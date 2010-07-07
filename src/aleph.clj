@@ -16,4 +16,7 @@
     (core/start-server port #(http/http-pipeline port handler))))
 
 (defn respond! [request msg]
-  ((:respond request) request (http/transform-response request msg)))
+  (io!
+    ((:respond request)
+     request
+     (http/transform-response request msg))))
