@@ -7,8 +7,8 @@ It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring
 (defn hello-world [request]
   (respond! request
     {:status 200
-	 :headers {"Content-Type" "text/html"}
-	 :body "Hello World!"}))
+     :headers {"Content-Type" "text/html"}
+     :body "Hello World!"}))
 
 (run-aleph hello-world {:port 8080})
 </code></pre>
