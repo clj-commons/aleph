@@ -1,0 +1,16 @@
+Aleph is an asynchronous web server, built on top of "Netty":http://www.jboss.org/netty.  
+
+It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.
+
+<pre><code>(use 'aleph)
+	
+(defn hello-world [request]
+  (respond! request
+    {:status 200
+	 :headers {"Content-Type" "text/html"}
+	 :body "Hello World!"}))
+
+(run-aleph hello-world {:port 8080})
+</code></pre>
+
+Notice that the response is an explicit step, using @(respond! request response)@.  This gives a much greater degree of flexibility than the servlet model, and allows more straightforward use of Clojure's concurrency primitives.
