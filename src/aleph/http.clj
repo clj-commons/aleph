@@ -133,7 +133,7 @@
     (when (:keep-alive? request)
       (HttpHeaders/setContentLength msg (-> msg .getContent .readableBytes)))
     (when (:chunked? request)
-      (.setChunked true))
+      (.setChunked msg true))
     msg))
 
 (defn respond-with-string
