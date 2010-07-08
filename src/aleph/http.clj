@@ -66,9 +66,6 @@
   [^HttpRequest msg]
   (->> msg .getMethod .getName .toLowerCase keyword))
 
-(defn channel-buffer->input-stream [^ChannelBuffer buf]
-  (ChannelBufferInputStream. buf))
-
 (defn request-headers
   "Get headers from Netty request."
   [^HttpMessage req]
