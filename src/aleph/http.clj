@@ -18,7 +18,7 @@
     [org.jboss.netty.channel
      Channel ChannelPipeline MessageEvent ChannelFutureListener Channels]
     [org.jboss.netty.buffer
-     ChannelBuffer ChannelBuffers]
+     ChannelBuffer ChannelBuffers ChannelBufferInputStream]
     [java.util
      Map$Entry]
     [java.io
@@ -34,17 +34,7 @@
   (->> msg .getMethod .getName .toLowerCase keyword))
 
 (defn channel-buffer->input-stream [^ChannelBuffer buf]
-  (let [buf (.duplicate buf)]
-    (proxy
-      [InputStream]
-      []
-      (read
-	([_]
-	   (if (pos? (.readableBytes buf))
-	     (.readByte buf)
-	     -1))
-	([_ ary off len]
-	   (.readBytes buf off len))))))
+  (ChannelBufferInputStream. buf))
 
 (defn request-headers [^HttpMessage req]
   {:headers (transform-headers (.getHeaders req))
