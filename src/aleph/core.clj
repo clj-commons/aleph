@@ -10,15 +10,28 @@
   (:use [clojure.contrib.def :only (defvar-)])
   (:import
     [org.jboss.netty.channel
-     ChannelHandler ChannelUpstreamHandler ChannelDownstreamHandler
-     ChannelHandlerContext MessageEvent ChannelPipelineFactory Channels
+     ChannelHandler
+     ChannelUpstreamHandler
+     ChannelDownstreamHandler
+     ChannelHandlerContext
+     MessageEvent
+     ChannelPipelineFactory
+     Channels
      ChannelPipeline]
+    [org.jboss.netty.buffer
+     ChannelBuffers
+     ChannelBuffer
+     ChannelBufferInputStream]
     [org.jboss.netty.channel.socket.nio
      NioServerSocketChannelFactory]
     [org.jboss.netty.bootstrap
      ServerBootstrap]
-    [java.util.concurrent Executors]
-    [java.net InetSocketAddress]))
+    [java.util.concurrent
+     Executors]
+    [java.net
+     InetSocketAddress]
+    [java.io
+     InputStream]))
 
 (defn event-message [evt]
   (when (instance? MessageEvent evt)
@@ -46,6 +59,14 @@
     (doseq [[id stage] stages]
       (.addLast pipeline (name id) stage))
     pipeline))
+
+(defn input-stream->channel-buffer [^InputStream stream]
+  (let [ary (make-array Byte/TYPE (.available stream))]
+    (.read stream ary)
+    (ChannelBuffers/wrappedBuffer ary)))
+
+(defn channel-buffer->input-stream [^ChannelBuffer buf]
+  (ChannelBufferInputStream. buf))
 
 (defn start-server [port pipeline]
   (let [server (ServerBootstrap.

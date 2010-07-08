@@ -6,21 +6,19 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph
-  (:require
-    [aleph.http :as http]
-    [aleph.core :as core]))
+(ns aleph.test.utils
+  (:use [aleph] :reload-all)
+  (:use [clojure.test])
+  (:import [java.util.concurrent CountDownLatch]))
 
-(defn run-aleph [handler options]
-  (let [port (:port options)
-	options (merge
-		  {:error-handler (fn [_ e] (.printStackTrace e))}
-		  options)]
-    (core/start-server port #(http/http-pipeline handler options))))
-
-(defn respond!
-  [request response]
-  (io! ((:respond request) request response)))
-
-(defn close [server]
-  (.close server))
+(defn run-test [handler]
+  (let [latch (CountDownLatch. 1)
+	server (run-aleph
+		 (fn [request]
+		   (handler request)
+		   (.countDown latch))
+		 {:port 8080})]
+    (.await latch)
+    (Thread/sleep 1000)
+    (is true)
+    (close server)))

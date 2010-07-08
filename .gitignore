@@ -2,4 +2,4 @@ pom.xml
 *jar
 lib
 classes
-DS_Store
+.DS_Store
