@@ -61,25 +61,13 @@
     flatten
     (apply hash-map)))
 
-(defn- request-method
+(defn request-method
   "Get HTTP method from Netty request."
   [^HttpRequest msg]
   (->> msg .getMethod .getName .toLowerCase keyword))
 
-(defn channel-buffer->input-stream
-  "Turns a Netty channel buffer into an InputStream."
-  [^ChannelBuffer buf]
-  (let [buf (.duplicate buf)]
-    (proxy
-      [InputStream]
-      []
-      (read
-	([_]
-	   (if (pos? (.readableBytes buf))
-	     (.readByte buf)
-	     -1))
-	([_ ary off len]
-	   (.readBytes buf off len))))))
+(defn channel-buffer->input-stream [^ChannelBuffer buf]
+  (ChannelBufferInputStream. buf))
 
 (defn request-headers
   "Get headers from Netty request."
