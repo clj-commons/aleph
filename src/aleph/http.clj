@@ -88,7 +88,7 @@
   "Get URI from Netty request."
   [^HttpMessage req]
   (let [uri (.getUri req)]
-    {:uri req
+    {:uri uri
      :query-string (when (.contains uri "?")
 		     (last (.split uri "?")))}))
 
@@ -113,7 +113,6 @@
   (let [channel ^Channel (:channel request)]
     (reify ChannelFutureListener
       (operationComplete [_ future]
-	(println "complete")
 	(if (.isSuccess future)
 	  (when-not (:keep-alive? request)
 	    (.close channel))
@@ -195,6 +194,7 @@
 			  (cond
 			    (string? body) (respond-with-string this response options)
 			    (sequential? body) (respond-with-sequence this response options)
+			    (instance? InputStream body) (respond-with-stream this response options)
 			    (instance? File body) (respond-with-file this response options))))}))))))
 
 (defn http-pipeline

@@ -22,5 +22,5 @@
   [request response]
   (io! ((:respond request) request response)))
 
-(defn close [server]
+(defn stop [server]
   (.close server))
