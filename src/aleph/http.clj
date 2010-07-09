@@ -42,8 +42,6 @@
     [org.jboss.netty.handler.stream
      ChunkedFile
      ChunkedWriteHandler]
-    [java.util
-     Map$Entry]
     [java.io
      ByteArrayInputStream
      InputStream
@@ -53,14 +51,6 @@
     [java.net
      URLConnection]))
 
-(defn transform-headers
-  "Turns Netty headers into a Clojure hash."
-  [headers]
-  (->> headers
-    (map #(list (.getKey ^Map$Entry %) (.getValue ^Map$Entry %)))
-    flatten
-    (apply hash-map)))
-
 (defn request-method
   "Get HTTP method from Netty request."
   [^HttpRequest msg]
@@ -69,7 +59,7 @@
 (defn request-headers
   "Get headers from Netty request."
   [^HttpMessage req]
-  {:headers (transform-headers (.getHeaders req))
+  {:headers (into {} (.getHeaders req))
    :chunked? (.isChunked req)
    :keep-alive? (HttpHeaders/isKeepAlive req)
    :last-chunk (and (.isChunked req) (.isLast ^HttpChunk req))})
