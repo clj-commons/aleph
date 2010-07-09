@@ -26,7 +26,7 @@
   (respond! request
     {:status 200
      :header {"Content-Type" "text/html"}
-     :body [1 "two" 3.0]}))
+     :body ["sequence: " 1 " two " 3.0]}))
 
 (defn file-handler [request]
   (respond! request
