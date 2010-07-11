@@ -55,6 +55,6 @@
   (when-let [handler (route-map (:uri request))]
     (handler request)))
 
-(deftest http-response
+'(deftest http-response
   (let [server (reset! server (run-http-server handler {:port 8080}))]
     (is @latch)))

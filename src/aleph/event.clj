@@ -8,7 +8,7 @@
 
 (ns aleph.event
   (:use
-    [clojure.contrib.def :only (defmacro-)])
+    [clojure.contrib.def :only (defmacro- defvar)])
   (:import
     [org.jboss.netty.channel
      ChannelFuture
@@ -109,15 +109,24 @@
   "Returns an event which can be triggered via error! or success!"
   []
   (let [complete? (ref false)
-	error? (ref false)
+	error? (ref nil)
 	result (ref nil)
-	success-listeners (ref [])
-	error-listeners (ref [])
-	complete-fn (fn []
-		      (dosync
-			(ref-set success-listeners nil)
-			(ref-set error-listeners nil)
-			(ref-set complete? true)))]
+	listeners (ref {})
+	publish-fn
+	(fn [evt rslt typ error]
+	  (when @complete?
+	    (throw (Exception. "An event can only be triggered once.")))
+	  (doseq [l (dosync
+		      (ref-set complete? true)
+		      (ref-set error? error)
+		      (ref-set result rslt)
+		      (let [coll (typ @listeners)]
+			(ref-set listeners nil)
+			coll))]
+	    (try
+	      (l evt)
+	      (catch Exception e
+		(.printStackTrace e)))))]
     ^{:tag ::event}
     (reify
       Event
@@ -126,10 +135,13 @@
       (success? [_]
 	(and @complete? (not @error?)))
       (on-success [this f]
-	(if @complete?
-	  (when-not @error?
-	    (f this))
-	  (dosync (alter success-listeners conj f)))
+	(when (dosync
+		(if @complete?
+		  (not @error?)
+		  (do
+		    (alter listeners update-in [:success] #(conj % f))
+		    false)))
+	  (f this))
 	nil)
       (on-completion [this f]
 	(on-success this f)
@@ -139,53 +151,60 @@
 
       FailableEvent
       (on-error [this f]
-	(if @complete?
-	  (when @error?
-	    (f this))
-	  (dosync (alter error-listeners conj f)))
+	(when (dosync
+		(if @complete?
+		  @error?
+		  (do
+		    (alter listeners update-in [:error] #(conj % f))
+		    false)))
+	  (f this))
 	nil)
       (error? [_]
 	(and @error?))
 
       EventTriggers
       (success! [this x]
-	(when @complete?
-	  (throw (Exception. "An event can only be triggered once.")))
-	(doseq
-	  [l (dosync
-	       (let [listeners @success-listeners]
-		 (complete-fn)
-		 (ref-set error? false)
-		 (ref-set result x)
-		 listeners))]
-	  (try
-	    (l this)
-	    (catch Exception e
-	      ))))
+	(publish-fn this x :success false))
       
       (error! [this x]
-	(when @complete?
-	  (throw (Exception. "An event can only be triggered once.")))
-	(doseq
-	  [l (dosync
-	       (let [listeners @error-listeners]
-		 (complete-fn)
-		 (ref-set error? true)
-		 (ref-set result x)
-		 listeners))]
-	  (try
-	    (l this)
-	    (catch Exception e
-	      )))))))
+	(publish-fn this x :error true)))))
 
 ;;;
+
+(defvar *context*)
+
+(defn- outer-event []
+  (:outer-event *context*))
+
+(defn- pipeline-error-handler []
+  (:error-handler *context*))
+
+(defn- current-pipeline []
+  (:current-pipeline *context*))
+
+(defmacro- with-context [context & body]
+  `(binding [*context* ~context]
+     ~@body))
+
+(defn pipeline? [x]
+  (and
+    (instance? clojure.lang.IMeta x)
+    (-> x meta :tag (= ::pipeline))))
 
 (defn redirect
   "When returned from a pipeline stage, redirects the event flow."
   [pipeline val]
+  (when-not (pipeline? pipeline)
+    (throw (Exception. "First parameter must be a pipeline.")))
   ^{:tag ::redirect}
-  {:pipeline pipeline
+  {:pipeline (-> pipeline meta :pipeline)
    :value val})
+
+(defn restart
+  "Redirects to the beginning of the current pipeline."
+  [val]
+  ^{:tag ::redirect}
+  (current-pipeline))
 
 (defn redirect?
   [x]
@@ -195,42 +214,55 @@
 
 (declare handle-event-result)
 
-(defn- pipeline-args [pipeline value outer-evt]
-  [value
-   (:stages pipeline)
-   (:error-handler pipeline)
-   outer-evt])
-
-(defn- redirect-args [redirect outer-evt]
-  (pipeline-args (:pipeline redirect) (:value redirect) outer-evt))
-
 (defn- wait-for-event
-  [evt fns error-handler outer-evt]
+  [evt fns context]
+  ;;(println "wait for event")
   (on-error evt
     (fn [evt]
-      (if-not error-handler
-	(error! outer-evt (result evt))
-	(let [result (error-handler (result evt))]
-	  (if (redirect? result)
-	    (apply handle-event-result (redirect-args redirect outer-evt))
-	    (error! outer-evt (result evt)))))))
+      (println "error")
+      (with-context context
+	(if-not (pipeline-error-handler)
+	  ;;Halt pipeline with error if there's no error-handler
+	  (error! (outer-event) (result evt))
+	  (let [result ((pipeline-error-handler) (result evt))]
+	    (if (redirect? result)
+	      ;;If error-handler issues a redirect, go there
+	      (handle-event-result
+		(:value redirect)
+		(-> redirect :pipeline :stages)
+		(assoc context
+		  :error-handler (-> redirect :pipeline :error-handler)
+		  :pipeline (:pipeline redirect)))
+	      ;;Otherwise, halt pipeline
+	      (error! (outer-event) (result evt))))))))
   (on-success evt
     (fn [evt]
-      (handle-event-result (result evt) fns error-handler outer-evt))))
+      (handle-event-result (result evt) fns context))))
 
 (defn- handle-event-result
-  [val fns error-handler outer-evt]
-  ;;(println "handle-event-result" val (event? val))
-  (cond
-    (redirect? val)
-    (let [[a b c d] (redirect-args val outer-evt)]
-      (recur a b c d))
-    (event? val)
-    (wait-for-event val fns error-handler outer-evt)
-    :else
-    (if (empty? fns)
-      (success! outer-evt val)
-      (recur ((first fns) val) (rest fns) error-handler outer-evt))))
+  [val fns context]
+  ;;(println "handle-event-result" val (event? val) (redirect? val))
+  (with-context context
+    (try
+      (cond
+	(redirect? val)
+	(recur
+	  (:value val)
+	  (-> val :pipeline :stages)
+	  (assoc context
+	    :pipeline (:pipeline redirect)
+	    :error-handler (-> redirect :pipeline :error-handler)))
+	(event? val)
+	(wait-for-event val fns context)
+	:else
+	(if (empty? fns)
+	  (success! (outer-event) val)
+	  (let [f (first fns)]
+	    (if (pipeline? f)
+	      (wait-for-event (f val) (rest fns) context)
+	      (recur (f val) (rest fns) context)))))
+      (catch Exception e
+	(.printStackTrace e)))))
 
 (defn- get-specs [specs+rest]
   (if (-> specs+rest first keyword?)
@@ -243,18 +275,27 @@
 	stages (drop (count opts) opts+stages)
 	pipeline {:stages stages
 		  :error-handler (:error-handler opts)}]
+    ^{:tag ::pipeline
+      :pipeline pipeline}
     (fn [x]
       (let [outer-evt (create-event)]
-	(apply handle-event-result (pipeline-args pipeline x outer-evt))
+	(handle-event-result
+	  x
+	  (:stages pipeline)
+	  {:error-handler (:error-handler pipeline)
+	   :pipeline :pipeline
+	   :outer-event outer-evt})
 	outer-evt))))
 
 (defn blocking [f]
   (fn [x]
-    (let [evt (create-event)]
+    (let [evt (create-event)
+	  context *context*]
       (future
-	(try
-	  (let [result (f x)]
-	    (success! evt result))
-	  (catch Exception e
-	    (error! evt e))))
+	(with-context context
+	  (try
+	    (let [result (f x)]
+	      (success! evt result))
+	    (catch Exception e
+	      (error! evt e)))))
       evt)))
