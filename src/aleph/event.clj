@@ -217,9 +217,10 @@
 
 (defn- wait-for-event
   [evt fns context]
-  ;;(println "wait for event")
+  ;;(println "wait for event" context "\n")
   (on-error evt
     (fn [evt]
+      (println "error")
       (with-context context
 	(if-not (pipeline-error-handler)
 	  ;;Halt pipeline with error if there's no error-handler
@@ -272,7 +273,7 @@
 (defn pipeline
   [& opts+stages]
   (let [opts (apply hash-map (get-specs opts+stages))
-	stages (drop (count opts) opts+stages)
+	stages (drop (* 2 (count opts)) opts+stages)
 	pipeline {:stages stages
 		  :error-handler (:error-handler opts)}]
     ^{:tag ::pipeline

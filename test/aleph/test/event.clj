@@ -50,3 +50,8 @@
   (test-pipeline (pipeline inc #(if (< % 10) (restart %) %) inc) 11)
   (test-pipeline pipe-b 10))
 
+'(deftest error-handling
+  (test-pipeline
+    (pipeline :error-handler #(do (println "error!") (redirect (pipeline inc inc inc)))
+      (blocking #(throw (Exception. "boom"))))
+    3))
