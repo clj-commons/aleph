@@ -11,12 +11,16 @@
     [aleph.http :as http]
     [aleph.core :as core]))
 
-(defn run-aleph [handler options]
+(defn run-server [handler options]
   (let [port (:port options)
-	options (merge
-		  {:error-handler (fn [_ e] (.printStackTrace e))}
-		  options)]
-    (core/start-server port #(http/http-pipeline handler options))))
+	protocol (:protocol options)]
+    (core/start-server
+      (condp = protocol
+	:http #(http/server-pipeline handler options))
+      port)))
+
+(defn run-http-server [handler options]
+  (run-server handler (assoc options :protocol :http)))
 
 (defn respond!
   [request response]

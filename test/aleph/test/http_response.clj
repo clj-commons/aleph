@@ -56,5 +56,5 @@
     (handler request)))
 
 (deftest http-response
-  (let [server (reset! server (run-aleph handler {:port 8080}))]
+  (let [server (reset! server (run-http-server handler {:port 8080}))]
     (is @latch)))
