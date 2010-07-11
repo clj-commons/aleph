@@ -180,7 +180,7 @@
   (:error-handler *context*))
 
 (defn- current-pipeline []
-  (:current-pipeline *context*))
+  (:pipeline *context*))
 
 (defmacro- with-context [context & body]
   `(binding [*context* ~context]
@@ -204,7 +204,8 @@
   "Redirects to the beginning of the current pipeline."
   [val]
   ^{:tag ::redirect}
-  (current-pipeline))
+  {:pipeline (current-pipeline)
+   :value val})
 
 (defn redirect?
   [x]
@@ -219,7 +220,6 @@
   ;;(println "wait for event")
   (on-error evt
     (fn [evt]
-      (println "error")
       (with-context context
 	(if-not (pipeline-error-handler)
 	  ;;Halt pipeline with error if there's no error-handler
@@ -241,7 +241,7 @@
 
 (defn- handle-event-result
   [val fns context]
-  ;;(println "handle-event-result" val (event? val) (redirect? val))
+  ;;(println "handle-event-result" val context "\n")
   (with-context context
     (try
       (cond
@@ -250,8 +250,8 @@
 	  (:value val)
 	  (-> val :pipeline :stages)
 	  (assoc context
-	    :pipeline (:pipeline redirect)
-	    :error-handler (-> redirect :pipeline :error-handler)))
+	    :pipeline (:pipeline val)
+	    :error-handler (-> val :pipeline :error-handler)))
 	(event? val)
 	(wait-for-event val fns context)
 	:else
@@ -283,7 +283,7 @@
 	  x
 	  (:stages pipeline)
 	  {:error-handler (:error-handler pipeline)
-	   :pipeline :pipeline
+	   :pipeline pipeline
 	   :outer-event outer-evt})
 	outer-evt))))
 

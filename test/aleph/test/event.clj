@@ -41,5 +41,12 @@
 (deftest nested-pipelines
   (test-pipeline (pipeline inc (pipeline inc (pipeline inc) inc) inc) 5))
 
+(declare pipe-a)
+(def pipe-b (pipeline inc #(if (< % 10) (redirect pipe-a %) %)))
+(def pipe-a (pipeline inc #(if (< % 10) (redirect pipe-b %) %)))
+
 (deftest redirected-pipelines
-  (test-pipeline (pipeline inc inc #(redirect (pipeline inc inc inc) %)) 5))
+  (test-pipeline (pipeline inc inc #(redirect (pipeline inc inc inc) %)) 5)
+  (test-pipeline (pipeline inc #(if (< % 10) (restart %) %) inc) 11)
+  (test-pipeline pipe-b 10))
+
