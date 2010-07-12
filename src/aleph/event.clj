@@ -14,6 +14,8 @@
      ChannelFuture
      ChannelFutureListener]))
 
+(set! *warn-on-reflection* true)
+
 (defprotocol CancellableEvent
   (cancel [event])
   (on-cancel [event callback])
@@ -21,18 +23,19 @@
 
 (defprotocol FailableEvent
   (on-error [event callback])
-  (error? [event]))
+  (error? [event])
+  (cause [event]))
 
 (defprotocol Event
-  (result [event])
+  (state [event])
   (on-success [event callback])
   (success? [event])
   (on-completion [event callback])
   (complete? [event]))
 
 (defprotocol EventTriggers
-  (success! [event result])
-  (error! [event error]))
+  (success! [event state])
+  (error! [event error state]))
 
 (defmacro- add-channel-listener [ftr pred & body]
   `(.addListener ~ftr
@@ -44,7 +47,7 @@
 	  (when ~pred
 	    ~@body))))))
 
-(defn wrap-channel-event [^ChannelFuture ftr]
+(defn wrap-channel-event [^ChannelFuture ftr state]
   ^{:tag ::event}
   (reify
 
@@ -61,12 +64,7 @@
 	(f this)))
     (success? [_]
       (.isSuccess ftr))
-    (result [this]
-      (cond
-	(not (complete? this)) :not-complete
-	(success? this) :success
-	(error? this) (error? this)
-	(cancelled? this) :cancelled))
+    (state [this] state)
 
     FailableEvent
     (on-error [this f]
@@ -94,8 +92,8 @@
     (-> x meta :tag (= ::event))))
 
 (defn immediate-success
-  "Returns an event which is immediately successful, and contains 'result'."
-  [result]
+  "Returns an event which is immediately successful, and contains 'state'."
+  [state]
   ^{:tag ::event}
   (reify
     Event
@@ -103,10 +101,10 @@
     (success? [_] true)
     (on-completion [this f] (f this))
     (on-success [this f] (f this))
-    (result [_] result)))
+    (state [_] state)))
 
 (defn immediate-failure
-  [exception]
+  [exception state]
   ^{:tag ::event}
   (reify
     Event
@@ -114,44 +112,46 @@
     (success? [_] false)
     (on-completion [this f] (f this))
     (on-success [this f] nil)
-    (result [_] exception)
+    (state [_] state)
     FailableEvent
     (on-error [this f] (f this))
-    (error? [_] true)))
+    (error? [_] true)
+    (cause [_] exception)))
 
 (defn create-event
   "Returns an event which can be triggered via error! or success!"
   []
   (let [complete? (ref false)
-	error? (ref nil)
-	result (ref nil)
+	state (ref nil)
+	cause (ref nil)
 	listeners (ref {})
 	publish-fn
 	(fn [evt rslt typ error]
 	  (when @complete?
 	    (throw (Exception. "An event can only be triggered once.")))
-	  (doseq [l (dosync
-		      (ref-set complete? true)
-		      (ref-set error? error)
-		      (ref-set result rslt)
-		      (let [coll (typ @listeners)]
-			(ref-set listeners nil)
-			coll))]
-	    (try
-	      (l evt)
-	      (catch Exception e
-		(.printStackTrace e)))))]
+	  (let [coll (dosync
+		       (ref-set complete? true)
+		       (ref-set cause error)
+		       (ref-set state rslt)
+		       (let [coll (@listeners typ)]
+			 (ref-set listeners nil)
+			 coll))]
+	    (doseq [l coll]
+	      (try
+		(l evt)
+		(catch Exception e
+		  (.printStackTrace e))))))]
     ^{:tag ::event}
     (reify
       Event
-      (complete? [_]
+      (complete? [this]
 	@complete?)
-      (success? [_]
-	(and @complete? (not @error?)))
+      (success? [this]
+	(and @complete? (not (error? this))))
       (on-success [this f]
 	(when (dosync
 		(if @complete?
-		  (not @error?)
+		  (not (error? this))
 		  (do
 		    (alter listeners update-in [:success] #(conj % f))
 		    false)))
@@ -160,28 +160,30 @@
       (on-completion [this f]
 	(on-success this f)
 	(on-error this f))
-      (result [_]
-	@result)
+      (state [_]
+	@state)
 
       FailableEvent
       (on-error [this f]
 	(when (dosync
 		(if @complete?
-		  @error?
+		  (error? this)
 		  (do
 		    (alter listeners update-in [:error] #(conj % f))
 		    false)))
 	  (f this))
 	nil)
       (error? [_]
-	(and @error?))
+	(not (nil? @cause)))
+      (cause [_]
+	@cause)
 
       EventTriggers
       (success! [this x]
-	(publish-fn this x :success false))
+	(publish-fn this x :success nil))
       
-      (error! [this x]
-	(publish-fn this x :error true)))))
+      (error! [this exception x]
+	(publish-fn this x :error exception)))))
 
 ;;;
 
@@ -195,6 +197,9 @@
 
 (defn- current-pipeline []
   (:pipeline *context*))
+
+(defn- initial-value []
+  (:initial-value *context*))
 
 (defmacro- with-context [context & body]
   `(binding [*context* ~context]
@@ -216,10 +221,12 @@
 
 (defn restart
   "Redirects to the beginning of the current pipeline."
-  [val]
-  ^{:tag ::redirect}
-  {:pipeline (current-pipeline)
-   :value val})
+  ([]
+     (restart (initial-value)))
+  ([val]
+     ^{:tag ::redirect}
+     {:pipeline (current-pipeline)
+      :value val}))
 
 (defn redirect?
   [x]
@@ -231,32 +238,31 @@
 
 (defn- wait-for-event
   [evt fns context]
-  ;;(println "wait for event" context "\n")
+  ;;(println "wait for event" "\n")
   (on-error evt
     (fn [evt]
-      ;;(println "error\n" context "\n")
       (with-context context
 	(if-not (pipeline-error-handler)
 	  ;;Halt pipeline with error if there's no error-handler
-	  (error! (outer-event) (result evt))
-	  (let [result (apply (pipeline-error-handler) (result evt))]
-	    (if (redirect? result)
+	  (error! (outer-event) (cause evt) (state evt))
+	  (let [state ((pipeline-error-handler) (cause evt) (state evt))]
+	    (if (redirect? state)
 	      ;;If error-handler issues a redirect, go there
 	      (handle-event-result
-		(:value result)
-		(-> result :pipeline :stages)
+		(:value state)
+		(-> state :pipeline :stages)
 		(assoc context
-		  :error-handler (-> result :pipeline :error-handler)
-		  :pipeline (:pipeline result)))
+		  :error-handler (-> state :pipeline :error-handler)
+		  :pipeline (:pipeline state)))
 	      ;;Otherwise, halt pipeline
-	      (error! (outer-event) result)))))))
+	      (error! (outer-event) (cause evt) state)))))))
   (on-success evt
     (fn [evt]
-      (handle-event-result (result evt) fns context))))
+      (handle-event-result (state evt) fns context))))
 
 (defn- handle-event-result
   [val fns context]
-  ;;s(println "handle-event-result" val context "\n")
+  ;;(println "handle-event-result" val (event? val) "\n")
   (with-context context
     (try
       (cond
@@ -266,19 +272,21 @@
 	  (-> val :pipeline :stages)
 	  (assoc context
 	    :pipeline (:pipeline val)
+	    :initial-value (:value val)
 	    :error-handler (-> val :pipeline :error-handler)))
 	(event? val)
 	(wait-for-event val fns context)
 	:else
-	(if (empty? fns)
-	  (success! (outer-event) val)
-	  (let [f (first fns)]
-	    (if (pipeline? f)
-	      (wait-for-event (f val) (rest fns) context)
-	      (try
-		(recur (f val) (rest fns) context)
-		(catch Exception e
-		  (wait-for-event (immediate-failure [e val]) fns context)))))))
+	(do
+	  (if (empty? fns)
+	   (success! (outer-event) val)
+	   (let [f (first fns)]
+	     (if (pipeline? f)
+	       (wait-for-event (f val) (rest fns) context)
+	       (try
+		 (recur (f val) (rest fns) context)
+		 (catch Exception e
+		   (wait-for-event (immediate-failure e val) fns context))))))))
       (catch Exception e
 	(.printStackTrace e)))))
 
@@ -302,7 +310,8 @@
 	  (:stages pipeline)
 	  {:error-handler (:error-handler pipeline)
 	   :pipeline pipeline
-	   :outer-event outer-evt})
+	   :outer-event outer-evt
+	   :initial-value x})
 	outer-evt))))
 
 (defn blocking [f]
@@ -315,5 +324,5 @@
 	    (let [result (f x)]
 	      (success! evt result))
 	    (catch Exception e
-	      (error! evt e)))))
+	      (error! evt e x)))))
       evt)))
