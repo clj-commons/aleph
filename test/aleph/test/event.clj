@@ -50,8 +50,43 @@
   (test-pipeline (pipeline inc #(if (< % 10) (restart %) %) inc) 11)
   (test-pipeline pipe-b 10))
 
-'(deftest error-handling
+(defn assert-failure [pipeline]
+  (let [latch (CountDownLatch. 1)]
+    (on-error
+      (pipeline 0)
+      (fn [x]
+	(.countDown latch)))
+    (if (.await latch 100 TimeUnit/MILLISECONDS)
+      (is true)
+      (do
+	(println "Timed out.")
+	(is false)))))
+
+(defn fail []
+  (throw (Exception. "boom")))
+
+(def slow-fail
+  (blocking (fn [_] (fail))))
+
+(deftest exceptions
+  (assert-failure (pipeline fail))
+  (assert-failure (pipeline inc fail))
+  (assert-failure (pipeline inc fail inc))
+  (assert-failure (pipeline slow-inc slow-fail)))
+
+(deftest error-handling
   (test-pipeline
-    (pipeline :error-handler #(do (println "error!") (redirect (pipeline inc inc inc)))
-      (blocking #(throw (Exception. "boom"))))
-    3))
+    (pipeline :error-handler (fn [ex val] (redirect (pipeline inc) val))
+      inc
+      fail)
+    2)
+  (let [counter (atom 3)]
+    (test-pipeline
+      (pipeline :error-handler (fn [ex val] (restart val))
+	inc
+	(fn [x]
+	  (swap! counter dec)
+	  (if (pos? @counter)
+	    (fail)
+	    x)))
+      3)))

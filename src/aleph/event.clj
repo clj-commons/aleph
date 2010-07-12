@@ -93,7 +93,7 @@
     (instance? clojure.lang.IMeta x)
     (-> x meta :tag (= ::event))))
 
-(defn immediate-event
+(defn immediate-success
   "Returns an event which is immediately successful, and contains 'result'."
   [result]
   ^{:tag ::event}
@@ -104,6 +104,20 @@
     (on-completion [this f] (f this))
     (on-success [this f] (f this))
     (result [_] result)))
+
+(defn immediate-failure
+  [exception]
+  ^{:tag ::event}
+  (reify
+    Event
+    (complete? [_] true)
+    (success? [_] false)
+    (on-completion [this f] (f this))
+    (on-success [this f] nil)
+    (result [_] exception)
+    FailableEvent
+    (on-error [this f] (f this))
+    (error? [_] true)))
 
 (defn create-event
   "Returns an event which can be triggered via error! or success!"
@@ -220,29 +234,29 @@
   ;;(println "wait for event" context "\n")
   (on-error evt
     (fn [evt]
-      (println "error")
+      ;;(println "error\n" context "\n")
       (with-context context
 	(if-not (pipeline-error-handler)
 	  ;;Halt pipeline with error if there's no error-handler
 	  (error! (outer-event) (result evt))
-	  (let [result ((pipeline-error-handler) (result evt))]
+	  (let [result (apply (pipeline-error-handler) (result evt))]
 	    (if (redirect? result)
 	      ;;If error-handler issues a redirect, go there
 	      (handle-event-result
-		(:value redirect)
-		(-> redirect :pipeline :stages)
+		(:value result)
+		(-> result :pipeline :stages)
 		(assoc context
-		  :error-handler (-> redirect :pipeline :error-handler)
-		  :pipeline (:pipeline redirect)))
+		  :error-handler (-> result :pipeline :error-handler)
+		  :pipeline (:pipeline result)))
 	      ;;Otherwise, halt pipeline
-	      (error! (outer-event) (result evt))))))))
+	      (error! (outer-event) result)))))))
   (on-success evt
     (fn [evt]
       (handle-event-result (result evt) fns context))))
 
 (defn- handle-event-result
   [val fns context]
-  ;;(println "handle-event-result" val context "\n")
+  ;;s(println "handle-event-result" val context "\n")
   (with-context context
     (try
       (cond
@@ -261,7 +275,10 @@
 	  (let [f (first fns)]
 	    (if (pipeline? f)
 	      (wait-for-event (f val) (rest fns) context)
-	      (recur (f val) (rest fns) context)))))
+	      (try
+		(recur (f val) (rest fns) context)
+		(catch Exception e
+		  (wait-for-event (immediate-failure [e val]) fns context)))))))
       (catch Exception e
 	(.printStackTrace e)))))
 
