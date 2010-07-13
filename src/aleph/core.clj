@@ -6,7 +6,9 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.core
+(ns
+  ^{:skip-wiki true}
+  aleph.core
   (:use [clojure.contrib.def :only (defvar- defmacro-)])
   (:import
     [org.jboss.netty.channel

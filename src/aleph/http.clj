@@ -6,7 +6,9 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.http
+(ns
+  ^{:skip-wiki true}
+  aleph.http
   (:require [aleph.http.server :as server]))
 
 (defn server-pipeline [handler options]

@@ -6,12 +6,51 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph
+(ns
+  ^{:author "Zachary Tellman"
+    :doc "An event-driven server."}
+  aleph
+  (:use
+    [clojure.contrib.def :only (defmacro-)])
   (:require
     [aleph.http :as http]
-    [aleph.core :as core]))
+    [aleph.core :as core]
+    [aleph.pipeline :as pipeline]))
 
-(defn run-server [handler options]
+(defmacro- import-fn [sym]
+  (let [m (meta (eval sym))
+        m (meta (intern (:ns m) (:name m)))
+        n (:name m)
+        arglists (:arglists m)
+        doc (:doc m)]
+    (list `def (with-meta n {:doc doc :arglists (list 'quote arglists)}) (eval sym))))
+
+;;;
+
+(import-fn pipeline/pipeline)
+(import-fn pipeline/blocking)
+
+(import-fn pipeline/future-proxy)
+(import-fn #'pipeline/success!)
+(import-fn #'pipeline/error!)
+
+(import-fn #'pipeline/redirect)
+(import-fn #'pipeline/restart)
+
+(import-fn #'pipeline/on-success)
+(import-fn #'pipeline/on-error)
+(import-fn #'pipeline/on-completion)
+(import-fn #'pipeline/success?)
+(import-fn #'pipeline/error?)
+(import-fn #'pipeline/complete?)
+(import-fn #'pipeline/cause)
+(import-fn #'pipeline/result)
+
+;;;
+
+(defn run-server
+  "Starts a server."
+  [handler options]
   (let [port (:port options)
 	protocol (:protocol options)]
     (core/start-server
@@ -19,12 +58,17 @@
 	:http #(http/server-pipeline handler options))
       port)))
 
-(defn run-http-server [handler options]
+(defn run-http-server
+  "Starts an HTTP server."
+  [handler options]
   (run-server handler (assoc options :protocol :http)))
 
 (defn respond!
-  [request response]
-  (io! ((:respond request) request response)))
+  "Sends a response to the origin of a message."
+  [msg response]
+  (io! ((:respond request) msg response)))
 
-(defn stop [server]
+(defn stop
+  "Stops a server."
+  [server]
   (.close server))

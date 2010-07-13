@@ -6,7 +6,10 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.pipeline
+
+(ns
+  ^{:skip-wiki true}
+  aleph.pipeline
   (:use
     [clojure.contrib.def :only (defmacro- defvar)])
   (:import
@@ -22,18 +25,28 @@
   (cancelled? [future]))
 
 (defprotocol PipelineFuture
-  (on-success [future callback])
-  (success? [future])
-  (on-completion [future callback])
-  (complete? [future])
-  (on-error [future callback])
-  (error? [future])
-  (cause [future])
-  (result [future]))
+  (on-success [future callback]
+    "Enqueues the callback to be invoked when the pipeline-future completes successfully.")
+  (success? [future]
+    "Returns true if the pipeline-future has completed successfully.")
+  (on-completion [future callback]
+    "Enqueues the callback to be invoked when the pipeline-future completes.")
+  (complete? [future]
+    "Returns true if the pipeline-future is complete.")
+  (on-error [future callback]
+    "Enqueues the callback to be invoked when the pipeline-future completes unsucccessfully.")
+  (error? [future]
+    "Returns true if the pipeline-future did not complete successfuly.")
+  (cause [future]
+    "Returns the exception that caused the pipeline-future to fail.")
+  (result [future]
+    "Returns the result of the pipeline-future, or nil if it did not complete successfully."))
 
 (defprotocol PipelineFutureProxy
-  (success! [future result])
-  (error! [future error result]))
+  (success! [future result]
+    "Triggers the successful conclusion of a future-proxy.")
+  (error! [future error result]
+    "Triggers the unsuccessful conclusion of a future-proxy."))
 
 (defmacro- add-channel-listener [ftr pred & body]
   `(.addListener ~ftr
@@ -103,6 +116,7 @@
     (result [_] result)))
 
 (defn immediate-failure
+  "Returns a future which is immediately unsuccessful."
   [exception result]
   ^{:tag ::future}
   (reify
@@ -117,9 +131,7 @@
     (result [_] result)))
 
 (defn future-proxy
-  "Returns a future which can be triggered via error! or success!
-
-   If the proxy is dereferenced before it's complete, it will throw an exception."
+  "Returns a future which can be triggered via error! or success!"
   []
   (let [complete-val (ref false)
 	result-val (ref nil)
@@ -218,7 +230,7 @@
     (-> x meta :tag (= ::pipeline))))
 
 (defn redirect
-  "When returned from a pipeline stage, redirects the future flow."
+  "When returned from a pipeline stage, redirects the execution flow.."
   [pipeline val]
   (when-not (pipeline? pipeline)
     (throw (Exception. "First parameter must be a pipeline.")))
@@ -227,7 +239,8 @@
    :value val})
 
 (defn restart
-  "Redirects to the beginning of the current pipeline."
+  "Redirects to the beginning of the current pipeline.  If no value is passed in, defaults
+   to the value previously passed into the pipeline."
   ([]
      (restart (initial-value)))
   ([val]
@@ -302,6 +315,12 @@
     nil))
 
 (defn pipeline
+  "Returns a function with an arity of one.  Invoking the function will return
+   a pipeline-future.
+
+   Stages should either be pipelines, or functions with an arity of one.  These functions
+   should either return a pipeline-future, a redirect signal, or a value which will be passed
+   into the next stage."
   [& opts+stages]
   (let [opts (apply hash-map (get-specs opts+stages))
 	stages (drop (* 2 (count opts)) opts+stages)
@@ -320,7 +339,10 @@
 	   :initial-value x})
 	outer-future))))
 
-(defn blocking [f]
+(defn blocking
+  "Takes a synchronous function, and returns a function which will be executed asynchronously,
+   and whose invocation will return a pipeline-future."
+  [f]
   (fn [x]
     (let [ftr (future-proxy)
 	  context *context*]
