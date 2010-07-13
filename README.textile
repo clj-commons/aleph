@@ -16,3 +16,5 @@ It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring
 Notice that the response is an explicit step, using @(respond! request response)@.  This gives a much greater degree of flexibility than the servlet model, and allows more straightforward use of Clojure's concurrency primitives.
 
 This is very experimental, but also a very interesting sandbox to play around in.  Contributions and ideas are welcome.
+
+Full documentation can be found "here":http://ztellman.github.com/aleph/aleph-api.html.
