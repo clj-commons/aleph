@@ -6,8 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.test.event
-  (:use [aleph.event] :reload-all)
+(ns aleph.test.pipeline
+  (:use [aleph.pipeline] :reload-all)
   (:use [clojure.test])
   (:import [java.util.concurrent
 	    CountDownLatch
@@ -19,7 +19,7 @@
     (on-success
       (pipeline 0)
       (fn [x]
-	(reset! value (state x))
+	(reset! value (result x))
 	(.countDown latch)))
     (if (.await latch 5 TimeUnit/SECONDS)
       (is (= expected-result @value))
@@ -100,4 +100,12 @@
 	inc
 	(fail-times 3)
 	inc)
-      2)))
+      2)
+    (test-pipeline
+      (pipeline
+	inc
+	(pipeline :error-handler (fn [ex val] (restart val))
+	inc
+	(fail-times 3))
+	inc)
+      5)))

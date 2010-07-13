@@ -6,7 +6,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.event
+(ns aleph.pipeline
   (:use
     [clojure.contrib.def :only (defmacro- defvar)])
   (:import
@@ -16,26 +16,24 @@
 
 (set! *warn-on-reflection* true)
 
-(defprotocol CancellableEvent
-  (cancel [event])
-  (on-cancel [event callback])
-  (cancelled? [event]))
+(defprotocol CancellablePipelineFuture
+  (cancel [future])
+  (on-cancel [future callback])
+  (cancelled? [future]))
 
-(defprotocol FailableEvent
-  (on-error [event callback])
-  (error? [event])
-  (cause [event]))
+(defprotocol PipelineFuture
+  (on-success [future callback])
+  (success? [future])
+  (on-completion [future callback])
+  (complete? [future])
+  (on-error [future callback])
+  (error? [future])
+  (cause [future])
+  (result [future]))
 
-(defprotocol Event
-  (state [event])
-  (on-success [event callback])
-  (success? [event])
-  (on-completion [event callback])
-  (complete? [event]))
-
-(defprotocol EventTriggers
-  (success! [event state])
-  (error! [event error state]))
+(defprotocol PipelineFutureProxy
+  (success! [future result])
+  (error! [future error result]))
 
 (defmacro- add-channel-listener [ftr pred & body]
   `(.addListener ~ftr
@@ -47,11 +45,11 @@
 	  (when ~pred
 	    ~@body))))))
 
-(defn wrap-channel-event [^ChannelFuture ftr state]
-  ^{:tag ::event}
+(defn wrap-channel-future [^ChannelFuture ftr result]
+  ^{:tag ::future}
   (reify
 
-    Event
+    PipelineFuture
     (on-completion [this f]
       (add-channel-listener ftr
 	(complete? this)
@@ -64,17 +62,15 @@
 	(f this)))
     (success? [_]
       (.isSuccess ftr))
-    (state [this] state)
-
-    FailableEvent
     (on-error [this f]
       (add-channel-listener ftr
 	(error? this)
 	(f this)))
     (error? [_]
       (.getCause ftr))
+    (result [_] result)
 
-    CancellableEvent
+    CancellablePipelineFuture
     (cancelled? [_]
       (.isCancelled ftr))
     (on-cancel [this f]
@@ -86,71 +82,83 @@
 
 ;;;
 
-(defn event? [x]
+(defn pipeline-future? [x]
   (and
     (instance? clojure.lang.IMeta x)
-    (-> x meta :tag (= ::event))))
+    (-> x meta :tag (= ::future))))
 
 (defn immediate-success
-  "Returns an event which is immediately successful, and contains 'state'."
-  [state]
-  ^{:tag ::event}
+  "Returns an future which is immediately successful."
+  [result]
+  ^{:tag ::future}
   (reify
-    Event
+    PipelineFuture
     (complete? [_] true)
     (success? [_] true)
     (on-completion [this f] (f this))
     (on-success [this f] (f this))
-    (state [_] state)))
+    (on-error [_ _])
+    (error? [_] false)
+    (cause [_] nil)
+    (result [_] result)))
 
 (defn immediate-failure
-  [exception state]
-  ^{:tag ::event}
+  [exception result]
+  ^{:tag ::future}
   (reify
-    Event
+    PipelineFuture
     (complete? [_] true)
     (success? [_] false)
     (on-completion [this f] (f this))
     (on-success [this f] nil)
-    (state [_] state)
-    FailableEvent
     (on-error [this f] (f this))
     (error? [_] true)
-    (cause [_] exception)))
+    (cause [_] exception)
+    (result [_] result)))
 
-(defn create-event
-  "Returns an event which can be triggered via error! or success!"
+(defn future-proxy
+  "Returns a future which can be triggered via error! or success!
+
+   If the proxy is dereferenced before it's complete, it will throw an exception."
   []
-  (let [complete? (ref false)
-	state (ref nil)
-	cause (ref nil)
+  (let [complete-val (ref false)
+	result-val (ref nil)
+	cause-val (ref nil)
 	listeners (ref {})
 	publish-fn
-	(fn [evt rslt typ error]
-	  (when @complete?
-	    (throw (Exception. "An event can only be triggered once.")))
+	(fn [ftr rslt typ error]
 	  (let [coll (dosync
-		       (ref-set complete? true)
-		       (ref-set cause error)
-		       (ref-set state rslt)
+		       (when (complete? ftr)
+			 (throw (Exception. "An future can only be triggered once.")))
+		       (ref-set complete-val true)
+		       (ref-set cause-val error)
+		       (ref-set result-val rslt)
 		       (let [coll (@listeners typ)]
 			 (ref-set listeners nil)
 			 coll))]
 	    (doseq [l coll]
 	      (try
-		(l evt)
+		(l ftr)
 		(catch Exception e
 		  (.printStackTrace e))))))]
-    ^{:tag ::event}
+    ^{:tag ::future}
     (reify
-      Event
+
+      Object
+      (toString [this]
+	(cond
+	  (error? this) (str "ERROR: " (cause this) " " (result this))
+	  (complete? this) (str "complete: " (result this))
+	  :else (str "pending...")))
+      
+      PipelineFuture
       (complete? [this]
-	@complete?)
+	@complete-val)
       (success? [this]
-	(and @complete? (not (error? this))))
+	(and (complete? this) (not (error? this))))
       (on-success [this f]
 	(when (dosync
-		(if @complete?
+		(if (complete? this)
 		  (not (error? this))
 		  (do
 		    (alter listeners update-in [:success] #(conj % f))
@@ -160,25 +168,24 @@
       (on-completion [this f]
 	(on-success this f)
 	(on-error this f))
-      (state [_]
-	@state)
-
-      FailableEvent
       (on-error [this f]
 	(when (dosync
-		(if @complete?
+		(if (complete? this)
 		  (error? this)
 		  (do
 		    (alter listeners update-in [:error] #(conj % f))
 		    false)))
 	  (f this))
 	nil)
-      (error? [_]
-	(not (nil? @cause)))
+      (error? [this]
+	(not (nil? (cause this))))
       (cause [_]
-	@cause)
+	@cause-val)
+      (result [this]
+	(when (complete? this)
+	  @result-val))
 
-      EventTriggers
+      PipelineFutureProxy
       (success! [this x]
 	(publish-fn this x :success nil))
       
@@ -189,8 +196,8 @@
 
 (defvar *context*)
 
-(defn- outer-event []
-  (:outer-event *context*))
+(defn- outer-future []
+  (:outer-future *context*))
 
 (defn- pipeline-error-handler []
   (:error-handler *context*))
@@ -211,7 +218,7 @@
     (-> x meta :tag (= ::pipeline))))
 
 (defn redirect
-  "When returned from a pipeline stage, redirects the event flow."
+  "When returned from a pipeline stage, redirects the future flow."
   [pipeline val]
   (when-not (pipeline? pipeline)
     (throw (Exception. "First parameter must be a pipeline.")))
@@ -234,35 +241,35 @@
     (instance? clojure.lang.IMeta x)
     (-> x meta :tag (= ::redirect))))
 
-(declare handle-event-result)
+(declare handle-future-result)
 
-(defn- wait-for-event
-  [evt fns context]
-  ;;(println "wait for event" "\n")
-  (on-error evt
-    (fn [evt]
+(defn- wait-for-future
+  [ftr fns context]
+  ;;(println "wait for future" ftr "\n")
+  (on-error ftr
+    (fn [ftr]
       (with-context context
 	(if-not (pipeline-error-handler)
 	  ;;Halt pipeline with error if there's no error-handler
-	  (error! (outer-event) (cause evt) (state evt))
-	  (let [state ((pipeline-error-handler) (cause evt) (state evt))]
-	    (if (redirect? state)
+	  (error! (outer-future) (cause ftr) (result ftr))
+	  (let [result ((pipeline-error-handler) (cause ftr) (result ftr))]
+	    (if (redirect? result)
 	      ;;If error-handler issues a redirect, go there
-	      (handle-event-result
-		(:value state)
-		(-> state :pipeline :stages)
+	      (handle-future-result
+		(:value result)
+		(-> result :pipeline :stages)
 		(assoc context
-		  :error-handler (-> state :pipeline :error-handler)
-		  :pipeline (:pipeline state)))
+		  :error-handler (-> result :pipeline :error-handler)
+		  :pipeline (:pipeline result)))
 	      ;;Otherwise, halt pipeline
-	      (error! (outer-event) (cause evt) state)))))))
-  (on-success evt
-    (fn [evt]
-      (handle-event-result (state evt) fns context))))
+	      (error! (outer-future) (cause ftr) result)))))))
+  (on-success ftr
+    (fn [ftr]
+      (handle-future-result (result ftr) fns context))))
 
-(defn- handle-event-result
+(defn- handle-future-result
   [val fns context]
-  ;;(println "handle-event-result" val (event? val) "\n")
+  ;;(println "handle-future-result" val (pipeline-future? val) "\n")
   (with-context context
     (try
       (cond
@@ -274,19 +281,18 @@
 	    :pipeline (:pipeline val)
 	    :initial-value (:value val)
 	    :error-handler (-> val :pipeline :error-handler)))
-	(event? val)
-	(wait-for-event val fns context)
+	(pipeline-future? val)
+	(wait-for-future val fns context)
 	:else
-	(do
-	  (if (empty? fns)
-	   (success! (outer-event) val)
-	   (let [f (first fns)]
-	     (if (pipeline? f)
-	       (wait-for-event (f val) (rest fns) context)
-	       (try
-		 (recur (f val) (rest fns) context)
-		 (catch Exception e
-		   (wait-for-event (immediate-failure e val) fns context))))))))
+	(if (empty? fns)
+	  (success! (outer-future) val)
+	  (let [f (first fns)]
+	    (if (pipeline? f)
+	      (wait-for-future (f val) (rest fns) context)
+	      (try
+		(recur (f val) (rest fns) context)
+		(catch Exception e
+		  (wait-for-future (immediate-failure e val) fns context)))))))
       (catch Exception e
 	(.printStackTrace e)))))
 
@@ -304,25 +310,25 @@
     ^{:tag ::pipeline
       :pipeline pipeline}
     (fn [x]
-      (let [outer-evt (create-event)]
-	(handle-event-result
+      (let [outer-future (future-proxy)]
+	(handle-future-result
 	  x
 	  (:stages pipeline)
 	  {:error-handler (:error-handler pipeline)
 	   :pipeline pipeline
-	   :outer-event outer-evt
+	   :outer-future outer-future
 	   :initial-value x})
-	outer-evt))))
+	outer-future))))
 
 (defn blocking [f]
   (fn [x]
-    (let [evt (create-event)
+    (let [ftr (future-proxy)
 	  context *context*]
       (future
 	(with-context context
 	  (try
 	    (let [result (f x)]
-	      (success! evt result))
+	      (success! ftr result))
 	    (catch Exception e
-	      (error! evt e x)))))
-      evt)))
+	      (error! ftr e x)))))
+      ftr)))
