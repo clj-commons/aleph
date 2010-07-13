@@ -1,0 +1,279 @@
+<html>
+  <head>
+    <title>aleph API reference (aleph)</title>
+    <link href="static/favicon.png" rel="icon" />
+    <link href="static/favicon.png" rel="shortcut icon" />
+    <link media="all" type="text/css" href="static/clojure.css" rel="stylesheet" />
+    <link media="all" type="text/css" href="static/wiki.css" rel="stylesheet" />
+    <link media="all" type="text/css" href="static/internal.css" rel="stylesheet" />
+    <!-- TODO: are we using these (from clojure.org)? If so, add the files -->
+    <script src="file/view/code_highlighter.js" type="text/javascript"></script>
+    <script src="file/view/clojure.js" type="text/javascript"></script>
+    <style>.menuWrapper{height: 36px;}</style>
+    <!--[if lte IE 6]>
+    <link rel="stylesheet" href="http://www.wikispaces.com/_/2009051601/s/internal_ie.css" type="text/css" />
+    <![endif]-->
+  </head>
+<!--
+This document was auto-generated from the source by the clojure autodoc system.
+To report errors or ask questions about the overall documentation structure, formatting,
+etc., contact Tom Faulhaber (google mail name: tomfaulhaber).
+For errors in the documentation of a particular namespace, contact the author of that
+namespace.
+-->
+  <body>
+    <div id="AllContentContainer">
+      <div id="Header">
+	<a id="Logo" href="index.html"><img alt="Clojure" height="100" width="100" src="static/clojure-icon.gif" /></a>
+	<h1><a title="page header title" id="page-header" href="index.html">aleph</a></h1>
+      </div>
+      <div id="leftcolumn"><div style="text-align: center;"></div>
+<div class="menu">
+  <div class="WikiCustomNav WikiElement wiki">
+    <a class="wiki_link" href="index.html">Overview</a><br />
+    <a class="wiki_link" href="api-index.html">API Index</a><br />
+    <a class="wiki_link" href="#">Namespaces:</a>
+    <ul id="left-sidebar-list">
+      <li><a href="aleph-api.html" class="wiki_link">aleph</a></li>
+    </ul>
+  </div>
+</div>
+</div>
+      <div id="rightcolumn">
+	<div id="Content">
+	  <div class="contentBox"><div class="innerContentBox">
+              <div id="content_view" class="wiki wikiPage">
+                <div id="right-sidebar"><div id="toc">
+  <h1 class="nopad">Table of Contents</h1>
+  <div style="margin-left: 1em;" class="toc-section">
+    <a href="#toc0">Overview</a>
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/blocking">blocking</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/cause">cause</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/complete?">complete?</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/error!">error!</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/error?">error?</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/future-proxy">future-proxy</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/on-completion">on-completion</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/on-error">on-error</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/on-success">on-success</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/pipeline">pipeline</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/redirect">redirect</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/restart">restart</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/result">result</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/run-http-server">run-http-server</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/run-server">run-server</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/success!">success!</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/success?">success?</a>
+    </div>
+    <br />
+  </div>
+</div>
+</div>
+                <div id="content-tag"><h1 id="overview">API for <span id="namespace-name">aleph</span></h1>
+by <span id="author">Zachary Tellman</span><br />
+<br />Usage:
+<pre>
+(ns your-namespace
+  (:require <span id="long-name">aleph</span>))
+</pre><pre>
+</pre><h2>Overview</h2>
+<pre id="namespace-docstr">An event-driven server.</pre>
+<br />
+<h2>Public Variables and Functions</h2>
+<div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/blocking">blocking</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (blocking f)
+</pre>
+  <pre id="var-docstr">Takes a synchronous function, and returns a function which will be executed asynchronously,
+and whose invocation will return a pipeline-future.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/cause">cause</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (cause future)
+</pre>
+  <pre id="var-docstr">Returns the exception that caused the pipeline-future to fail.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/complete?">complete?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (complete? future)
+</pre>
+  <pre id="var-docstr">Returns true if the pipeline-future is complete.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/error!">error!</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (error! future error result)
+</pre>
+  <pre id="var-docstr">Triggers the unsuccessful conclusion of a future-proxy.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/error?">error?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (error? future)
+</pre>
+  <pre id="var-docstr">Returns true if the pipeline-future did not complete successfuly.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/future-proxy">future-proxy</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (future-proxy)
+</pre>
+  <pre id="var-docstr">Returns a future which can be triggered via error! or success!</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/on-completion">on-completion</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (on-completion future callback)
+</pre>
+  <pre id="var-docstr">Enqueues the callback to be invoked when the pipeline-future completes.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/on-error">on-error</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (on-error future callback)
+</pre>
+  <pre id="var-docstr">Enqueues the callback to be invoked when the pipeline-future completes unsucccessfully.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/on-success">on-success</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (on-success future callback)
+</pre>
+  <pre id="var-docstr">Enqueues the callback to be invoked when the pipeline-future completes successfully.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/pipeline">pipeline</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (pipeline &amp; opts+stages)
+</pre>
+  <pre id="var-docstr">Returns a function with an arity of one.  Invoking the function will return
+a pipeline-future.
+
+Stages should either be pipelines, or functions with an arity of one.  These functions
+should either return a pipeline-future, a redirect signal, or a value which will be passed
+into the next stage.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/redirect">redirect</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (redirect pipeline val)
+</pre>
+  <pre id="var-docstr">When returned from a pipeline stage, redirects the execution flow..</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/restart">restart</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (restart)
+       (restart val)
+</pre>
+  <pre id="var-docstr">Redirects to the beginning of the current pipeline.  If no value is passed in, defaults
+to the value previously passed into the pipeline.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/result">result</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (result future)
+</pre>
+  <pre id="var-docstr">Returns the result of the pipeline-future, or nil if it did not complete successfully.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/run-http-server">run-http-server</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (run-http-server handler options)
+</pre>
+  <pre id="var-docstr">Starts an HTTP server.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/run-server">run-server</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (run-server handler options)
+</pre>
+  <pre id="var-docstr">Starts a server.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/success!">success!</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (success! future result)
+</pre>
+  <pre id="var-docstr">Triggers the successful conclusion of a future-proxy.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/success?">success?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (success? future)
+</pre>
+  <pre id="var-docstr">Returns true if the pipeline-future has completed successfully.</pre>
+  
+</div>
+
+
+</div>
+              </div>
+            </div>
+          </div>
+	</div>
+	<div id="foot">
+	  <div style="text-align: center;" id="copyright">No copyright info </div>
+	</div>
+      </div>
+      <div id="DesignedBy">Logo &amp; site design by <a title="Visit Tom Hickey's website." href="http://www.tomhickey.com">Tom Hickey</a>.<br />
+      Clojure auto-documentation system by Tom Faulhaber.</div>
+    </div>
+    <!-- /AllContentContainer -->
+  </body>
+
+</html>
