@@ -15,7 +15,9 @@
   (:require
     [aleph.http :as http]
     [aleph.core :as core]
-    [aleph.pipeline :as pipeline]))
+    [aleph.pipeline :as pipeline]
+    [aleph.pipeline.future :as future]
+    [aleph.pipeline.channel :as channel]))
 
 (defmacro- import-fn [sym]
   (let [m (meta (eval sym))
@@ -30,21 +32,26 @@
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
 
-(import-fn pipeline/future-proxy)
-(import-fn #'pipeline/success!)
-(import-fn #'pipeline/error!)
+(import-fn future/pipeline-future)
 
 (import-fn #'pipeline/redirect)
 (import-fn #'pipeline/restart)
 
-(import-fn #'pipeline/on-success)
-(import-fn #'pipeline/on-error)
-(import-fn #'pipeline/on-completion)
-(import-fn #'pipeline/success?)
-(import-fn #'pipeline/error?)
-(import-fn #'pipeline/complete?)
-(import-fn #'pipeline/cause)
-(import-fn #'pipeline/result)
+(import-fn #'future/success?)
+(import-fn #'future/complete?)
+(import-fn #'future/cause)
+(import-fn #'future/result)
+(import-fn future/success!)
+(import-fn future/error!)
+
+(defn on-completion [ftr callback]
+  (future/add-listener ftr callback))
+
+(defn on-success [ftr callback]
+  (future/add-listener ftr #(when (success? %) (callback %))))
+
+(defn on-error [ftr callback]
+  (future/add-listener ftr #(when-not (success? %) (callback %))))
 
 ;;;
 
@@ -66,7 +73,7 @@
 (defn respond!
   "Sends a response to the origin of a message."
   [msg response]
-  (io! ((:respond request) msg response)))
+  (io! ((:respond msg) msg response)))
 
 (defn stop
   "Stops a server."

@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.pipeline
-  (:use [aleph.pipeline] :reload-all)
+  (:use [aleph] :reload-all)
   (:use [clojure.test])
   (:import [java.util.concurrent
 	    CountDownLatch
