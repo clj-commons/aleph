@@ -79,8 +79,7 @@
   [^HttpMessage req]
   (let [uri (.getUri req)]
     {:uri uri
-     :query-string (when (.contains uri "?")
-		     (last (.split uri "?")))}))
+     :query-string (apply str (rest (.split uri "[?]")))}))
 
 (defn transform-request
   "Transforms a Netty request into a Ring request."
