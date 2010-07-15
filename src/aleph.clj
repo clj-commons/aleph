@@ -32,7 +32,7 @@
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
 
-(import-fn future/pipeline-future)
+(import-fn future/evented-future)
 
 (import-fn #'pipeline/redirect)
 (import-fn #'pipeline/restart)

@@ -84,7 +84,7 @@
 	  :pipeline (:pipeline val)
 	  :initial-value (:value val)
 	  :error-handler (-> val :pipeline :error-handler)))
-      (pipeline-future? val)
+      (evented-future? val)
       (wait-for-future val fns context)
       :else
       (if (empty? fns)
@@ -127,10 +127,10 @@
 
 (defn pipeline
   "Returns a function with an arity of one.  Invoking the function will return
-   a pipeline-future.
+   a evented-future.
 
    Stages should either be pipelines, or functions with an arity of one.  These functions
-   should either return a pipeline-future, a redirect signal, or a value which will be passed
+   should either return a evented-future, a redirect signal, or a value which will be passed
    into the next stage."
   [& opts+stages]
   (let [opts (apply hash-map (get-opts opts+stages))
@@ -140,7 +140,7 @@
     ^{:tag ::pipeline
       :pipeline pipeline}
     (fn [x]
-      (let [ftr (pipeline-future)]
+      (let [ftr (evented-future)]
 	(handle-future-result
 	  x
 	  (:stages pipeline)
@@ -152,10 +152,10 @@
 
 (defn blocking
   "Takes a synchronous function, and returns a function which will be executed asynchronously,
-   and whose invocation will return a pipeline-future."
+   and whose invocation will return a evented-future."
   [f]
   (fn [x]
-    (let [ftr (pipeline-future)
+    (let [ftr (evented-future)
 	  context *context*]
       (future
 	(with-context context

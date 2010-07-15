@@ -16,21 +16,21 @@
      ChannelFuture
      ChannelFutureListener]))
 
-(defprotocol Future
+(defprotocol EventedFuture
   (add-listener [future callback]
     "Adds a listener.")
   (remove-listener [future callback]
     "Removes a callback.")
   (success? [future]
-    "Returns true if the pipeline-future has completed successfully.")
+    "Returns true if the evented-future has completed successfully.")
   (complete? [future]
-    "Returns true if the pipeline-future is complete.")
+    "Returns true if the evented-future is complete.")
   (cause [future]
-    "Returns the exception that caused the pipeline-future to fail.")
+    "Returns the exception that caused the evented-future to fail.")
   (result [future]
-    "Returns the result of the pipeline-future, or nil if it did not complete successfully."))
+    "Returns the result of the evented-future, or nil if it did not complete successfully."))
 
-(defprotocol FutureTrigger
+(defprotocol EventedFutureTrigger
   (complete! [future result exception]))
 
 (defn success! [ftr result]
@@ -39,7 +39,7 @@
 (defn error! [ftr result exception]
   (complete! ftr result exception))
 
-(defn pipeline-future? [x]
+(defn evented-future? [x]
   (and
     (instance? clojure.lang.IMeta x)
     (-> x meta :tag (= ::future))))
@@ -47,7 +47,7 @@
 (defn- immediate-future [success? result exception]
   ^{:tag ::future}
   (reify
-    Future
+    EventedFuture
     (complete? [_] true)
     (success? [_] success?)
     (add-listener [this f] (f this))
@@ -61,7 +61,7 @@
 (defn immediate-failure [result exception]
   (immediate-future false result exception))
 
-(defn pipeline-future
+(defn evented-future
   "Returns a future which can be triggered via error! or success!"
   []
   (let [complete-val (ref false)
@@ -78,7 +78,7 @@
 	  (complete? this) (str "error: [ " (cause this) " " (result this) " ]")
 	  :else "pending..."))
       
-      Future
+      EventedFuture
       (complete? [this]
 	@complete-val)
       (success? [this]
@@ -101,7 +101,7 @@
 	(when (complete? this)
 	  @result-val))
 
-      FutureTrigger
+      EventedFutureTrigger
       (complete! [this result exception]
 	(doseq [l (dosync
 		    (when (complete? this)

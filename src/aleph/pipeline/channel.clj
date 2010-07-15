@@ -41,7 +41,7 @@
 			   msg)))]
 	  (immediate-success msg)
 	  (do
-	    (let [ftr (pipeline-future)]
+	    (let [ftr (evented-future)]
 	      (when (pos? timeout)
 		(delay-fn
 		  #(when (dosync
