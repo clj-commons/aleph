@@ -19,7 +19,7 @@
     (on-success
       (pipeline 0)
       (fn [x]
-	(reset! value (result x))
+	(reset! value x)
 	(.countDown latch)))
     (if (.await latch 5 TimeUnit/SECONDS)
       (is (= expected-result @value))
@@ -37,7 +37,7 @@
   (let [latch (CountDownLatch. 1)]
     (on-error
       (pipeline 0)
-      (fn [x]
+      (fn [x e]
 	(.countDown latch)))
     (if (.await latch 100 TimeUnit/MILLISECONDS)
       (is true)
@@ -45,7 +45,7 @@
 	(println "Timed out.")
 	(is false)))))
 
-(defn fail []
+(defn fail [_]
   (throw (Exception. "boom")))
 
 (def slow-fail
@@ -56,7 +56,7 @@
     (fn [x]
       (swap! counter dec)
       (if (pos? @counter)
-	(fail)
+	(fail nil)
 	x))))
 
 (declare pipe-a)
@@ -85,18 +85,18 @@
     (assert-failure (pipeline inc #(redirect (pipeline inc fail) %))))
   (testing "Error handling"
     (test-pipeline
-      (pipeline :error-handler (fn [ex val] (redirect (pipeline inc) val))
+      (pipeline :error-handler (fn [val ex] (redirect (pipeline inc) val))
 	inc
 	fail)
       2)
     (test-pipeline
-      (pipeline :error-handler (fn [ex val] (restart val))
+      (pipeline :error-handler (fn [val ex] (restart val))
 	inc
 	(fail-times 3)
 	inc)
       4)
     (test-pipeline
-      (pipeline :error-handler (fn [ex val] (restart))
+      (pipeline :error-handler (fn [val ex] (restart))
 	inc
 	(fail-times 3)
 	inc)
@@ -104,7 +104,7 @@
     (test-pipeline
       (pipeline
 	inc
-	(pipeline :error-handler (fn [ex val] (restart val))
+	(pipeline :error-handler (fn [val ex] (restart val))
 	inc
 	(fail-times 3))
 	inc)

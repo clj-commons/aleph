@@ -11,16 +11,15 @@
   aleph.pipeline
   (:use
     [clojure.contrib.def :only (defmacro- defvar)]
-    [aleph.pipeline.future]))
+    [aleph.channel]))
 
 (set! *warn-on-reflection* true)
-
 ;;;
 
 (defvar *context* nil)
 
-(defn- outer-future []
-  (:outer-future *context*))
+(defn- outer-result []
+  (:outer-result *context*))
 
 (defn- pipeline-error-handler []
   (:error-handler *context*))
@@ -35,67 +34,79 @@
   `(binding [*context* ~context]
      ~@body))
 
+(defn- tag= [x tag]
+  (and
+    (instance? clojure.lang.IMeta x)
+    (-> x meta :tag (= tag))))
+
 (defn pipeline? [x]
-  (and
-    (instance? clojure.lang.IMeta x)
-    (-> x meta :tag (= ::pipeline))))
+  (tag= x ::pipeline))
 
-(defn redirect?
-  [x]
-  (and
-    (instance? clojure.lang.IMeta x)
-    (-> x meta :tag (= ::redirect))))
+(defn redirect? [x]
+  (tag= x ::redirect))
 
-(declare handle-future-result)
+(defn pipeline-channel? [x]
+  (tag= x ::pipeline-channel))
 
-(defn- wait-for-future
-  [ftr fns context]
-  ;;(println "wait for future" ftr "\n")
-  (add-listener ftr
-    (fn [ftr]
-      (with-context context
-	(if (success? ftr)
-	  (handle-future-result (result ftr) fns context)
+(defn pipeline-channel []
+  ^{:tag ::pipeline-channel}
+  {:success (result-channel)
+   :error (result-channel)})
+
+;;;
+
+(declare handle-result)
+
+(defn- poll-channels [channels fns context]
+  ;;(println "poll-channels" (-> context :outer-result :error .hashCode))
+  (receive! (poll channels 0)
+    (fn [[typ result]]
+      (case typ
+	:success
+	(handle-result result fns context)
+	:error
+	(let [outer-error (-> context :outer-result :error)]
 	  (if-not (pipeline-error-handler)
-	    ;;Halt pipeline with error if there's no error-handler
-	    (error! (outer-future) (result ftr) (cause ftr))
-	    (let [result ((pipeline-error-handler) (cause ftr) (result ftr))]
-	      (if (redirect? result)
-		;;If error-handler issues a redirect, go there
-		(handle-future-result
-		  (:value result)
-		  (-> result :pipeline :stages)
+	    (enqueue outer-error result)
+	    (let [possible-redirect (apply (pipeline-error-handler) result)]
+	      (if (redirect? possible-redirect)
+		(handle-result
+		  (:value possible-redirect)
+		  (-> possible-redirect :pipeline :stages)
 		  (assoc context
-		    :error-handler (-> result :pipeline :error-handler)
-		    :pipeline (:pipeline result)))
-		;;Otherwise, halt pipeline
-		(error! (outer-future) result (cause result))))))))))
+		    :error-handler (-> possible-redirect :pipeline :error-handler)
+		    :initial-value (:value possible-redirect)
+		    :pipeline (-> possible-redirect :pipeline)))
+		(enqueue outer-error result)))))))))
 
-(defn- handle-future-result
-  [val fns context]
-  ;;(println "handle-future-result" "\n")
+(defn- handle-result [result fns context]
+  ;;(println "handle-result" result)
   (with-context context
     (cond
-      (redirect? val)
+      (redirect? result)
       (recur
-	(:value val)
-	(-> val :pipeline :stages)
+	(:value result)
+	(-> result :pipeline :stages)
 	(assoc context
-	  :pipeline (:pipeline val)
-	  :initial-value (:value val)
-	  :error-handler (-> val :pipeline :error-handler)))
-      (evented-future? val)
-      (wait-for-future val fns context)
+	  :pipeline (:pipeline result)
+	  :initial-value (:value result)
+	  :error-handler (-> result :pipeline :error-handler)))
+      (pipeline-channel? result)
+      (poll-channels result fns context)
       :else
-      (if (empty? fns)
-	(success! (outer-future) val)
-	(let [f (first fns)]
-	  (if (pipeline? f)
-	    (wait-for-future (f val) (rest fns) context)
-	    (try
-	      (recur (f val) (rest fns) context)
-	      (catch Exception e
-		(wait-for-future (immediate-failure val e) fns context)))))))))
+      (let [{outer-success :success outer-error :error} (outer-result)]
+	(if (empty? fns)
+	  (enqueue outer-success result)
+	  (let [f (first fns)]
+	    (if (pipeline? f)
+	      (poll-channels (f result) (next fns) context)
+	      (try
+		(recur (f result) (next fns) context)
+		(catch Exception e
+		  ;;(.printStackTrace e)
+		  (let [failure (pipeline-channel)]
+		    (enqueue (:error failure) [result e])
+		    (poll-channels failure fns context)))))))))))
 
 ;;;
 
@@ -127,10 +138,10 @@
 
 (defn pipeline
   "Returns a function with an arity of one.  Invoking the function will return
-   a evented-future.
+   a pipeline channel.
 
    Stages should either be pipelines, or functions with an arity of one.  These functions
-   should either return a evented-future, a redirect signal, or a value which will be passed
+   should either return a pipeline channel, a redirect signal, or a value which will be passed
    into the next stage."
   [& opts+stages]
   (let [opts (apply hash-map (get-opts opts+stages))
@@ -140,27 +151,28 @@
     ^{:tag ::pipeline
       :pipeline pipeline}
     (fn [x]
-      (let [ftr (evented-future)]
-	(handle-future-result
+      (let [ch (pipeline-channel)]
+	(handle-result
 	  x
 	  (:stages pipeline)
 	  {:error-handler (:error-handler pipeline)
 	   :pipeline pipeline
-	   :outer-future ftr
+	   :outer-result ch
 	   :initial-value x})
-	ftr))))
+	ch))))
 
 (defn blocking
   "Takes a synchronous function, and returns a function which will be executed asynchronously,
-   and whose invocation will return a evented-future."
+   and whose invocation will return a pipeline channel."
   [f]
   (fn [x]
-    (let [ftr (evented-future)
+    (let [result (pipeline-channel)
+	  {data :success error :error} result
 	  context *context*]
       (future
 	(with-context context
 	  (try
-	    (success! ftr (f x))
+	    (enqueue data (f x))
 	    (catch Exception e
-	      (error! ftr x e)))))
-      ftr)))
+	      (enqueue error [x e])))))
+      result)))

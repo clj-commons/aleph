@@ -16,8 +16,7 @@
     [aleph.http :as http]
     [aleph.core :as core]
     [aleph.pipeline :as pipeline]
-    [aleph.pipeline.future :as future]
-    [aleph.pipeline.channel :as channel]))
+    [aleph.channel :as channel])) 
 
 (defmacro- import-fn [sym]
   (let [m (meta (eval sym))
@@ -32,26 +31,23 @@
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
 
-(import-fn future/evented-future)
+(import-fn #'channel/listen)
+(import-fn #'channel/listen-all)
+(import-fn #'channel/receive!)
+(import-fn #'channel/receive-all!)
+(import-fn #'channel/cancel-callback)
+(import-fn #'channel/enqueue)
+(import-fn #'channel/enqueue-and-close)
+(import-fn #'channel/closed?)
 
-(import-fn #'pipeline/redirect)
-(import-fn #'pipeline/restart)
+(import-fn pipeline/redirect)
+(import-fn pipeline/restart)
 
-(import-fn #'future/success?)
-(import-fn #'future/complete?)
-(import-fn #'future/cause)
-(import-fn #'future/result)
-(import-fn future/success!)
-(import-fn future/error!)
+(defn on-success [ch f]
+  (receive! (:success ch) f))
 
-(defn on-completion [ftr callback]
-  (future/add-listener ftr callback))
-
-(defn on-success [ftr callback]
-  (future/add-listener ftr #(when (success? %) (callback %))))
-
-(defn on-error [ftr callback]
-  (future/add-listener ftr #(when-not (success? %) (callback %))))
+(defn on-error [ch f]
+  (receive! (:error ch) (fn [[result exception]] (f result exception))))
 
 ;;;
 
