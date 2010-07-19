@@ -53,8 +53,8 @@
 
 (defn request-method
   "Get HTTP method from Netty request."
-  [^HttpRequest msg]
-  (->> msg .getMethod .getName .toLowerCase keyword))
+  [^HttpRequest req]
+  {:request-method (->> req .getMethod .getName .toLowerCase)})
 
 (defn request-headers
   "Get headers from Netty request."
@@ -86,6 +86,7 @@
   [^HttpRequest req]
   (merge
     (request-body req)
+		(request-method req)
     (request-headers req)
     (request-uri req)))
 
