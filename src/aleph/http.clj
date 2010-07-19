@@ -54,7 +54,7 @@
 (defn request-method
   "Get HTTP method from Netty request."
   [^HttpRequest req]
-  {:request-method (->> req .getMethod .getName .toLowerCase)})
+  {:request-method (->> req .getMethod .getName .toLowerCase keyword)})
 
 (defn request-headers
   "Get headers from Netty request."
