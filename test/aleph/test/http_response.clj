@@ -17,24 +17,24 @@
      ByteArrayInputStream]))
 
 (defn string-handler [request]
-  (respond! request
+  (send! request
     {:status 200
      :header {"Content-Type" "text/html"}
      :body "String!"}))
 
 (defn seq-handler [request]
-  (respond! request
+  (send! request
     {:status 200
      :header {"Content-Type" "text/html"}
      :body ["sequence: " 1 " two " 3.0]}))
 
 (defn file-handler [request]
-  (respond! request
+  (send! request
     {:status 200
      :body (File. (str (pwd) "/test/starry_night.jpg"))}))
 
 (defn stream-handler [request]
-  (respond! request
+  (send! request
     {:status 200
      :header {"Content-Type" "text/html"}
      :body (ByteArrayInputStream. (.getBytes "Stream!"))}))
@@ -55,6 +55,6 @@
   (when-let [handler (route-map (:uri request))]
     (handler request)))
 
-'(deftest http-response
-  (let [server (reset! server (run-http-server handler {:port 8080}))]
+(deftest http-response
+  (let [server (reset! server (start-http-server handler {:port 8080}))]
     (is @latch)))

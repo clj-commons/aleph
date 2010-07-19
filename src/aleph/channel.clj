@@ -9,7 +9,7 @@
 (ns aleph.channel
   (:import [java.util.concurrent ScheduledThreadPoolExecutor TimeUnit]))
 
-(defprotocol Channel
+(defprotocol AlephChannel
   (listen [ch f])
   (listen-all [ch f])
   (receive! [ch f]
@@ -27,7 +27,7 @@
     "Returns true if the channel has been closed."))
 
 (defn channel? [ch]
-  (satisfies? Channel ch))
+  (satisfies? AlephChannel ch))
 
 ;;;
 
@@ -38,17 +38,18 @@
 
 ;;;
 
-(defn result-channel
-  "A channel which is meant to permanently hold a single value.  Only a single value
-   can be enqueued, and this value can be received an unlimited number of times."
+(defn constant-channel
+  "A channel which can hold zero or one messages in the queue.  Once it has
+   a message, that message cannot be consumed.  Meant to communicate a single,
+   constant value via a channel."
   []
   (let [result (ref nil)
 	complete (ref false)
 	listeners (ref #{})]
-    (reify Channel
+    (reify AlephChannel
       (toString [_]
 	(str
-	  "result-channel: "
+	  "constant-channel: "
 	  (if @complete
 	    @result
 	    :incomplete)))
@@ -82,7 +83,7 @@
 	  (f msg))
 	nil)
       (enqueue-and-close [_ _]
-	(throw (Exception. "Cannot close result-channel.")))
+	(throw (Exception. "Cannot close constant-channel.")))
       (closed? [_]
 	false))))
 
@@ -130,7 +131,7 @@
 			    (doseq [[msg fns] callbacks]
 			      (doseq [f fns]
 				(f msg))))]
-    (reify Channel
+    (reify AlephChannel
       Object
       (toString [_]
 	(str
@@ -187,7 +188,7 @@
 (defn poll
   [channel-map timeout]
   (let [received (ref false)
-	result (result-channel)
+	result (constant-channel)
 	enqueue-fn (fn [k]
 		     (fn this
 		       ([]

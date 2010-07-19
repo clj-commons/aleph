@@ -31,47 +31,90 @@
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
 
-(import-fn #'channel/listen)
-(import-fn #'channel/listen-all)
 (import-fn #'channel/receive!)
 (import-fn #'channel/receive-all!)
 (import-fn #'channel/cancel-callback)
 (import-fn #'channel/enqueue)
 (import-fn #'channel/enqueue-and-close)
 (import-fn #'channel/closed?)
+(import-fn channel/poll)
 
 (import-fn pipeline/redirect)
 (import-fn pipeline/restart)
 
-(defn on-success [ch f]
+(defn on-success
+  "Adds a callback to a pipeline channel which will be called if the
+   pipeline succeeds.
+
+   The function will be called with (f result)"
+  [ch f]
   (receive! (:success ch) f))
 
-(defn on-error [ch f]
+(defn on-error
+  "Adds a callback to a pipeline channel which will be called if the
+   pipeline terminates due to an error.
+
+   The function will be called with (f intermediate-result exception)."
+  [ch f]
   (receive! (:error ch) (fn [[result exception]] (f result exception))))
 
 ;;;
 
+(defn send-channel [msg-or-client]
+  (:send-channel msg-or-client))
+
+(defn receive-channel [client]
+  (:receive-channel client))
+
+;;;
+
 (defn run-server
-  "Starts a server."
+  "Starts a server.  The options hash should contain a value for :protocol and :port.
+
+   Currently :http is the only supported protocol."
   [handler options]
   (let [port (:port options)
 	protocol (:protocol options)]
     (core/start-server
-      (condp = protocol
+      (case protocol
 	:http #(http/server-pipeline handler options))
       port)))
 
-(defn run-http-server
+(defn create-client
+  "Creates a client.  The options hash must contain a value for :protocol, :host, and :port.
+
+   Currently :http is the only supported protocol."
+  [options]
+  (let [port (:port options)
+	host (:host options)
+	protocol (:protocol options)]
+    (core/create-client
+      (case protocol
+	:http #(http/client-pipeline options))
+      host
+      port)))
+
+(defn start-http-server
   "Starts an HTTP server."
   [handler options]
-  (run-server handler (assoc options :protocol :http)))
+  (run-server handler
+    (assoc options
+      :protocol :http
+      :error-handler (fn [request e] (.printStackTrace e)))))
 
-(defn respond!
+(defn create-http-client
+  "Create an HTTP client."
+  [options]
+  (create-client (assoc options :protocol :http)))
+
+(defn send!
   "Sends a response to the origin of a message."
-  [msg response]
-  (io! ((:respond msg) msg response)))
+  [msg data]
+  (io!
+    (enqueue-and-close (send-channel msg) data)))
 
 (defn stop
   "Stops a server."
   [server]
   (.close server))
+

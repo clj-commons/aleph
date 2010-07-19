@@ -11,7 +11,11 @@
   aleph.pipeline
   (:use
     [clojure.contrib.def :only (defmacro- defvar)]
-    [aleph.channel]))
+    [aleph.channel])
+  (:import
+    [org.jboss.netty.channel
+     ChannelFuture
+     ChannelFutureListener]))
 
 (set! *warn-on-reflection* true)
 ;;;
@@ -50,16 +54,16 @@
 
 (defn pipeline-channel []
   ^{:tag ::pipeline-channel}
-  {:success (result-channel)
-   :error (result-channel)})
+  {:success (constant-channel)
+   :error (constant-channel)})
 
 ;;;
 
 (declare handle-result)
 
-(defn- poll-channels [channels fns context]
+(defn- poll-pipeline-channel [chs fns context]
   ;;(println "poll-channels" (-> context :outer-result :error .hashCode))
-  (receive! (poll channels 0)
+  (receive! (poll chs 0)
     (fn [[typ result]]
       (case typ
 	:success
@@ -79,6 +83,9 @@
 		    :pipeline (-> possible-redirect :pipeline)))
 		(enqueue outer-error result)))))))))
 
+(defn- poll-channel [ch fns context]
+  (receive! ch #(handle-result % fns context)))
+
 (defn- handle-result [result fns context]
   ;;(println "handle-result" result)
   (with-context context
@@ -92,21 +99,23 @@
 	  :initial-value (:value result)
 	  :error-handler (-> result :pipeline :error-handler)))
       (pipeline-channel? result)
-      (poll-channels result fns context)
+      (poll-pipeline-channel result fns context)
+      (channel? result)
+      (poll-channel result fns context)
       :else
       (let [{outer-success :success outer-error :error} (outer-result)]
 	(if (empty? fns)
 	  (enqueue outer-success result)
 	  (let [f (first fns)]
 	    (if (pipeline? f)
-	      (poll-channels (f result) (next fns) context)
+	      (poll-pipeline-channel (f result) (next fns) context)
 	      (try
 		(recur (f result) (next fns) context)
 		(catch Exception e
 		  ;;(.printStackTrace e)
 		  (let [failure (pipeline-channel)]
 		    (enqueue (:error failure) [result e])
-		    (poll-channels failure fns context)))))))))))
+		    (poll-pipeline-channel failure fns context)))))))))))
 
 ;;;
 
@@ -176,3 +185,16 @@
 	    (catch Exception e
 	      (enqueue error [x e])))))
       result)))
+
+;;;
+
+(defn wrap-netty-future [^ChannelFuture netty-future]
+  (let [ch (pipeline-channel)]
+    (.addListener netty-future
+      (reify ChannelFutureListener
+	(operationComplete [_ netty-future]
+	  (if (.isSuccess netty-future)
+	    (enqueue (:success ch) (.getChannel netty-future))
+	    (enqueue (:error ch) [nil (.getCause netty-future)]))
+	  nil)))
+    ch))

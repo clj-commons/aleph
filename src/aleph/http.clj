@@ -9,7 +9,12 @@
 (ns
   ^{:skip-wiki true}
   aleph.http
-  (:require [aleph.http.server :as server]))
+  (:require
+    [aleph.http.server :as server]
+    [aleph.http.client :as client]))
 
 (defn server-pipeline [handler options]
   (server/create-pipeline handler options))
+
+(defn client-pipeline [options]
+  (client/create-pipeline options))

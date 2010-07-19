@@ -10,7 +10,7 @@
   ^{:skip-wiki true}
   aleph.http.server
   (:use
-    [aleph.core]
+    [aleph core channel pipeline]
     [clojure.pprint])
   (:import
     [org.jboss.netty.handler.codec.http
@@ -62,9 +62,9 @@
   "Get headers from Netty request."
   [^HttpMessage req]
   {:headers (into {} (.getHeaders req))
-   :chunked? (.isChunked req)
+   :partial? (.isChunked req)
    :keep-alive? (HttpHeaders/isKeepAlive req)
-   :last-chunk (and (.isChunked req) (.isLast ^HttpChunk req))})
+   :last? (and (.isChunked req) (.isLast ^HttpChunk req))})
 
 (defn request-body
   "Get body from Netty request."
@@ -131,7 +131,7 @@
   ([request response options]
      (respond-with-string request response options "UTF-8"))
   ([request response options charset]
-     (let [channel ^Channel (:channel request)
+     (let [channel ^Channel (:netty-channel request)
 	   body (ChannelBuffers/copiedBuffer (:body response) charset)
 	   response (transform-response request (assoc response :body body))]
        (-> channel
@@ -146,13 +146,13 @@
 
 (defn respond-with-stream
   [request response options]
-  (let [channel ^Channel (:channel request)
+  (let [channel ^Channel (:netty-channel request)
 	response (transform-response request (update-in response [:body] #(input-stream->channel-buffer %)))]
     (-> channel
       (.write response)
       (.addListener (response-listener options request)))))
 
-;;TODO: use the more efficient file serving mechanisms
+;;TODO: use a more efficient file serving mechanism
 (defn respond-with-file
   [request response options]
   (let [file ^File (:body response)
@@ -171,23 +171,33 @@
     (.printStackTrace (.getCause evt)))
   evt)
 
+(defn- respond [request response options]
+  (let [body (:body response)]
+    (cond
+      (string? body) (respond-with-string request response options)
+      (sequential? body) (respond-with-sequence request response options)
+      (instance? InputStream body) (respond-with-stream request response options)
+      (instance? File body) (respond-with-file request response options))))
+
 (defn request-handler
   "Creates a pipeline stage that handles a Netty request."
   [handler options]
   (upstream-stage
     (fn [evt]
       (when-let [request ^HttpRequest (event-message evt)]
-	(handler
-	  (merge
-	    (transform-request request)
-	    {:channel (.getChannel ^MessageEvent evt)
-	     :respond (fn [this response]
-			(let [body (:body response)]
-			  (cond
-			    (string? body) (respond-with-string this response options)
-			    (sequential? body) (respond-with-sequence this response options)
-			    (instance? InputStream body) (respond-with-stream this response options)
-			    (instance? File body) (respond-with-file this response options))))}))))))
+	(let [request (assoc (transform-request request)
+			:netty-channel (.getChannel ^MessageEvent evt))]
+	  (handler
+	    (assoc request
+	      :send-channel
+	      (let [ch (channel)
+		    consume! (pipeline
+			       (fn [response]
+				 (respond request response options)
+				 (when-not (closed? ch)
+				   (restart))))]
+		(consume! ch)
+		ch))))))))
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
@@ -196,7 +206,6 @@
     :decoder (HttpRequestDecoder.)
     :encoder (HttpResponseEncoder.)
     :deflater (HttpContentCompressor.)
-    :file-handler (ChunkedWriteHandler.)
     :downstream-error (downstream-stage error-stage-fn)
     :request (request-handler
 	       (fn [req]

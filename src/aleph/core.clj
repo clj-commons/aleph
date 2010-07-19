@@ -107,7 +107,7 @@
 	(getPipeline [_] (pipeline-fn))))
     (.bind server (InetSocketAddress. port))))
 
-(defn start-client [pipeline-fn host port]
+(defn create-client [pipeline-fn host port]
   (let [client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   (Executors/newCachedThreadPool)
