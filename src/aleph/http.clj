@@ -77,9 +77,9 @@
 (defn request-uri
   "Get URI from Netty request."
   [^HttpMessage req]
-  (let [uri (.getUri req)]
-    {:uri uri
-     :query-string (apply str (rest (.split uri "[?]")))}))
+  (let [split-uri (.split (.getUri req) "[?]")]
+    {:uri (first split-uri)
+     :query-string (apply str (rest split-uri))}))
 
 (defn transform-request
   "Transforms a Netty request into a Ring request."
