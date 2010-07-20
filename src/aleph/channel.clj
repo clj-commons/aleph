@@ -12,9 +12,9 @@
 (defprotocol AlephChannel
   (listen [ch f])
   (listen-all [ch f])
-  (receive! [ch f]
+  (receive [ch f]
     "Adds a callback which will receive the next message from the channel.")
-  (receive-all! [ch f]
+  (receive-all [ch f]
     "Adds a callback which will receive all messages from the channel.")
   (cancel-callback [ch f]
     "Removes a permanent or transient callback from the channel.")
@@ -64,9 +64,9 @@
 	nil)
       (listen-all [this f]
 	(listen this f))
-      (receive-all! [this f]
+      (receive-all [this f]
 	(listen this f))
-      (receive! [this f]
+      (receive [this f]
 	(listen this f))
       (cancel-callback [_ f]
 	(dosync
@@ -96,41 +96,60 @@
 	transient-listeners (ref #{})
 	listeners (ref #{})
 	closed (ref false)
-	callbacks (fn []
-		    (dosync
-		      (when-not (empty? @messages)
-			(let [close (= ::close (second @messages))
-			      first-recipients (concat
-						 @transient-receivers
-						 @transient-listeners)
-			      all-recipients (concat
-					       @receivers
-					       @listeners)]
-			  (when close
-			    (ref-set closed true))
-			  (try
-			    (if-not (and (empty? @receivers) (empty? @transient-receivers))
-			      (list*
-				[(first @messages) (concat first-recipients all-recipients)]
-				(partition 2 (interleave (rest @messages) all-recipients)))
-			      (when (some identity (doall (map #(% (first @messages)) first-recipients)))
-				(ref-set messages
-				  (loop [msgs (next @messages)]
-				    (if (and msgs (some identity (doall (map #(% (first msgs)) all-recipients))))
-				      (recur (next msgs))
-				      (vec msgs))))
-				nil))
-			    (finally
-			      (ref-set transient-listeners #{})
-			      (if-not (empty? @receivers)
-				(ref-set messages [])
-				(when-not (empty? @transient-receivers)
-				  (alter messages (comp vec next))))
-			      (ref-set transient-receivers #{})))))))
-	send-to-callbacks (fn [callbacks]
-			    (doseq [[msg fns] callbacks]
-			      (doseq [f fns]
-				(f msg))))]
+	test-listeners
+	  (fn [messages listeners]
+	    (some identity (doall (map #(% (first messages)) listeners))))
+	send-to-listeners
+	  (fn []
+	    (try
+	      (if (test-listeners @messages (concat @listeners @transient-listeners))
+		(ref-set messages
+		  (let [lst @listeners]
+		    (loop [msgs (next @messages)]
+		      (if (and msgs (test-listeners msgs lst))
+			(recur (next msgs))
+			(vec msgs)))))
+		(ref-set closed false))
+	      (finally
+		(ref-set transient-listeners #{}))))
+	send-to-all
+	  (fn []
+	    (try
+	      (list*
+		[(first @messages)
+		 (concat
+		   @receivers
+		   @transient-receivers
+		   @listeners
+		   @transient-listeners)]
+		(partition 2
+		  (interleave
+		    (rest @messages)
+		    (repeat (concat @receivers @listeners)))))
+	      (finally
+		(if-not (empty? @receivers)
+		  (ref-set messages [])
+		  (alter messages (comp vec next)))
+		(ref-set transient-listeners #{})
+		(ref-set transient-receivers #{}))))
+	callbacks
+	  (fn []
+	    (dosync
+	      (when-not (empty? @messages)
+		(let [close (= ::close (second @messages))]
+		  (when close
+		    (ref-set closed true))
+		  (try
+		    (if-not (and (empty? @receivers) (empty? @transient-receivers))
+		      (send-to-all)
+		      (do
+			(send-to-listeners)
+			nil)))))))
+	send-to-callbacks
+	  (fn [callbacks]
+	    (doseq [[msg fns] callbacks]
+	      (doseq [f fns]
+		(f msg))))]
     (reify AlephChannel
       Object
       (toString [_]
@@ -140,12 +159,12 @@
 	  "transient-listeners: " @transient-listeners "\n"
 	  "receivers: " @receivers "\n"
 	  "transient-receivers: " @transient-receivers "\n"))
-      (receive-all! [_ f]
+      (receive-all [_ f]
 	(send-to-callbacks
 	  (dosync
 	    (alter receivers conj f)
 	    (callbacks))))
-      (receive! [this f]
+      (receive [this f]
 	(send-to-callbacks
 	  (dosync
 	    (alter transient-receivers conj f)
@@ -157,12 +176,12 @@
 	    (alter transient-listeners conj f)
 	    (callbacks)))
 	this)
-      (listen-all [_ f]
+      (listen-all [this f]
 	(send-to-callbacks
 	  (dosync
 	    (alter listeners conj f)
 	    (callbacks)))
-	@messages)
+	this)
       (cancel-callback [_ f]
 	(dosync
 	  (alter listeners disj f)

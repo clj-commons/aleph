@@ -52,10 +52,15 @@
 (defn pipeline-channel? [x]
   (tag= x ::pipeline-channel))
 
-(defn pipeline-channel []
-  ^{:tag ::pipeline-channel}
-  {:success (constant-channel)
-   :error (constant-channel)})
+(defn pipeline-channel
+  ([]
+     (pipeline-channel
+       (constant-channel)
+       (constant-channel)))
+  ([success-channel error-channel]
+     ^{:tag ::pipeline-channel}
+     {:success success-channel
+      :error error-channel}))
 
 ;;;
 
@@ -63,7 +68,7 @@
 
 (defn- poll-pipeline-channel [chs fns context]
   ;;(println "poll-channels" (-> context :outer-result :error .hashCode))
-  (receive! (poll chs 0)
+  (receive (poll chs 0)
     (fn [[typ result]]
       (case typ
 	:success
@@ -84,7 +89,7 @@
 		(enqueue outer-error result)))))))))
 
 (defn- poll-channel [ch fns context]
-  (receive! ch #(handle-result % fns context)))
+  (receive ch #(handle-result % fns context)))
 
 (defn- handle-result [result fns context]
   ;;(println "handle-result" result)

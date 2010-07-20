@@ -31,8 +31,8 @@
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
 
-(import-fn #'channel/receive!)
-(import-fn #'channel/receive-all!)
+(import-fn #'channel/receive)
+(import-fn #'channel/receive-all)
 (import-fn #'channel/cancel-callback)
 (import-fn #'channel/enqueue)
 (import-fn #'channel/enqueue-and-close)
@@ -48,7 +48,7 @@
 
    The function will be called with (f result)"
   [ch f]
-  (receive! (:success ch) f))
+  (receive (:success ch) f))
 
 (defn on-error
   "Adds a callback to a pipeline channel which will be called if the
@@ -56,7 +56,7 @@
 
    The function will be called with (f intermediate-result exception)."
   [ch f]
-  (receive! (:error ch) (fn [[result exception]] (f result exception))))
+  (receive (:error ch) (fn [[result exception]] (f result exception))))
 
 ;;;
 
