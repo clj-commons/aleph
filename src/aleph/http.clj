@@ -87,7 +87,7 @@
   [^HttpRequest req]
   (merge
     (request-body req)
-	(request-method req)
+    (request-method req)
     (request-headers req)
     (request-uri req)))
 
