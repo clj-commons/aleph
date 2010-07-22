@@ -64,7 +64,6 @@
        :body (str (= keys downcased-keys))})))
 
 (defn return-remote-addr [request]
-  (println request)
   (respond! request
     {:status 200
      :headers {"Content-Type" "text/plain"}
