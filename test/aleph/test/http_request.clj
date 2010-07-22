@@ -41,6 +41,29 @@
                "nil"
                (:query-string request))}))
 
+(defn return-server-name [request]
+  (respond! request
+    {:status 200
+     :headers {"Content-Type", "text/plain"}
+     :body (if (= nil (:server-name request))
+               "nil"
+               (:server-name request))}))
+
+(defn return-server-port [request]
+  (respond! request
+    {:status 200
+     :headers {"Content-Type", "text/plain"}
+     :body (str (:server-port request))}))
+
+(defn return-header-keys-are-downcased [request]
+  (let [keys (keys (:headers request))
+        downcased-keys (map #(-> %1 .toString .toLowerCase) keys)]
+    (println keys)
+    (respond! request
+      {:status 200
+       :headers {"Content-Type", "text/plain"}
+       :body (str (= keys downcased-keys))})))
+
 ; Tests all of the different possible values of :request-method
 (deftest test-request-method
   (let [test-port (swap! port inc)
@@ -144,5 +167,47 @@
               (make-http-request 
                 (create-url "localhost" test-port "?t1=tv1&t2=tv2") 
                 "GET"))))
+
+    (stop server)))
+
+; Tests the value parsed into :server-name.  Should be the domain name if the
+; http call uses one, otherwise it should be the ip address.
+(deftest test-server-name
+  (let [test-port (swap! port inc)
+        server (run-aleph return-server-name {:port test-port})]
+
+    (testing "domain name based URL"
+      (is (= "localhost" (make-http-request
+                           (create-url "localhost" test-port "")
+                           "GET"))))
+
+    (testing "ip-based URL"
+      (is (= "127.0.0.1" (make-http-request
+                           (create-url "127.0.0.1" test-port "")
+                           "GET"))))
+
+    (stop server)))
+
+; Tests the value of :server-port
+(deftest test-server-port
+  (let [test-port (swap! port inc)
+        server (run-aleph return-server-port {:port test-port})]
+
+    (testing "port value"
+      (is (= (str test-port) (make-http-request
+                               (create-url "localhost" test-port "")
+                               "GET"))))
+
+    (stop server)))
+    
+; Makes sure that the header keys are all downcased
+(deftest test-downcased-headers
+  (let [test-port (swap! port inc)
+        server (run-aleph return-header-keys-are-downcased {:port test-port})]
+
+    (testing "downcased header keys"
+      (is (= "true" (make-http-request 
+                      (create-url "localhost" test-port "") 
+                      "GET"))))
 
     (stop server)))

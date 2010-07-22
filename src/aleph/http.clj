@@ -59,10 +59,13 @@
 (defn request-headers
   "Get headers from Netty request."
   [^HttpMessage req]
-  {:headers (into {} (.getHeaders req))
+  (let [headers (into {} (.getHeaders req))]
+  {:headers (into {} 
+                  (map #(vector (.toLowerCase (first %1)) (second %1)) headers))
+   :server-name (-> req (.getHeader "Host") (.split "[:]" 2) (first))
    :chunked? (.isChunked req)
    :keep-alive? (HttpHeaders/isKeepAlive req)
-   :last-chunk (and (.isChunked req) (.isLast ^HttpChunk req))})
+   :last-chunk (and (.isChunked req) (.isLast ^HttpChunk req))}))
 
 (defn request-body
   "Get body from Netty request."
