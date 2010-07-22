@@ -58,11 +58,19 @@
 (defn return-header-keys-are-downcased [request]
   (let [keys (keys (:headers request))
         downcased-keys (map #(-> %1 .toString .toLowerCase) keys)]
-    (println keys)
     (respond! request
       {:status 200
        :headers {"Content-Type", "text/plain"}
        :body (str (= keys downcased-keys))})))
+
+(defn return-remote-addr [request]
+  (println request)
+  (respond! request
+    {:status 200
+     :headers {"Content-Type" "text/plain"}
+     :body (if (= nil (:remote-addr request))
+               "nil"
+               (:remote-addr request))}))
 
 ; Tests all of the different possible values of :request-method
 (deftest test-request-method
@@ -209,5 +217,17 @@
       (is (= "true" (make-http-request 
                       (create-url "localhost" test-port "") 
                       "GET"))))
+
+    (stop server)))
+
+; Tests the value of :remote-addr
+(deftest test-remote-addr
+  (let [test-port (swap! port inc)
+        server (run-aleph return-remote-addr {:port test-port})]
+
+    (testing "remote addr"
+      (is (= "127.0.0.1" (make-http-request
+                           (create-url "127.0.0.1" test-port "")
+                           "GET"))))
 
     (stop server)))

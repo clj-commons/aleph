@@ -182,6 +182,8 @@
 	(handler
 	  (merge
 	    (transform-request request)
+      {:remote-addr 
+        (->> evt .getChannel .getRemoteAddress .getAddress .getHostAddress)}
 	    {:channel (.getChannel ^MessageEvent evt)
 	     :respond (fn [this response]
 			(let [body (:body response)]
