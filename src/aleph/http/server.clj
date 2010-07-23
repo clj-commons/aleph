@@ -51,19 +51,26 @@
      FileInputStream
      RandomAccessFile]
     [java.net
+     URI
      URLConnection]))
 
 (defn request-method
   "Get HTTP method from Netty request."
   [^HttpRequest req]
-  (->> req .getMethod .getName .toLowerCase keyword))
+  {:request-method (->> req .getMethod .getName .toLowerCase keyword)})
 
 (defn request-headers
   "Get headers from Netty request."
   [^HttpMessage req]
-  {:headers (into {} (.getHeaders req))
-   :request-method (request-method req)
-   :keep-alive? (HttpHeaders/isKeepAlive req)})
+  (let [headers (into {} (.getHeaders req))
+	host (-> req (.getHeader "Host") (.split ":"))]
+    {:headers (into {}
+		(map
+		  (fn [[k v]] [(.toLowerCase k) v])
+		  (into {} (.getHeaders req))))
+     :server-name (first host)
+     :server-port (second host)
+     :keep-alive? (HttpHeaders/isKeepAlive req)}))
 
 (defn request-body
   "Get body from Netty request."
@@ -78,7 +85,7 @@
 (defn request-uri
   "Get URI from Netty request."
   [^HttpMessage req]
-  (let [uri-parts (.split (.getUri req) "[?]")]
+  (let [uri-parts (.split (.getUri req) "[?]" 2)]
     {:uri (first uri-parts)
      :query-string (second uri-parts)}))
 
@@ -86,6 +93,7 @@
   "Transforms a Netty request into a Ring request."
   [^HttpRequest req]
   (merge
+    (request-method req)
     (request-body req)
     (request-headers req)
     (request-uri req)))
@@ -208,7 +216,12 @@
 			     (reset-channels netty-channel)))
 			 ;; prime handler channel
 			 (enqueue-and-close @handler-channel
-			   (transform-request request))))
+			   (assoc (transform-request request)
+			     :scheme :http
+			     :remote-addr (->> netty-channel
+					    .getRemoteAddress
+					    .getAddress
+					    .getHostAddress)))))
 	    :downstream-error (downstream-stage error-stage-fn))]
     netty-pipeline))
 
