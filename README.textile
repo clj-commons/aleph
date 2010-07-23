@@ -5,7 +5,7 @@ It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring
 <pre><code>(use 'aleph)
 	
 (defn hello-world [channel request]
-  (enqueue-and-close
+  (enqueue-and-close channel
     {:status 200
      :headers {"Content-Type" "text/html"}
      :body "Hello World!"}))
