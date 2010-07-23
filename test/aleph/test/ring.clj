@@ -57,7 +57,7 @@
 
 (defn return-header-keys-are-downcased [ch request]
   (let [keys (keys (:headers request))
-        downcased-keys (map #(-> %1 .toString .toLowerCase) keys)]
+        downcased-keys (map #(-> ^String %1 .toString .toLowerCase) keys)]
     (enqueue-and-close ch
       {:status 200
        :headers {"Content-Type", "text/plain"}

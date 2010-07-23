@@ -66,7 +66,7 @@
 	host (-> req (.getHeader "Host") (.split ":"))]
     {:headers (into {}
 		(map
-		  (fn [[k v]] [(.toLowerCase k) v])
+		  (fn [[^String k v]] [(.toLowerCase k) v])
 		  (into {} (.getHeaders req))))
      :server-name (first host)
      :server-port (second host)
@@ -84,8 +84,8 @@
 
 (defn request-uri
   "Get URI from Netty request."
-  [^HttpMessage req]
-  (let [uri-parts (.split (.getUri req) "[?]" 2)]
+  [^HttpRequest req]
+  (let [uri-parts (.split ^String (.getUri req) "[?]" 2)]
     {:uri (first uri-parts)
      :query-string (second uri-parts)}))
 
@@ -132,10 +132,10 @@
     msg))
 
 (defn respond-with-string
-  ([channel response options]
+  ([^Channel channel response options]
      (respond-with-string channel response options "UTF-8"))
-  ([channel response options charset]
-     (let [body (ChannelBuffers/copiedBuffer (:body response) charset)
+  ([^Channel channel response options ^String charset]
+     (let [body (ChannelBuffers/copiedBuffer ^CharSequence (:body response) (java.nio.charset.Charset/forName charset))
 	   response (transform-response (assoc response :body body))]
        (-> channel
 	 (.write response)
@@ -148,7 +148,7 @@
      (respond-with-string channel (update-in response [:body] #(apply str %)) options charset)))
 
 (defn respond-with-stream
-  [channel response options]
+  [^Channel channel response options]
   (let [response (transform-response (update-in response [:body] #(input-stream->channel-buffer %)))]
     (-> channel
       (.write response)
@@ -163,7 +163,7 @@
       channel
       (-> response
 	(update-in [:headers "Content-Type"] #(or % content-type))
-	(update-in [:body] #(FileInputStream. %)))
+	(update-in [:body] #(FileInputStream. ^String %)))
       options)))
 
 ;;;
@@ -171,7 +171,7 @@
 (defn- error-stage-fn [evt]
   (when (instance? ExceptionEvent evt)
     (println "error-stage-fn")
-    (.printStackTrace (.getCause evt)))
+    (.printStackTrace (.getCause ^Throwable evt)))
   evt)
 
 (defn- respond [channel response options]

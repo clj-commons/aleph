@@ -97,7 +97,7 @@
 
 (defn input-stream->channel-buffer
   [^InputStream stream]
-  (let [ary (make-array Byte/TYPE (.available stream))]
+  (let [^bytes ary (make-array Byte/TYPE (.available stream))]
     (.read stream ary)
     (ChannelBuffers/wrappedBuffer ary)))
 
@@ -119,7 +119,7 @@
 	    (getPipeline [_] (pipeline-fn))))
 	(.bind server (InetSocketAddress. port))))
 
-(defn create-client [pipeline-fn host port]
+(defn create-client [pipeline-fn ^String host ^Integer port]
   (let [client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   thread-pool

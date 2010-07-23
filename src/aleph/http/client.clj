@@ -17,6 +17,7 @@
      HttpClientCodec
      HttpContentDecompressor
      DefaultHttpRequest
+     HttpMessage
      HttpMethod
      HttpHeaders
      HttpVersion]
@@ -35,18 +36,18 @@
    :options HttpMethod/OPTIONS
    :head HttpMethod/HEAD})
 
-(defn transform-request [scheme host port request]
+(defn transform-request [scheme ^String host ^Integer port request]
   (let [uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
-	req (DefaultHttpRequest.
+        req (DefaultHttpRequest.
 	      HttpVersion/HTTP_1_1
 	      (request-methods (:request-method request))
 	      (.toASCIIString uri))]
     (.setHeader req "Host" host)
     ;;(.setHeader req "Accept-Encoding" )
-    (doseq [[k v] (:headers request)]
+    (doseq [[^String k v] (:headers request)]
       (.setHeader req k v))
     (when-let [body (:body request)]
-      (.setContents req (input-stream->channel-buffer body)))))
+      (.setContent req (input-stream->channel-buffer body)))))
 
 (defn transform-response [^HttpResponse response]
   {:status (-> response .getStatus .getCode)
@@ -57,7 +58,7 @@
 
 (defn- error-stage-fn [evt]
   (when (instance? ExceptionEvent evt)
-    (.printStackTrace (.getCause evt)))
+    (.printStackTrace ^Throwable (.getCause ^ExceptionEvent evt)))
   evt)
 
 (defn create-pipeline [options]

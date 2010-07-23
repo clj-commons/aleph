@@ -42,7 +42,7 @@
 (def delayed-executor (ScheduledThreadPoolExecutor. 1))
 
 (defn delay-invoke [f delay]
-  (.schedule delayed-executor f (long delay) TimeUnit/MILLISECONDS))
+  (.schedule ^ScheduledThreadPoolExecutor delayed-executor ^Runnable f (long delay) TimeUnit/MILLISECONDS))
 
 ;;;
 

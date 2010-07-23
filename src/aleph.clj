@@ -100,7 +100,7 @@
   (run-server handler
     (assoc options
       :protocol :http
-      :error-handler (fn [e] (.printStackTrace e)))))
+      :error-handler (fn [^Throwable e] (.printStackTrace e)))))
 
 (defn create-http-client
   "Create an HTTP client."
@@ -115,6 +115,6 @@
 
 (defn stop
   "Stops a server."
-  [server]
+  [^org.jboss.netty.channel.Channel server]
   (.close server))
 
