@@ -50,17 +50,17 @@ namespace.
     <div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph/blocking">blocking</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/cause">cause</a>
+      <a href="#aleph/cancel-callback">cancel-callback</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/complete?">complete?</a>
+      <a href="#aleph/closed?">closed?</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/error!">error!</a>
+      <a href="#aleph/create-client">create-client</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/error?">error?</a>
+      <a href="#aleph/create-http-client">create-http-client</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/future-proxy">future-proxy</a>
+      <a href="#aleph/enqueue">enqueue</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/on-completion">on-completion</a>
+      <a href="#aleph/enqueue-and-close">enqueue-and-close</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph/on-error">on-error</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
@@ -68,19 +68,47 @@ namespace.
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph/pipeline">pipeline</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/receive">receive</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph/receive-all">receive-all</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph/redirect">redirect</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph/restart">restart</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/result">result</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/run-http-server">run-http-server</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph/run-server">run-server</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/success!">success!</a>
+      <a href="#aleph/sealed?">sealed?</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph/success?">success?</a>
+      <a href="#aleph/start-http-server">start-http-server</a>
+    </div>
+    <br />
+  </div><div style="margin-left: 1em;" class="toc-section">
+    <a href="#aleph.channel">aleph.channel</a>
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/cancel-callback">cancel-callback</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/channel">channel</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/channel-pair">channel-pair</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/closed?">closed?</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/constant-channel">constant-channel</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/enqueue">enqueue</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/enqueue-and-close">enqueue-and-close</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/listen">listen</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/listen-all">listen-all</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/receive">receive</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/receive-all">receive-all</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.channel/sealed?">sealed?</a>
     </div>
     <br />
   </div>
@@ -94,7 +122,7 @@ by <span id="author">Zachary Tellman</span><br />
   (:require <span id="long-name">aleph</span>))
 </pre><pre>
 </pre><h2>Overview</h2>
-<pre id="namespace-docstr">An event-driven server.</pre>
+<pre id="namespace-docstr">An asynchronous server</pre>
 <br />
 <h2>Public Variables and Functions</h2>
 <div id="var-entry">
@@ -105,79 +133,88 @@ by <span id="author">Zachary Tellman</span><br />
   <pre id="var-usage">Usage: (blocking f)
 </pre>
   <pre id="var-docstr">Takes a synchronous function, and returns a function which will be executed asynchronously,
-and whose invocation will return a pipeline-future.</pre>
+and whose invocation will return a pipeline channel.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/cause">cause</h2>
+  <h2 id="aleph/cancel-callback">cancel-callback</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (cause future)
+  <pre id="var-usage">Usage: (cancel-callback ch f)
 </pre>
-  <pre id="var-docstr">Returns the exception that caused the pipeline-future to fail.</pre>
+  <pre id="var-docstr">Removes a permanent or transient callback from the channel.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/complete?">complete?</h2>
+  <h2 id="aleph/closed?">closed?</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (complete? future)
+  <pre id="var-usage">Usage: (closed? ch)
 </pre>
-  <pre id="var-docstr">Returns true if the pipeline-future is complete.</pre>
+  <pre id="var-docstr">Returns true if queue is sealed and there are no pending messages.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/error!">error!</h2>
+  <h2 id="aleph/create-client">create-client</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (error! future error result)
+  <pre id="var-usage">Usage: (create-client options)
 </pre>
-  <pre id="var-docstr">Triggers the unsuccessful conclusion of a future-proxy.</pre>
+  <pre id="var-docstr">Creates a client.  The options hash must contain a value for :protocol, :host, and :port.
+
+Currently :http is the only supported protocol.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/error?">error?</h2>
+  <h2 id="aleph/create-http-client">create-http-client</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (error? future)
+  <pre id="var-usage">Usage: (create-http-client options)
 </pre>
-  <pre id="var-docstr">Returns true if the pipeline-future did not complete successfuly.</pre>
+  <pre id="var-docstr">Create an HTTP client.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/future-proxy">future-proxy</h2>
+  <h2 id="aleph/enqueue">enqueue</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (future-proxy)
+  <pre id="var-usage">Usage: (enqueue ch msg)
 </pre>
-  <pre id="var-docstr">Returns a future which can be triggered via error! or success!</pre>
+  <pre id="var-docstr">Enqueues a message into the channel.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/on-completion">on-completion</h2>
+  <h2 id="aleph/enqueue-and-close">enqueue-and-close</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (on-completion future callback)
+  <pre id="var-usage">Usage: (enqueue-and-close ch sg)
 </pre>
-  <pre id="var-docstr">Enqueues the callback to be invoked when the pipeline-future completes.</pre>
+  <pre id="var-docstr">Enqueues the final message into the channel.  When this message is received,
+the channel will be closed.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
   <h2 id="aleph/on-error">on-error</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (on-error future callback)
+  <pre id="var-usage">Usage: (on-error ch f)
 </pre>
-  <pre id="var-docstr">Enqueues the callback to be invoked when the pipeline-future completes unsucccessfully.</pre>
+  <pre id="var-docstr">Adds a callback to a pipeline channel which will be called if the
+pipeline terminates due to an error.
+
+The function will be called with (f intermediate-result exception).</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
   <h2 id="aleph/on-success">on-success</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (on-success future callback)
+  <pre id="var-usage">Usage: (on-success ch f)
 </pre>
-  <pre id="var-docstr">Enqueues the callback to be invoked when the pipeline-future completes successfully.</pre>
+  <pre id="var-docstr">Adds a callback to a pipeline channel which will be called if the
+pipeline succeeds.
+
+The function will be called with (f result)</pre>
   
 </div><div id="var-entry">
   <br />
@@ -187,11 +224,29 @@ and whose invocation will return a pipeline-future.</pre>
   <pre id="var-usage">Usage: (pipeline &amp; opts+stages)
 </pre>
   <pre id="var-docstr">Returns a function with an arity of one.  Invoking the function will return
-a pipeline-future.
+a pipeline channel.
 
 Stages should either be pipelines, or functions with an arity of one.  These functions
-should either return a pipeline-future, a redirect signal, or a value which will be passed
+should either return a pipeline channel, a redirect signal, or a value which will be passed
 into the next stage.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/receive">receive</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (receive ch f)
+</pre>
+  <pre id="var-docstr">Adds a callback which will receive the next message from the channel.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph/receive-all">receive-all</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (receive-all ch f)
+</pre>
+  <pre id="var-docstr">Adds a callback which will receive all messages from the channel.</pre>
   
 </div><div id="var-entry">
   <br />
@@ -216,47 +271,139 @@ to the value previously passed into the pipeline.</pre>
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/result">result</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (result future)
-</pre>
-  <pre id="var-docstr">Returns the result of the pipeline-future, or nil if it did not complete successfully.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph/run-http-server">run-http-server</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (run-http-server handler options)
-</pre>
-  <pre id="var-docstr">Starts an HTTP server.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
   <h2 id="aleph/run-server">run-server</h2>
   <span id="var-type">function</span><br />
   <pre id="var-usage">Usage: (run-server handler options)
 </pre>
-  <pre id="var-docstr">Starts a server.</pre>
+  <pre id="var-docstr">Starts a server.  The options hash should contain a value for :protocol and :port.
+
+Currently :http is the only supported protocol.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/success!">success!</h2>
+  <h2 id="aleph/sealed?">sealed?</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (success! future result)
+  <pre id="var-usage">Usage: (sealed? ch)
 </pre>
-  <pre id="var-docstr">Triggers the successful conclusion of a future-proxy.</pre>
+  <pre id="var-docstr">Returns true if no further messages can be enqueued.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph/success?">success?</h2>
+  <h2 id="aleph/start-http-server">start-http-server</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (success? future)
+  <pre id="var-usage">Usage: (start-http-server handler options)
 </pre>
-  <pre id="var-docstr">Returns true if the pipeline-future has completed successfully.</pre>
+  <pre id="var-docstr">Starts an HTTP server.</pre>
+  
+</div>
+<h2 id="namespace-name">aleph.channel</h2>
+<pre id="namespace-docstr"></pre>
+<br />
+<div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/cancel-callback">cancel-callback</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (cancel-callback ch f)
+</pre>
+  <pre id="var-docstr">Removes a permanent or transient callback from the channel.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/channel">channel</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel)
+</pre>
+  <pre id="var-docstr">A basic implementation of a channel with an unbounded queue.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/channel-pair">channel-pair</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-pair)
+</pre>
+  <pre id="var-docstr">Creates paired channels, where an enqueued message from one channel
+can be received from the other.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/closed?">closed?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (closed? ch)
+</pre>
+  <pre id="var-docstr">Returns true if queue is sealed and there are no pending messages.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/constant-channel">constant-channel</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (constant-channel)
+</pre>
+  <pre id="var-docstr">A channel which can hold zero or one messages in the queue.  Once it has
+a message, that message cannot be consumed.  Meant to communicate a single,
+constant value via a channel.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/enqueue">enqueue</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (enqueue ch msg)
+</pre>
+  <pre id="var-docstr">Enqueues a message into the channel.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/enqueue-and-close">enqueue-and-close</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (enqueue-and-close ch sg)
+</pre>
+  <pre id="var-docstr">Enqueues the final message into the channel.  When this message is received,
+the channel will be closed.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/listen">listen</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (listen ch f)
+</pre>
+  <pre id="var-docstr">Adds a callback which will receive all new messages.  If the callback returns true,
+the message will be consumed.  If not, it will remain in the channel.  A callback
+which returns false may see the same message multiple times.
+
+This exists to support poll, don't use it directly unless you know what you're doing.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/listen-all">listen-all</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (listen-all ch f)
+</pre>
+  <pre id="var-docstr">Same as listen, but for all messages that comes through the queue.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/receive">receive</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (receive ch f)
+</pre>
+  <pre id="var-docstr">Adds a callback which will receive the next message from the channel.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/receive-all">receive-all</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (receive-all ch f)
+</pre>
+  <pre id="var-docstr">Adds a callback which will receive all messages from the channel.</pre>
+  
+</div><div id="var-entry">
+  <hr />
+  <h2 id="aleph.channel/sealed?">sealed?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (sealed? ch)
+</pre>
+  <pre id="var-docstr">Returns true if no further messages can be enqueued.</pre>
   
 </div>
 
