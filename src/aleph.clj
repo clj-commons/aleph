@@ -100,7 +100,7 @@
   (run-server handler
     (assoc options
       :protocol :http
-      :error-handler (fn [request e] (.printStackTrace e)))))
+      :error-handler (fn [e] (.printStackTrace e)))))
 
 (defn create-http-client
   "Create an HTTP client."

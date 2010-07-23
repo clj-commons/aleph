@@ -175,6 +175,10 @@
 	   :initial-value x})
 	ch))))
 
+(defn run-pipeline
+  [initial-value & opts+stages]
+  ((apply pipeline opts+stages) initial-value))
+
 (defn blocking
   "Takes a synchronous function, and returns a function which will be executed asynchronously,
    and whose invocation will return a pipeline channel."
@@ -190,6 +194,14 @@
 	    (catch Exception e
 	      (enqueue error [x e])))))
       result)))
+
+(defn receive-in-order [ch f]
+  ((pipeline
+     (fn [x]
+       (f x)
+       (when-not (closed? ch)
+	 (restart))))
+   ch))
 
 ;;;
 

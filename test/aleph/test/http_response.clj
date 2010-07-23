@@ -17,27 +17,23 @@
      ByteArrayInputStream]))
 
 (defn string-handler [request]
-  (send! request
-    {:status 200
-     :header {"Content-Type" "text/html"}
-     :body "String!"}))
+  {:status 200
+   :header {"Content-Type" "text/html"}
+   :body "String!"})
 
 (defn seq-handler [request]
-  (send! request
-    {:status 200
-     :header {"Content-Type" "text/html"}
-     :body ["sequence: " 1 " two " 3.0]}))
+  {:status 200
+   :header {"Content-Type" "text/html"}
+   :body ["sequence: " 1 " two " 3.0]})
 
 (defn file-handler [request]
-  (send! request
-    {:status 200
-     :body (File. (str (pwd) "/test/starry_night.jpg"))}))
+  {:status 200
+   :body (File. (str (pwd) "/test/starry_night.jpg"))})
 
 (defn stream-handler [request]
-  (send! request
-    {:status 200
-     :header {"Content-Type" "text/html"}
-     :body (ByteArrayInputStream. (.getBytes "Stream!"))}))
+  {:status 200
+   :header {"Content-Type" "text/html"}
+   :body (ByteArrayInputStream. (.getBytes "Stream!"))})
 
 (def server (atom nil))
 (def latch (promise))
@@ -51,9 +47,10 @@
 	     (stop @server)
 	     (deliver latch true))})
 
-(defn handler [request]
+(defn handler [ch request]
   (when-let [handler (route-map (:uri request))]
-    (handler request)))
+    (enqueue-and-close ch
+      (handler request))))
 
 (deftest http-response
   (let [server (reset! server (start-http-server handler {:port 8080}))]

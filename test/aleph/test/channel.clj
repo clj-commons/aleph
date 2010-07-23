@@ -30,11 +30,14 @@
      (deref a)))
 
 (defn try-all [f exprs]
-  (map
-    #(f (run-test
-	  (doseq [x %]
-	    (eval x))))
-    (permutations exprs)))
+  (let [fns (map
+	      (fn [expr] (eval `(fn [] ~expr)))
+	      exprs)]
+    (map
+      #(f (run-test
+	    (doseq [x %]
+	      (x))))
+      (permutations fns))))
 
 (defn expected-result [s]
   (loop [s s, enqueued [], result [], consumed false]

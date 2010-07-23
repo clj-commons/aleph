@@ -55,16 +55,15 @@
 
 (defn request-method
   "Get HTTP method from Netty request."
-  [^HttpRequest msg]
-  (->> msg .getMethod .getName .toLowerCase keyword))
+  [^HttpRequest req]
+  (->> req .getMethod .getName .toLowerCase keyword))
 
 (defn request-headers
   "Get headers from Netty request."
   [^HttpMessage req]
   {:headers (into {} (.getHeaders req))
-   :partial? (.isChunked req)
-   :keep-alive? (HttpHeaders/isKeepAlive req)
-   :last? (and (.isChunked req) (.isLast ^HttpChunk req))})
+   :request-method (request-method req)
+   :keep-alive? (HttpHeaders/isKeepAlive req)})
 
 (defn request-body
   "Get body from Netty request."
@@ -79,10 +78,9 @@
 (defn request-uri
   "Get URI from Netty request."
   [^HttpMessage req]
-  (let [uri (.getUri req)]
-    {:uri uri
-     :query-string (when (.contains uri "?")
-		     (last (.split uri "?")))}))
+  (let [uri-parts (.split (.getUri req) "[?]")]
+    {:uri (first uri-parts)
+     :query-string (second uri-parts)}))
 
 (defn transform-request
   "Transforms a Netty request into a Ring request."
@@ -96,23 +94,22 @@
 
 (defn call-error-handler
   "Calls the error-handling function."
-  [options req e]
-  ((:error-handler options) req e))
+  [options e]
+  ((:error-handler options) e))
 
 (defn response-listener
   "Handles the completion of the response."
-  [options request]
-  (let [channel ^Channel (:channel request)]
-    (reify ChannelFutureListener
-      (operationComplete [_ future]
-	(if (.isSuccess future)
-	  (when-not (:keep-alive? request)
-	    (.close channel))
-	  (call-error-handler options request (.getCause future)))))))
+  [options]
+  (reify ChannelFutureListener
+    (operationComplete [_ future]
+      (if (.isSuccess future)
+	(do
+	  )
+	(call-error-handler options (.getCause future))))))
 
 (defn transform-response
   "Turns a Ring response into something Netty can understand."
-  [request response]
+  [response]
   (let [msg (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
@@ -121,44 +118,41 @@
       (.addHeader msg k v))
     (when body
       (.setContent msg body))
-    (when (:keep-alive? request)
-      (HttpHeaders/setContentLength msg (-> msg .getContent .readableBytes)))
-    (when (:chunked? request)
+    (HttpHeaders/setContentLength msg (-> msg .getContent .readableBytes))
+    (when (:chunked? response)
       (.setChunked msg true))
     msg))
 
 (defn respond-with-string
-  ([request response options]
-     (respond-with-string request response options "UTF-8"))
-  ([request response options charset]
-     (let [channel ^Channel (:netty-channel request)
-	   body (ChannelBuffers/copiedBuffer (:body response) charset)
-	   response (transform-response request (assoc response :body body))]
+  ([channel response options]
+     (respond-with-string channel response options "UTF-8"))
+  ([channel response options charset]
+     (let [body (ChannelBuffers/copiedBuffer (:body response) charset)
+	   response (transform-response (assoc response :body body))]
        (-> channel
 	 (.write response)
-	 (.addListener (response-listener options request))))))
+	 (.addListener (response-listener options))))))
 
 (defn respond-with-sequence
-  ([request response options]
-     (respond-with-sequence request response options "UTF-8"))
-  ([request response options charset]
-     (respond-with-string request (update-in response [:body] #(apply str %)) options charset)))
+  ([channel response options]
+     (respond-with-sequence channel response options "UTF-8"))
+  ([channel response options charset]
+     (respond-with-string channel (update-in response [:body] #(apply str %)) options charset)))
 
 (defn respond-with-stream
-  [request response options]
-  (let [channel ^Channel (:netty-channel request)
-	response (transform-response request (update-in response [:body] #(input-stream->channel-buffer %)))]
+  [channel response options]
+  (let [response (transform-response (update-in response [:body] #(input-stream->channel-buffer %)))]
     (-> channel
       (.write response)
-      (.addListener (response-listener options request)))))
+      (.addListener (response-listener options)))))
 
 ;;TODO: use a more efficient file serving mechanism
 (defn respond-with-file
-  [request response options]
+  [channel response options]
   (let [file ^File (:body response)
 	content-type (or (URLConnection/guessContentTypeFromName (.getName file)) "application/octet-stream")]
     (respond-with-stream
-      request
+      channel
       (-> response
 	(update-in [:headers "Content-Type"] #(or % content-type))
 	(update-in [:body] #(FileInputStream. %)))
@@ -168,58 +162,56 @@
 
 (defn- error-stage-fn [evt]
   (when (instance? ExceptionEvent evt)
+    (println "error-stage-fn")
     (.printStackTrace (.getCause evt)))
   evt)
 
-(defn- respond [request response options]
+(defn- respond [channel response options]
   (let [body (:body response)]
     (cond
-      (string? body) (respond-with-string request response options)
-      (sequential? body) (respond-with-sequence request response options)
-      (instance? InputStream body) (respond-with-stream request response options)
-      (instance? File body) (respond-with-file request response options))))
-
-(defn request-handler
-  "Creates a pipeline stage that handles a Netty request."
-  [handler options]
-  (upstream-stage
-    (fn [evt]
-      (when-let [request ^HttpRequest (event-message evt)]
-	(let [request (assoc (transform-request request)
-			:netty-channel (.getChannel ^MessageEvent evt))]
-	  (handler
-	    (assoc request
-	      :send-channel
-	      (let [ch (channel)
-		    consume! (pipeline
-			       (fn [response]
-				 (respond request response options)
-				 (when-not (closed? ch)
-				   (restart))))]
-		(consume! ch)
-		ch))))))))
+      (string? body) (respond-with-string channel response options)
+      (sequential? body) (respond-with-sequence channel response options)
+      (instance? InputStream body) (respond-with-stream channel response options)
+      (instance? File body) (respond-with-file channel response options))))
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
   [handler options]
-  (create-netty-pipeline
-    :decoder (HttpRequestDecoder.)
-    :encoder (HttpResponseEncoder.)
-    :deflater (HttpContentCompressor.)
-    :downstream-error (downstream-stage error-stage-fn)
-    :request (request-handler
-	       (fn [req]
-		 (let [req (assoc req
-			     :scheme :http
-			     :server-port (:port options))]
-		   (try
-		     (handler req)
-		     (catch Exception e
-		       (call-error-handler options req e)))
-		   nil))
-	       options)
-    :upstream-error (upstream-stage error-stage-fn)
-    ))
+  (let [handler-channel (atom nil)
+	reset-channels
+	  (fn [netty-channel]
+	    (let [[outer inner] (channel-pair)]
+	      ;; Aleph -> Netty
+	      (receive-in-order outer
+		(fn [response]
+		  (try
+		    (respond netty-channel response options)
+		    (catch Exception e
+		      (.printStackTrace e)))))
+	      ;; Netty -> Aleph
+	      (receive inner
+		(fn [request]
+		  (handler inner request)))
+	      (reset! handler-channel outer)))
+	netty-pipeline
+	  ^ChannelPipeline
+	  (create-netty-pipeline
+	    :decoder (HttpRequestDecoder.)
+	    :encoder (HttpResponseEncoder.)
+	    :deflater (HttpContentCompressor.)
+	    :upstream-error (upstream-stage error-stage-fn)
+	    :request (message-stage
+		       (fn [^Channel netty-channel ^HttpRequest request]
+			 ;; if this is a new request, create a new pair of channels
+			 (let [ch @handler-channel]
+			   (when (or (not ch) (sealed? ch))
+			     (reset-channels netty-channel)))
+			 ;; prime handler channel
+			 (enqueue-and-close @handler-channel
+			   (transform-request request))))
+	    :downstream-error (downstream-stage error-stage-fn))]
+    netty-pipeline))
+
 
 
 

@@ -10,8 +10,14 @@
   (:import [java.util.concurrent ScheduledThreadPoolExecutor TimeUnit]))
 
 (defprotocol AlephChannel
-  (listen [ch f])
-  (listen-all [ch f])
+  (listen [ch f]
+    "Adds a callback which will receive all new messages.  If the callback returns true,
+     the message will be consumed.  If not, it will remain in the channel.  A callback
+     which returns false may see the same message multiple times.
+
+     This exists to support poll, don't use it directly unless you know what you're doing.")
+  (listen-all [ch f]
+    "Same as listen, but for all messages that comes through the queue.")
   (receive [ch f]
     "Adds a callback which will receive the next message from the channel.")
   (receive-all [ch f]
@@ -23,8 +29,10 @@
   (enqueue-and-close [ch sg]
     "Enqueues the final message into the channel.  When this message is received,
      the channel will be closed.")
+  (sealed? [ch]
+    "Returns true if no further messages can be enqueued.")
   (closed? [ch]
-    "Returns true if the channel has been closed."))
+    "Returns true if queue is sealed and there are no pending messages."))
 
 (defn channel? [ch]
   (satisfies? AlephChannel ch))
@@ -84,6 +92,8 @@
 	nil)
       (enqueue-and-close [_ _]
 	(throw (Exception. "Cannot close constant-channel.")))
+      (sealed? [_]
+	@complete)
       (closed? [_]
 	false))))
 
@@ -96,6 +106,7 @@
 	transient-listeners (ref #{})
 	listeners (ref #{})
 	closed (ref false)
+	sealed (ref false)
 	test-listeners
 	  (fn [messages listeners]
 	    (some identity (doall (map #(% (first messages)) listeners))))
@@ -124,19 +135,19 @@
 		   @transient-listeners)]
 		(partition 2
 		  (interleave
-		    (rest @messages)
+		    (rest (if @sealed (take (-> @messages count dec) @messages) @messages))
 		    (repeat (concat @receivers @listeners)))))
 	      (finally
 		(if-not (empty? @receivers)
 		  (ref-set messages [])
-		  (alter messages (comp vec next)))
+		  (alter messages (comp vec (if @closed nnext next))))
 		(ref-set transient-listeners #{})
 		(ref-set transient-receivers #{}))))
 	callbacks
 	  (fn []
 	    (dosync
 	      (when-not (empty? @messages)
-		(let [close (= ::close (second @messages))]
+		(let [close (= ::close (last @messages))]
 		  (when close
 		    (ref-set closed true))
 		  (try
@@ -149,7 +160,15 @@
 	  (fn [callbacks]
 	    (doseq [[msg fns] callbacks]
 	      (doseq [f fns]
-		(f msg))))]
+		(f msg))))
+	assert-can-enqueue
+	  (fn []
+	    (when @sealed
+	      (throw (Exception. "Can't enqueue into a sealed channel."))))
+	assert-can-receive
+	  (fn []
+	    (when @closed
+	      (throw (Exception. "Can't receive from a closed channel."))))]
     (reify AlephChannel
       Object
       (toString [_]
@@ -162,23 +181,27 @@
       (receive-all [_ f]
 	(send-to-callbacks
 	  (dosync
+	    (assert-can-receive)
 	    (alter receivers conj f)
 	    (callbacks))))
       (receive [this f]
 	(send-to-callbacks
 	  (dosync
+	    (assert-can-receive)
 	    (alter transient-receivers conj f)
 	    (callbacks)))
 	this)
       (listen [this f]
 	(send-to-callbacks
 	  (dosync
+	    (assert-can-receive)
 	    (alter transient-listeners conj f)
 	    (callbacks)))
 	this)
       (listen-all [this f]
 	(send-to-callbacks
 	  (dosync
+	    (assert-can-receive)
 	    (alter listeners conj f)
 	    (callbacks)))
 	this)
@@ -191,35 +214,70 @@
       (enqueue [this msg]
 	(send-to-callbacks
 	  (dosync
+	    (assert-can-enqueue)
 	    (alter messages conj msg)
 	    (callbacks)))
 	this)
       (enqueue-and-close [_ msg]
 	(send-to-callbacks
 	  (dosync
+	    (assert-can-enqueue)
+	    (ref-set sealed true)
 	    (alter messages concat [msg ::close])
 	    (callbacks))))
+      (sealed? [_]
+	@sealed)
       (closed? [_]
 	@closed))))
 
 ;;;
 
+(defn- splice [a b]
+  (reify AlephChannel
+    (receive [_ f]
+      (receive a f))
+    (receive-all [_ f]
+      (receive-all a f))
+    (listen [_ f]
+      (listen a f))
+    (listen-all [_ f]
+      (listen-all a f))
+    (cancel-callback [_ f]
+      (cancel-callback a f))
+    (closed? [_]
+      (closed? a))
+    (sealed? [_]
+      (sealed? b))
+    (enqueue [_ msg]
+      (enqueue b msg))
+    (enqueue-and-close [_ msg]
+      (enqueue-and-close b msg))))
+
+(defn channel-pair
+  "Creates paired channels, where an enqueued message from one channel
+   can be received from the other."
+  []
+  (let [a (channel)
+	b (channel)]
+    [(splice a b) (splice b a)]))
+
 (defn poll
   [channel-map timeout]
   (let [received (ref false)
 	result (constant-channel)
-	enqueue-fn (fn [k]
-		     (fn this
-		       ([]
-			  (this nil))
-		       ([x]
-			  (when
-			    (dosync
-			      (when-not @received
-				(ref-set received true)
-				true))
-			    (enqueue result [k x])
-			    true))))]
+	enqueue-fn
+	  (fn [k]
+	    (fn this
+	      ([]
+		 (this nil))
+	      ([x]
+		 (when
+		   (dosync
+		     (when-not @received
+		       (ref-set received true)
+		       true))
+		   (enqueue result [k x])
+		   true))))]
     (doseq [[k ch] channel-map]
       (listen ch (enqueue-fn k)))
     (when (pos? timeout)

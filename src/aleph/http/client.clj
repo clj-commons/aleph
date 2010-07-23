@@ -8,7 +8,7 @@
 
 
 (ns aleph.http.client
-  (:use [aleph.core])
+  (:use [aleph core pipeline])
   (:import
     [org.jboss.netty.handler.codec.http
      HttpRequest
@@ -63,16 +63,15 @@
 (defn create-pipeline [options]
   (let [host (:host options)
 	port (:port options)
-	scheme (:scheme options)]
-    (create-netty-pipeline
-      :codec (HttpClientCodec.)
-      :inflater (HttpContentDecompressor.)
-      :downstream-error (downstream-stage error-stage-fn)
-      :requests (upstream-stage
-		  (fn [req]
-		    (transform-request scheme host port req)))
-      :response (downstream-stage
-		  (fn [resp]
-		    (when-let [resp (event-message resp)]
-		      (println (transform-response resp)))))
-      :upstream-error (upstream-stage error-stage-fn))))
+	scheme (:scheme options)
+	pipeline (create-netty-pipeline
+		   :codec (HttpClientCodec.)
+		   :inflater (HttpContentDecompressor.)
+		   :upstream-error (upstream-stage error-stage-fn)
+		   :response (message-stage
+			       (fn [ch response]
+				 (println (transform-response response))))
+		   :downstream-error (downstream-stage error-stage-fn))]
+    pipeline))
+
+

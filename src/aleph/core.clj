@@ -9,7 +9,9 @@
 (ns
   ^{:skip-wiki true}
   aleph.core
-  (:use [clojure.contrib.def :only (defvar- defmacro-)])
+  (:use
+    [clojure.contrib.def :only (defvar- defmacro-)]
+    [aleph channel pipeline])
   (:import
     [org.jboss.netty.channel
      ChannelHandler
@@ -58,7 +60,7 @@
   [handler]
   (reify ChannelUpstreamHandler
     (handleUpstream [_ ctx evt]
-      (when-let [upstream-evt (handler evt)]
+      (if-let [upstream-evt (handler evt)]
 	(.sendUpstream ctx upstream-evt)))))
 
 (defn downstream-stage
@@ -66,8 +68,16 @@
   [handler]
   (reify ChannelDownstreamHandler
     (handleDownstream [_ ctx evt]
-      (when-let [downstream-evt (handler evt)]
+      (if-let [downstream-evt (handler evt)]
 	(.sendDownstream ctx downstream-evt)))))
+
+(defn message-stage
+  "Creates a final upstream stage that only captures MessageEvents."
+  [handler]
+  (upstream-stage
+    (fn [evt]
+      (when-let [msg (event-message evt)]
+	(handler (.getChannel ^MessageEvent evt) msg)))))
 
 (defn create-netty-pipeline
   "Creates a pipeline.  Each stage must have a name.
@@ -97,25 +107,30 @@
 
 ;;;
 
+(def thread-pool (Executors/newCachedThreadPool))
+
 (defn start-server [pipeline-fn port]
   (let [server (ServerBootstrap.
-		    (NioServerSocketChannelFactory.
-		      (Executors/newCachedThreadPool)
-		      (Executors/newCachedThreadPool)))]
-    (.setPipelineFactory server
-      (reify ChannelPipelineFactory
-	(getPipeline [_] (pipeline-fn))))
-    (.bind server (InetSocketAddress. port))))
+		 (NioServerSocketChannelFactory.
+		   thread-pool
+		   thread-pool))]
+	(.setPipelineFactory server
+	  (reify ChannelPipelineFactory
+	    (getPipeline [_] (pipeline-fn))))
+	(.bind server (InetSocketAddress. port))))
 
 (defn create-client [pipeline-fn host port]
   (let [client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
-		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)))]
+		   thread-pool
+		   thread-pool))]
     (.setPipelineFactory client
       (reify ChannelPipelineFactory
 	(getPipeline [_] (pipeline-fn))))
-    (.connect client (InetSocketAddress. host port))))
+    (run-pipeline (.connect client (InetSocketAddress. host port))
+      wrap-netty-future
+      (fn [netty-channel]
+	))))
 
 ;;;
 
