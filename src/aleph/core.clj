@@ -7,131 +7,103 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns
-  ^{:skip-wiki true}
+  ^{:author "Zachary Tellman"
+    :doc "An event-driven server."}
   aleph.core
   (:use
-    [clojure.contrib.def :only (defvar- defmacro-)]
-    [aleph channel pipeline])
-  (:import
-    [org.jboss.netty.channel
-     ChannelHandler
-     ChannelUpstreamHandler
-     ChannelDownstreamHandler
-     ChannelHandlerContext
-     MessageEvent
-     ChannelPipelineFactory
-     Channels
-     ChannelPipeline]
-    [org.jboss.netty.buffer
-     ChannelBuffers
-     ChannelBuffer
-     ChannelBufferInputStream]
-    [org.jboss.netty.channel.socket.nio
-     NioServerSocketChannelFactory
-     NioClientSocketChannelFactory]
-    [org.jboss.netty.bootstrap
-     ServerBootstrap
-     ClientBootstrap]
-    [java.util.concurrent
-     Executors]
-    [java.net
-     InetSocketAddress]
-    [java.io
-     InputStream]))
+    [clojure.contrib.def :only (defmacro-)])
+  (:require
+    [aleph.http :as http]
+    [aleph.netty :as netty]
+    [aleph.core.pipeline :as pipeline]
+    [aleph.core.channel :as channel])) 
+
+(defmacro- import-fn [sym]
+  (let [m (meta (eval sym))
+        m (meta (intern (:ns m) (:name m)))
+        n (:name m)
+        arglists (:arglists m)
+        doc (:doc m)]
+    (list `def (with-meta n {:doc doc :arglists (list 'quote arglists)}) (eval sym))))
 
 ;;;
 
-(defn event-message
-  "Returns contents of message event, or nil if it's a different type of message."
-  [evt]
-  (when (instance? MessageEvent evt)
-    (.getMessage ^MessageEvent evt)))
+(import-fn pipeline/pipeline)
+(import-fn pipeline/blocking)
 
-(defn event-origin
-  "Returns origin of message event, or nil if it's a different type of message."
-  [evt]
-  (when (instance? MessageEvent evt)
-    (.getRemoteAddress ^MessageEvent evt)))
+(import-fn #'channel/receive)
+(import-fn #'channel/receive-all)
+(import-fn #'channel/cancel-callback)
+(import-fn #'channel/enqueue)
+(import-fn #'channel/enqueue-and-close)
+(import-fn #'channel/closed?)
+(import-fn channel/poll)
+(import-fn channel/channel-pair)
+(import-fn channel/channel)
+(import-fn channel/constant-channel)
 
-;;;
+(import-fn pipeline/redirect)
+(import-fn pipeline/restart)
 
-(defn upstream-stage
-  "Creates a pipeline stage for upstream events."
-  [handler]
-  (reify ChannelUpstreamHandler
-    (handleUpstream [_ ctx evt]
-      (if-let [upstream-evt (handler evt)]
-	(.sendUpstream ctx upstream-evt)))))
+(defn on-success
+  "Adds a callback to a pipeline channel which will be called if the
+   pipeline succeeds.
 
-(defn downstream-stage
-  "Creates a pipeline stage for downstream events."
-  [handler]
-  (reify ChannelDownstreamHandler
-    (handleDownstream [_ ctx evt]
-      (if-let [downstream-evt (handler evt)]
-	(.sendDownstream ctx downstream-evt)))))
+   The function will be called with (f result)"
+  [ch f]
+  (receive (:success ch) f))
 
-(defn message-stage
-  "Creates a final upstream stage that only captures MessageEvents."
-  [handler]
-  (upstream-stage
-    (fn [evt]
-      (when-let [msg (event-message evt)]
-	(handler (.getChannel ^MessageEvent evt) msg)))))
+(defn on-error
+  "Adds a callback to a pipeline channel which will be called if the
+   pipeline terminates due to an error.
 
-(defn create-netty-pipeline
-  "Creates a pipeline.  Each stage must have a name.
-
-   Example:
-   (create-netty-pipeline
-     :stage-a a
-     :stage-b b)"
-  [& stages]
-  (let [stages (partition 2 stages)
-	pipeline (Channels/pipeline)]
-    (doseq [[id stage] stages]
-      (.addLast pipeline (name id) stage))
-    pipeline))
+   The function will be called with (f intermediate-result exception)."
+  [ch f]
+  (receive (:error ch) (fn [[result exception]] (f result exception))))
 
 ;;;
 
-(defn input-stream->channel-buffer
-  [^InputStream stream]
-  (let [^bytes ary (make-array Byte/TYPE (.available stream))]
-    (.read stream ary)
-    (ChannelBuffers/wrappedBuffer ary)))
+(defn start-server
+  "Starts a server.  The options hash should contain a value for :protocol and :port.
 
-(defn channel-buffer->input-stream
-  [^ChannelBuffer buf]
-  (ChannelBufferInputStream. buf))
+   Currently :http is the only supported protocol."
+  [handler options]
+  (let [port (:port options)
+	protocol (:protocol options)]
+    (netty/start-server
+      (case protocol
+	:http #(http/server-pipeline handler options))
+      port)))
 
-;;;
+(defn client
+  "Creates a client.  The options hash must contain a value for :protocol, :host, and :port.
 
-(def thread-pool (Executors/newCachedThreadPool))
+   Currently :http is the only supported protocol."
+  [options]
+  (let [port (:port options)
+	host (:host options)
+	protocol (:protocol options)]
+    (netty/create-client
+      (case protocol
+	:http #(http/client-pipeline options))
+      host
+      port)))
 
-(defn start-server [pipeline-fn port]
-  (let [server (ServerBootstrap.
-		 (NioServerSocketChannelFactory.
-		   thread-pool
-		   thread-pool))]
-	(.setPipelineFactory server
-	  (reify ChannelPipelineFactory
-	    (getPipeline [_] (pipeline-fn))))
-	(.bind server (InetSocketAddress. port))))
+(defn start-http-server
+  "Starts an HTTP server."
+  [handler options]
+  (start-server handler
+    (assoc options
+      :protocol :http
+      :error-handler (fn [^Throwable e] (.printStackTrace e)))))
 
-(defn create-client [pipeline-fn ^String host ^Integer port]
-  (let [client (ClientBootstrap.
-		 (NioClientSocketChannelFactory.
-		   thread-pool
-		   thread-pool))]
-    (.setPipelineFactory client
-      (reify ChannelPipelineFactory
-	(getPipeline [_] (pipeline-fn))))
-    (run-pipeline (.connect client (InetSocketAddress. host port))
-      wrap-netty-future
-      (fn [netty-channel]
-	))))
+(defn http-client
+  "Create an HTTP client."
+  [options]
+  (client (assoc options :protocol :http)))
 
-;;;
-
+(defn stop
+  "Stops a server."
+  [^org.jboss.netty.channel.Channel server]
+  (.close server))
 

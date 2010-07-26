@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.http-response
-  (:use [aleph] :reload-all)
+  (:use [aleph.core] :reload-all)
   (:use
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]])

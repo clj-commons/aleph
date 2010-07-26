@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.channel
-  (:use [aleph.channel] :reload-all)
+  (:use [aleph.core.channel] :reload-all)
   (:use
     [clojure.test]
     [clojure.contrib.def]

@@ -2,7 +2,7 @@ Aleph is an asynchronous web server, built on top of "Netty":http://www.jboss.or
 
 It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.
 
-<pre><code>(use 'aleph)
+<pre><code>(use 'aleph.core 'aleph.http)
 	
 (defn hello-world [channel request]
   (enqueue-and-close channel

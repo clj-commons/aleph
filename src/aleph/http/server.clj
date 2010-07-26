@@ -10,7 +10,8 @@
   ^{:skip-wiki true}
   aleph.http.server
   (:use
-    [aleph core channel pipeline]
+    [aleph netty]
+    [aleph.core channel pipeline]
     [clojure.pprint])
   (:import
     [org.jboss.netty.handler.codec.http

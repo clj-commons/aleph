@@ -8,16 +8,15 @@
 
 (ns
   ^{:skip-wiki true}
-  aleph.pipeline
+  aleph.core.pipeline
   (:use
     [clojure.contrib.def :only (defmacro- defvar)]
-    [aleph.channel])
+    [aleph.core.channel])
   (:import
     [org.jboss.netty.channel
      ChannelFuture
      ChannelFutureListener]))
 
-(set! *warn-on-reflection* true)
 ;;;
 
 (defvar *context* nil)
@@ -176,6 +175,9 @@
 	ch))))
 
 (defn run-pipeline
+  "Equivalent to ((pipeline opts+stages) initial-value).
+
+   Returns a pipeline future."
   [initial-value & opts+stages]
   ((apply pipeline opts+stages) initial-value))
 
@@ -196,12 +198,11 @@
       result)))
 
 (defn receive-in-order [ch f]
-  ((pipeline
-     (fn [x]
-       (f x)
-       (when-not (closed? ch)
-	 (restart))))
-   ch))
+  (run-pipeline ch
+    (fn [x]
+      (f x)
+      (when-not (closed? ch)
+	(restart)))))
 
 ;;;
 

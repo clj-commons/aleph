@@ -8,7 +8,9 @@
 
 
 (ns aleph.http.client
-  (:use [aleph core pipeline])
+  (:use
+    [aleph netty]
+    [aleph.core channel pipeline])
   (:import
     [org.jboss.netty.handler.codec.http
      HttpRequest
