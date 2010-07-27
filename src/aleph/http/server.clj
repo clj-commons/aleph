@@ -33,7 +33,6 @@
      ChannelPipeline
      ChannelFuture
      MessageEvent
-     ExceptionEvent
      ChannelFutureListener
      ChannelFutureProgressListener
      Channels
@@ -208,7 +207,7 @@
 	    :decoder (HttpRequestDecoder.)
 	    :encoder (HttpResponseEncoder.)
 	    :deflater (HttpContentCompressor.)
-	    :upstream-error (upstream-stage error-stage-fn)
+	    :upstream-error (upstream-stage error-stage-handler)
 	    :request (message-stage
 		       (fn [^Channel netty-channel ^HttpRequest request]
 			 ;; if this is a new request, create a new pair of channels
@@ -223,7 +222,7 @@
 					    .getRemoteAddress
 					    .getAddress
 					    .getHostAddress)))))
-	    :downstream-error (downstream-stage error-stage-fn))]
+	    :downstream-error (downstream-stage error-stage-handler))]
     netty-pipeline))
 
 

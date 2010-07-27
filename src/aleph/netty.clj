@@ -20,6 +20,7 @@
      ChannelDownstreamHandler
      ChannelHandlerContext
      MessageEvent
+     ExceptionEvent
      ChannelPipelineFactory
      Channels
      ChannelPipeline]
@@ -79,6 +80,11 @@
     (fn [evt]
       (when-let [msg (event-message evt)]
 	(handler (.getChannel ^MessageEvent evt) msg)))))
+
+(defn error-stage-handler [evt]
+  (when (instance? ExceptionEvent evt)
+    (.printStackTrace ^Throwable (.getCause ^ExceptionEvent evt)))
+  evt)
 
 (defn create-netty-pipeline
   "Creates a pipeline.  Each stage must have a name.
