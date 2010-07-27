@@ -174,10 +174,11 @@
       (toString [_]
 	(str
 	  "\nmessages: " @messages "\n"
-	  "listeners: " @listeners "\n"
-	  "transient-listeners: " @transient-listeners "\n"
-	  "receivers: " @receivers "\n"
-	  "transient-receivers: " @transient-receivers "\n"))
+	  ;;"listeners: " @listeners "\n"
+	  ;;"transient-listeners: " @transient-listeners "\n"
+	  ;;"receivers: " @receivers "\n"
+	  ;;"transient-receivers: " @transient-receivers "\n"
+	  ))
       (receive-all [_ f]
 	(send-to-callbacks
 	  (dosync
@@ -234,6 +235,8 @@
 
 (defn- splice [a b]
   (reify AlephChannel
+    (toString [_]
+      (str a))
     (receive [_ f]
       (receive a f))
     (receive-all [_ f]
@@ -263,7 +266,7 @@
 
 (defn poll
   [channel-map timeout]
-  (let [received (ref false)
+  (let [received (atom 0)
 	result (constant-channel)
 	enqueue-fn
 	  (fn [k]
@@ -271,15 +274,13 @@
 	      ([]
 		 (this nil))
 	      ([x]
-		 (when
-		   (dosync
-		     (when-not @received
-		       (ref-set received true)
-		       true))
-		   (enqueue result [k x])
+		 (when (compare-and-set! received 0 1)
+		   (enqueue result (when k [k x]))
 		   true))))]
     (doseq [[k ch] channel-map]
       (listen ch (enqueue-fn k)))
-    (when (pos? timeout)
+    (when (zero? timeout)
+      ((enqueue-fn nil) nil))
+    (when (< 0 timeout)
       (delay-invoke (enqueue-fn nil) timeout))
     result))

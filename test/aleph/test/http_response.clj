@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.http-response
-  (:use [aleph.core] :reload-all)
+  (:use [aleph core http] :reload-all)
   (:use
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]])
@@ -52,6 +52,6 @@
     (enqueue-and-close ch
       (handler request))))
 
-'(deftest http-response
+(deftest http-response
   (let [server (reset! server (start-http-server handler {:port 8080}))]
     (is @latch)))

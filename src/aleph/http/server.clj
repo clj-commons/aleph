@@ -164,7 +164,7 @@
       channel
       (-> response
 	(update-in [:headers "Content-Type"] #(or % content-type))
-	(update-in [:body] #(FileInputStream. ^String %)))
+	(update-in [:body] #(FileInputStream. ^File %)))
       options)))
 
 ;;;
@@ -172,7 +172,7 @@
 (defn- error-stage-fn [evt]
   (when (instance? ExceptionEvent evt)
     (println "error-stage-fn")
-    (.printStackTrace (.getCause ^Throwable evt)))
+    (.printStackTrace (.getCause ^ExceptionEvent evt)))
   evt)
 
 (defn- respond [channel response options]

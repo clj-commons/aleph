@@ -63,18 +63,17 @@
     (.printStackTrace ^Throwable (.getCause ^ExceptionEvent evt)))
   evt)
 
-(defn create-pipeline [options]
+(defn create-pipeline [ch options]
   (let [host (:host options)
 	port (:port options)
-	scheme (:scheme options)
-	pipeline (create-netty-pipeline
-		   :codec (HttpClientCodec.)
-		   :inflater (HttpContentDecompressor.)
-		   :upstream-error (upstream-stage error-stage-fn)
-		   :response (message-stage
-			       (fn [ch response]
-				 (println (transform-response response))))
-		   :downstream-error (downstream-stage error-stage-fn))]
-    pipeline))
+	scheme (:scheme options)]
+    (create-netty-pipeline
+      :codec (HttpClientCodec.)
+      :inflater (HttpContentDecompressor.)
+      :upstream-error (upstream-stage error-stage-fn)
+      :response (message-stage
+		  (fn [netty-channel response]
+		    (enqueue ch (transform-response response))))
+      :downstream-error (downstream-stage error-stage-fn))))
 
 

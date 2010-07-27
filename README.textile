@@ -13,8 +13,8 @@ It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring
 (start-http-server hello-world {:port 8080})
 </code></pre>
 
-Notice that the response is an explicit step, using @(enqueue-and-close channel response)@.  This gives a much greater degree of flexibility than the servlet model, and allows more straightforward use of Clojure's concurrency primitives.
+Notice that the response is an explicit step, using @(enqueue-and-close channel response)@.  This gives more flexibility, and allows more straightforward use of Clojure's concurrency primitives.
 
-This is very experimental, but also a very interesting sandbox to play around in.  Contributions and ideas are welcome.
+Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
 
-Full documentation can be found "here":http://ztellman.github.com/aleph/aleph-api.html.
+A mailing list can be found "here":http://groups.google.com/group/aleph-lib, and documentation "here":http://ztellman.github.com/aleph/aleph-api.html.

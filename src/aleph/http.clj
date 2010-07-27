@@ -10,11 +10,26 @@
   ^{:skip-wiki true}
   aleph.http
   (:require
+    [aleph.core :as core]
     [aleph.http.server :as server]
     [aleph.http.client :as client]))
 
-(defn server-pipeline [handler options]
-  (server/create-pipeline handler options))
+(defn start-http-server
+  "Starts an HTTP server."
+  [handler options]
+  (core/start-server
+    #(server/create-pipeline handler options)
+    (assoc options
+      :error-handler (fn [^Throwable e] (.printStackTrace e)))))
 
-(defn client-pipeline [options]
-  (client/create-pipeline options))
+(defn http-client
+  "Create an HTTP client."
+  [options]
+  (core/client
+    #(client/create-pipeline % options)
+    #(client/transform-request
+       "http"
+       (:host options)
+       (:port options)
+       %)
+    options))

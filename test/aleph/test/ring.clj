@@ -1,5 +1,5 @@
 (ns aleph.test.ring
-  (:use [aleph.core] :reload-all)
+  (:use [aleph core http] :reload-all)
   (:use [clojure.test])
   (:require clojure.contrib.http.agent))
 

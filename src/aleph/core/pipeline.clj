@@ -67,7 +67,7 @@
 
 (defn- poll-pipeline-channel [chs fns context]
   ;;(println "poll-channels" (-> context :outer-result :error .hashCode))
-  (receive (poll chs 0)
+  (receive (poll chs -1)
     (fn [[typ result]]
       (case typ
 	:success
@@ -87,9 +87,6 @@
 		    :pipeline (-> possible-redirect :pipeline)))
 		(enqueue outer-error result)))))))))
 
-(defn- poll-channel [ch fns context]
-  (receive ch #(handle-result % fns context)))
-
 (defn- handle-result [result fns context]
   ;;(println "handle-result" result)
   (with-context context
@@ -104,8 +101,6 @@
 	  :error-handler (-> result :pipeline :error-handler)))
       (pipeline-channel? result)
       (poll-pipeline-channel result fns context)
-      (channel? result)
-      (poll-channel result fns context)
       :else
       (let [{outer-success :success outer-error :error} (outer-result)]
 	(if (empty? fns)
@@ -197,8 +192,15 @@
 	      (enqueue error [x e])))))
       result)))
 
+(defn to-pipeline-channel [ch]
+  (pipeline-channel
+    ch
+    (reify AlephChannel
+      (listen [_ _]))))
+
 (defn receive-in-order [ch f]
   (run-pipeline ch
+    to-pipeline-channel
     (fn [x]
       (f x)
       (when-not (closed? ch)
@@ -211,6 +213,7 @@
     (.addListener netty-future
       (reify ChannelFutureListener
 	(operationComplete [_ netty-future]
+	  (println "complete!" (.isSuccess netty-future) (.getChannel netty-future))
 	  (if (.isSuccess netty-future)
 	    (enqueue (:success ch) (.getChannel netty-future))
 	    (enqueue (:error ch) [nil (.getCause netty-future)]))

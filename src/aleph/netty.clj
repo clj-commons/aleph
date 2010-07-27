@@ -14,6 +14,7 @@
     [aleph.core channel pipeline])
   (:import
     [org.jboss.netty.channel
+     Channel
      ChannelHandler
      ChannelUpstreamHandler
      ChannelDownstreamHandler
@@ -109,7 +110,8 @@
 
 (def thread-pool (Executors/newCachedThreadPool))
 
-(defn start-server [pipeline-fn port]
+(defn start-server
+  [pipeline-fn port]
   (let [server (ServerBootstrap.
 		 (NioServerSocketChannelFactory.
 		   thread-pool
@@ -119,18 +121,22 @@
 	    (getPipeline [_] (pipeline-fn))))
 	(.bind server (InetSocketAddress. port))))
 
-(defn create-client [pipeline-fn host port]
-  (let [client (ClientBootstrap.
+(defn create-client
+  [pipeline-fn send-fn host port]
+  (let [[inner outer] (channel-pair)
+	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   thread-pool
 		   thread-pool))]
     (.setPipelineFactory client
       (reify ChannelPipelineFactory
-	(getPipeline [_] (pipeline-fn))))
+	(getPipeline [_] (pipeline-fn outer))))
     (run-pipeline (.connect client (InetSocketAddress. host port))
       wrap-netty-future
-      (fn [netty-channel]
-	))))
+      (fn [^Channel netty-channel]
+	(receive-in-order outer
+	  #(.write netty-channel (send-fn %)))
+	inner))))
 
 ;;;
 

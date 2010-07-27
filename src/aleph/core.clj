@@ -13,7 +13,6 @@
   (:use
     [clojure.contrib.def :only (defmacro-)])
   (:require
-    [aleph.http :as http]
     [aleph.netty :as netty]
     [aleph.core.pipeline :as pipeline]
     [aleph.core.channel :as channel])) 
@@ -64,43 +63,19 @@
 ;;;
 
 (defn start-server
-  "Starts a server.  The options hash should contain a value for :protocol and :port.
-
-   Currently :http is the only supported protocol."
-  [handler options]
+  "Starts a server.  The options hash should contain a value for :port."
+  [pipeline-fn options]
   (let [port (:port options)
 	protocol (:protocol options)]
-    (netty/start-server
-      (case protocol
-	:http #(http/server-pipeline handler options))
-      port)))
+    (netty/start-server pipeline-fn port)))
 
 (defn client
-  "Creates a client.  The options hash must contain a value for :protocol, :host, and :port.
-
-   Currently :http is the only supported protocol."
-  [options]
+  "Creates a client.  The options hash must contain a value for :host and :port."
+  [pipeline-fn send-fn options]
   (let [port (:port options)
 	host (:host options)
 	protocol (:protocol options)]
-    (netty/create-client
-      (case protocol
-	:http #(http/client-pipeline options))
-      host
-      port)))
-
-(defn start-http-server
-  "Starts an HTTP server."
-  [handler options]
-  (start-server handler
-    (assoc options
-      :protocol :http
-      :error-handler (fn [^Throwable e] (.printStackTrace e)))))
-
-(defn http-client
-  "Create an HTTP client."
-  [options]
-  (client (assoc options :protocol :http)))
+    (netty/create-client pipeline-fn send-fn host port)))
 
 (defn stop
   "Stops a server."
