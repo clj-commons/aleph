@@ -33,6 +33,7 @@
      ChannelPipeline
      ChannelFuture
      MessageEvent
+     ExceptionEvent
      ChannelFutureListener
      ChannelFutureProgressListener
      Channels
