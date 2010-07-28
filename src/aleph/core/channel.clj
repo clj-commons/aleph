@@ -59,16 +59,17 @@
 	(str
 	  "constant-channel: "
 	  (if @complete
-	    @result
+	    (with-out-str (println @result))
 	    :incomplete)))
       (listen [this f]
-	(when-let [value (dosync
-			   (if @complete
-			     @result
-			     (do
-			       (alter listeners conj f)
-			       nil)))]
-	  (f value))
+	(let [value (dosync
+		      (if @complete
+			@result
+			(do
+			  (alter listeners conj f)
+			  ::incomplete)))]
+	  (when-not (= ::incomplete value)
+	    (f value)))
 	nil)
       (listen-all [this f]
 	(listen this f))
@@ -267,20 +268,30 @@
 (defn poll
   [channel-map timeout]
   (let [received (atom 0)
-	result (constant-channel)
+	result-channel (constant-channel)
 	enqueue-fn
 	  (fn [k]
-	    (fn this
-	      ([]
-		 (this nil))
-	      ([x]
-		 (when (compare-and-set! received 0 1)
-		   (enqueue result (when k [k x]))
-		   true))))]
+	    #(when (compare-and-set! received 0 1) 
+	       (enqueue result-channel (when k [k %]))
+	       true))]
     (doseq [[k ch] channel-map]
       (listen ch (enqueue-fn k)))
     (when (zero? timeout)
       ((enqueue-fn nil) nil))
     (when (< 0 timeout)
-      (delay-invoke (enqueue-fn nil) timeout))
-    result))
+      (delay-invoke #((enqueue-fn nil) nil) timeout))
+    result-channel))
+
+(defn channel-seq
+  ([ch]
+     (channel-seq ch 0))
+  ([ch timeout]
+     (lazy-seq
+       (let [value (promise)]
+	 (receive (poll {:ch ch} timeout)
+	   (fn [x]
+	     (deliver value
+	       (when (first x)
+		 [(second x)]))))
+	 (when @value
+	   (concat @value (channel-seq ch timeout)))))))
