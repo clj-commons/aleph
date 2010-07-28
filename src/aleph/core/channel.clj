@@ -287,11 +287,11 @@
      (channel-seq ch 0))
   ([ch timeout]
      (lazy-seq
-       (let [value (promise)]
-	 (receive (poll {:ch ch} timeout)
-	   (fn [x]
-	     (deliver value
-	       (when (first x)
-		 [(second x)]))))
-	 (when @value
-	   (concat @value (channel-seq ch timeout)))))))
+       (when-not (closed? ch)
+	 (let [value (promise)]
+	   (receive (poll {:ch ch} timeout)
+	     #(deliver value
+		(when (first %)
+		  [(second %)])))
+	   (when @value
+	     (concat @value (channel-seq ch timeout))))))))
