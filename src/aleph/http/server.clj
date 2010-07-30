@@ -137,7 +137,10 @@
      (respond-with-string channel response options "UTF-8"))
   ([^Channel channel response options ^String charset]
      (let [body (ChannelBuffers/copiedBuffer ^CharSequence (:body response) (java.nio.charset.Charset/forName charset))
-	   response (transform-response (assoc response :body body))]
+	   response (transform-response
+		      (-> response
+			(update-in [:headers] assoc "charset" charset)
+			(assoc :body body)))]
        (-> channel
 	 (.write response)
 	 (.addListener (response-listener options))))))

@@ -103,7 +103,7 @@
                   (create-url "localhost" test-port "") 
                   "HEAD"))))
 
-    (stop server)))
+    (stop-server server)))
 
 ; Tests the different options for :scheme.  Right now only :http is checked for
 ; TODO: Eventually, we need to also test for https
@@ -116,7 +116,7 @@
                         (create-url "localhost" test-port "") 
                         "GET"))))
 
-    (stop server)))
+    (stop-server server)))
 
 ; Tests the parsing of :uri, to ensure that it's only the section after the 
 ; host and before the query string
@@ -145,7 +145,7 @@
                            (create-url "localhost" test-port "testdir/") 
                            "GET"))))
 
-    (stop server)))
+    (stop-server server)))
 
 ; Tests the parsing of :query-string.  Should be the full string after the 
 ; first "?" in the URL or nil in the case that no query string is part of the 
@@ -175,7 +175,7 @@
                 (create-url "localhost" test-port "?t1=tv1&t2=tv2") 
                 "GET"))))
 
-    (stop server)))
+    (stop-server server)))
 
 ; Tests the value parsed into :server-name.  Should be the domain name if the
 ; http call uses one, otherwise it should be the ip address.
@@ -193,7 +193,7 @@
                            (create-url "127.0.0.1" test-port "")
                            "GET"))))
 
-    (stop server)))
+    (stop-server server)))
 
 ; Tests the value of :server-port
 (deftest test-server-port
@@ -205,7 +205,7 @@
                                (create-url "localhost" test-port "")
                                "GET"))))
 
-    (stop server)))
+    (stop-server server)))
     
 ; Makes sure that the header keys are all downcased
 (deftest test-downcased-headers
@@ -217,7 +217,7 @@
                       (create-url "localhost" test-port "") 
                       "GET"))))
 
-    (stop server)))
+    (stop-server server)))
 
 ; Tests the value of :remote-addr
 (deftest test-remote-addr
@@ -229,4 +229,4 @@
                            (create-url "127.0.0.1" test-port "")
                            "GET"))))
 
-    (stop server)))
+    (stop-server server)))

@@ -15,7 +15,9 @@
   (:import
     [org.jboss.netty.channel
      ChannelFuture
-     ChannelFutureListener]))
+     ChannelFutureListener]
+    [java.util.concurrent
+     TimeoutException]))
 
 ;;;
 
@@ -57,7 +59,8 @@
        (constant-channel)
        (constant-channel)))
   ([success-channel error-channel]
-     ^{:tag ::pipeline-channel}
+     ^{:tag ::pipeline-channel
+       :type ::pipeline-channel}
      {:success success-channel
       :error error-channel}))
 
@@ -192,15 +195,21 @@
 	      (enqueue error [x e])))))
       result)))
 
-(defn to-pipeline-channel [ch]
+(defn receive-from-channel
+  "Creates a pipeline stage which takes a basic channel as a parameter,
+   and returns a single message from that channel."
+  [ch]
   (pipeline-channel
     ch
     (reify AlephChannel
       (listen [_ _]))))
 
-(defn receive-in-order [ch f]
+(defn receive-in-order
+  "Consumes messages from a channel one at a time.  The callback will only
+   receive the next message once it has completed processing the previous one."
+  [ch f]
   (run-pipeline ch
-    to-pipeline-channel
+    receive-from-channel
     (fn [x]
       (f x)
       (when-not (closed? ch)
@@ -208,14 +217,61 @@
 
 ;;;
 
-(defn wrap-netty-future [^ChannelFuture netty-future]
+(defn on-success
+  "Adds a callback to a pipeline channel which will be called if the
+   pipeline succeeds.
+
+   The function will be called with (f result)"
+  [ch f]
+  (receive (:success ch) f))
+
+(defn on-error
+  "Adds a callback to a pipeline channel which will be called if the
+   pipeline terminates due to an error.
+
+   The function will be called with (f intermediate-result exception)."
+  [ch f]
+  (receive (:error ch) (fn [[result exception]] (f result exception))))
+
+(defn wait-for-pipeline
+  "Waits for a pipeline to complete.  If it succeeds, returns the result.
+   If there was an error, the exception is re-thrown."
+  ([pipeline-channel]
+     (wait-for-pipeline pipeline-channel -1))
+  ([pipeline-channel timeout]
+     (let [value (promise)]
+       (receive (poll pipeline-channel timeout)
+	 #(deliver value %))
+       (let [value @value]
+	 (if (nil? value)
+	   (throw (TimeoutException. "Timed out waiting for result from pipeline."))
+	   (let [[k result] value]
+	     (case k
+	       :error (throw (second result))
+	       :success result)))))))
+
+;;;
+
+(defn wrap-netty-future
+  "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
+   a Netty Channel."
+  [^ChannelFuture netty-future]
   (let [ch (pipeline-channel)]
     (.addListener netty-future
       (reify ChannelFutureListener
 	(operationComplete [_ netty-future]
-	  (println "complete!" (.isSuccess netty-future) (.getChannel netty-future))
 	  (if (.isSuccess netty-future)
 	    (enqueue (:success ch) (.getChannel netty-future))
 	    (enqueue (:error ch) [nil (.getCause netty-future)]))
 	  nil)))
     ch))
+
+;;;
+
+(defmethod print-method ::pipeline-channel [ch writer]
+  (.write writer
+    (str "pipeline-channel\n"
+      "  success: "))
+  (print-method (:success ch) writer)
+  (.write writer "\n  error:   ")
+  (print-method (:error ch) writer))

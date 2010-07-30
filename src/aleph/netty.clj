@@ -20,10 +20,13 @@
      ChannelDownstreamHandler
      ChannelHandlerContext
      MessageEvent
+     ChannelEvent
      ExceptionEvent
      ChannelPipelineFactory
      Channels
      ChannelPipeline]
+    [org.jboss.netty.channel.group
+     DefaultChannelGroup]
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
@@ -43,11 +46,15 @@
 
 ;;;
 
-(defn event-message
+(defn message-event
   "Returns contents of message event, or nil if it's a different type of message."
   [evt]
   (when (instance? MessageEvent evt)
     (.getMessage ^MessageEvent evt)))
+
+(defn channel-event [evt]
+  (when (instance? ChannelEvent evt)
+    (.getChannel ^ChannelEvent evt)))
 
 (defn event-origin
   "Returns origin of message event, or nil if it's a different type of message."
@@ -63,7 +70,8 @@
   (reify ChannelUpstreamHandler
     (handleUpstream [_ ctx evt]
       (if-let [upstream-evt (handler evt)]
-	(.sendUpstream ctx upstream-evt)))))
+	(.sendUpstream ctx upstream-evt)
+	(.sendUpstream ctx evt)))))
 
 (defn downstream-stage
   "Creates a pipeline stage for downstream events."
@@ -71,14 +79,15 @@
   (reify ChannelDownstreamHandler
     (handleDownstream [_ ctx evt]
       (if-let [downstream-evt (handler evt)]
-	(.sendDownstream ctx downstream-evt)))))
+	(.sendDownstream ctx downstream-evt)
+	(.sendDownstream ctx evt)))))
 
 (defn message-stage
   "Creates a final upstream stage that only captures MessageEvents."
   [handler]
   (upstream-stage
     (fn [evt]
-      (when-let [msg (event-message evt)]
+      (when-let [msg (message-event evt)]
 	(handler (.getChannel ^MessageEvent evt) msg)))))
 
 (defn error-stage-handler [evt]
@@ -117,19 +126,38 @@
 (def thread-pool (Executors/newCachedThreadPool))
 
 (defn start-server
-  [pipeline-fn port]
-  (let [server (ServerBootstrap.
+  "Starts a server.  Returns a function that stops the server."
+  [pipeline-fn options]
+  (let [port (:port options)
+	server (ServerBootstrap.
 		 (NioServerSocketChannelFactory.
 		   thread-pool
-		   thread-pool))]
-	(.setPipelineFactory server
-	  (reify ChannelPipelineFactory
-	    (getPipeline [_] (pipeline-fn))))
-	(.bind server (InetSocketAddress. port))))
+		   thread-pool))
+	channel-group (DefaultChannelGroup.)]
+    (.setPipelineFactory server
+      (reify ChannelPipelineFactory
+	(getPipeline [_]
+	  (let [pipeline (pipeline-fn)]
+	    (.addFirst pipeline
+	      "channel-listener"
+	      (upstream-stage
+		(fn [evt]
+		  (when-let [ch ^Channel (channel-event evt)]
+		    (when (.isOpen ch)
+		      (.add channel-group ch)
+		      nil)))))
+	    pipeline))))
+    (.add channel-group (.bind server (InetSocketAddress. port)))
+    (fn []
+      (-> channel-group .close .awaitUninterruptibly)
+      ;;(.releaseExternalResources server)
+      )))
 
 (defn create-client
-  [pipeline-fn send-fn host port]
-  (let [[inner outer] (channel-pair)
+  [pipeline-fn send-fn options]
+  (let [host (:host options)
+	port (:port options)
+	[inner outer] (channel-pair)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   thread-pool
@@ -141,7 +169,10 @@
       wrap-netty-future
       (fn [^Channel netty-channel]
 	(receive-in-order outer
-	  #(.write netty-channel (send-fn %)))
+	  #(try
+	     (.write netty-channel (send-fn %))
+	     (catch Exception e
+	       (.printStackTrace e))))
 	inner))))
 
 ;;;

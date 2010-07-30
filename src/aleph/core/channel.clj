@@ -7,7 +7,12 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.core.channel
-  (:import [java.util.concurrent ScheduledThreadPoolExecutor TimeUnit]))
+  (:use [clojure.pprint])
+  (:import
+    [java.util.concurrent
+     ScheduledThreadPoolExecutor
+     TimeUnit
+     TimeoutException]))
 
 (defprotocol AlephChannel
   (listen [ch f]
@@ -54,13 +59,13 @@
   (let [result (ref nil)
 	complete (ref false)
 	listeners (ref #{})]
+    ^{:type ::constant-channel}
     (reify AlephChannel
       (toString [_]
-	(str
-	  "constant-channel: "
-	  (if @complete
-	    (with-out-str (println @result))
-	    :incomplete)))
+	(if @complete
+	  (->> (with-out-str (pprint @result))
+	    drop-last
+	    (apply str))))
       (listen [this f]
 	(let [value (dosync
 		      (if @complete
@@ -83,7 +88,7 @@
       (enqueue [_ msg]
 	(doseq [f (dosync
 		    (when @complete
-		      (throw (Exception. "Channel already contains a result.")))
+		      (throw (Exception. "Constant channel already contains a result.")))
 		    (ref-set result msg)
 		    (ref-set complete true)
 		    (let [coll @listeners]
@@ -136,7 +141,7 @@
 		   @transient-listeners)]
 		(partition 2
 		  (interleave
-		    (rest (if @sealed (take (-> @messages count dec) @messages) @messages))
+		    (rest (if @sealed (drop-last @messages) @messages))
 		    (repeat (concat @receivers @listeners)))))
 	      (finally
 		(if-not (empty? @receivers)
@@ -170,16 +175,13 @@
 	  (fn []
 	    (when @closed
 	      (throw (Exception. "Can't receive from a closed channel."))))]
+    ^{:type ::channel}
     (reify AlephChannel
       Object
       (toString [_]
-	(str
-	  "\nmessages: " @messages "\n"
-	  ;;"listeners: " @listeners "\n"
-	  ;;"transient-listeners: " @transient-listeners "\n"
-	  ;;"receivers: " @receivers "\n"
-	  ;;"transient-receivers: " @transient-receivers "\n"
-	  ))
+	(->> (with-out-str (pprint @messages))
+	  drop-last
+	  (apply str)))
       (receive-all [_ f]
 	(send-to-callbacks
 	  (dosync
@@ -191,22 +193,19 @@
 	  (dosync
 	    (assert-can-receive)
 	    (alter transient-receivers conj f)
-	    (callbacks)))
-	this)
+	    (callbacks))))
       (listen [this f]
 	(send-to-callbacks
 	  (dosync
 	    (assert-can-receive)
 	    (alter transient-listeners conj f)
-	    (callbacks)))
-	this)
+	    (callbacks))))
       (listen-all [this f]
 	(send-to-callbacks
 	  (dosync
 	    (assert-can-receive)
 	    (alter listeners conj f)
-	    (callbacks)))
-	this)
+	    (callbacks))))
       (cancel-callback [_ f]
 	(dosync
 	  (alter listeners disj f)
@@ -218,8 +217,7 @@
 	  (dosync
 	    (assert-can-enqueue)
 	    (alter messages conj msg)
-	    (callbacks)))
-	this)
+	    (callbacks))))
       (enqueue-and-close [_ msg]
 	(send-to-callbacks
 	  (dosync
@@ -235,6 +233,7 @@
 ;;;
 
 (defn- splice [a b]
+  ^{:type ::channel}
   (reify AlephChannel
     (toString [_]
       (str a))
@@ -266,21 +265,23 @@
     [(splice a b) (splice b a)]))
 
 (defn poll
-  [channel-map timeout]
-  (let [received (atom 0)
-	result-channel (constant-channel)
-	enqueue-fn
-	  (fn [k]
-	    #(when (compare-and-set! received 0 1) 
-	       (enqueue result-channel (when k [k %]))
-	       true))]
-    (doseq [[k ch] channel-map]
-      (listen ch (enqueue-fn k)))
-    (when (zero? timeout)
-      ((enqueue-fn nil) nil))
-    (when (< 0 timeout)
-      (delay-invoke #((enqueue-fn nil) nil) timeout))
-    result-channel))
+  ([channel-map]
+     (poll channel-map 0))
+  ([channel-map timeout]
+     (let [received (atom 0)
+	   result-channel (constant-channel)
+	   enqueue-fn
+	   (fn [k]
+	     #(when (compare-and-set! received 0 1) 
+		(enqueue result-channel (when k [k %]))
+		true))]
+       (doseq [[k ch] channel-map]
+	 (listen ch (enqueue-fn k)))
+       (when (zero? timeout)
+	 ((enqueue-fn nil) nil))
+       (when (< 0 timeout)
+	 (delay-invoke #((enqueue-fn nil) nil) timeout))
+       result-channel)))
 
 (defn channel-seq
   ([ch]
@@ -295,3 +296,21 @@
 		  [(second %)])))
 	   (when @value
 	     (concat @value (channel-seq ch timeout))))))))
+
+(defn wait-for-message
+  ([ch]
+     (wait-for-message ch -1))
+  ([ch timeout]
+     (let [msg (take 1 (channel-seq ch timeout))]
+       (if (empty? msg)
+	 (throw (TimeoutException. "Timed out waiting for message from channel."))
+	 (first msg)))))
+
+;;;
+
+(defmethod print-method ::channel [ch writer]
+  (.write writer (str "<== " (.toString ch))))
+
+(defmethod print-method ::constant-channel [ch writer]
+  (let [s (.toString ch)]
+    (.write writer (str "<== [" s (when-not (empty? s) " ...") "]"))))

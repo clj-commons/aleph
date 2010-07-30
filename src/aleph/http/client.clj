@@ -45,16 +45,30 @@
 	      (request-methods (:request-method request))
 	      (.toASCIIString uri))]
     (.setHeader req "Host" host)
-    ;;(.setHeader req "Accept-Encoding" )
+    (.setHeader req "Accept-Encoding" "gzip")
     (doseq [[^String k v] (:headers request)]
       (.setHeader req k v))
     (when-let [body (:body request)]
-      (.setContent req (input-stream->channel-buffer body)))))
+      (.setContent req (input-stream->channel-buffer body)))
+    req))
+
+(defn transform-response-body [response]
+  (update-in response [:body]
+    (fn [body]
+      (let [content-type (-> response :headers (get "content-type"))
+	    charset (-> response :headers (get "charset"))]
+	(cond
+	  (.startsWith content-type "text") (.toString body (or charset "UTF-8"))
+	  :else (channel-buffer->input-stream body))))))
 
 (defn transform-response [^HttpResponse response]
-  {:status (-> response .getStatus .getCode)
-   :headers (into {} (.getHeaders response))
-   :body (channel-buffer->input-stream (.getContent response))})
+  (transform-response-body
+    {:status (-> response .getStatus .getCode)
+     :headers (into {}
+		(map
+		  (fn [[^String k v]] [(.toLowerCase k) v])
+		  (into {} (.getHeaders response))))
+     :body (.getContent response)}))
 
 ;;;
 

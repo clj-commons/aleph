@@ -8,7 +8,7 @@
 
 (ns
   ^{:author "Zachary Tellman"
-    :doc "An event-driven server."}
+    :doc "An asynchronous server."}
   aleph.core
   (:use
     [clojure.contrib.def :only (defmacro-)])
@@ -29,6 +29,14 @@
 
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
+(import-fn pipeline/receive-in-order)
+(import-fn pipeline/receive-from-channel)
+(import-fn pipeline/redirect)
+(import-fn pipeline/restart)
+(import-fn pipeline/run-pipeline)
+(import-fn pipeline/on-success)
+(import-fn pipeline/on-error)
+(import-fn pipeline/wait-for-pipeline)
 
 (import-fn #'channel/receive)
 (import-fn #'channel/receive-all)
@@ -40,45 +48,14 @@
 (import-fn channel/channel-pair)
 (import-fn channel/channel)
 (import-fn channel/constant-channel)
+(import-fn channel/channel-seq)
+(import-fn channel/wait-for-message)
 
-(import-fn pipeline/redirect)
-(import-fn pipeline/restart)
-
-(defn on-success
-  "Adds a callback to a pipeline channel which will be called if the
-   pipeline succeeds.
-
-   The function will be called with (f result)"
-  [ch f]
-  (receive (:success ch) f))
-
-(defn on-error
-  "Adds a callback to a pipeline channel which will be called if the
-   pipeline terminates due to an error.
-
-   The function will be called with (f intermediate-result exception)."
-  [ch f]
-  (receive (:error ch) (fn [[result exception]] (f result exception))))
 
 ;;;
 
-(defn start-server
-  "Starts a server.  The options hash should contain a value for :port."
-  [pipeline-fn options]
-  (let [port (:port options)
-	protocol (:protocol options)]
-    (netty/start-server pipeline-fn port)))
-
-(defn client
-  "Creates a client.  The options hash must contain a value for :host and :port."
-  [pipeline-fn send-fn options]
-  (let [port (:port options)
-	host (:host options)
-	protocol (:protocol options)]
-    (netty/create-client pipeline-fn send-fn host port)))
-
-(defn stop
+(defn stop-server
   "Stops a server."
-  [^org.jboss.netty.channel.Channel server]
-  (.close server))
+  [stop-fn]
+  (stop-fn))
 

@@ -44,7 +44,7 @@
    "/seq" seq-handler
    "/string" string-handler
    "/stop" (fn [_]
-	     (stop @server)
+	     (stop-server @server)
 	     (deliver latch true))})
 
 (defn handler [ch request]
