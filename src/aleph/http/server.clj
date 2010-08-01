@@ -191,7 +191,7 @@
 	  (fn [connection-options netty-channel]
 	    (let [[outer inner] (channel-pair)]
 	      ;; Aleph -> Netty
-	      (receive-in-order outer
+	      (receive-all outer
 		(fn [response]
 		  (try
 		    (respond
@@ -215,20 +215,18 @@
 	  (create-netty-pipeline
 	    :decoder (HttpRequestDecoder.)
 	    :encoder (HttpResponseEncoder.)
-	    ;;:deflater (HttpContentCompressor.)
+	    :deflater (HttpContentCompressor.)
 	    :upstream-error (upstream-stage error-stage-handler)
 	    :request (message-stage
 		       (fn [^Channel netty-channel ^HttpRequest request]
 			 (try
 			   ;; if this is a new request, create a new pair of channels
-			   ;;(println "received")
 			   (let [ch @handler-channel]
 			     (when (or (not ch) (sealed? ch))
 			       (reset-channels
 				 {:keep-alive? (.isKeepAlive request)}
 				 netty-channel)))
 			   ;; prime handler channel
-			   ;;(println "responding")
 			   (enqueue-and-close @handler-channel
 			     (assoc (transform-request request)
 			       :scheme :http
