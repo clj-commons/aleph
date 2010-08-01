@@ -112,13 +112,13 @@
   (reify ChannelFutureListener
     (operationComplete [_ future]
       (if (.isSuccess future)
-	(do
-	  )
+	(when (:close? options)
+	  (.close (.getChannel future)))
 	(call-error-handler options (.getCause future))))))
 
 (defn transform-response
   "Turns a Ring response into something Netty can understand."
-  [response]
+  [response options]
   (let [msg (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
@@ -128,8 +128,8 @@
     (when body
       (.setContent msg body))
     (HttpHeaders/setContentLength msg (-> msg .getContent .readableBytes))
-    (when (:chunked? response)
-      (.setChunked msg true))
+    (when (:keep-alive? options)
+      (.setHeader msg "Connection" "Keep-Alive"))
     msg))
 
 (defn respond-with-string
@@ -139,8 +139,9 @@
      (let [body (ChannelBuffers/copiedBuffer ^CharSequence (:body response) (java.nio.charset.Charset/forName charset))
 	   response (transform-response
 		      (-> response
-			(update-in [:headers] assoc "charset" charset)
-			(assoc :body body)))]
+			(update-in [:headers] assoc "Charset" charset)
+			(assoc :body body))
+		      options)]
        (-> channel
 	 (.write response)
 	 (.addListener (response-listener options))))))
@@ -153,7 +154,9 @@
 
 (defn respond-with-stream
   [^Channel channel response options]
-  (let [response (transform-response (update-in response [:body] #(input-stream->channel-buffer %)))]
+  (let [response (transform-response
+		   (update-in response [:body] #(input-stream->channel-buffer %))
+		   options)]
     (-> channel
       (.write response)
       (.addListener (response-listener options)))))
@@ -185,13 +188,21 @@
   [handler options]
   (let [handler-channel (atom nil)
 	reset-channels
-	  (fn [netty-channel]
+	  (fn [connection-options netty-channel]
 	    (let [[outer inner] (channel-pair)]
 	      ;; Aleph -> Netty
 	      (receive-in-order outer
 		(fn [response]
 		  (try
-		    (respond netty-channel response options)
+		    (respond
+		      netty-channel
+		      response
+		      (merge
+			options
+			connection-options
+			{:close? (and
+				   (closed? outer)
+				   (not (:keep-alive? connection-options)))}))
 		    (catch Exception e
 		      (.printStackTrace e)))))
 	      ;; Netty -> Aleph
@@ -204,22 +215,29 @@
 	  (create-netty-pipeline
 	    :decoder (HttpRequestDecoder.)
 	    :encoder (HttpResponseEncoder.)
-	    :deflater (HttpContentCompressor.)
+	    ;;:deflater (HttpContentCompressor.)
 	    :upstream-error (upstream-stage error-stage-handler)
 	    :request (message-stage
 		       (fn [^Channel netty-channel ^HttpRequest request]
-			 ;; if this is a new request, create a new pair of channels
-			 (let [ch @handler-channel]
-			   (when (or (not ch) (sealed? ch))
-			     (reset-channels netty-channel)))
-			 ;; prime handler channel
-			 (enqueue-and-close @handler-channel
-			   (assoc (transform-request request)
-			     :scheme :http
-			     :remote-addr (->> netty-channel
-					    .getRemoteAddress
-					    .getAddress
-					    .getHostAddress)))))
+			 (try
+			   ;; if this is a new request, create a new pair of channels
+			   ;;(println "received")
+			   (let [ch @handler-channel]
+			     (when (or (not ch) (sealed? ch))
+			       (reset-channels
+				 {:keep-alive? (.isKeepAlive request)}
+				 netty-channel)))
+			   ;; prime handler channel
+			   ;;(println "responding")
+			   (enqueue-and-close @handler-channel
+			     (assoc (transform-request request)
+			       :scheme :http
+			       :remote-addr (->> netty-channel
+					      .getRemoteAddress
+					      .getAddress
+					      .getHostAddress)))
+			   (catch Exception e
+			     (.printStackTrace e)))))
 	    :downstream-error (downstream-stage error-stage-handler))]
     netty-pipeline))
 

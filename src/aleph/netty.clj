@@ -123,22 +123,20 @@
 
 ;;;
 
-(def thread-pool (Executors/newCachedThreadPool))
-
 (defn start-server
   "Starts a server.  Returns a function that stops the server."
   [pipeline-fn options]
   (let [port (:port options)
 	server (ServerBootstrap.
 		 (NioServerSocketChannelFactory.
-		   thread-pool
-		   thread-pool))
+		   (Executors/newCachedThreadPool)
+		   (Executors/newCachedThreadPool)))
 	channel-group (DefaultChannelGroup.)]
     (.setPipelineFactory server
       (reify ChannelPipelineFactory
 	(getPipeline [_]
 	  (let [pipeline (pipeline-fn)]
-	    (.addFirst pipeline
+	    '(.addFirst pipeline
 	      "channel-listener"
 	      (upstream-stage
 		(fn [evt]
@@ -150,7 +148,7 @@
     (.add channel-group (.bind server (InetSocketAddress. port)))
     (fn []
       (-> channel-group .close .awaitUninterruptibly)
-      ;;(.releaseExternalResources server)
+      (.releaseExternalResources server)
       )))
 
 (defn create-client
@@ -160,8 +158,8 @@
 	[inner outer] (channel-pair)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
-		   thread-pool
-		   thread-pool))]
+		   (Executors/newCachedThreadPool)
+		   (Executors/newCachedThreadPool)))]
     (.setPipelineFactory client
       (reify ChannelPipelineFactory
 	(getPipeline [_] (pipeline-fn outer))))
