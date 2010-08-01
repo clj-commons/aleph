@@ -172,12 +172,6 @@
 
 ;;;
 
-(defn- error-stage-fn [evt]
-  (when (instance? ExceptionEvent evt)
-    (println "error-stage-fn")
-    (.printStackTrace (.getCause ^ExceptionEvent evt)))
-  evt)
-
 (defn- respond [channel response options]
   (let [body (:body response)]
     (cond
@@ -228,6 +222,14 @@
 					    .getHostAddress)))))
 	    :downstream-error (downstream-stage error-stage-handler))]
     netty-pipeline))
+
+(defn start-http-server
+  "Starts an HTTP server."
+  [handler options]
+  (start-server
+    #(create-pipeline handler options)
+    (assoc options
+      :error-handler (fn [^Throwable e] (.printStackTrace e)))))
 
 
 

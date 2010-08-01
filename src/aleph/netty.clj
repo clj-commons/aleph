@@ -155,8 +155,8 @@
 
 (defn create-client
   [pipeline-fn send-fn options]
-  (let [host (:host options)
-	port (:port options)
+  (let [host (or (:host options) (:server-name options))
+	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.

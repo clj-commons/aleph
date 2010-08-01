@@ -21,12 +21,8 @@
 (deftest test-get
   (let [server (start-http-server hello-world {:port 8080})]
     (try
-      (let [response (->>
-		       (run-pipeline
-			 (http-client {:host "localhost" :port 8080})
-			 (fn [ch]
-			   (enqueue ch {:request-method :get, :uri "/"})
-			   ch))
+      (let [response (->> (http-request {:request-method :get, :url "http://localhost:8080"})
+		       run-pipeline
 		       wait-for-pipeline
 		       wait-for-message)]
 	(is (= (:body response) body)))

@@ -11,19 +11,11 @@
     :doc "An asynchronous server."}
   aleph.core
   (:use
-    [clojure.contrib.def :only (defmacro-)])
+    [aleph.import])
   (:require
     [aleph.netty :as netty]
     [aleph.core.pipeline :as pipeline]
     [aleph.core.channel :as channel])) 
-
-(defmacro- import-fn [sym]
-  (let [m (meta (eval sym))
-        m (meta (intern (:ns m) (:name m)))
-        n (:name m)
-        arglists (:arglists m)
-        doc (:doc m)]
-    (list `def (with-meta n {:doc doc :arglists (list 'quote arglists)}) (eval sym))))
 
 ;;;
 
@@ -50,7 +42,6 @@
 (import-fn channel/constant-channel)
 (import-fn channel/channel-seq)
 (import-fn channel/wait-for-message)
-
 
 ;;;
 

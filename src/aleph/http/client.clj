@@ -44,8 +44,9 @@
 	      HttpVersion/HTTP_1_1
 	      (request-methods (:request-method request))
 	      (.toASCIIString uri))]
-    (.setHeader req "Host" host)
-    (.setHeader req "Accept-Encoding" "gzip")
+    (.setHeader req "host" (str host ":" port))
+    (.setHeader req "accept-encoding" "gzip")
+    (.setHeader req "connection" "keep-alive")
     (doseq [[^String k v] (:headers request)]
       (.setHeader req k v))
     (when-let [body (:body request)]
@@ -72,17 +73,73 @@
 
 ;;;
 
-(defn create-pipeline [ch options]
+(defn create-pipeline [ch close? options]
   (let [host (:host options)
-	port (:port options)
-	scheme (:scheme options)]
+	port (:port options)]
     (create-netty-pipeline
       :codec (HttpClientCodec.)
       :inflater (HttpContentDecompressor.)
       :upstream-error (upstream-stage error-stage-handler)
       :response (message-stage
 		  (fn [netty-channel response]
-		    (enqueue ch (transform-response response))))
+		    (let [response (transform-response response)]
+		      (enqueue ch response)
+		      (when (close? response)
+			(.close netty-channel)))))
       :downstream-error (downstream-stage error-stage-handler))))
+
+;;;
+
+(defprotocol HttpClient
+  (create-request-channel [c])
+  (close-http-client [c]))
+
+(defn split-url [request]
+  (if-not (:url request)
+    request
+    (let [uri (URI. (:url request))
+	  port (.getPort uri)]
+      (->
+	request
+	(assoc
+	  :server-name (.getHost uri)
+	  :server-port (if (neg? port) 80 port)
+	  :scheme (.getScheme uri)
+	  :uri (.getPath uri)
+	  :query-string (.getQuery uri)
+	  :fragment (.getFragment uri))
+	(dissoc :url)))))
+
+(defn raw-http-client
+  "Create an HTTP client."
+  [options]
+  (let [client (create-client
+		 #(create-pipeline
+		    %
+		    (or (:close? options) (constantly false))
+		    options)
+		 #(transform-request
+		    (:scheme options)
+		    (:server-name options)
+		    (:server-port options)
+		    %)
+		 options)]
+    (reify HttpClient
+      (create-request-channel [_]
+	client))))
+
+(defn http-request
+  ([request]
+     (let [request (split-url request)]
+       (http-request
+	 (raw-http-client request)
+	 request)))
+  ([client request]
+     (run-pipeline
+       client
+       create-request-channel
+       (fn [ch]
+	 (enqueue ch (split-url request))
+	 ch))))
 
 

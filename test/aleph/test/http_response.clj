@@ -45,7 +45,10 @@
    "/string" string-handler
    "/stop" (fn [_]
 	     (stop-server @server)
-	     (deliver latch true))})
+	     (try
+	       (deliver latch true) ;;this can be triggered more than once, sometimes
+	       (catch Exception e
+		 )))})
 
 (defn handler [ch request]
   (when-let [handler (route-map (:uri request))]

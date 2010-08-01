@@ -6,19 +6,13 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns
-  ^{:skip-wiki true}
-  aleph.http
-  (:use
-    [aleph.import])
-  (:require
-    [aleph.http.server :as server]
-    [aleph.http.client :as client]))
+(ns aleph.import)
 
-(import-fn server/start-http-server)
-(import-fn client/raw-http-client)
-(import-fn client/http-request)
-
-
-
+(defmacro import-fn [sym]
+  (let [m (meta (eval sym))
+        m (meta (intern (:ns m) (:name m)))
+        n (:name m)
+        arglists (:arglists m)
+        doc (:doc m)]
+    (list `def (with-meta n {:doc doc :arglists (list 'quote arglists)}) (eval sym))))
 
