@@ -136,7 +136,7 @@
       (reify ChannelPipelineFactory
 	(getPipeline [_]
 	  (let [pipeline (pipeline-fn)]
-	    '(.addFirst pipeline
+	    (.addFirst pipeline
 	      "channel-listener"
 	      (upstream-stage
 		(fn [evt]
