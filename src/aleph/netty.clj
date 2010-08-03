@@ -95,7 +95,7 @@
     (.printStackTrace ^Throwable (.getCause ^ExceptionEvent evt)))
   evt)
 
-(defn create-netty-pipeline
+(defmacro create-netty-pipeline
   "Creates a pipeline.  Each stage must have a name.
 
    Example:
@@ -103,11 +103,12 @@
      :stage-a a
      :stage-b b)"
   [& stages]
-  (let [stages (partition 2 stages)
-	pipeline (Channels/pipeline)]
-    (doseq [[id stage] stages]
-      (.addLast pipeline (name id) stage))
-    pipeline))
+  (let [pipeline-var (gensym "pipeline")]
+    `(let [~pipeline-var (Channels/pipeline)]
+       ~@(map
+	   (fn [[id# stage#]] (list '.addLast pipeline-var (name id#) stage#))
+	   (partition 2 stages))
+       ~pipeline-var)))
 
 ;;;
 
@@ -141,15 +142,15 @@
 	      (upstream-stage
 		(fn [evt]
 		  (when-let [ch ^Channel (channel-event evt)]
-		    (when (.isOpen ch)
+		    (if (.isOpen ch)
 		      (.add channel-group ch)
-		      nil)))))
-	    pipeline))))
+		      (.remove channel-group ch)))
+		  nil)))
+	      pipeline))))
     (.add channel-group (.bind server (InetSocketAddress. port)))
     (fn []
       (-> channel-group .close .awaitUninterruptibly)
-      (.releaseExternalResources server)
-      )))
+      (.releaseExternalResources server))))
 
 (defn create-client
   [pipeline-fn send-fn options]

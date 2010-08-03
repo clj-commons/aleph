@@ -87,7 +87,7 @@
   (try-all
     #(is (= (range 3) %))
     (list*
-      `(listen-all ch f)
+      `(listen-all ch (constantly f))
       (map
 	(fn [x] `(enqueue ch ~x))
 	(range 3)))))
@@ -101,7 +101,7 @@
 	identity
 	(concat
 	  (map
-	    (fn [_] `(listen ch (fn [x#] (f x#))))
+	    (fn [_] `(listen ch (constantly f)))
 	    (range 3))
 	  (map
 	    (fn [x] `(enqueue ch ~x))

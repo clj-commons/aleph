@@ -195,25 +195,16 @@
 	      (enqueue error [x e])))))
       result)))
 
+(def nil-channel
+  (reify AlephChannel
+    (listen [_ _])
+    (receive [_ _])))
+
 (defn receive-from-channel
   "Creates a pipeline stage which takes a basic channel as a parameter,
    and returns a single message from that channel."
   [ch]
-  (pipeline-channel
-    ch
-    (reify AlephChannel
-      (listen [_ _]))))
-
-(defn receive-in-order
-  "Consumes messages from a channel one at a time.  The callback will only
-   receive the next message once it has completed processing the previous one."
-  [ch f]
-  (run-pipeline ch
-    receive-from-channel
-    (fn [x]
-      (f x)
-      (when-not (closed? ch)
-	(restart)))))
+  (pipeline-channel ch nil-channel))    
 
 ;;;
 
@@ -240,7 +231,7 @@
      (wait-for-pipeline pipeline-channel -1))
   ([pipeline-channel timeout]
      (let [value (promise)]
-       (receive (poll pipeline-channel timeout)
+       (receive (poll* pipeline-channel timeout)
 	 #(deliver value %))
        (let [value @value]
 	 (if (nil? value)

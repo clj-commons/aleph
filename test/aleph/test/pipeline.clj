@@ -1,5 +1,6 @@
 ;;   Copyright (c) Zachary Tellman. All rights reserved.
 ;;   The use and distribution terms for this software are covered by the
+
 ;;   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
 ;;   which can be found in the file epl-v10.html at the root of this distribution.
 ;;   By using this software in any fashion, you are agreeing to be bound by
@@ -10,22 +11,12 @@
   (:use [aleph.core] :reload-all)
   (:use [clojure.test])
   (:import [java.util.concurrent
+	    TimeoutException
 	    CountDownLatch
 	    TimeUnit]))
 
 (defn test-pipeline [pipeline expected-result]
-  (let [latch (CountDownLatch. 1)
-	value (atom nil)]
-    (on-success
-      (pipeline 0)
-      (fn [x]
-	(reset! value x)
-	(.countDown latch)))
-    (if (.await latch 5 TimeUnit/SECONDS)
-      (is (= expected-result @value))
-      (do
-	(println "Timed out.")
-	(is false)))))
+  (is (= expected-result (wait-for-pipeline (pipeline 0) 5000))))
 
 (def slow-inc
   (blocking
@@ -34,16 +25,12 @@
       (inc x))))
 
 (defn assert-failure [pipeline]
-  (let [latch (CountDownLatch. 1)]
-    (on-error
-      (pipeline 0)
-      (fn [x e]
-	(.countDown latch)))
-    (if (.await latch 100 TimeUnit/MILLISECONDS)
-      (is true)
-      (do
-	(println "Timed out.")
-	(is false)))))
+  (try
+    (wait-for-pipeline (pipeline 0) 100)
+    (catch TimeoutException e
+      (is false))
+    (catch Exception e
+      (is true))))
 
 (defn fail [_]
   (throw (Exception. "boom")))

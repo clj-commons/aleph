@@ -21,7 +21,6 @@
 
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
-(import-fn pipeline/receive-in-order)
 (import-fn pipeline/receive-from-channel)
 (import-fn pipeline/redirect)
 (import-fn pipeline/restart)
@@ -42,6 +41,7 @@
 (import-fn channel/constant-channel)
 (import-fn channel/channel-seq)
 (import-fn channel/wait-for-message)
+(import-fn channel/receive-in-order)
 
 ;;;
 

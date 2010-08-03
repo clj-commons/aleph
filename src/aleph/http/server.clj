@@ -30,6 +30,7 @@
      HttpContentCompressor]
     [org.jboss.netty.channel
      Channel
+     Channels
      ChannelPipeline
      ChannelFuture
      MessageEvent
@@ -80,8 +81,7 @@
 	has-content? (pos? content-length)]
     (when has-content?
       {:content-length content-length
-       :body (channel-buffer->input-stream (.getContent req))
-       })))
+       :body (channel-buffer->input-stream (.getContent req))})))
 
 (defn request-uri
   "Get URI from Netty request."
@@ -111,9 +111,9 @@
   [options]
   (reify ChannelFutureListener
     (operationComplete [_ future]
-      (if (.isSuccess future)
-	(when (:close? options)
-	  (.close (.getChannel future)))
+      (when (:close? options)
+	(Channels/close (.getChannel future)))
+      (when-not (.isSuccess future)
 	(call-error-handler options (.getCause future))))))
 
 (defn transform-response
@@ -136,7 +136,9 @@
   ([^Channel channel response options]
      (respond-with-string channel response options "UTF-8"))
   ([^Channel channel response options ^String charset]
-     (let [body (ChannelBuffers/copiedBuffer ^CharSequence (:body response) (java.nio.charset.Charset/forName charset))
+     (let [body (ChannelBuffers/copiedBuffer
+		  ^CharSequence (:body response)
+		  (java.nio.charset.Charset/forName charset))
 	   response (transform-response
 		      (-> response
 			(update-in [:headers] assoc "Charset" charset)
@@ -189,20 +191,18 @@
   (let [handler-channel (atom nil)
 	reset-channels
 	  (fn [connection-options netty-channel]
-	    (let [[outer inner] (channel-pair)]
+	    (let [[outer inner] (channel-pair)
+		  keep-alive? (:keep-alive? connection-options)]
 	      ;; Aleph -> Netty
 	      (receive-all outer
-		(fn [response]
+		(fn [response]  
 		  (try
-		    (respond
-		      netty-channel
+		    (respond netty-channel
 		      response
 		      (merge
 			options
 			connection-options
-			{:close? (and
-				   (closed? outer)
-				   (not (:keep-alive? connection-options)))}))
+			{:close? (and (not keep-alive?) (closed? outer))}))
 		    (catch Exception e
 		      (.printStackTrace e)))))
 	      ;; Netty -> Aleph

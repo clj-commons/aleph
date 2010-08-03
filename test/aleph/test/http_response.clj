@@ -44,9 +44,9 @@
    "/seq" seq-handler
    "/string" string-handler
    "/stop" (fn [_]
-	     (stop-server @server)
 	     (try
 	       (deliver latch true) ;;this can be triggered more than once, sometimes
+	       (stop-server @server)
 	       (catch Exception e
 		 )))})
 
@@ -55,6 +55,6 @@
     (enqueue-and-close ch
       (handler request))))
 
-(deftest http-response
+'(deftest http-response
   (let [server (reset! server (start-http-server handler {:port 8080}))]
     (is @latch)))
