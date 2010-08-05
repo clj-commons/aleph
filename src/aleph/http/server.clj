@@ -11,6 +11,7 @@
   aleph.http.server
   (:use
     [aleph netty]
+    [aleph.http utils]
     [aleph.core channel pipeline]
     [clojure.pprint])
   (:import
@@ -65,11 +66,12 @@
   "Get headers from Netty request."
   [^HttpMessage req]
   (let [headers (into {} (.getHeaders req))
-	host (-> req (.getHeader "Host") (.split ":"))]
-    {:headers (into {}
-		(map
-		  (fn [[^String k v]] [(.toLowerCase k) v])
-		  (into {} (.getHeaders req))))
+	host (-> req (.getHeader "Host") (.split ":"))
+	headers (into {}
+		  (map
+		    (fn [[^String k v]] [(.toLowerCase k) v])
+		    (into {} (.getHeaders req))))]
+    {:headers (update-in headers ["cookies"] cookies->hash)
      :server-name (first host)
      :server-port (second host)
      :keep-alive? (HttpHeaders/isKeepAlive req)}))
@@ -86,9 +88,9 @@
 (defn request-uri
   "Get URI from Netty request."
   [^HttpRequest req]
-  (let [uri-parts (.split ^String (.getUri req) "[?]" 2)]
-    {:uri (first uri-parts)
-     :query-string (second uri-parts)}))
+  (let [paths (.split (.getUri req) "[?]")]
+    {:uri (first paths)
+     :query-string (second paths)}))
 
 (defn transform-request
   "Transforms a Netty request into a Ring request."
@@ -122,14 +124,16 @@
   (let [msg (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
-	body (:body response)]
+	body (:body response)
+	response (update-in response [:headers "set-cookies"] hash->cookies)]
     (doseq [[k v] (:headers response)]
-      (.addHeader msg k v))
+      (when-not (nil? v)
+	(.setHeader msg k v)))
     (when body
       (.setContent msg body))
     (HttpHeaders/setContentLength msg (-> msg .getContent .readableBytes))
     (when (:keep-alive? options)
-      (.setHeader msg "Connection" "Keep-Alive"))
+      (.setHeader msg "connection" "keep-alive"))
     msg))
 
 (defn respond-with-string
@@ -141,7 +145,7 @@
 		  (java.nio.charset.Charset/forName charset))
 	   response (transform-response
 		      (-> response
-			(update-in [:headers] assoc "Charset" charset)
+			(update-in [:headers] assoc "charset" charset)
 			(assoc :body body))
 		      options)]
        (-> channel

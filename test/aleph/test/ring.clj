@@ -1,232 +1,88 @@
 (ns aleph.test.ring
   (:use [aleph core http] :reload-all)
-  (:use [clojure.test])
-  (:require clojure.contrib.http.agent))
+  (:use [clojure test pprint])
+  (:import [java.io StringReader PushbackReader]))
 
-(def port (atom 8080))
+(defn create-url
+  ([path]
+     (create-url 8080 path))
+  ([port path]
+     (create-url "http" "localhost" port path))
+  ([scheme host port path]
+     (str scheme "://" host ":" port path)))
 
-(defn create-url [host port path]
-  (str "http://" host ":" port "/" path))
+(defn request
+  ([]
+     (request (create-url "/")))
+  ([url]
+     (request url :get))
+  ([url method]
+     (->> (http-request {:request-method method :url url})
+       run-pipeline
+       wait-for-pipeline
+       wait-for-message
+       :body
+       StringReader.
+       PushbackReader.
+       read)))
 
-(defn make-http-request [url method]
-  (clojure.contrib.http.agent/string
-    (clojure.contrib.http.agent/http-agent url :method method)))
+(defn get-request-value [request keys]
+  (reduce
+    #(or (get %1 %2) (get %1 (keyword %2)))
+    request
+    keys))
 
-; The return-* methods are helper handlers defined to return the relevant 
-; portion of an http request as text. We then inspect that value when returned 
-; to validate correctness.
-(defn return-request-method [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type", "text/plain"}
-     :body (str (:request-method request))}))
-
-(defn return-scheme [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type", "text/plain"}
-     :body (str (:scheme request))}))
-
-(defn return-uri [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type", "text/plain"}
-     :body (str (:uri request))}))
-
-(defn return-query-string [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type", "text/plain"}
-     :body (if (= nil (:query-string request))
-               "nil"
-               (:query-string request))}))
-
-(defn return-server-name [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type", "text/plain"}
-     :body (if (= nil (:server-name request))
-               "nil"
-               (:server-name request))}))
-
-(defn return-server-port [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type", "text/plain"}
-     :body (str (:server-port request))}))
-
-(defn return-header-keys-are-downcased [ch request]
-  (let [keys (keys (:headers request))
-        downcased-keys (map #(-> ^String %1 .toString .toLowerCase) keys)]
+(defn request-callback [keys]
+  (fn [ch request]
     (enqueue-and-close ch
       {:status 200
-       :headers {"Content-Type", "text/plain"}
-       :body (str (= keys downcased-keys))})))
+       :headers {"content-type" "text/plan"}
+       :body (with-out-str
+	       (write
+		 (get-request-value request keys)))})))
 
-(defn return-remote-addr [ch request]
-  (enqueue-and-close ch
-    {:status 200
-     :headers {"Content-Type" "text/plain"}
-     :body (if (= nil (:remote-addr request))
-               "nil"
-               (:remote-addr request))}))
+(defmacro with-server [keys & body]
+  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8080})]
+     (try
+       ~@body
+       (finally
+	 (kill-fn#)))))
 
-; Tests all of the different possible values of :request-method
+;;;
+
 (deftest test-request-method
-  (let [test-port (swap! port inc)
-        server (start-http-server return-request-method {:port test-port})]
+  (with-server [:request-method]
+    (doseq [method [:get :post :put :delete]]
+      (is (= method (request (create-url "/") method))))))
 
-    (testing "get"
-      (is (= ":get" (make-http-request 
-                      (create-url "localhost" test-port "") 
-                      "GET"))))
-
-    (testing "post"
-      (is (= ":post" (make-http-request 
-                      (create-url "localhost" test-port "") 
-                      "POST"))))
-                      
-    (testing "put"
-      (is (= ":put" (make-http-request 
-                      (create-url "localhost" test-port "") 
-                      "PUT"))))
-
-    (testing "delete"
-      (is (= ":delete" (make-http-request 
-                        (create-url "localhost" test-port "") 
-                        "DELETE"))))
-
-    (testing "head"
-      ; by default, head isn't returning a content body
-      ; maybe a separate method that checks a custom header field?
-      (is (= "" (make-http-request 
-                  (create-url "localhost" test-port "") 
-                  "HEAD"))))
-
-    (stop-server server)))
-
-; Tests the different options for :scheme.  Right now only :http is checked for
-; TODO: Eventually, we need to also test for https
 (deftest test-scheme
-  (let [test-port (swap! port inc)
-        server (start-http-server return-scheme {:port test-port})]
+  (with-server [:scheme]
+    (is (= :http (request)))))
 
-    (testing "scheme"
-      (is (= ":http" (make-http-request 
-                        (create-url "localhost" test-port "") 
-                        "GET"))))
-
-    (stop-server server)))
-
-; Tests the parsing of :uri, to ensure that it's only the section after the 
-; host and before the query string
 (deftest test-uri
-  (let [test-port (swap! port inc)
-        server (start-http-server return-uri {:port test-port})]
+  (with-server [:uri]
+    (doseq [uri ["/a" "/a/b" "/a/b/c/"]]
+      (is (= uri (request (create-url uri)))))))
 
-    (testing "root"
-      (is (= "/" (make-http-request 
-                    (create-url "localhost" test-port "") 
-                    "GET"))))
-
-    (testing "single directory"
-      (is (= "/testdir" (make-http-request 
-                          (create-url "localhost" test-port "testdir") 
-                          "GET"))))
-
-    (testing "multiple directories"
-      (is (= "/testdir/testdir2" 
-              (make-http-request 
-                (create-url "localhost" test-port "testdir/testdir2") 
-                "GET"))))
-
-    (testing "trailing slash"
-      (is (= "/testdir/" (make-http-request 
-                           (create-url "localhost" test-port "testdir/") 
-                           "GET"))))
-
-    (stop-server server)))
-
-; Tests the parsing of :query-string.  Should be the full string after the 
-; first "?" in the URL or nil in the case that no query string is part of the 
-; full url
 (deftest test-query-string
-  (let [test-port (swap! port inc)
-        server (start-http-server return-query-string {:port test-port})]
+  (with-server [:query-string]
+    (doseq [[k v] {"/" nil
+		   "/a" nil
+		   "/a?a=b" "a=b"
+		   "/a?a=b&c=d" "a=b&c=d"}]
+      (is (= v (request (create-url k)))))))
 
-    (testing "no query string"
-      (is (= "nil" (make-http-request 
-                    (create-url "localhost" test-port "") 
-                    "GET"))))
-
-    (testing "single value"
-      (is (= "test" (make-http-request 
-                      (create-url "localhost" test-port "?test") 
-                      "GET"))))
-
-    (testing "single key value pair"
-      (is (= "test=testval" (make-http-request 
-                              (create-url "localhost" test-port "?test=testval")
-                              "GET"))))
-
-    (testing "multiple key value pairs"
-      (is (= "t1=tv1&t2=tv2" 
-              (make-http-request 
-                (create-url "localhost" test-port "?t1=tv1&t2=tv2") 
-                "GET"))))
-
-    (stop-server server)))
-
-; Tests the value parsed into :server-name.  Should be the domain name if the
-; http call uses one, otherwise it should be the ip address.
 (deftest test-server-name
-  (let [test-port (swap! port inc)
-        server (start-http-server return-server-name {:port test-port})]
+  (with-server [:server-name]
+    (is (= "localhost" (request)))))
 
-    (testing "domain name based URL"
-      (is (= "localhost" (make-http-request
-                           (create-url "localhost" test-port "")
-                           "GET"))))
-
-    (testing "ip-based URL"
-      (is (= "127.0.0.1" (make-http-request
-                           (create-url "127.0.0.1" test-port "")
-                           "GET"))))
-
-    (stop-server server)))
-
-; Tests the value of :server-port
 (deftest test-server-port
-  (let [test-port (swap! port inc)
-        server (start-http-server return-server-port {:port test-port})]
+  (with-server [:server-port]
+    (is (= "8080" (request)))))
 
-    (testing "port value"
-      (is (= (str test-port) (make-http-request
-                               (create-url "localhost" test-port "")
-                               "GET"))))
-
-    (stop-server server)))
-    
-; Makes sure that the header keys are all downcased
-(deftest test-downcased-headers
-  (let [test-port (swap! port inc)
-        server (start-http-server return-header-keys-are-downcased {:port test-port})]
-
-    (testing "downcased header keys"
-      (is (= "true" (make-http-request 
-                      (create-url "localhost" test-port "") 
-                      "GET"))))
-
-    (stop-server server)))
-
-; Tests the value of :remote-addr
 (deftest test-remote-addr
-  (let [test-port (swap! port inc)
-        server (start-http-server return-remote-addr {:port test-port})]
+  (with-server [:remote-addr]
+    (is (= "127.0.0.1" (request)))))
 
-    (testing "remote addr"
-      (is (= "127.0.0.1" (make-http-request
-                           (create-url "127.0.0.1" test-port "")
-                           "GET"))))
 
-    (stop-server server)))
+

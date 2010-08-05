@@ -55,6 +55,6 @@
     (enqueue-and-close ch
       (handler request))))
 
-'(deftest http-response
+(deftest http-response
   (let [server (reset! server (start-http-server handler {:port 8080}))]
     (is @latch)))

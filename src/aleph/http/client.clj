@@ -10,6 +10,7 @@
 (ns aleph.http.client
   (:use
     [aleph netty]
+    [aleph.http utils]
     [aleph.core channel pipeline])
   (:import
     [org.jboss.netty.handler.codec.http
@@ -40,15 +41,23 @@
 
 (defn transform-request [scheme ^String host ^Integer port request]
   (let [uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
+	request (update-in request [:headers "cookies"] hash->cookies)
         req (DefaultHttpRequest.
 	      HttpVersion/HTTP_1_1
 	      (request-methods (:request-method request))
-	      (.toASCIIString uri))]
+	      (str
+		(when-not (= \/ (-> uri .getPath first))
+		  "/")
+		(.getPath uri)
+		(when-not (empty? (.getQuery uri))
+		  "?")
+		(.getQuery uri)))]
     (.setHeader req "host" (str host ":" port))
     (.setHeader req "accept-encoding" "gzip")
     (.setHeader req "connection" "keep-alive")
     (doseq [[^String k v] (:headers request)]
-      (.setHeader req k v))
+      (when-not (nil? v)
+	(.setHeader req k v)))
     (when-let [body (:body request)]
       (.setContent req (input-stream->channel-buffer body)))
     req))
@@ -63,13 +72,14 @@
 	  :else (channel-buffer->input-stream body))))))
 
 (defn transform-response [^HttpResponse response]
-  (transform-response-body
-    {:status (-> response .getStatus .getCode)
-     :headers (into {}
-		(map
-		  (fn [[^String k v]] [(.toLowerCase k) v])
-		  (into {} (.getHeaders response))))
-     :body (.getContent response)}))
+  (let [headers (into {}
+		  (map
+		    (fn [[^String k v]] [(.toLowerCase k) v])
+		    (into {} (.getHeaders response))))]
+    (transform-response-body
+      {:status (-> response .getStatus .getCode)
+       :headers (update-in headers ["set-cookies"] cookies->hash)
+       :body (.getContent response)})))
 
 ;;;
 

@@ -69,7 +69,6 @@
 (declare handle-result)
 
 (defn- poll-pipeline-channel [chs fns context]
-  ;;(println "poll-channels" (-> context :outer-result :error .hashCode))
   (receive (poll chs -1)
     (fn [[typ result]]
       (case typ

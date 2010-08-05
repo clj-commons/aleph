@@ -137,17 +137,14 @@
 	(fn []
 	  (try
 	    (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
-	      (if-not (empty? consumers)
+	      (when-not (empty? consumers)
 		(loop [msgs (next @messages) consumers [consumers]]
 		  (let [msg-consumers (when msgs (test-listeners msgs @listeners))]
 		    (if msg-consumers
 		      (recur (next msgs) (conj consumers msg-consumers))
 		      (do
 			(ref-set messages (vec msgs))
-			consumers))))
-		(do
-		  ;;(ref-set closed false)
-		  nil)))
+			consumers))))))
 	    (finally
 	      (ref-set transient-listeners #{}))))
 	sample-receivers
@@ -282,6 +279,8 @@
 	b (channel)]
     [(splice a b) (splice b a)]))
 
+;;;
+
 (defn poll
   ([channel-map]
      (poll channel-map 0))
@@ -327,7 +326,7 @@
      (lazy-seq
        (when-not (closed? ch)
 	 (let [value (promise)]
-	   (receive (poll {:ch ch} timeout)
+	   (receive (poll* {:ch ch} timeout)
 	     #(deliver value
 		(when (first %)
 		  [(second %)])))
@@ -352,6 +351,22 @@
       (f msg)
       (when-not (closed? ch)
 	(receive ch callback)))))
+
+;;;
+
+(def named-channels (ref {}))
+
+(defn named-channel [key]
+  (dosync
+    (if-let [ch (@named-channels key)]
+      ch
+      (let [ch (channel)]
+	(commute named-channels assoc key ch)
+	ch))))
+
+(defn relesae-named-channel [key]
+  (dosync
+    (commute named-channels dissoc key)))
 
 ;;;
 
