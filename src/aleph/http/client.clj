@@ -65,7 +65,7 @@
 (defn transform-response-body [response]
   (update-in response [:body]
     (fn [body]
-      (let [content-type (-> response :headers (get "content-type"))
+      (let [content-type (or (-> response :headers (get "content-type")) "text/plain")
 	    charset (-> response :headers (get "charset"))]
 	(cond
 	  (.startsWith content-type "text") (.toString body (or charset "UTF-8"))

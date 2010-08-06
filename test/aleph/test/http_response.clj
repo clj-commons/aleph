@@ -14,26 +14,33 @@
   (:import
     [java.io
      File
-     ByteArrayInputStream]))
+     ByteArrayInputStream
+     StringReader
+     PushbackReader]))
+
+(def string-response "String!")
+(def seq-response ["sequence: " 1 " two " 3.0])
+(def file-response (File. (str (pwd) "/test/starry_night.jpg")))
+(def stream-response "Stream!")
 
 (defn string-handler [request]
   {:status 200
    :header {"Content-Type" "text/html"}
-   :body "String!"})
+   :body string-response})
 
 (defn seq-handler [request]
   {:status 200
    :header {"Content-Type" "text/html"}
-   :body ["sequence: " 1 " two " 3.0]})
+   :body seq-response})
 
 (defn file-handler [request]
   {:status 200
-   :body (File. (str (pwd) "/test/starry_night.jpg"))})
+   :body file-response})
 
 (defn stream-handler [request]
   {:status 200
    :header {"Content-Type" "text/html"}
-   :body (ByteArrayInputStream. (.getBytes "Stream!"))})
+   :body (ByteArrayInputStream. (.getBytes stream-response))})
 
 (def server (atom nil))
 (def latch (promise))
@@ -55,6 +62,22 @@
     (enqueue-and-close ch
       (handler request))))
 
-(deftest http-response
+'(deftest browser-http-response
   (let [server (reset! server (start-http-server handler {:port 8080}))]
     (is @latch)))
+
+(defn request [path]
+  (->> (http-request {:request-method :get, :url (str "http://localhost:8080/" path)})
+    run-pipeline
+    wait-for-pipeline
+    wait-for-message
+    :body))
+
+(deftest http-response
+  (let [kill-fn (start-http-server handler {:port 8080})]
+    (try
+      (is (= string-response (request "string")))
+      (is (= stream-response (request "stream")))
+      (is (= (apply str seq-response) (request "seq")))
+      (finally
+	(kill-fn)))))
