@@ -25,12 +25,12 @@
 
 (defn string-handler [request]
   {:status 200
-   :header {"Content-Type" "text/html"}
+   :header {"content-type" "text/html"}
    :body string-response})
 
 (defn seq-handler [request]
   {:status 200
-   :header {"Content-Type" "text/html"}
+   :header {"content-type" "text/html"}
    :body seq-response})
 
 (defn file-handler [request]
@@ -39,7 +39,7 @@
 
 (defn stream-handler [request]
   {:status 200
-   :header {"Content-Type" "text/html"}
+   :header {"content-type" "text/html"}
    :body (ByteArrayInputStream. (.getBytes stream-response))})
 
 (def server (atom nil))
@@ -79,5 +79,6 @@
       (is (= string-response (request "string")))
       (is (= stream-response (request "stream")))
       (is (= (apply str seq-response) (request "seq")))
+      ;;need test for file here
       (finally
 	(kill-fn)))))

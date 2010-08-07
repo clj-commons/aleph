@@ -124,6 +124,15 @@
 
 ;;;
 
+(def default-server-options
+  {"child.reuseAddress" true,
+   "reuseAddress" true,
+   "child.keepAlive" true,
+   "child.connectTimeoutMillis" 100,
+   "tcpNoDelay" true,
+   "readWriteFair" true,
+   "child.tcpNoDelay" true})
+
 (defn start-server
   "Starts a server.  Returns a function that stops the server."
   [pipeline-fn options]
@@ -133,6 +142,8 @@
 		   (Executors/newCachedThreadPool)
 		   (Executors/newCachedThreadPool)))
 	channel-group (DefaultChannelGroup.)]
+    (doseq [[k v] (merge default-server-options (:netty options))]
+      (.setOption server k v))
     (.setPipelineFactory server
       (reify ChannelPipelineFactory
 	(getPipeline [_]
@@ -152,6 +163,12 @@
       (-> channel-group .close .awaitUninterruptibly)
       (.releaseExternalResources server))))
 
+(def default-client-options
+  {"tcpNoDelay" true,
+   "reuseAddress" true,
+   "readWriteFair" true,
+   "connectTimeoutMillis" 3000})
+
 (defn create-client
   [pipeline-fn send-fn options]
   (let [host (or (:host options) (:server-name options))
@@ -161,6 +178,8 @@
 		 (NioClientSocketChannelFactory.
 		   (Executors/newCachedThreadPool)
 		   (Executors/newCachedThreadPool)))]
+    (doseq [[k v] (merge default-client-options (:netty options))]
+      (.setOption client k v))
     (.setPipelineFactory client
       (reify ChannelPipelineFactory
 	(getPipeline [_] (pipeline-fn outer))))
