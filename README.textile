@@ -7,7 +7,7 @@ It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring
 (defn hello-world [channel request]
   (enqueue-and-close channel
     {:status 200
-     :headers {"Content-Type" "text/html"}
+     :headers {"content-type" "text/html"}
      :body "Hello World!"}))
 
 (start-http-server hello-world {:port 8080})

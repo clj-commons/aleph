@@ -55,9 +55,12 @@
     (.setHeader req "host" (str host ":" port))
     (.setHeader req "accept-encoding" "gzip")
     (.setHeader req "connection" "keep-alive")
-    (doseq [[^String k v] (:headers request)]
-      (when-not (nil? v)
-	(.setHeader req k v)))
+    (doseq [[k v-or-vals] (:headers request)]
+      (when-not (nil? v-or-vals)
+	(if (string? v-or-vals)
+	  (.addHeader req k v-or-vals)
+	  (doseq [val v-or-vals]
+	    (.addHeader req k val)))))
     (when-let [body (:body request)]
       (.setContent req (input-stream->channel-buffer body)))
     req))

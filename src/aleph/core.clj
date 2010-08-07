@@ -42,6 +42,8 @@
 (import-fn channel/channel-seq)
 (import-fn channel/wait-for-message)
 (import-fn channel/receive-in-order)
+(import-fn channel/named-channel)
+(import-fn channel/release-named-channel)
 
 ;;;
 

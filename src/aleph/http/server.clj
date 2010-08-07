@@ -121,20 +121,23 @@
 (defn transform-response
   "Turns a Ring response into something Netty can understand."
   [response options]
-  (let [msg (DefaultHttpResponse.
+  (let [rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
 	body (:body response)
 	response (update-in response [:headers "set-cookies"] hash->cookies)]
-    (doseq [[k v] (:headers response)]
-      (when-not (nil? v)
-	(.setHeader msg k v)))
+    (doseq [[k v-or-vals] (:headers response)]
+      (when-not (nil? v-or-vals)
+	(if (string? v-or-vals)
+	  (.addHeader rsp k v-or-vals)
+	  (doseq [val v-or-vals]
+	    (.addHeader rsp k val)))))
     (when body
-      (.setContent msg body))
-    (HttpHeaders/setContentLength msg (-> msg .getContent .readableBytes))
+      (.setContent rsp body))
+    (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes))
     (when (:keep-alive? options)
-      (.setHeader msg "connection" "keep-alive"))
-    msg))
+      (.setHeader rsp "connection" "keep-alive"))
+    rsp))
 
 (defn respond-with-string
   ([^Channel channel response options]

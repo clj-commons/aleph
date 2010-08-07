@@ -364,7 +364,7 @@
 	(commute named-channels assoc key ch)
 	ch))))
 
-(defn relesae-named-channel [key]
+(defn release-named-channel [key]
   (dosync
     (commute named-channels dissoc key)))
 
