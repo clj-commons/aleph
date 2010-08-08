@@ -356,13 +356,19 @@
 
 (def named-channels (ref {}))
 
-(defn named-channel [key]
-  (dosync
-    (if-let [ch (@named-channels key)]
-      ch
-      (let [ch (channel)]
-	(commute named-channels assoc key ch)
-	ch))))
+(defn named-channel
+  ([key]
+     (named-channel key nil))
+  ([key creation-callback]
+     (let [[created? ch] (dosync
+			   (if-let [ch (@named-channels key)]
+			     [false ch]
+			     (let [ch (channel)]
+			       (commute named-channels assoc key ch)
+			       [true ch])))]
+       (when (and created? creation-callback)
+	 (creation-callback ch))
+       ch)))
 
 (defn release-named-channel [key]
   (dosync

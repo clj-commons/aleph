@@ -8,17 +8,24 @@
 
 (ns aleph.http.utils)
 
-(defn cookies->hash [cookies]
-  (when cookies
-    (lazy-seq
-      (apply hash-map
-	(seq (.split cookies "[=;]"))))))
+(defn to-str [x]
+  (if (keyword? x)
+    (name x)
+    (str x)))
 
-(defn hash->cookies [cookies]
+(defn cookie->hash [cookies]
+  (when cookies
+    (apply hash-map
+      (seq (.split cookies "[=;]")))))
+
+(defn hash->cookie [cookies]
   (when cookies
     (if (map? cookies)
       (->> cookies
-	(map #(str (first %) "=" (second %)))
+	(map #(str (to-str (first %)) "=" (second %)))
 	(interpose ";")
 	(apply str))
       cookies)))
+
+(defn cookie [request]
+  (-> request :headers (get "cookie") cookie->hash))

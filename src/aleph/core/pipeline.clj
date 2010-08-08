@@ -11,7 +11,8 @@
   aleph.core.pipeline
   (:use
     [clojure.contrib.def :only (defmacro- defvar)]
-    [aleph.core.channel])
+    [aleph.core.channel]
+    [clojure.pprint])
   (:import
     [org.jboss.netty.channel
      ChannelFuture
@@ -26,8 +27,12 @@
 (defn- outer-result []
   (:outer-result *context*))
 
-(defn- pipeline-error-handler []
-  (:error-handler *context*))
+(defn- inner-error-handler []
+  (when-not (= (:inner-error-handler *context*) (:outer-error-handler *context*))
+    (:inner-error-handler *context*)))
+
+(defn- outer-error-handler []
+  (:outer-error-handler *context*))
 
 (defn- current-pipeline []
   (:pipeline *context*))
@@ -71,26 +76,29 @@
 (defn- poll-pipeline-channel [chs fns context]
   (receive (poll chs -1)
     (fn [[typ result]]
-      (case typ
-	:success
-	(handle-result result fns context)
-	:error
-	(let [outer-error (-> context :outer-result :error)]
-	  (if-not (pipeline-error-handler)
-	    (enqueue outer-error result)
-	    (let [possible-redirect (apply (pipeline-error-handler) result)]
-	      (if (redirect? possible-redirect)
-		(handle-result
-		  (:value possible-redirect)
-		  (-> possible-redirect :pipeline :stages)
-		  (assoc context
-		    :error-handler (-> possible-redirect :pipeline :error-handler)
-		    :initial-value (:value possible-redirect)
-		    :pipeline (-> possible-redirect :pipeline)))
-		(enqueue outer-error result)))))))))
+      ;;(println "poll-pipeline-channel" typ "\n" (with-out-str (pprint result)))
+      (with-context context
+	(case typ
+	  :success
+	  (handle-result result fns context)
+	  :error
+	  (let [possible-redirect (when (inner-error-handler)
+				    (apply (inner-error-handler) result))
+		possible-redirect (if (or (redirect? possible-redirect) (not (outer-error-handler)))
+				    possible-redirect
+				    (apply (outer-error-handler) result))]
+	    (if (redirect? possible-redirect)
+	      (handle-result
+		(:value possible-redirect)
+		(-> possible-redirect :pipeline :stages)
+		(assoc context
+		  :inner-error-handler (-> possible-redirect :pipeline :error-handler)
+		  :initial-value (:value possible-redirect)
+		  :pipeline (-> possible-redirect :pipeline)))
+	      (enqueue (-> context :outer-result :error) result))))))))
 
 (defn- handle-result [result fns context]
-  ;;(println "handle-result" result)
+  ;;(println "handle-result\n" (with-out-str (pprint result) (println) (pprint context)))
   (with-context context
     (cond
       (redirect? result)
@@ -100,7 +108,7 @@
 	(assoc context
 	  :pipeline (:pipeline result)
 	  :initial-value (:value result)
-	  :error-handler (-> result :pipeline :error-handler)))
+	  :inner-error-handler (-> result :pipeline :error-handler)))
       (pipeline-channel? result)
       (poll-pipeline-channel result fns context)
       :else
@@ -122,12 +130,12 @@
 
 (defn redirect
   "When returned from a pipeline stage, redirects the execution flow.."
-  [pipeline val]
-  (when-not (pipeline? pipeline)
-    (throw (Exception. "First parameter must be a pipeline.")))
-  ^{:tag ::redirect}
-  {:pipeline (-> pipeline meta :pipeline)
-   :value val})
+  ([pipeline val]
+     (when-not (pipeline? pipeline)
+       (throw (Exception. "First parameter must be a pipeline.")))
+     ^{:tag ::redirect}
+     {:pipeline (-> pipeline meta :pipeline)
+      :value val}))
 
 (defn restart
   "Redirects to the beginning of the current pipeline.  If no value is passed in, defaults
@@ -165,7 +173,7 @@
 	(handle-result
 	  x
 	  (:stages pipeline)
-	  {:error-handler (:error-handler pipeline)
+	  {:outer-error-handler (:error-handler pipeline)
 	   :pipeline pipeline
 	   :outer-result ch
 	   :initial-value x})

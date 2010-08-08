@@ -13,12 +13,14 @@
     [aleph.import])
   (:require
     [aleph.http.server :as server]
-    [aleph.http.client :as client]))
+    [aleph.http.client :as client]
+    [aleph.http.utils :as utils]))
 
 (import-fn server/start-http-server)
+
 (import-fn client/raw-http-client)
 (import-fn client/http-request)
 
-
+(import-fn utils/cookie)
 
 

@@ -66,12 +66,12 @@
   "Get headers from Netty request."
   [^HttpMessage req]
   (let [headers (into {} (.getHeaders req))
-	host (-> req (.getHeader "Host") (.split ":"))
+	host (-> req (.getHeader "host") (.split ":"))
 	headers (into {}
 		  (map
 		    (fn [[^String k v]] [(.toLowerCase k) v])
 		    (into {} (.getHeaders req))))]
-    {:headers (update-in headers ["cookies"] cookies->hash)
+    {:headers headers
      :server-name (first host)
      :server-port (second host)
      :keep-alive? (HttpHeaders/isKeepAlive req)}))
@@ -125,13 +125,15 @@
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
 	body (:body response)
-	response (update-in response [:headers "set-cookies"] hash->cookies)]
+	response (if (:cookie response)
+		   (assoc-in response [:headers "set-cookie"] (-> response :cookie hash->cookie))
+		   response)]
     (doseq [[k v-or-vals] (:headers response)]
       (when-not (nil? v-or-vals)
 	(if (string? v-or-vals)
-	  (.addHeader rsp k v-or-vals)
+	  (.addHeader rsp (to-str k) v-or-vals)
 	  (doseq [val v-or-vals]
-	    (.addHeader rsp k val)))))
+	    (.addHeader rsp (to-str k) val)))))
     (when body
       (.setContent rsp body))
     (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes))
@@ -178,7 +180,7 @@
     (respond-with-stream
       channel
       (-> response
-	(update-in [:headers "Content-Type"] #(or % content-type))
+	(update-in [:headers "content-type"] #(or % content-type))
 	(update-in [:body] #(FileInputStream. ^File %)))
       options)))
 

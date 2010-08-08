@@ -70,6 +70,29 @@
     (assert-failure (pipeline slow-inc slow-fail))
     (assert-failure (pipeline inc (pipeline inc fail) inc))
     (assert-failure (pipeline inc #(redirect (pipeline inc fail) %))))
+  (testing "Redirection and error handlers"
+    (let [n (atom 0)
+	  f (fn [n _] (swap! n inc))]
+      (run-pipeline n
+	(pipeline :error-handler f
+	  (pipeline :error-handler f
+	    (pipeline :error-handler f
+	      fail))))
+      (is (= 3 @n)))
+    (let [n (atom #{})
+	  f (fn [val] (fn [n _] (swap! n conj val)))]
+      (run-pipeline n
+	(pipeline :error-handler (f 1)
+	  (fn [x]
+	    (redirect
+	      (pipeline :error-handler (f 2)
+		(fn [x]
+		  (redirect
+		    (pipeline :error-handler (f 3)
+		      fail)
+		    x)))
+	      x))))
+      (is (= #{1 3} @n))))
   (testing "Error handling"
     (test-pipeline
       (pipeline :error-handler (fn [val ex] (redirect (pipeline inc) val))

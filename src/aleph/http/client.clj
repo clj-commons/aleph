@@ -41,7 +41,9 @@
 
 (defn transform-request [scheme ^String host ^Integer port request]
   (let [uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
-	request (update-in request [:headers "cookies"] hash->cookies)
+	request (if (:cookie request)
+		  (assoc-in request [:headers "cookie"] (-> request :cookie hash->cookie))
+		  request)
         req (DefaultHttpRequest.
 	      HttpVersion/HTTP_1_1
 	      (request-methods (:request-method request))
@@ -58,9 +60,9 @@
     (doseq [[k v-or-vals] (:headers request)]
       (when-not (nil? v-or-vals)
 	(if (string? v-or-vals)
-	  (.addHeader req k v-or-vals)
+	  (.addHeader req (to-str k) v-or-vals)
 	  (doseq [val v-or-vals]
-	    (.addHeader req k val)))))
+	    (.addHeader req (to-str k) val)))))
     (when-let [body (:body request)]
       (.setContent req (input-stream->channel-buffer body)))
     req))
@@ -81,7 +83,7 @@
 		    (into {} (.getHeaders response))))]
     (transform-response-body
       {:status (-> response .getStatus .getCode)
-       :headers (update-in headers ["set-cookies"] cookies->hash)
+       :headers headers
        :body (.getContent response)})))
 
 ;;;
