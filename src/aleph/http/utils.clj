@@ -13,19 +13,26 @@
     (name x)
     (str x)))
 
-(defn cookie->hash [cookies]
-  (when cookies
+(defn cookie->hash [cookie]
+  (when cookie
     (apply hash-map
-      (seq (.split cookies "[=;]")))))
+      (apply concat
+	(map
+	  #(let [pair (.split % "[=]")]
+	     (list (first pair) (or (second pair) "")))
+	  (.split cookie "[;]"))))))
 
-(defn hash->cookie [cookies]
-  (when cookies
-    (if (map? cookies)
-      (->> cookies
+(defn hash->cookie [cookie]
+  (when cookie
+    (if (map? cookie)
+      (->> cookie
 	(map #(str (to-str (first %)) "=" (second %)))
 	(interpose ";")
 	(apply str))
-      cookies)))
+      cookie)))
 
 (defn cookie [request]
   (-> request :headers (get "cookie") cookie->hash))
+
+(defn query [request]
+  (apply hash-map (-> request :query-string (.split "[;&=]"))))

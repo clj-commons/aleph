@@ -22,5 +22,6 @@
 (import-fn client/http-request)
 
 (import-fn utils/cookie)
+(import-fn utils/query)
 
 
