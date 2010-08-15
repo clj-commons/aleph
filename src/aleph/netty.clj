@@ -30,7 +30,8 @@
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
-     ChannelBufferInputStream]
+     ChannelBufferInputStream
+     ByteBufferBackedChannelBuffer]
     [org.jboss.netty.channel.socket.nio
      NioServerSocketChannelFactory
      NioClientSocketChannelFactory]
@@ -42,7 +43,9 @@
     [java.net
      InetSocketAddress]
     [java.io
-     InputStream]))
+     InputStream]
+    [java.nio
+     ByteBuffer]))
 
 ;;;
 
@@ -61,6 +64,11 @@
   [evt]
   (when (instance? MessageEvent evt)
     (.getRemoteAddress ^MessageEvent evt)))
+
+(defmacro do-once [& body]
+  `(let [latch# (atom false)]
+     (when (compare-and-set! latch# false true)
+       ~@body)))
 
 ;;;
 
@@ -90,6 +98,20 @@
       (when-let [msg (message-event evt)]
 	(handler (.getChannel ^MessageEvent evt) msg)))))
 
+(defn channel-open-stage [f]
+  (let [latch (atom false)]
+    (fn [evt]
+      (when-let [ch (channel-event evt)]
+	(when (and (.isConnected ch) (compare-and-set! latch false true))
+	  (f ch))))))
+
+(defn channel-close-stage [f]
+  (let [latch (atom false)]
+    (fn [evt]
+      (when-let [ch (channel-event evt)]
+	(when (and (not (.isConnected ch)) (compare-and-set! latch false true))
+	  (f ch))))))
+
 (defn error-stage-handler [evt]
   (when (instance? ExceptionEvent evt)
     (.printStackTrace ^Throwable (.getCause ^ExceptionEvent evt)))
@@ -114,13 +136,41 @@
 
 (defn input-stream->channel-buffer
   [^InputStream stream]
-  (let [ary (make-array Byte/TYPE (.available stream))]
-    (.read stream ary)
-    (ChannelBuffers/wrappedBuffer ary)))
+  (when stream
+    (let [ary (make-array Byte/TYPE (.available stream))]
+      (.read stream ary)
+      (ChannelBuffers/wrappedBuffer ary))))
 
 (defn channel-buffer->input-stream
   [^ChannelBuffer buf]
-  (ChannelBufferInputStream. buf))
+  (when buf
+    (ChannelBufferInputStream. buf)))
+
+(defn byte-buffer->channel-buffer
+  [^ByteBuffer buf]
+  (when buf
+    (ByteBufferBackedChannelBuffer. buf)))
+
+(defn channel-buffer->byte-buffer
+  [^ChannelBuffer buf]
+  (when buf
+    (.toByteBuffer buf)))
+
+(defn byte-buffer->string
+  ([buf]
+     (byte-buffer->string buf "ASCII"))
+  ([^ByteBuffer buf charset]
+     (when buf
+       (let [ary (byte-array (.remaining buf))]
+	 (.get buf ary)
+	 (String. ary charset)))))
+
+(defn string->byte-buffer
+  ([s]
+     (string->byte-buffer s "ASCII"))
+  ([^String s charset]
+     (when s
+       (ByteBuffer/wrap (.getBytes s charset)))))
 
 ;;;
 
@@ -188,7 +238,10 @@
       (fn [^Channel netty-channel]
 	(receive-in-order outer
 	  #(try
-	     (.write netty-channel (send-fn %))
+	     (when-let [msg (send-fn %)]
+	       (.write netty-channel msg))
+	     (when (closed? outer)
+	       (.close netty-channel))
 	     (catch Exception e
 	       (.printStackTrace e))))
 	inner))))

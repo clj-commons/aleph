@@ -6,7 +6,6 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-
 (ns aleph.http.client
   (:use
     [aleph netty]
@@ -89,19 +88,17 @@
 ;;;
 
 (defn create-pipeline [ch close? options]
-  (let [host (:host options)
-	port (:port options)]
-    (create-netty-pipeline
-      :codec (HttpClientCodec.)
-      :inflater (HttpContentDecompressor.)
-      :upstream-error (upstream-stage error-stage-handler)
-      :response (message-stage
-		  (fn [netty-channel response]
-		    (let [response (transform-response response)]
-		      (enqueue ch response)
-		      (when (close? response)
-			(.close netty-channel)))))
-      :downstream-error (downstream-stage error-stage-handler))))
+  (create-netty-pipeline
+    :codec (HttpClientCodec.)
+    :inflater (HttpContentDecompressor.)
+    :upstream-error (upstream-stage error-stage-handler)
+    :response (message-stage
+		(fn [netty-channel response]
+		  (let [response (transform-response response)]
+		    (enqueue ch response)
+		    (when (close? response)
+		      (.close netty-channel)))))
+    :downstream-error (downstream-stage error-stage-handler)))
 
 ;;;
 
@@ -141,7 +138,9 @@
 		 options)]
     (reify HttpClient
       (create-request-channel [_]
-	client))))
+	client)
+      (close-http-client [_]
+	(enqueue client nil)))))
 
 (defn http-request
   ([request]
