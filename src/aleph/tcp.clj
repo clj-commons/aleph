@@ -8,13 +8,19 @@
 
 (ns aleph.tcp
   (:use
-    [aleph netty]
+    [aleph netty formats]
     [aleph.core channel])
   (:import
     [org.jboss.netty.channel
      Channel
      DownstreamMessageEvent
-     DefaultChannelFuture]))
+     DefaultChannelFuture]
+    [java.nio
+     ByteBuffer]
+    [org.jboss.netty.buffer
+     ChannelBuffer]
+    [java.io
+     InputStream]))
 
 (defn server-pipeline [handler send-encoder receive-encoder options]
   (let [[inner outer] (channel-pair)
@@ -44,11 +50,18 @@
 		 (enqueue ch (receive-encoder msg))))
     :downstream-error (downstream-stage error-stage-handler)))
 
+(defn to-channel-buffer [x]
+  (cond
+    (instance? ByteBuffer x) (byte-buffer->channel-buffer x)
+    (instance? ChannelBuffer x) x
+    (instance? String x) (-> x string->byte-buffer byte-buffer->channel-buffer)
+    (instance? InputStream x) (input-stream->channel-buffer x)))
+
 (defn start-tcp-server [handler options]
   (start-server
     #(server-pipeline
        handler
-       byte-buffer->channel-buffer
+       to-channel-buffer
        channel-buffer->byte-buffer
        options)
     options))
@@ -56,5 +69,5 @@
 (defn tcp-client [options]
   (create-client
     #(client-pipeline % channel-buffer->byte-buffer options)
-    byte-buffer->channel-buffer
+    to-channel-buffer
     options))

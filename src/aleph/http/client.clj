@@ -8,7 +8,7 @@
 
 (ns aleph.http.client
   (:use
-    [aleph netty]
+    [aleph netty formats]
     [aleph.http utils]
     [aleph.core channel pipeline])
   (:import

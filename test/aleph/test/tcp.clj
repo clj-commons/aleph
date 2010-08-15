@@ -7,13 +7,12 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.tcp
-  (:use [aleph core tcp] [clojure.test] :reload-all)
-  (:require [aleph.netty :as netty]))
+  (:use [aleph core tcp formats] [clojure.test] :reload-all))
 
 (def server-messages (ref []))
 
 (defn append-to-server [msg]
-  (dosync (alter server-messages conj (netty/byte-buffer->string msg))))
+  (dosync (alter server-messages conj (byte-buffer->string msg))))
 
 (defn join-and-split [s]
   (seq (.split (apply str s) "\0")))
@@ -32,10 +31,10 @@
     (try
       (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
 	(dotimes [i 1000]
-	  (enqueue ch (netty/string->byte-buffer (str i "\0"))))
+	  (enqueue ch (str i "\0")))
 	(let [s (doall (channel-seq ch 100))]
 	  (is (=
-	       (join-and-split (map netty/byte-buffer->string s))
+	       (join-and-split (map byte-buffer->string s))
 	       (join-and-split @server-messages)))))
       (finally
 	(stop-server server)))))

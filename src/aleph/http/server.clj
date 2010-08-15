@@ -10,7 +10,7 @@
   ^{:skip-wiki true}
   aleph.http.server
   (:use
-    [aleph netty]
+    [aleph netty formats]
     [aleph.http utils]
     [aleph.core channel pipeline]
     [clojure.pprint])

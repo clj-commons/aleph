@@ -11,7 +11,8 @@
   aleph.netty
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
-    [aleph.core channel pipeline])
+    [aleph.core channel pipeline]
+    [aleph formats])
   (:import
     [org.jboss.netty.channel
      Channel
@@ -27,11 +28,6 @@
      ChannelPipeline]
     [org.jboss.netty.channel.group
      DefaultChannelGroup]
-    [org.jboss.netty.buffer
-     ChannelBuffers
-     ChannelBuffer
-     ChannelBufferInputStream
-     ByteBufferBackedChannelBuffer]
     [org.jboss.netty.channel.socket.nio
      NioServerSocketChannelFactory
      NioClientSocketChannelFactory]
@@ -131,46 +127,6 @@
 	   (fn [[id# stage#]] (list '.addLast pipeline-var (name id#) stage#))
 	   (partition 2 stages))
        ~pipeline-var)))
-
-;;;
-
-(defn input-stream->channel-buffer
-  [^InputStream stream]
-  (when stream
-    (let [ary (make-array Byte/TYPE (.available stream))]
-      (.read stream ary)
-      (ChannelBuffers/wrappedBuffer ary))))
-
-(defn channel-buffer->input-stream
-  [^ChannelBuffer buf]
-  (when buf
-    (ChannelBufferInputStream. buf)))
-
-(defn byte-buffer->channel-buffer
-  [^ByteBuffer buf]
-  (when buf
-    (ByteBufferBackedChannelBuffer. buf)))
-
-(defn channel-buffer->byte-buffer
-  [^ChannelBuffer buf]
-  (when buf
-    (.toByteBuffer buf)))
-
-(defn byte-buffer->string
-  ([buf]
-     (byte-buffer->string buf "ASCII"))
-  ([^ByteBuffer buf charset]
-     (when buf
-       (let [ary (byte-array (.remaining buf))]
-	 (.get buf ary)
-	 (String. ary charset)))))
-
-(defn string->byte-buffer
-  ([s]
-     (string->byte-buffer s "ASCII"))
-  ([^String s charset]
-     (when s
-       (ByteBuffer/wrap (.getBytes s charset)))))
 
 ;;;
 
