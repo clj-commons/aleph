@@ -323,15 +323,20 @@
   ([ch]
      (channel-seq ch 0))
   ([ch timeout]
-     (lazy-seq
-       (when-not (closed? ch)
-	 (let [value (promise)]
-	   (receive (poll* {:ch ch} timeout)
-	     #(deliver value
-		(when (first %)
-		  [(second %)])))
-	   (when @value
-	     (concat @value (channel-seq ch timeout))))))))
+     (let [timeout-fn (cond
+			(fn? timeout) timeout
+			(not (pos? timeout)) (constantly timeout)
+			:else (let [t0 (System/currentTimeMillis)]
+				#(max 0 (- timeout (- (System/currentTimeMillis) t0)))))]
+       (lazy-seq
+	 (when-not (closed? ch)
+	   (let [value (promise)]
+	     (receive (poll* {:ch ch} (timeout-fn))
+	       #(deliver value
+		  (when (first %)
+		    [(second %)])))
+	     (when @value
+	      (concat @value (channel-seq ch timeout-fn)))))))))
 
 (defn wait-for-message
   ([ch]

@@ -10,13 +10,15 @@
   (:use
     [aleph netty formats]
     [aleph.http utils]
-    [aleph.core channel pipeline])
+    [aleph.core channel pipeline]
+    [clojure.contrib.json])
   (:import
     [org.jboss.netty.handler.codec.http
      HttpRequest
      HttpResponse
      HttpResponseStatus
      HttpClientCodec
+     HttpChunk
      HttpContentDecompressor
      DefaultHttpRequest
      HttpMessage
@@ -73,32 +75,54 @@
 	    charset (-> response :headers (get "charset"))]
 	(cond
 	  (.startsWith content-type "text") (.toString body (or charset "UTF-8"))
+	  (= content-type "application/json") (let [s (.toString body (or charset "UTF-8"))]
+						(when-not (empty? s)
+						  (read-json s true false nil)))
 	  :else (channel-buffer->input-stream body))))))
 
-(defn transform-response [^HttpResponse response]
-  (let [headers (into {}
-		  (map
-		    (fn [[^String k v]] [(.toLowerCase k) v])
-		    (into {} (.getHeaders response))))]
-    (transform-response-body
-      {:status (-> response .getStatus .getCode)
-       :headers headers
-       :body (.getContent response)})))
+(defn transform-headers [^HttpResponse response]
+  (into {}
+    (map
+      (fn [[^String k v]] [(.toLowerCase k) v])
+      (into {} (.getHeaders response)))))
+
+(defn transform-chunk [^HttpChunk chunk headers]
+  (transform-response-body
+    {:headers headers
+     :body (.getContent chunk)}))
+
+(defn transform-response [^HttpResponse response headers]
+  (transform-response-body
+    {:status (-> response .getStatus .getCode)
+     :headers headers
+     :body (.getContent response)}))
 
 ;;;
 
+(defn last? [response]
+  (or
+    (and (instance? HttpChunk response) (.isLast ^HttpChunk response))
+    (and (instance? HttpResponse response) (not (.isChunked ^HttpResponse response)))))
+
 (defn create-pipeline [ch close? options]
-  (create-netty-pipeline
-    :codec (HttpClientCodec.)
-    :inflater (HttpContentDecompressor.)
-    :upstream-error (upstream-stage error-stage-handler)
-    :response (message-stage
-		(fn [netty-channel response]
-		  (let [response (transform-response response)]
-		    (enqueue ch response)
-		    (when (close? response)
-		      (.close netty-channel)))))
-    :downstream-error (downstream-stage error-stage-handler)))
+  (let [headers (atom nil)]
+    (create-netty-pipeline
+      :codec (HttpClientCodec.)
+      :inflater (HttpContentDecompressor.)
+      :upstream-error (upstream-stage error-stage-handler)
+      :response (message-stage
+		  (fn [netty-channel response]
+		    (when-not @headers
+		      (reset! headers (transform-headers response)))
+		    (let [response (if (instance? HttpResponse response)
+				     (transform-response response @headers)
+				     (transform-chunk response @headers))]
+		      (enqueue ch response)
+		      (when (close? response)
+			(.close netty-channel))
+		      (when (last? response)
+			(reset! headers nil)))))
+      :downstream-error (downstream-stage error-stage-handler))))
 
 ;;;
 
@@ -140,7 +164,7 @@
       (create-request-channel [_]
 	client)
       (close-http-client [_]
-	(enqueue client nil)))))
+	(enqueue-and-close client nil)))))
 
 (defn http-request
   ([request]

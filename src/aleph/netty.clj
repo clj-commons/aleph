@@ -194,7 +194,7 @@
       (fn [^Channel netty-channel]
 	(receive-in-order outer
 	  #(try
-	     (when-let [msg (send-fn %)]
+	     (when-let [msg (and % (send-fn %))]
 	       (.write netty-channel msg))
 	     (when (closed? outer)
 	       (.close netty-channel))

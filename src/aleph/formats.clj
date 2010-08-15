@@ -7,11 +7,15 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.formats
+  (:use
+    [clojure.contrib.json])
   (:import
     [java.io
      InputStream]
     [java.nio
      ByteBuffer]
+    [org.jboss.netty.handler.codec.base64
+     Base64]
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
@@ -57,3 +61,19 @@
        (ByteBuffer/wrap (.getBytes s charset)))))
 
 ;;;
+
+(defn base64-encode [string]
+  (-> string
+    string->byte-buffer
+    byte-buffer->channel-buffer
+    (Base64/encode)
+    channel-buffer->byte-buffer
+    byte-buffer->string))
+
+(defn base64-decode [string]
+  (-> string
+    string->byte-buffer
+    byte-buffer->channel-buffer
+    (Base64/decode)
+    channel-buffer->byte-buffer
+    byte-buffer->string))
