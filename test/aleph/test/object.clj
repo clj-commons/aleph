@@ -6,22 +6,17 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.test.tcp
-  (:use [aleph core tcp] [clojure.test] :reload-all)
-  (:require [aleph.netty :as netty]))
+(ns aleph.test.object
+  (:use [aleph core object] [clojure.test] :reload-all))
 
-(def server-messages (ref []))
+(def server-messages (atom []))
 
 (defn append-to-server [msg]
-  (dosync (alter server-messages conj (netty/byte-buffer->string msg))))
-
-(defn join-and-split [s]
-  (seq (.split (apply str s) "\0")))
+  (swap! server-messages conj msg))
 
 (deftest echo-server
-  (dosync
-    (ref-set server-messages []))
-  (let [server (start-tcp-server
+  (reset! server-messages [])
+  (let [server (start-object-server
 		 (fn [ch _]
 		   (receive-all ch
 		     (fn [x]
@@ -30,12 +25,10 @@
 			 (append-to-server x)))))
 		 {:port 8888})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
-	(dotimes [i 1000]
-	  (enqueue ch (netty/string->byte-buffer (str i "\0"))))
+      (let [ch (wait-for-pipeline (object-client {:host "localhost" :port 8888}))]
+	(dotimes [i 100]
+	  (enqueue ch [i]))
 	(let [s (doall (channel-seq ch 100))]
-	  (is (=
-	       (join-and-split (map netty/byte-buffer->string s))
-	       (join-and-split @server-messages)))))
+	  (is (= s @server-messages))))
       (finally
 	(stop-server server)))))

@@ -7,5 +7,36 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.object
-  (:use [aleph core])
-  (:require [aleph.tcp :as tcp]))
+  (:use [aleph core netty])
+  (:require [aleph.tcp :as tcp])
+  (:import
+    [org.jboss.netty.channel
+     ChannelPipeline]
+    [org.jboss.netty.handler.codec.serialization
+     ObjectEncoder
+     ObjectDecoder]))
+
+(defn- server-pipeline [handler options]
+  (let [pipeline ^ChannelPipeline (tcp/server-pipeline handler identity identity options)]
+    (.addFirst pipeline "encoder" (ObjectEncoder.))
+    (.addFirst pipeline "decoder" (ObjectDecoder.))
+    pipeline))
+
+(defn- client-pipeline [ch options]
+  (let [pipeline ^ChannelPipeline (tcp/client-pipeline ch identity options)]
+    (.addFirst pipeline "encoder" (ObjectEncoder.))
+    (.addFirst pipeline "decoder" (ObjectDecoder.))
+    pipeline))
+
+(defn start-object-server [handler options]
+  (start-server
+    #(server-pipeline
+       handler
+       options)
+    options))
+
+(defn object-client [options]
+  (create-client
+    #(client-pipeline % options)
+    identity
+    options))
