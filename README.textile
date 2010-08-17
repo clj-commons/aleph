@@ -1,6 +1,6 @@
 Aleph is a framework for asynchronous communication, built on top of "Netty":http://www.jboss.org/netty.  It can do all kinds of things, including:
 
-h3. HTTP Server
+h4. HTTP Server
 
 Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.  Here is a simple server:
 
@@ -15,7 +15,7 @@ Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/r
 (start-http-server hello-world {:port 8080})
 </code></pre>
 
-h3. HTTP Client
+h4. HTTP Client
 
 This snippet prints out a never-ending sequence of tweets, using Twitter's "streaming API":http://dev.twitter.com/pages/streaming_api.
 
@@ -30,7 +30,7 @@ This snippet prints out a never-ending sequence of tweets, using Twitter's "stre
     (println tweet)))
 </code></pre>
 
-h3. TCP Client/Server
+h4. TCP Client/Server
 
 Here is a basic echo server:
 
@@ -42,7 +42,9 @@ Here is a basic echo server:
 (start-tcp-server echo-handler {:port 1234})
 </code></pre>
 
-<code></code>
+--
+
+Other protocols are supported, and still more are forthcoming.
 
 Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
 
