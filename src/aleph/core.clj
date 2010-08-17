@@ -40,6 +40,7 @@
 (import-fn channel/channel)
 (import-fn channel/constant-channel)
 (import-fn channel/channel-seq)
+(import-fn channel/lazy-channel-seq)
 (import-fn channel/wait-for-message)
 (import-fn channel/receive-in-order)
 (import-fn channel/named-channel)

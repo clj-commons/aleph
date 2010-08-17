@@ -32,7 +32,7 @@
       (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
 	(dotimes [i 1000]
 	  (enqueue ch (str i "\0")))
-	(let [s (doall (channel-seq ch 100))]
+	(let [s (doall (lazy-channel-seq ch 100))]
 	  (is (=
 	       (join-and-split (map byte-buffer->string s))
 	       (join-and-split @server-messages)))))

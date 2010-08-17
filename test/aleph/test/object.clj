@@ -28,7 +28,7 @@
       (let [ch (wait-for-pipeline (object-client {:host "localhost" :port 8888}))]
 	(dotimes [i 100]
 	  (enqueue ch [i]))
-	(let [s (doall (channel-seq ch 100))]
+	(let [s (doall (lazy-channel-seq ch 100))]
 	  (is (= s @server-messages))))
       (finally
 	(stop-server server)))))

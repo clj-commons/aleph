@@ -319,30 +319,36 @@
 	 (delay-invoke #((enqueue-fn nil) nil) timeout))
        result-channel)))
 
+(defn lazy-channel-seq
+  ([ch]
+     (lazy-channel-seq ch -1))
+  ([ch timeout]
+     (let [timeout-fn (if (fn? timeout)
+			timeout
+			(constantly timeout))]
+       (let [value (promise)]
+	 (receive (poll* {:ch ch} (timeout-fn))
+	   #(deliver value
+	      (when (first %)
+		[(second %)])))
+	 (lazy-seq
+	   (when @value
+	     (concat @value (lazy-channel-seq ch timeout-fn))))))))
+
 (defn channel-seq
   ([ch]
      (channel-seq ch 0))
   ([ch timeout]
-     (let [timeout-fn (cond
-			(fn? timeout) timeout
-			(not (pos? timeout)) (constantly timeout)
-			:else (let [t0 (System/currentTimeMillis)]
-				#(max 0 (- timeout (- (System/currentTimeMillis) t0)))))]
-       (lazy-seq
-	 (when-not (closed? ch)
-	   (let [value (promise)]
-	     (receive (poll* {:ch ch} (timeout-fn))
-	       #(deliver value
-		  (when (first %)
-		    [(second %)])))
-	     (when @value
-	      (concat @value (channel-seq ch timeout-fn)))))))))
+     (doall
+       (lazy-channel-seq ch
+	 (let [t0 (System/currentTimeMillis)]
+	   #(max 0 (- timeout (- (System/currentTimeMillis) t0))))))))
 
 (defn wait-for-message
   ([ch]
      (wait-for-message ch -1))
   ([ch timeout]
-     (let [msg (take 1 (channel-seq ch timeout))]
+     (let [msg (take 1 (lazy-channel-seq ch timeout))]
        (if (empty? msg)
 	 (throw (TimeoutException. "Timed out waiting for message from channel."))
 	 (first msg)))))
