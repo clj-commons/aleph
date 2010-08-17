@@ -1,6 +1,8 @@
-Aleph is an asynchronous web server, built on top of "Netty":http://www.jboss.org/netty.  
+Aleph is a framework for asynchronous communication, built on top of "Netty":http://www.jboss.org/netty.  It can do all kinds of things, including:
 
-It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.
+h3. HTTP Server
+
+Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.  Here is a simple server:
 
 <pre><code>(use 'aleph.core 'aleph.http)
 	
@@ -13,8 +15,35 @@ It conforms to the interface described by "Ring":http://github.com/mmcgrana/ring
 (start-http-server hello-world {:port 8080})
 </code></pre>
 
-Notice that the response is an explicit step, using @(enqueue-and-close channel response)@.  This gives more flexibility, and allows more straightforward use of Clojure's concurrency primitives.
+h3. HTTP Client
+
+This snippet prints out a never-ending sequence of tweets, using Twitter's "streaming API":http://dev.twitter.com/pages/streaming_api.
+
+<pre><code>(use 'aleph.core 'aleph.http)
+	
+(let [ch (wait-for-pipeline
+	       (http-request
+	         {:request-method :get
+		      :headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
+		      :url "http://stream.twitter.com/1/statuses/sample.json"}))]
+  (doseq [tweet (map :body (lazy-channel-seq ch))]
+    (println tweet)))
+</code></pre>
+
+h3. TCP Client/Server
+
+Here is a basic echo server:
+
+<pre><code>(use 'aleph.core 'aleph.tcp)
+	
+(defn echo-handler [channel connection-info]
+  (receive-all channel #(enqueue channel %)))
+
+(start-tcp-server echo-handler {:port 1234})
+</code></pre>
+
+<code></code>
 
 Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
 
-A mailing list can be found "here":http://groups.google.com/group/aleph-lib, and documentation "here":http://ztellman.github.com/aleph/aleph-api.html.
+A mailing list can be found "here":http://groups.google.com/group/aleph-lib, and API documentation "here":http://ztellman.github.com/aleph/aleph-api.html.
