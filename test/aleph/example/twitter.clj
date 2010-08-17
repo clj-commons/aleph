@@ -18,5 +18,5 @@
 	       {:request-method :get
 		:headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
 		:url "http://stream.twitter.com/1/statuses/sample.json"}))]
-    (doall (map :body (channel-seq ch 2000)))))
+    (doall (map :body (channel-seq ch 1000)))))
 

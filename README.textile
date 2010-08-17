@@ -2,7 +2,7 @@ Aleph is a framework for asynchronous communication, built on top of "Netty":htt
 
 h4. HTTP Server
 
-Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.  Here is a simple server:
+Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.
 
 <pre><code>(use 'aleph.core 'aleph.http)
 	
@@ -22,10 +22,10 @@ This snippet prints out a never-ending sequence of tweets, using Twitter's "stre
 <pre><code>(use 'aleph.core 'aleph.http)
 	
 (let [ch (wait-for-pipeline
-	       (http-request
-	         {:request-method :get
-		      :headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
-		      :url "http://stream.twitter.com/1/statuses/sample.json"}))]
+           (http-request
+             {:request-method :get
+              :headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
+              :url "http://stream.twitter.com/1/statuses/sample.json"}))]
   (doseq [tweet (map :body (lazy-channel-seq ch))]
     (println tweet)))
 </code></pre>
