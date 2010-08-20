@@ -8,12 +8,12 @@
 
 (ns aleph.http.utils)
 
-(defn to-str [x]
+(defn- to-str [x]
   (if (keyword? x)
     (name x)
     (str x)))
 
-(defn string->hash [s outer-separator inner-separator]
+(defn- string->hash [s outer-separator inner-separator]
   (when s
     (apply hash-map
       (apply concat
@@ -22,10 +22,10 @@
 	     (list (first pair) (or (second pair) "")))
 	  (.split s outer-separator))))))
 
-(defn cookie->hash [cookie]
+(defn- cookie->hash [cookie]
   (string->hash cookie "[;]" "[=]"))
 
-(defn hash->cookie [cookie]
+(defn- hash->cookie [cookie]
   (when cookie
     (if (map? cookie)
       (->> cookie
@@ -34,8 +34,11 @@
 	(apply str))
       cookie)))
 
-(defn cookie [request]
-  (-> request :headers (get "cookie") cookie->hash))
+(defn- request-cookie [request]
+  (if-let [cookie (:cookies request)]
+    (assoc-in [request :headers "cookie"])))
 
-(defn query [request]
-  (string->hash (:query-string request) "[;&]" "[=]"))
+(defn wrap-request [request]
+  (-> request
+    ))
+

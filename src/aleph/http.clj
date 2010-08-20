@@ -10,7 +10,7 @@
   ^{:skip-wiki true}
   aleph.http
   (:use
-    [aleph.import])
+    [aleph core import])
   (:require
     [aleph.http.server :as server]
     [aleph.http.client :as client]
@@ -20,6 +20,11 @@
 
 (import-fn client/raw-http-client)
 (import-fn client/http-request)
+
+(defn wrap-ring-handler [f]
+  (fn [channel request]
+    (enqueue-and-close channel
+      (f request))))
 
 (import-fn utils/cookie)
 (import-fn utils/query)
