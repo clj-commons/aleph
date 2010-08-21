@@ -26,7 +26,4 @@
     (enqueue-and-close channel
       (f request))))
 
-(import-fn utils/cookie)
-(import-fn utils/query)
-
 

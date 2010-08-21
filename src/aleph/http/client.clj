@@ -41,10 +41,8 @@
    :head HttpMethod/HEAD})
 
 (defn transform-request [scheme ^String host ^Integer port request]
-  (let [uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
-	request (if (:cookie request)
-		  (assoc-in request [:headers "cookie"] (-> request :cookie hash->cookie))
-		  request)
+  (let [request (wrap-request request)
+	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
 	      HttpVersion/HTTP_1_1
 	      (request-methods (:request-method request))

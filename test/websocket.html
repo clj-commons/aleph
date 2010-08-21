@@ -1,0 +1,47 @@
+<html>
+<head>
+<title>WebSocket</title>
+<script>
+  var socket;
+
+  function openWebSocket() {
+     if (window.WebSocket) {
+         socket = new WebSocket('ws://127.0.0.1:10000/');
+         socket.onopen    = function(event) { alert('WebSocket open!');  };
+         socket.onclose   = function(event) { alert('WebSocket closed'); };
+         socket.onmessage = function(event) { parse(event.data);         };
+     } else {
+         alert('Your browser does not support WebSockets yet.');
+     }
+  }
+
+  function closeWebSocket() {
+    socket.close();
+  }
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function send(message) {
+    if (!window.WebSocket) { return; }
+    if (socket.readyState == WebSocket.OPEN) {
+        socket.send(message);
+    } else {
+        alert('The WebSocket is not open!');
+    }
+  }
+
+  function parse( response ) {
+    // parse response: json or xml, etc
+    $('out').innerHTML = response;
+  }
+
+</script>
+</head>
+
+<body onload='openWebSocket()' onunload='closeWebSocket()'>
+<div id='out'></div>
+<!-- more html here -->
+</body>
+</html>

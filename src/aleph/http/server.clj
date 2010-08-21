@@ -17,6 +17,7 @@
   (:import
     [org.jboss.netty.handler.codec.http
      HttpRequest
+     HttpResponse
      HttpMessage
      HttpMethod
      HttpHeaders
@@ -33,6 +34,7 @@
      Channel
      Channels
      ChannelPipeline
+     ChannelUpstreamHandler
      ChannelFuture
      MessageEvent
      ExceptionEvent
@@ -47,6 +49,15 @@
     [org.jboss.netty.handler.stream
      ChunkedFile
      ChunkedWriteHandler]
+    [org.jboss.netty.handler.codec.http.websocket
+     WebSocketFrameEncoder
+     WebSocketFrameDecoder
+     WebSocketFrame
+     DefaultWebSocketFrame]
+    [java.security
+     MessageDigest]
+    [java.nio.charset
+     Charset]
     [java.io
      ByteArrayInputStream
      InputStream
@@ -121,13 +132,11 @@
 (defn transform-response
   "Turns a Ring response into something Netty can understand."
   [response options]
-  (let [rsp (DefaultHttpResponse.
+  (let [;;response (wrap-response response)
+	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
-	body (:body response)
-	response (if (:cookie response)
-		   (assoc-in response [:headers "set-cookie"] (-> response :cookie hash->cookie))
-		   response)]
+	body (:body response)]
     (doseq [[k v-or-vals] (:headers response)]
       (when-not (nil? v-or-vals)
 	(if (string? v-or-vals)
@@ -184,69 +193,145 @@
 	(update-in [:body] #(FileInputStream. ^File %)))
       options)))
 
+(defn- respond [channel response options]
+  (try
+    (let [body (:body response)]
+      (cond
+       (string? body) (respond-with-string channel response options)
+       (sequential? body) (respond-with-sequence channel response options)
+       (instance? InputStream body) (respond-with-stream channel response options)
+       (instance? File body) (respond-with-file channel response options)))
+    (catch Exception e
+      (.printStackTrace e))))
+
 ;;;
 
-(defn- respond [channel response options]
-  (let [body (:body response)]
-    (cond
-      (string? body) (respond-with-string channel response options)
-      (sequential? body) (respond-with-sequence channel response options)
-      (instance? InputStream body) (respond-with-stream channel response options)
-      (instance? File body) (respond-with-file channel response options))))
+(defn websocket-handshake? [^HttpRequest request]
+  (and
+    (= "upgrade" (.toLowerCase (.getHeader request "connection")))
+    (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))
+
+(defn transform-key [k]
+  (/
+    (-> k (.replaceAll "[^0-9]" "") Long/parseLong)
+    (-> k (.replaceAll "[^ ]" "") .length)))
+
+(defn secure-websocket-response [request headers ^HttpResponse response]
+  (.addHeader response "sec-websocket-origin" (headers "origin"))
+  (.addHeader response "sec-websocket-location" (str "ws://" (headers "host") "/"))
+  (when-let [protocol (headers "sec-websocket-protocol")]
+    (.addHeader response "sec-websocket-protocol" protocol))
+  (let [buf (ChannelBuffers/buffer 16)]
+    (doto buf
+      (.writeInt (transform-key (headers "sec-websocket-key1")))
+      (.writeInt (transform-key (headers "sec-websocket-key2")))
+      (.writeLong (-> request .getContent .readLong)))
+    (.setContent response
+      (-> (MessageDigest/getInstance "MD5")
+	(.digest (.array buf))
+	ChannelBuffers/wrappedBuffer))))
+
+(defn standard-websocket-response [request headers ^HttpResponse response]
+  (.addHeader response "websocket-origin" (headers "origin"))
+  (.addHeader response "websocket-location" (str "ws://" (headers "host") "/"))
+  (when-let [protocol (headers "websocket-protocol")]
+    (.addHeader response "websocket-protocol" protocol)))
+
+(defn websocket-response [^HttpRequest request]
+  (let [response (DefaultHttpResponse.
+		   HttpVersion/HTTP_1_1
+		   (HttpResponseStatus. 101 "Web Socket Protocol Handshake"))
+	headers (:headers (request-headers request))]
+    (.addHeader response "Upgrade" "WebSocket")
+    (.addHeader response "Connection" "Upgrade")
+    (if (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
+      (secure-websocket-response request headers response)
+      (standard-websocket-response request headers response))
+    response))
+
+(defn respond-to-handshake [ctx ^HttpRequest request]
+  (let [pipeline (-> ctx .getChannel .getPipeline)]
+    (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
+    (-> ctx .getChannel (.write (websocket-response request)))
+    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
+
+(defn from-websocket-frame [^WebSocketFrame frame]
+  (.toString frame))
+
+(defn to-websocket-frame [msg]
+  (DefaultWebSocketFrame. msg))
+
+(defn websocket-handshake-handler [handler options]
+  (let [[inner outer] (channel-pair)]
+    (reify ChannelUpstreamHandler
+      (handleUpstream [_ ctx evt]
+	(if-let [msg (message-event evt)]
+	  (cond
+	    (instance? WebSocketFrame msg) (enqueue outer (from-websocket-frame msg))
+	    (instance? HttpRequest msg) (if (websocket-handshake? msg)
+					  (let [ch (.getChannel ctx)]
+					    (receive-all outer
+					      #(.write ch (to-websocket-frame %)))
+					    (respond-to-handshake ctx msg)
+					    (handler inner {:websocket true}))
+					  (.sendUpstream ctx evt)))
+	  (.sendUpstream ctx evt))))))
+
+;;;
+
+(defn http-session-handler [handler options]
+  (let [handler-channel (atom nil)
+	reset-channels (fn [connection-options netty-channel]
+			 (let [[outer inner] (channel-pair)
+			       keep-alive? (:keep-alive? connection-options)]
+			   ;; Aleph -> Netty
+			   (receive-all outer
+			     (fn [response]  
+			       (respond netty-channel
+				 response
+				 (merge
+				   options
+				   connection-options
+				   {:close? (and (not keep-alive?) (closed? outer))}))))
+			   ;; Netty -> Aleph
+			   (receive inner
+			     (fn [request]
+			       (handler inner request)))
+			   (reset! handler-channel outer)))]
+    (message-stage
+      (fn [^Channel netty-channel ^HttpRequest request]
+	(try
+	  ;; if this is a new request, create a new pair of channels
+	  (let [ch @handler-channel]
+	    (when (or (not ch) (sealed? ch))
+	      (reset-channels
+		{:keep-alive? (.isKeepAlive request)}
+		netty-channel)))
+	  ;; prime handler channel
+	  (enqueue-and-close @handler-channel
+	    (assoc (transform-request request)
+	      :scheme :http
+	      :remote-addr (->> netty-channel
+			     .getRemoteAddress
+			     .getAddress
+			     .getHostAddress)))
+	  (catch Exception e
+	    (.printStackTrace e)))))))
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
   [handler options]
-  (let [handler-channel (atom nil)
-	reset-channels
-	  (fn [connection-options netty-channel]
-	    (let [[outer inner] (channel-pair)
-		  keep-alive? (:keep-alive? connection-options)]
-	      ;; Aleph -> Netty
-	      (receive-all outer
-		(fn [response]  
-		  (try
-		    (respond netty-channel
-		      response
-		      (merge
-			options
-			connection-options
-			{:close? (and (not keep-alive?) (closed? outer))}))
-		    (catch Exception e
-		      (.printStackTrace e)))))
-	      ;; Netty -> Aleph
-	      (receive inner
-		(fn [request]
-		  (handler inner request)))
-	      (reset! handler-channel outer)))
-	netty-pipeline
-	  ^ChannelPipeline
-	  (create-netty-pipeline
-	    :decoder (HttpRequestDecoder.)
-	    :encoder (HttpResponseEncoder.)
-	    :deflater (HttpContentCompressor.)
-	    :upstream-error (upstream-stage error-stage-handler)
-	    :request (message-stage
-		       (fn [^Channel netty-channel ^HttpRequest request]
-			 (try
-			   ;; if this is a new request, create a new pair of channels
-			   (let [ch @handler-channel]
-			     (when (or (not ch) (sealed? ch))
-			       (reset-channels
-				 {:keep-alive? (.isKeepAlive request)}
-				 netty-channel)))
-			   ;; prime handler channel
-			   (enqueue-and-close @handler-channel
-			     (assoc (transform-request request)
-			       :scheme :http
-			       :remote-addr (->> netty-channel
-					      .getRemoteAddress
-					      .getAddress
-					      .getHostAddress)))
-			   (catch Exception e
-			     (.printStackTrace e)))))
-	    :downstream-error (downstream-stage error-stage-handler))]
-    netty-pipeline))
+  (let [pipeline ^ChannelPipeline
+	(create-netty-pipeline
+	  :decoder (HttpRequestDecoder.)
+	  :encoder (HttpResponseEncoder.)
+	  :deflater (HttpContentCompressor.)
+	  :upstream-error (upstream-stage error-stage-handler)
+	  :http-request (http-session-handler handler options)
+	  :downstream-error (downstream-stage error-stage-handler))]
+    (when (:websocket options)
+      (.addBefore pipeline "http-request" "websocket" (websocket-handshake-handler handler options)))
+    pipeline))
 
 (defn start-http-server
   "Starts an HTTP server."

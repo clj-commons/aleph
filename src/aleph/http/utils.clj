@@ -8,7 +8,7 @@
 
 (ns aleph.http.utils)
 
-(defn- to-str [x]
+(defn to-str [x]
   (if (keyword? x)
     (name x)
     (str x)))
@@ -36,9 +36,19 @@
 
 (defn- request-cookie [request]
   (if-let [cookie (:cookies request)]
-    (assoc-in [request :headers "cookie"])))
+    (assoc-in request [:headers "cookie"] cookie)
+    request))
+
+(defn- response-cookie [response]
+  (if-let [cookie (:cookies response)]
+    (assoc-in response [:headers "set-cookie"] cookie)
+    response))
 
 (defn wrap-request [request]
   (-> request
-    ))
+    request-cookie))
+
+(defn wrap-response [response]
+  (-> response
+    response-cookie))
 
