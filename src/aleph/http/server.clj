@@ -11,7 +11,7 @@
   aleph.http.server
   (:use
     [aleph netty formats]
-    [aleph.http utils]
+    [aleph.http utils core]
     [aleph.core channel pipeline]
     [clojure.pprint])
   (:import
@@ -30,6 +30,10 @@
      HttpRequestDecoder
      HttpResponseEncoder
      HttpContentCompressor]
+    [org.jboss.netty.handler.codec.http.websocket
+     WebSocketFrame
+     WebSocketFrameDecoder
+     WebSocketFrameEncoder]
     [org.jboss.netty.channel
      Channel
      Channels
@@ -46,93 +50,58 @@
      ChannelBuffer
      ChannelBufferInputStream
      ChannelBuffers]
-    [org.jboss.netty.handler.stream
-     ChunkedFile
-     ChunkedWriteHandler]
-    [org.jboss.netty.handler.codec.http.websocket
-     WebSocketFrameEncoder
-     WebSocketFrameDecoder
-     WebSocketFrame
-     DefaultWebSocketFrame]
-    [java.security
-     MessageDigest]
-    [java.nio.charset
-     Charset]
     [java.io
      ByteArrayInputStream
      InputStream
      File
-     FileInputStream
-     RandomAccessFile]
+     FileInputStream]
     [java.net
-     URI
      URLConnection]))
 
-(defn request-method
+;;;
+
+(defn netty-request-method
   "Get HTTP method from Netty request."
   [^HttpRequest req]
   {:request-method (->> req .getMethod .getName .toLowerCase keyword)})
 
-(defn request-headers
-  "Get headers from Netty request."
-  [^HttpMessage req]
-  (let [headers (into {} (.getHeaders req))
-	host (-> req (.getHeader "host") (.split ":"))
-	headers (into {}
-		  (map
-		    (fn [[^String k v]] [(.toLowerCase k) v])
-		    (into {} (.getHeaders req))))]
-    {:headers headers
-     :server-name (first host)
-     :server-port (second host)
-     :keep-alive? (HttpHeaders/isKeepAlive req)}))
-
-(defn request-body
-  "Get body from Netty request."
-  [^HttpMessage req]
-  (let [content-length (HttpHeaders/getContentLength req)
-	has-content? (pos? content-length)]
-    (when has-content?
-      {:content-length content-length
-       :body (channel-buffer->input-stream (.getContent req))})))
-
-(defn request-uri
+(defn netty-request-uri
   "Get URI from Netty request."
   [^HttpRequest req]
   (let [paths (.split (.getUri req) "[?]")]
     {:uri (first paths)
      :query-string (second paths)}))
 
-(defn transform-request
+(defn transform-netty-request
   "Transforms a Netty request into a Ring request."
   [^HttpRequest req]
-  (merge
-    (request-method req)
-    (request-body req)
-    (request-headers req)
-    (request-uri req)))
+  (let [headers (netty-headers req)
+	parts (.split (headers "host") "[:]")
+	host (first parts)
+	port (when-let [port (second parts)]
+	       (Integer/parseInt port))]
+    (merge
+      (netty-request-method req)
+      {:headers headers}
+      {:body (let [body (transform-netty-body (.getContent req) headers)]
+	       (if (final-netty-message? req)
+		 body
+		 (let [ch (channel)]
+		   (when body
+		     (enqueue ch body))
+		   ch)))}
+      {:keep-alive? (HttpHeaders/isKeepAlive req)
+       :server-name host
+       :server-port port}
+      (netty-headers req)
+      (netty-request-uri req))))
 
 ;;;
 
-(defn call-error-handler
-  "Calls the error-handling function."
-  [options e]
-  ((:error-handler options) e))
-
-(defn response-listener
-  "Handles the completion of the response."
-  [options]
-  (reify ChannelFutureListener
-    (operationComplete [_ future]
-      (when (:close? options)
-	(Channels/close (.getChannel future)))
-      (when-not (.isSuccess future)
-	(call-error-handler options (.getCause future))))))
-
-(defn transform-response
+(defn transform-aleph-response
   "Turns a Ring response into something Netty can understand."
   [response options]
-  (let [;;response (wrap-response response)
+  (let [response (wrap-response response)
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))
@@ -157,7 +126,7 @@
      (let [body (ChannelBuffers/copiedBuffer
 		  ^CharSequence (:body response)
 		  (java.nio.charset.Charset/forName charset))
-	   response (transform-response
+	   response (transform-aleph-response
 		      (-> response
 			(update-in [:headers] assoc "charset" charset)
 			(assoc :body body))
@@ -174,7 +143,7 @@
 
 (defn respond-with-stream
   [^Channel channel response options]
-  (let [response (transform-response
+  (let [response (transform-aleph-response
 		   (update-in response [:body] #(input-stream->channel-buffer %))
 		   options)]
     (-> channel
@@ -206,60 +175,11 @@
 
 ;;;
 
-(defn websocket-handshake? [^HttpRequest request]
-  (and
-    (= "upgrade" (.toLowerCase (.getHeader request "connection")))
-    (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))
-
-(defn transform-key [k]
-  (/
-    (-> k (.replaceAll "[^0-9]" "") Long/parseLong)
-    (-> k (.replaceAll "[^ ]" "") .length)))
-
-(defn secure-websocket-response [request headers ^HttpResponse response]
-  (.addHeader response "sec-websocket-origin" (headers "origin"))
-  (.addHeader response "sec-websocket-location" (str "ws://" (headers "host") "/"))
-  (when-let [protocol (headers "sec-websocket-protocol")]
-    (.addHeader response "sec-websocket-protocol" protocol))
-  (let [buf (ChannelBuffers/buffer 16)]
-    (doto buf
-      (.writeInt (transform-key (headers "sec-websocket-key1")))
-      (.writeInt (transform-key (headers "sec-websocket-key2")))
-      (.writeLong (-> request .getContent .readLong)))
-    (.setContent response
-      (-> (MessageDigest/getInstance "MD5")
-	(.digest (.array buf))
-	ChannelBuffers/wrappedBuffer))))
-
-(defn standard-websocket-response [request headers ^HttpResponse response]
-  (.addHeader response "websocket-origin" (headers "origin"))
-  (.addHeader response "websocket-location" (str "ws://" (headers "host") "/"))
-  (when-let [protocol (headers "websocket-protocol")]
-    (.addHeader response "websocket-protocol" protocol)))
-
-(defn websocket-response [^HttpRequest request]
-  (let [response (DefaultHttpResponse.
-		   HttpVersion/HTTP_1_1
-		   (HttpResponseStatus. 101 "Web Socket Protocol Handshake"))
-	headers (:headers (request-headers request))]
-    (.addHeader response "Upgrade" "WebSocket")
-    (.addHeader response "Connection" "Upgrade")
-    (if (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
-      (secure-websocket-response request headers response)
-      (standard-websocket-response request headers response))
-    response))
-
 (defn respond-to-handshake [ctx ^HttpRequest request]
   (let [pipeline (-> ctx .getChannel .getPipeline)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
     (-> ctx .getChannel (.write (websocket-response request)))
     (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
-
-(defn from-websocket-frame [^WebSocketFrame frame]
-  (.toString frame))
-
-(defn to-websocket-frame [msg]
-  (DefaultWebSocketFrame. msg))
 
 (defn websocket-handshake-handler [handler options]
   (let [[inner outer] (channel-pair)]
@@ -267,15 +187,25 @@
       (handleUpstream [_ ctx evt]
 	(if-let [msg (message-event evt)]
 	  (cond
-	    (instance? WebSocketFrame msg) (enqueue outer (from-websocket-frame msg))
-	    (instance? HttpRequest msg) (if (websocket-handshake? msg)
-					  (let [ch (.getChannel ctx)]
-					    (receive-all outer
-					      #(.write ch (to-websocket-frame %)))
-					    (respond-to-handshake ctx msg)
-					    (handler inner {:websocket true}))
-					  (.sendUpstream ctx evt)))
-	  (.sendUpstream ctx evt))))))
+	    (instance? WebSocketFrame msg)
+	    (enqueue outer (from-websocket-frame msg))
+	    (instance? HttpRequest msg)
+	    (if (websocket-handshake? msg)
+	      (let [ch (.getChannel ctx)]
+		(receive-all outer
+		  (fn [msg]
+		    (when msg
+		      (.write ch (to-websocket-frame msg)))
+		    (when (closed? outer)
+		      (.close ch))))
+		(respond-to-handshake ctx msg)
+		(handler inner {:websocket true}))
+	      (.sendUpstream ctx evt)))
+	  (if-let [ch (channel-event evt)]
+	    (when-not (.isConnected ch)
+	      (when-not (sealed? outer)
+		(enqueue-and-close outer nil)))
+	    (.sendUpstream ctx evt)))))))
 
 ;;;
 
@@ -309,7 +239,7 @@
 		netty-channel)))
 	  ;; prime handler channel
 	  (enqueue-and-close @handler-channel
-	    (assoc (transform-request request)
+	    (assoc (transform-netty-request request)
 	      :scheme :http
 	      :remote-addr (->> netty-channel
 			     .getRemoteAddress

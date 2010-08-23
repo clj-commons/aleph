@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.http.utils)
+(ns aleph.http.utils
+  (:require [clj-http.client :as client]))
 
 (defn to-str [x]
   (if (keyword? x)
@@ -34,21 +35,34 @@
 	(apply str))
       cookie)))
 
-(defn- request-cookie [request]
+(defn- wrap-request-cookie [request]
   (if-let [cookie (:cookies request)]
     (assoc-in request [:headers "cookie"] cookie)
     request))
 
-(defn- response-cookie [response]
+(defn- wrap-response-cookie [response]
   (if-let [cookie (:cookies response)]
     (assoc-in response [:headers "set-cookie"] cookie)
     response))
 
 (defn wrap-request [request]
   (-> request
-    request-cookie))
+    wrap-request-cookie))
+
+(defn wrap-client-request [request]
+  ((comp
+     wrap-request
+     (-> identity
+       client/wrap-input-coercion
+       client/wrap-content-type
+       client/wrap-accept
+       client/wrap-query-params
+       client/wrap-basic-auth
+       client/wrap-method
+       client/wrap-url))
+   request))
 
 (defn wrap-response [response]
   (-> response
-    response-cookie))
+    wrap-response-cookie))
 

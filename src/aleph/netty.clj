@@ -13,6 +13,8 @@
     [clojure.contrib.def :only (defvar- defmacro-)]
     [aleph.core channel pipeline]
     [aleph formats])
+  (:require
+    [clj-http.client :as client])
   (:import
     [org.jboss.netty.channel
      Channel
@@ -175,9 +177,15 @@
    "readWriteFair" true,
    "connectTimeoutMillis" 3000})
 
+(defn split-url [options]
+  (if (:url options)
+    ((client/wrap-url identity) options)
+    options))
+
 (defn create-client
   [pipeline-fn send-fn options]
-  (let [host (or (:host options) (:server-name options))
+  (let [options (split-url options)
+	host (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
 	client (ClientBootstrap.

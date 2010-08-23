@@ -78,7 +78,7 @@
 
 (deftest test-server-port
   (with-server [:server-port]
-    (is (= "8080" (request)))))
+    (is (= 8080 (request)))))
 
 (deftest test-remote-addr
   (with-server [:remote-addr]
