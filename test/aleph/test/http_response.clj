@@ -68,7 +68,10 @@
 
 (defn request [path]
   (->> (http-request {:request-method :get, :url (str "http://localhost:8080/" path)})
-    run-pipeline))
+    run-pipeline
+    wait-for-pipeline
+    wait-for-message
+    :body))
 
 (def expected-results
   (->>
@@ -80,23 +83,20 @@
     (apply concat)
     (partition 2)))
 
-(deftest )
-
 (deftest http-response
   (let [kill-fn (start-http-server handler {:port 8080})]
     (try
-      (let [request-response (->> expected-results
-				   (repeat 100)
-				   concat
-				   (apply concat)
-				   (partition 2))
-	    ]
-	)
-      (doseq [[request response]])
-      (dotimes [_ 100]
-	(is (= string-response (request "string")))
-	(is (= stream-response (request "stream")))
-	(is (= (apply str seq-response) (request "seq"))))
+      '(let [request-response (->> expected-results
+				(repeat 100)
+				concat
+				(apply concat)
+				(partition 2))
+	     ]
+	 )
+      '(doseq [[request response]])
+      (is (= string-response (request "string")))
+      (is (= stream-response (request "stream")))
+      (is (= (apply str seq-response) (request "seq")))
       ;;need test for file here
       (finally
 	(kill-fn)))))
