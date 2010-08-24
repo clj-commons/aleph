@@ -85,7 +85,7 @@
 (defn call-error-handler
   "Calls the error-handling function."
   [options e]
-  ((:error-handler options) e))
+  ((or (:error-handler options) #(.printStackTrace %)) e))
 
 (defn response-listener
   "Handles the completion of the response."
@@ -100,7 +100,7 @@
 ;;;
 
 (defn from-websocket-frame [^WebSocketFrame frame]
-  (.toString frame (Charset/forName "UTF-8")))
+  (.getTextData frame))
 
 (defn to-websocket-frame [msg]
   (DefaultWebSocketFrame. msg))
