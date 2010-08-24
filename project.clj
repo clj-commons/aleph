@@ -1,4 +1,4 @@
-(defproject aleph "0.1.0-SNAPSHOT"
+(defproject aleph "0.1.1-SNAPSHOT"
   :description "an asynchronous web server"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"}
   :dev-dependencies [[swank-clojure "1.3.0-SNAPSHOT"]

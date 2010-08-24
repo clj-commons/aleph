@@ -63,7 +63,8 @@
 (defn raw-http-client
   "Create an HTTP client."
   [options]
-  (let [client (create-client
+  (let [options (split-url options)
+	client (create-client
 		 #(create-pipeline
 		    %
 		    (or (:close? options) (constantly false))
@@ -78,16 +79,15 @@
       (create-request-channel [_]
 	client)
       (close-http-client [_]
-	(enqueue-and-close client nil)))))
+	(enqueue-and-close (-> client run-pipeline wait-for-pipeline) nil)))))
 
 (defn http-request
   ([request]
      (http-request
-       (raw-http-client (split-url request))
+       (raw-http-client request)
        request))
   ([client request]
-     (run-pipeline
-       client
+     (run-pipeline client
        create-request-channel
        (fn [ch]
 	 (enqueue ch request)

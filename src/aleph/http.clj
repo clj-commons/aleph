@@ -20,6 +20,7 @@
 
 (import-fn client/raw-http-client)
 (import-fn client/http-request)
+(import-fn #'client/close-http-client)
 
 (defn wrap-ring-handler [f]
   (fn [channel request]

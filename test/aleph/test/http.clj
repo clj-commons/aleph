@@ -6,11 +6,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.test.http-response
+(ns aleph.test.http
   (:use [aleph core http] :reload-all)
   (:use
     [clojure.test]
-    [clojure.contrib.duck-streams :only [pwd]])
+    [clojure.contrib.duck-streams :only [pwd]]
+    [clojure.contrib.seq :only [indexed]])
   (:import
     [java.io
      File
@@ -57,46 +58,53 @@
 	       (catch Exception e
 		 )))})
 
-(defn handler [ch request]
-  (when-let [handler (route-map (:uri request))]
-    (enqueue-and-close ch
-      (handler request))))
+(defn create-handler []
+  (let [num (atom 0)]
+    (fn [ch request]
+      ;;(println (swap! num inc))
+      (when-let [handler (route-map (:uri request))]
+	(enqueue-and-close ch
+	  (handler request))))))
 
-'(deftest browser-http-response
-  (let [server (reset! server (start-http-server handler {:port 8080}))]
-    (is @latch)))
+(defn request [client path]
+  (http-request client {:request-method :get, :url (str "http://localhost:8080/" path)}))
 
-(defn request [path]
-  (->> (http-request {:request-method :get, :url (str "http://localhost:8080/" path)})
-    run-pipeline
-    wait-for-pipeline
-    wait-for-message
-    :body))
+(defn wait-for-request [client path]
+  (-> (request client path) wait-for-pipeline wait-for-message :body))
 
 (def expected-results
   (->>
-    {"string" string-response
-    "stream" stream-response
-    "seq" (apply str seq-response)}
-    (repeat 100)
-    concat
+    ["string" string-response
+     "stream" stream-response
+     "seq" (apply str seq-response)]
+    (repeat 1)
     (apply concat)
     (partition 2)))
 
-(deftest http-response
-  (let [kill-fn (start-http-server handler {:port 8080})]
-    (try
-      '(let [request-response (->> expected-results
-				(repeat 100)
-				concat
-				(apply concat)
-				(partition 2))
-	     ]
-	 )
-      '(doseq [[request response]])
-      (is (= string-response (request "string")))
-      (is (= stream-response (request "stream")))
-      (is (= (apply str seq-response) (request "seq")))
-      ;;need test for file here
-      (finally
-	(kill-fn)))))
+(defmacro with-server [& body]
+  `(let [kill-fn# (start-http-server (create-handler) {:port 8080})]
+     (try
+       ~@body
+       (finally
+	 (kill-fn#)))))
+
+'(deftest browser-http-response
+  (let [server (reset! server (start-http-server (create-handler) {:port 8080}))]
+    (is @latch)))
+
+(deftest single-requests
+  (with-server
+    (doseq [[path result] (take 50 expected-results)]
+      (let [client (raw-http-client {:url "http://localhost:8080"})]
+	(is (= result (wait-for-request client path)))
+	(close-http-client client)))))
+
+(deftest multiple-requests
+  (with-server
+    (let [client (raw-http-client {:url "http://localhost:8080"})]
+      (doseq [[index [path result]] (indexed expected-results)]
+	;;(println "requesting" index)
+	(is (= result (wait-for-request client path))))
+      (close-http-client client))))
+
+
