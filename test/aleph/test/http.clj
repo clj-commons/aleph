@@ -59,12 +59,10 @@
 		 )))})
 
 (defn create-handler []
-  (let [num (atom 0)]
-    (fn [ch request]
-      ;;(println (swap! num inc))
-      (when-let [handler (route-map (:uri request))]
-	(enqueue-and-close ch
-	  (handler request))))))
+  (fn [ch request]
+    (when-let [handler (route-map (:uri request))]
+      (enqueue-and-close ch
+	(handler request)))))
 
 (defn request [client path]
   (http-request client {:request-method :get, :url (str "http://localhost:8080/" path)}))
@@ -77,7 +75,7 @@
     ["string" string-response
      "stream" stream-response
      "seq" (apply str seq-response)]
-    (repeat 1)
+    (repeat 500)
     (apply concat)
     (partition 2)))
 
@@ -103,7 +101,6 @@
   (with-server
     (let [client (raw-http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
-	;;(println "requesting" index)
 	(is (= result (wait-for-request client path))))
       (close-http-client client))))
 

@@ -254,6 +254,8 @@
   (let [pipeline ^ChannelPipeline
 	(create-netty-pipeline
 	  :decoder (HttpRequestDecoder.)
+	  ;;:upstream-decoder (upstream-stage (fn [x] (println "request" x) x))
+	  ;;:downstream-decoder (downstream-stage (fn [x] (println "response" x) x))
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
 	  :upstream-error (upstream-stage error-stage-handler)

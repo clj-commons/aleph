@@ -326,12 +326,12 @@
      (let [timeout-fn (if (fn? timeout)
 			timeout
 			(constantly timeout))]
-       (let [value (promise)]
-	 (receive (poll* {:ch ch} (timeout-fn))
-	   #(deliver value
-	      (when (first %)
-		[(second %)])))
-	 (lazy-seq
+       (lazy-seq
+	 (let [value (promise)]
+	   (receive (poll* {:ch ch} (timeout-fn))
+	     #(deliver value
+		(when (first %)
+		  [(second %)])))
 	   (when @value
 	     (concat @value (lazy-channel-seq ch timeout-fn))))))))
 

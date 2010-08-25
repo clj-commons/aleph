@@ -205,7 +205,8 @@
 	     (when-let [msg (and % (send-fn %))]
 	       (.write netty-channel msg))
 	     (when (closed? outer)
-	       (.close netty-channel))
+	       (.close netty-channel)
+	       (.releaseExternalResources client))
 	     (catch Exception e
 	       (.printStackTrace e))))
 	inner))))
