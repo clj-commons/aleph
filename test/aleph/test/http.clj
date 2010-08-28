@@ -75,7 +75,7 @@
     ["string" string-response
      "stream" stream-response
      "seq" (apply str seq-response)]
-    (repeat 500)
+    (repeat 50)
     (apply concat)
     (partition 2)))
 
@@ -92,7 +92,7 @@
 
 (deftest single-requests
   (with-server
-    (doseq [[path result] (take 50 expected-results)]
+    (doseq [[index [path result]] (indexed expected-results)]
       (let [client (raw-http-client {:url "http://localhost:8080"})]
 	(is (= result (wait-for-request client path)))
 	(close-http-client client)))))

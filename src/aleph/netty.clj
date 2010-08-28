@@ -141,6 +141,21 @@
    "readWriteFair" true,
    "child.tcpNoDelay" true})
 
+(defn create-pipeline-factory [channel-group pipeline-fn & args]
+  (reify ChannelPipelineFactory
+    (getPipeline [_]
+      (let [pipeline (apply pipeline-fn args)]
+	(.addFirst pipeline
+	  "channel-listener"
+	  (upstream-stage
+	    (fn [evt]
+	      (when-let [ch ^Channel (channel-event evt)]
+		(if (.isOpen ch)
+		  (.add channel-group ch)
+		  (.remove channel-group ch)))
+	      nil)))
+	pipeline))))
+
 (defn start-server
   "Starts a server.  Returns a function that stops the server."
   [pipeline-fn options]
@@ -153,19 +168,7 @@
     (doseq [[k v] (merge default-server-options (:netty options))]
       (.setOption server k v))
     (.setPipelineFactory server
-      (reify ChannelPipelineFactory
-	(getPipeline [_]
-	  (let [pipeline (pipeline-fn)]
-	    (.addFirst pipeline
-	      "channel-listener"
-	      (upstream-stage
-		(fn [evt]
-		  (when-let [ch ^Channel (channel-event evt)]
-		    (if (.isOpen ch)
-		      (.add channel-group ch)
-		      (.remove channel-group ch)))
-		  nil)))
-	      pipeline))))
+      (create-pipeline-factory channel-group pipeline-fn))
     (.add channel-group (.bind server (InetSocketAddress. port)))
     (fn []
       (-> channel-group .close .awaitUninterruptibly)
@@ -188,24 +191,25 @@
 	host (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
+	channel-group (DefaultChannelGroup.)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
-		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)))]
+		   (Executors/newSingleThreadExecutor)
+		   (Executors/newSingleThreadExecutor)))]
     (doseq [[k v] (merge default-client-options (:netty options))]
       (.setOption client k v))
     (.setPipelineFactory client
-      (reify ChannelPipelineFactory
-	(getPipeline [_] (pipeline-fn outer))))
+      (create-pipeline-factory channel-group pipeline-fn outer))
     (run-pipeline (.connect client (InetSocketAddress. host port))
       wrap-netty-future
       (fn [^Channel netty-channel]
+	(.add channel-group netty-channel)
 	(receive-in-order outer
 	  #(try
 	     (when-let [msg (and % (send-fn %))]
 	       (.write netty-channel msg))
 	     (when (closed? outer)
-	       (.close netty-channel)
+	       (-> channel-group .close .awaitUninterruptibly)
 	       (.releaseExternalResources client))
 	     (catch Exception e
 	       (.printStackTrace e))))

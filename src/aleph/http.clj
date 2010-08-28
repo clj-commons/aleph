@@ -14,13 +14,16 @@
   (:require
     [aleph.http.server :as server]
     [aleph.http.client :as client]
-    [aleph.http.utils :as utils]))
+    [aleph.http.utils :as utils]
+    [aleph.http.policy-file :as policy]))
 
 (import-fn server/start-http-server)
 
 (import-fn client/raw-http-client)
 (import-fn client/http-request)
 (import-fn #'client/close-http-client)
+
+(import-fn policy/start-policy-file-server)
 
 (defn wrap-ring-handler [f]
   (fn [channel request]
