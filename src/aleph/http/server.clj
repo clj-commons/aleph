@@ -93,7 +93,6 @@
       {:keep-alive? (HttpHeaders/isKeepAlive req)
        :server-name host
        :server-port port}
-      (netty-headers req)
       (netty-request-uri req))))
 
 ;;;
@@ -199,7 +198,7 @@
 		    (when (closed? outer)
 		      (.close ch))))
 		(respond-to-handshake ctx msg)
-		(handler inner {:websocket true}))
+		(handler inner (assoc (transform-netty-request msg) :websocket true)))
 	      (.sendUpstream ctx evt)))
 	  (if-let [ch (channel-event evt)]
 	    (when-not (.isConnected ch)
