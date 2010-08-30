@@ -74,9 +74,8 @@
 (declare handle-result)
 
 (defn- poll-pipeline-channel [chs fns context]
-  (receive (poll chs -1)
+  (receive (poll* chs -1)
     (fn [[typ result]]
-      ;;(println "poll-pipeline-channel" typ "\n" (with-out-str (pprint result)))
       (with-context context
 	(case typ
 	  :success
@@ -98,7 +97,6 @@
 	      (enqueue (-> context :outer-result :error) result))))))))
 
 (defn- handle-result [result fns context]
-  ;;(println "handle-result\n" (with-out-str (pprint result) (println) (pprint context)))
   (with-context context
     (cond
       (redirect? result)

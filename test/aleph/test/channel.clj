@@ -106,3 +106,13 @@
 	  (map
 	    (fn [x] `(enqueue ch ~x))
 	    (range 3)))))))
+
+(deftest test-wait-for-message
+  (let [num 1e3]
+    (let [ch (channel)]
+      (future
+	(dotimes [i num]
+	  (enqueue ch i)
+	  (Thread/sleep 0 1)))
+      (dotimes [i num]
+	(is (= i (wait-for-message ch)))))))

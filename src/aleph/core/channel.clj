@@ -136,6 +136,8 @@
 	sample-listeners
 	(fn []
 	  (try
+	    (ensure listeners)
+	    (ensure transient-listeners)
 	    (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
 	      (when-not (empty? consumers)
 		(loop [msgs (next @messages) consumers [consumers]]
@@ -150,6 +152,8 @@
 	sample-receivers
 	(fn []
 	  (try
+	    (ensure receivers)
+	    (ensure transient-receivers)
 	    (list*
 	      [(first @messages)
 	       (concat @receivers @transient-receivers)]
@@ -165,6 +169,7 @@
 	callbacks
 	(fn []
 	  (dosync
+	    (ensure messages)
 	    (when-not (empty? @messages)
 	      (let [close (= ::close (last @messages))]
 		(when close
@@ -209,7 +214,7 @@
 	    (assert-can-receive)
 	    (alter transient-receivers conj f)
 	    (callbacks))))
-      (listen [this f]
+       (listen [this f]
 	(send-to-callbacks
 	  (dosync
 	    (assert-can-receive)
