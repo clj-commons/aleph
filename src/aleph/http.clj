@@ -23,6 +23,14 @@
 (import-fn client/http-request)
 (import-fn #'client/close-http-client)
 
+(defn sync-http-request
+  ([request]
+     (sync-http-request (raw-http-client request) request))
+  ([client request]
+     (->> (http-request client request)
+       wait-for-pipeline
+       wait-for-message)))
+
 (import-fn policy/start-policy-file-server)
 
 (defn wrap-ring-handler [f]

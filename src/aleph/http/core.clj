@@ -181,10 +181,6 @@
       (.setContent req (input-stream->channel-buffer body)))
     req))
 
-(defn transform-netty-chunk [^HttpChunk chunk headers]
-  {:headers headers
-   :body (transform-netty-body (.getContent chunk) headers)})
-
 (defn transform-netty-response [^HttpResponse response headers]
   {:status (-> response .getStatus .getCode)
    :headers headers

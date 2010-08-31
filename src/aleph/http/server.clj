@@ -152,7 +152,9 @@
 (defn- respond-with-file
   [netty-channel response options]
   (let [file ^File (:body response)
-	content-type (or (URLConnection/guessContentTypeFromName (.getName file)) "application/octet-stream")]
+	content-type (or
+		       (URLConnection/guessContentTypeFromName (.getName file))
+		       "application/octet-stream")]
     (respond-with-stream
       netty-channel
       (-> response
@@ -162,7 +164,29 @@
 
 (defn- respond-with-channel
   [netty-channel response options]
-  )
+  (let [charset (or (get-in response [:headers "charset"]) "UTF-8")
+	response (update-in [:headers "charset"] (constantly charset))
+	initial-response ^HttpResponse (transform-aleph-response (dissoc response :body))
+	keep-alive? (:keep-alive? options)
+	ch (:body response)]
+    (.setChunked initial-response true)
+    (-> netty-channel
+      (.write initial-response)
+      (.addListener (response-listener (assoc options :close? false))))
+    (receive-in-order ch
+      (fn [msg]
+	(let [msg (if (string? msg)
+		    (string->byte-buffer msg charset)
+		    msg)
+	      msg (byte-buffer->channel-buffer msg)
+	      chunk (DefaultHttpChunk. msg)]
+	  (when (closed? ch)
+	    (.isLast chunk true))
+	  (-> netty-channel
+	    (.write chunk)
+	    (.addListener (response-listener
+			    (assoc options
+			      :close? (and (closed? ch) (not keep-alive?)))))))))))
 
 (defn respond [netty-channel response options]
   (try
@@ -230,30 +254,27 @@
     (run-pipeline in
       receive-from-channel
       (fn [^HttpRequest request]
-	(try
-	  (let [chunked? (.isChunked request)
-		keep-alive? (.isKeepAlive request)
-		request (assoc (transform-netty-request request)
-			  :scheme :http
-			  :remote-addr remote-addr)
-		out (channel)]
-	    (receive out
-	      #(respond
-		 netty-channel
-		 %
-		 (assoc options
-		   :keep-alive? keep-alive?
-		   :close? (not (or keep-alive? (channel? (:body %)))))))
-	    (if-not chunked?
-	      (handler out request)
-	      (let [headers (:headers request)
-		    stream (channel)]
-		(when (:body request)
-		  (enqueue stream (:body request)))
-		(handler out (assoc request :body stream))
-		(read-streaming-request headers in stream))))
-	  (catch Exception e
-	    (.printStackTrace e))))
+	(let [chunked? (.isChunked request)
+	      keep-alive? (.isKeepAlive request)
+	      request (assoc (transform-netty-request request)
+			:scheme :http
+			:remote-addr remote-addr)
+	      out (single-shot-channel)]
+	  (receive out
+	    #(respond
+	       netty-channel
+	       %
+	       (assoc options
+		 :keep-alive? keep-alive?
+		 :close? (not (or keep-alive? (channel? (:body %)))))))
+	  (if-not chunked?
+	    (handler out request)
+	    (let [headers (:headers request)
+		  stream (channel)]
+	      (when (:body request)
+		(enqueue stream (:body request)))
+	      (handler out (assoc request :body stream))
+	      (read-streaming-request headers in stream)))))
       (fn [_]
 	(restart)))))
 

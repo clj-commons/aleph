@@ -252,7 +252,63 @@
 
 ;;;
 
-(defn- splice [a b]
+(defn closed-channel
+  "Creates a channel which is already closed."
+  []
+  ^{:type ::channel}
+  (reify AlephChannel
+    (toString [_]
+      "<== []")
+    (receive [_ f]
+      (throw (Exception. "Cannot receive from a closed channel.")))
+    (receive-all [_ f]
+      (throw (Exception. "Cannot receive from a closed channel.")))
+    (listen [_ f]
+      (throw (Exception. "Cannot receive from a closed channel.")))
+    (listen-all [_ f]
+      (throw (Exception. "Cannot receive from a closed channel.")))
+    (cancel-callback [_ f]
+      )
+    (closed? [_]
+      true)
+    (sealed? [_]
+      true)
+    (enqueue [_ msg]
+      (throw (Exception. "Cannot enqueue into a sealed channel.")))
+    (enqueue-and-close [_ msg]
+      (throw (Exception. "Cannot enqueue into a sealed channel.")))))
+
+(defn single-shot-channel
+  "Creates a channel which will be closed after a single message."
+  []
+  (let [ch (channel)]
+    ^{:type ::channel}
+    (reify AlephChannel
+      (toString [_]
+	(str ch))
+      (receive [_ f]
+	(receive ch f))
+      (receive-all [_ f]
+	(receive-all ch f))
+      (listen [_ f]
+	(listen ch f))
+      (listen-all [_ f]
+	(listen-all ch f))
+      (cancel-callback [_ f]
+	(cancel-callback ch f))
+      (closed? [_]
+	(closed? ch))
+      (sealed? [_]
+	(sealed? ch))
+      (enqueue [_ msg]
+	(enqueue-and-close ch msg))
+      (enqueue-and-close [_ msg]
+	(enqueue-and-close ch msg)))))
+
+(defn splice
+  "Takes two undirectional channels, and returns two
+   endpoints of a bidirectional channel."
+  [a b]
   ^{:type ::channel}
   (reify AlephChannel
     (toString [_]
@@ -282,6 +338,11 @@
   []
   (let [a (channel)
 	b (channel)]
+    [(splice a b) (splice b a)]))
+
+(defn single-shot-channel-pair []
+  (let [a (single-shot-channel)
+	b (single-shot-channel)]
     [(splice a b) (splice b a)]))
 
 ;;;

@@ -7,16 +7,14 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.example.twitter
-  (:use [aleph http core formats]))
+  (:use [aleph http core formats] :reload-all))
 
 (def username "aleph_example")
 (def password "_password")
 
 (defn sample-stream []
-  (let [ch (wait-for-pipeline
-	     (http-request
-	       {:request-method :get
-		:headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
-		:url "http://stream.twitter.com/1/statuses/sample.json"}))]
-    (doall (map :body (channel-seq ch 1000)))))
+  (sync-http-request
+    {:method :get
+     :headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
+     :url "http://stream.twitter.com/1/statuses/sample.json"}))
 

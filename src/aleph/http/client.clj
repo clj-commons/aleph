@@ -34,8 +34,43 @@
 
 ;;;
 
-(defn create-pipeline [ch close? options]
-  (let [headers (atom nil)]
+(defn read-streaming-response [headers in out]
+  (run-pipeline in
+    :error-handler (fn [_ ex] (.printStackTrace ex))
+    receive-from-channel
+    (fn [^HttpChunk response]
+      (let [body (transform-netty-body (.getContent response) headers)]
+	(if (.isLast response)
+	  (enqueue-and-close out body)
+	  (do
+	    (enqueue out body)
+	    (restart)))))))
+
+(defn read-responses [in out]
+  (run-pipeline in
+    :error-handler (fn [_ ex] (.printStackTrace ex))
+    receive-from-channel
+    (fn [^HttpResponse response]
+      (let [chunked? (.isChunked response)
+	    headers (netty-headers response)
+	    response (transform-netty-response response headers)]
+	(if-not chunked?
+	  (enqueue out response)
+	  (let [body (:body response)
+		ch (channel)
+		response (assoc response :body ch)]
+	    (when body
+	      (enqueue ch body))
+	    (enqueue out response)
+	    (read-streaming-response headers in ch)
+	    ))))
+    (fn [_]
+      (restart)
+      )))
+
+(defn create-pipeline [out close? options]
+  (let [in (channel)]
+    (read-responses in out)
     (create-netty-pipeline
       :codec (HttpClientCodec.)
       :inflater (HttpContentDecompressor.)
@@ -44,16 +79,7 @@
       :upstream-error (upstream-stage error-stage-handler)
       :response (message-stage
 		  (fn [netty-channel response]
-		    (when-not @headers
-		      (reset! headers (netty-headers response)))
-		    (let [response (if (instance? HttpResponse response)
-				     (transform-netty-response response @headers)
-				     (transform-netty-chunk response @headers))]
-		      (enqueue ch response)
-		      (when (close? response)
-			(.close netty-channel))
-		      (when (final-netty-message? response)
-			(reset! headers nil)))))
+		    (enqueue in response)))
       :downstream-error (downstream-stage error-stage-handler))))
 
 ;;;
@@ -65,7 +91,8 @@
 (defn raw-http-client
   "Create an HTTP client."
   [options]
-  (let [options (split-url options)
+  (let [options (-> (split-url options)
+		  (update-in [:server-port] #(or % 80)))
 	client (create-client
 		 #(create-pipeline
 		    %
