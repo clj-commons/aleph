@@ -13,8 +13,12 @@
 (def password "_password")
 
 (defn sample-stream []
-  (sync-http-request
-    {:method :get
-     :headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
-     :url "http://stream.twitter.com/1/statuses/sample.json"}))
+  (let [req (sync-http-request
+	      {:method :get
+	       :basic-auth [username password]
+	       ;;:headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
+	       :url "http://stream.twitter.com/1/statuses/sample.json"})]
+    (Thread/sleep 500)
+    (enqueue (:body req) nil)
+    req))
 

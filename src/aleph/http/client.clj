@@ -46,7 +46,7 @@
 	    (enqueue out body)
 	    (restart)))))))
 
-(defn read-responses [in out]
+(defn read-responses [netty-channel in out]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
     receive-from-channel
@@ -57,20 +57,21 @@
 	(if-not chunked?
 	  (enqueue out response)
 	  (let [body (:body response)
-		ch (channel)
-		response (assoc response :body ch)]
+		stream (channel)
+		close (single-shot-channel)
+		response (assoc response :body (splice stream close))]
+	    (receive close
+	      (fn [_] (.close netty-channel)))
 	    (when body
-	      (enqueue ch body))
+	      (enqueue stream body))
 	    (enqueue out response)
-	    (read-streaming-response headers in ch)
-	    ))))
+	    (read-streaming-response headers in stream)))))
     (fn [_]
-      (restart)
-      )))
+      (restart))))
 
 (defn create-pipeline [out close? options]
-  (let [in (channel)]
-    (read-responses in out)
+  (let [in (channel)
+	init? (atom false)]
     (create-netty-pipeline
       :codec (HttpClientCodec.)
       :inflater (HttpContentDecompressor.)
@@ -79,6 +80,8 @@
       :upstream-error (upstream-stage error-stage-handler)
       :response (message-stage
 		  (fn [netty-channel response]
+		    (when (compare-and-set! init? false true)
+		      (read-responses netty-channel in out))
 		    (enqueue in response)))
       :downstream-error (downstream-stage error-stage-handler))))
 
