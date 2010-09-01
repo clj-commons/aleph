@@ -40,7 +40,6 @@
 (import-fn channel/channel-pair)
 (import-fn channel/constant-channel)
 (import-fn channel/single-shot-channel)
-(import-fn channel/single-shot-channel-pair)
 (import-fn channel/channel-seq)
 (import-fn channel/lazy-channel-seq)
 (import-fn channel/wait-for-message)

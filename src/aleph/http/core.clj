@@ -28,15 +28,10 @@
      HttpChunk]
     [org.jboss.netty.buffer
      ChannelBuffers]
-    [org.jboss.netty.handler.codec.http.websocket
-     DefaultWebSocketFrame
-     WebSocketFrame]
     [java.net
      URI]
     [java.nio.charset
-     Charset]
-    [java.security
-     MessageDigest]))
+     Charset]))
 
 ;;;
 
@@ -96,57 +91,6 @@
 	(Channels/close (.getChannel future)))
       (when-not (.isSuccess future)
 	(call-error-handler options (.getCause future))))))
-
-;;;
-
-(defn from-websocket-frame [^WebSocketFrame frame]
-  (.getTextData frame))
-
-(defn to-websocket-frame [msg]
-  (DefaultWebSocketFrame. msg))
-
-(defn websocket-handshake? [^HttpRequest request]
-  (and
-    (= "upgrade" (.toLowerCase (.getHeader request "connection")))
-    (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))
-
-(defn transform-key [k]
-  (/
-    (-> k (.replaceAll "[^0-9]" "") Long/parseLong)
-    (-> k (.replaceAll "[^ ]" "") .length)))
-
-(defn secure-websocket-response [request headers ^HttpResponse response]
-  (.addHeader response "sec-websocket-origin" (headers "origin"))
-  (.addHeader response "sec-websocket-location" (str "ws://" (headers "host") "/"))
-  (when-let [protocol (headers "sec-websocket-protocol")]
-    (.addHeader response "sec-websocket-protocol" protocol))
-  (let [buf (ChannelBuffers/buffer 16)]
-    (doto buf
-      (.writeInt (transform-key (headers "sec-websocket-key1")))
-      (.writeInt (transform-key (headers "sec-websocket-key2")))
-      (.writeLong (-> request .getContent .readLong)))
-    (.setContent response
-      (-> (MessageDigest/getInstance "MD5")
-	(.digest (.array buf))
-	ChannelBuffers/wrappedBuffer))))
-
-(defn standard-websocket-response [request headers ^HttpResponse response]
-  (.addHeader response "websocket-origin" (headers "origin"))
-  (.addHeader response "websocket-location" (str "ws://" (headers "host") "/"))
-  (when-let [protocol (headers "websocket-protocol")]
-    (.addHeader response "websocket-protocol" protocol)))
-
-(defn websocket-response [^HttpRequest request]
-  (let [response (DefaultHttpResponse.
-		   HttpVersion/HTTP_1_1
-		   (HttpResponseStatus. 101 "Web Socket Protocol Handshake"))
-	headers (netty-headers request)]
-    (.addHeader response "Upgrade" "WebSocket")
-    (.addHeader response "Connection" "Upgrade")
-    (if (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
-      (secure-websocket-response request headers response)
-      (standard-websocket-response request headers response))
-    response))
 
 ;;;
 

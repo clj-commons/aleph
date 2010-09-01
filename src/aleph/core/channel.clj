@@ -335,15 +335,10 @@
 (defn channel-pair
   "Creates paired channels, where an enqueued message from one channel
    can be received from the other."
-  []
-  (let [a (channel)
-	b (channel)]
-    [(splice a b) (splice b a)]))
-
-(defn single-shot-channel-pair []
-  (let [a (single-shot-channel)
-	b (single-shot-channel)]
-    [(splice a b) (splice b a)]))
+  ([]
+     (channel-pair (channel) (channel)))
+  ([a b]
+     [(splice a b) (splice b a)]))
 
 ;;;
 

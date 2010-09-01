@@ -11,7 +11,7 @@
   aleph.http.server
   (:use
     [aleph netty formats]
-    [aleph.http utils core]
+    [aleph.http utils core websocket]
     [aleph.core channel pipeline]
     [clojure.pprint])
   (:import
