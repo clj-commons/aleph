@@ -14,9 +14,6 @@
     [aleph.core.channel]
     [clojure.pprint])
   (:import
-    [org.jboss.netty.channel
-     ChannelFuture
-     ChannelFutureListener]
     [java.util.concurrent
      TimeoutException]))
 
@@ -245,22 +242,6 @@
 	     (case k
 	       :error (throw (second result))
 	       :success result)))))))
-
-;;;
-
-(defn wrap-netty-future
-  "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
-   a Netty Channel."
-  [^ChannelFuture netty-future]
-  (let [ch (pipeline-channel)]
-    (.addListener netty-future
-      (reify ChannelFutureListener
-	(operationComplete [_ netty-future]
-	  (if (.isSuccess netty-future)
-	    (enqueue (:success ch) (.getChannel netty-future))
-	    (enqueue (:error ch) [nil (.getCause netty-future)]))
-	  nil)))
-    ch))
 
 ;;;
 

@@ -11,9 +11,8 @@
     :doc "An asynchronous server."}
   aleph.core
   (:use
-    [aleph.import])
+    [potemkin])
   (:require
-    [aleph.netty :as netty]
     [aleph.core.pipeline :as pipeline]
     [aleph.core.channel :as channel])) 
 

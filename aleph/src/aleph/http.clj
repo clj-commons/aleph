@@ -10,7 +10,8 @@
   ^{:skip-wiki true}
   aleph.http
   (:use
-    [aleph core import])
+    [aleph core]
+    [potemkin])
   (:require
     [aleph.http.server :as server]
     [aleph.http.client :as client]

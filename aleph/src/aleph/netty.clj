@@ -27,7 +27,9 @@
      ExceptionEvent
      ChannelPipelineFactory
      Channels
-     ChannelPipeline]
+     ChannelPipeline
+     ChannelFuture
+     ChannelFutureListener]
     [org.jboss.netty.channel.group
      DefaultChannelGroup]
     [org.jboss.netty.channel.socket.nio
@@ -129,6 +131,25 @@
 	   (fn [[id# stage#]] (list '.addLast pipeline-var (name id#) stage#))
 	   (partition 2 stages))
        ~pipeline-var)))
+
+;;;
+
+(defn wrap-netty-future
+  "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
+   a Netty Channel."
+  [^ChannelFuture netty-future]
+  (let [ch (pipeline-channel)]
+    (.addListener netty-future
+      (reify ChannelFutureListener
+	(operationComplete [_ netty-future]
+	  (if (.isSuccess netty-future)
+	    (enqueue (:success ch) (.getChannel netty-future))
+	    (enqueue (:error ch) [nil (.getCause netty-future)]))
+	  nil)))
+    ch))
+
+;;;
+
 
 ;;;
 
