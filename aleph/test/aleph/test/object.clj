@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.object
-  (:use [aleph core object] [clojure.test] :reload-all))
+  (:use [aleph core object] [clojure.test]))
 
 (def server-messages (atom []))
 

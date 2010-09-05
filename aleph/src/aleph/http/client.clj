@@ -75,8 +75,8 @@
     (create-netty-pipeline
       :codec (HttpClientCodec.)
       :inflater (HttpContentDecompressor.)
-      ;;:upstream-decoder (upstream-stage (fn [x] (println "request" x) x))
-      ;;:downstream-decoder (downstream-stage (fn [x] (println "response" x) x))
+      ;;:upstream-decoder (upstream-stage (fn [x] (println "client request\n" x) x))
+      ;;:downstream-decoder (downstream-stage (fn [x] (println "client response\n" x) x))
       :upstream-error (upstream-stage error-stage-handler)
       :response (message-stage
 		  (fn [netty-channel response]

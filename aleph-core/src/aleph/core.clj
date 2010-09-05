@@ -8,7 +8,7 @@
 
 (ns
   ^{:author "Zachary Tellman"
-    :doc "An asynchronous server."}
+    :doc "The core data structures for Aleph."}
   aleph.core
   (:use
     [potemkin])
@@ -34,6 +34,7 @@
 (import-fn #'channel/enqueue)
 (import-fn #'channel/enqueue-and-close)
 (import-fn #'channel/closed?)
+(import-fn channel/channel?)
 (import-fn channel/poll)
 (import-fn channel/channel)
 (import-fn channel/channel-pair)
@@ -46,10 +47,4 @@
 (import-fn channel/named-channel)
 (import-fn channel/release-named-channel)
 
-;;;
-
-(defn stop-server
-  "Stops a server."
-  [stop-fn]
-  (stop-fn))
 

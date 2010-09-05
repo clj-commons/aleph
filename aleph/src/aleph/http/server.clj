@@ -164,12 +164,14 @@
 
 (defn- respond-with-channel
   [netty-channel response options]
+  (println "respond with channel")
   (let [charset (or (get-in response [:headers "charset"]) "UTF-8")
-	response (update-in [:headers "charset"] (constantly charset))
-	initial-response ^HttpResponse (transform-aleph-response (dissoc response :body))
+	response (-> response
+		   (assoc-in [:headers "charset"] charset)
+		   (assoc-in [:headers "transfer-encoding"] "chunked"))
+	initial-response ^HttpResponse (transform-aleph-response (dissoc response :body) options)
 	keep-alive? (:keep-alive? options)
 	ch (:body response)]
-    (.setChunked initial-response true)
     (-> netty-channel
       (.write initial-response)
       (.addListener (response-listener (assoc options :close? false))))
@@ -293,8 +295,8 @@
   (let [pipeline ^ChannelPipeline
 	(create-netty-pipeline
 	  :decoder (HttpRequestDecoder.)
-	  ;;:upstream-decoder (upstream-stage (fn [x] (println "request" x) x))
-	  ;;:downstream-decoder (downstream-stage (fn [x] (println "response" x) x))
+	  ;;:upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
+	  ;;:downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
 	  :upstream-error (upstream-stage error-stage-handler)

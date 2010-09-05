@@ -7,8 +7,9 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.http
-  (:use [aleph core http] :reload-all)
+  (:use [aleph http])
   (:use
+    [aleph core]
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
@@ -18,6 +19,8 @@
      ByteArrayInputStream
      StringReader
      PushbackReader]))
+
+;;;
 
 (def string-response "String!")
 (def seq-response ["sequence: " 1 " two " 3.0])
@@ -58,7 +61,7 @@
 	       (catch Exception e
 		 )))})
 
-(defn create-handler []
+(defn create-basic-handler []
   (let [num (atom -1)]
     (fn [ch request]
       (when-let [handler (route-map (:uri request))]
@@ -66,26 +69,41 @@
 	(enqueue-and-close ch
 	  (handler request))))))
 
-(defn request [client path]
-  (http-request client {:request-method :get, :url (str "http://localhost:8080/" path)}))
-
-(defn wait-for-request [client path]
-  (-> (request client path)
-    wait-for-pipeline
-    wait-for-message
-    :body))
-
 (def expected-results
   (->>
     ["string" string-response
      "stream" stream-response
      "seq" (apply str seq-response)]
-    (repeat 1e2)
+    (repeat 10)
     (apply concat)
     (partition 2)))
 
-(defmacro with-server [& body]
-  `(let [kill-fn# (start-http-server (create-handler) {:port 8080})]
+;;;
+
+(defn create-streaming-handler []
+  (fn [ch request]
+    (enqueue (channel) 1)
+    (let [body (channel)]
+      (doseq [x "abcdefghi"]
+	(enqueue body (str x)))
+      (enqueue ch
+	{:status 200
+	 :headers {"content-type" "text/plain"}
+	 :body body}))))
+
+;;;
+
+(defn request [client path]
+  (http-request client {:request-method :get, :url (str "http://localhost:8080/" path)}))
+
+(defn wait-for-request [client path]
+  (-> (request client path)
+    (wait-for-pipeline 1000)
+    (wait-for-message 1000)
+    :body))
+
+(defmacro with-server [handler & body]
+  `(let [kill-fn# (start-http-server ~handler {:port 8080})]
      (try
        ~@body
        (finally
@@ -96,17 +114,22 @@
     (is @latch)))
 
 (deftest single-requests
-  (with-server
-    (doseq [[index [path result]] (indexed (take 300 expected-results))]
+  (with-server (create-basic-handler)
+    (doseq [[index [path result]] (indexed expected-results)]
       (let [client (raw-http-client {:url "http://localhost:8080"})]
 	(is (= result (wait-for-request client path)))
 	(close-http-client client)))))
 
 (deftest multiple-requests
-  (with-server
+  (with-server (create-basic-handler)
     (let [client (raw-http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-http-client client))))
+
+(deftest streaming-response
+  (with-server (create-streaming-handler)
+    (let [result (sync-http-request {:url "http://localhost:8080" :request-method :get})]
+      (= "abcdeghi" (channel-seq (:body result) 250)))))
 
 

@@ -128,4 +128,5 @@
 (defn transform-netty-response [^HttpResponse response headers]
   {:status (-> response .getStatus .getCode)
    :headers headers
+   :chunked? (.isChunked response)
    :body (transform-netty-body (.getContent response) headers)})

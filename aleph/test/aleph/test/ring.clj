@@ -1,5 +1,5 @@
 (ns aleph.test.ring
-  (:use [aleph core http] :reload-all)
+  (:use [aleph core http])
   (:use [clojure test pprint])
   (:import [java.io StringReader PushbackReader]))
 
