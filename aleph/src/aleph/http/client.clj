@@ -21,6 +21,7 @@
      HttpResponseStatus
      HttpClientCodec
      HttpChunk
+     DefaultHttpChunk
      HttpContentDecompressor
      DefaultHttpRequest
      HttpMessage
@@ -28,9 +29,40 @@
      HttpHeaders
      HttpVersion]
     [org.jboss.netty.channel
+     Channel
      ExceptionEvent]
     [java.net
      URI]))
+
+;;;
+
+(defn transform-aleph-request [scheme ^String host ^Integer port request]
+  (let [request (wrap-client-request request)
+	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
+        req (DefaultHttpRequest.
+	      HttpVersion/HTTP_1_1
+	      (request-methods (:request-method request))
+	      (str
+		(when-not (= \/ (-> uri .getPath first))
+		  "/")
+		(.getPath uri)
+		(when-not (empty? (.getQuery uri))
+		  "?")
+		(.getQuery uri)))]
+    (.setHeader req "host" (str host ":" port))
+    (.setHeader req "accept-encoding" "gzip")
+    (.setHeader req "connection" "keep-alive")
+    (doseq [[k v-or-vals] (:headers request)]
+      (when-not (nil? v-or-vals)
+	(if (string? v-or-vals)
+	  (.addHeader req (to-str k) v-or-vals)
+	  (doseq [val v-or-vals]
+	    (.addHeader req (to-str k) val)))))
+    (when-let [body (:body request)]
+      (if (channel? body)
+	(.setHeader req "transfer-encoding" "chunked")
+	(.setContent req (transform-aleph-body body (:headers request)))))
+    req))
 
 ;;;
 
@@ -69,8 +101,38 @@
     (fn [_]
       (restart))))
 
-(defn create-pipeline [out close? options]
-  (let [in (channel)
+;;;
+
+(defn read-streaming-request [in out headers]
+  (run-pipeline in
+    :error-handler (fn [_ ex] (.printStackTrace ex))
+    receive-from-channel
+    (fn [chunk]
+      (enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers)))
+      (if (closed? in)
+	(enqueue out HttpChunk/LAST_CHUNK)
+	(restart)))))
+
+(defn read-requests [in out options]
+  (run-pipeline in
+    :error-handler (fn [_ ex] (.printStackTrace ex))
+    receive-from-channel
+    (fn [request]
+      (enqueue out
+	(transform-aleph-request
+	  (:scheme options)
+	  (:server-name options)
+	  (:server-port options)
+	  request))
+      (when (channel? (:body request))
+	(read-streaming-request (:body request) out (:headers request))))
+    (fn [_]
+      (restart))))
+
+;;;
+
+(defn create-pipeline [client close? options]
+  (let [responses (channel)
 	init? (atom false)]
     (create-netty-pipeline
       :codec (HttpClientCodec.)
@@ -79,10 +141,10 @@
       ;;:downstream-decoder (downstream-stage (fn [x] (println "client response\n" x) x))
       :upstream-error (upstream-stage error-stage-handler)
       :response (message-stage
-		  (fn [netty-channel response]
+		  (fn [netty-channel rsp]
 		    (when (compare-and-set! init? false true)
-		      (read-responses netty-channel in out))
-		    (enqueue in response)))
+		      (read-responses netty-channel responses client))
+		    (enqueue responses rsp)))
       :downstream-error (downstream-stage error-stage-handler))))
 
 ;;;
@@ -94,24 +156,26 @@
 (defn raw-http-client
   "Create an HTTP client."
   [options]
-  (let [options (-> (split-url options)
+  (let [options (-> options
+		  split-url
 		  (update-in [:server-port] #(or % 80)))
+	requests (channel)
 	client (create-client
 		 #(create-pipeline
 		    %
 		    (or (:close? options) (constantly false))
 		    options)
-		 #(transform-aleph-request
-		    (:scheme options)
-		    (:server-name options)
-		    (:server-port options)
-		    %)
+		 identity
 		 options)]
+    (run-pipeline client
+      #(read-requests requests % options))
     (reify HttpClient
       (create-request-channel [_]
-	client)
+	(run-pipeline client
+	  #(splice % requests)))
       (close-http-client [_]
-	(enqueue-and-close (-> client run-pipeline wait-for-pipeline) nil)))))
+	(enqueue-and-close (-> client run-pipeline wait-for-pipeline)
+	  nil)))))
 
 (defn http-request
   ([request]

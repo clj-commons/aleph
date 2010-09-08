@@ -9,6 +9,8 @@
 (ns aleph.example.twitter
   (:use [aleph http core formats] :reload-all))
 
+;;NOTE: Twitter's moved over to OAuth.  This no longer works.
+
 (def username "aleph_example")
 (def password "_password")
 

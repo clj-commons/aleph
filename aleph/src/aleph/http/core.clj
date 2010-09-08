@@ -27,6 +27,7 @@
      HttpMessage
      HttpChunk]
     [org.jboss.netty.buffer
+     ChannelBuffer
      ChannelBuffers]
     [java.net
      URI]
@@ -58,9 +59,9 @@
 
 (defn transform-netty-body
   "Transform body from ChannelBuffer into something more appropriate."
-  [body headers]
+  [^ChannelBuffer body headers]
   (let [content-type (or (headers "content-type") "text/plain")
-	charset (or (headers "charset") "UTF-8")]
+	charset (or (get headers "charset") "UTF-8")]
     (when-not (zero? (.readableBytes body))
       (cond
 
@@ -74,6 +75,22 @@
 
        :else
        (channel-buffer->input-stream body)))))
+
+(defn transform-aleph-body
+  [body headers]
+  (let [content-type (or (get headers "content-type") "text/plain")
+	charset (or (get headers "charset") "UTF-8")]
+    (cond
+
+	
+      (string? body)
+      (-> body (string->byte-buffer charset) byte-buffer->channel-buffer)
+	
+      (= content-type "application/json")
+      (transform-aleph-body (with-out-str (write-json body (java.io.PrintWriter. *out*))) headers)
+	
+      :else
+      (byte-buffer->channel-buffer body))))
 
 ;;;
 
@@ -99,34 +116,7 @@
     (and (instance? HttpChunk response) (.isLast ^HttpChunk response))
     (and (instance? HttpMessage response) (not (.isChunked ^HttpMessage response)))))
 
-(defn transform-aleph-request [scheme ^String host ^Integer port request]
-  (let [request (wrap-client-request request)
-	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
-        req (DefaultHttpRequest.
-	      HttpVersion/HTTP_1_1
-	      (request-methods (:request-method request))
-	      (str
-		(when-not (= \/ (-> uri .getPath first))
-		  "/")
-		(.getPath uri)
-		(when-not (empty? (.getQuery uri))
-		  "?")
-		(.getQuery uri)))]
-    (.setHeader req "host" (str host ":" port))
-    (.setHeader req "accept-encoding" "gzip")
-    (.setHeader req "connection" "keep-alive")
-    (doseq [[k v-or-vals] (:headers request)]
-      (when-not (nil? v-or-vals)
-	(if (string? v-or-vals)
-	  (.addHeader req (to-str k) v-or-vals)
-	  (doseq [val v-or-vals]
-	    (.addHeader req (to-str k) val)))))
-    (when-let [body (:body request)]
-      (.setContent req (input-stream->channel-buffer body)))
-    req))
-
 (defn transform-netty-response [^HttpResponse response headers]
   {:status (-> response .getStatus .getCode)
    :headers headers
-   :chunked? (.isChunked response)
    :body (transform-netty-body (.getContent response) headers)})

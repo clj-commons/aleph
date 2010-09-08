@@ -80,7 +80,7 @@
 
 ;;;
 
-(defn create-streaming-handler []
+(defn create-streaming-response-handler []
   (fn [ch request]
     (enqueue (channel) 1)
     (let [body (channel)]
@@ -90,6 +90,13 @@
 	{:status 200
 	 :headers {"content-type" "text/plain"}
 	 :body body}))))
+
+(defn create-streaming-request-handler []
+  (fn [ch request]
+    (enqueue ch
+      {:status 200
+       :headers {"content-type" "application/json"}
+       :body (:body request)})))
 
 ;;;
 
@@ -128,8 +135,20 @@
       (close-http-client client))))
 
 (deftest streaming-response
-  (with-server (create-streaming-handler)
-    (let [result (sync-http-request {:url "http://localhost:8080" :request-method :get})]
+  (with-server (create-streaming-response-handler)
+    (let [result (sync-http-request {:url "http://localhost:8080" :method :get})]
       (= "abcdeghi" (channel-seq (:body result) 250)))))
+
+(deftest streaming-request
+  (with-server (create-streaming-request-handler)
+    (let [ch (channel)]
+      (doseq [x (range 10)]
+	(enqueue ch x))
+      (let [result (sync-http-request
+		     {:url "http://localhost:8080"
+		      :method :get
+		      :headers {"content-type" "application/json"}
+		      :body ch})]
+	(is (= (range 10) (channel-seq (:body result) 1000)))))))
 
 
