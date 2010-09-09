@@ -9,7 +9,8 @@
 (ns aleph.example.twitter
   (:use [aleph http core formats] :reload-all))
 
-;;NOTE: Twitter's moved over to OAuth.  This no longer works.
+;; NOTE: Twitter's moved over to OAuth for most streams.  This example still works,
+;; but it won't work universally. 
 
 (def username "aleph_example")
 (def password "_password")
@@ -18,7 +19,6 @@
   (let [req (sync-http-request
 	      {:method :get
 	       :basic-auth [username password]
-	       ;;:headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
 	       :url "http://stream.twitter.com/1/statuses/sample.json"})]
     (Thread/sleep 500)
     (enqueue (:body req) nil)

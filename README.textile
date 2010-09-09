@@ -17,18 +17,20 @@ Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/r
 
 h4. HTTP Client
 
-This snippet prints out a never-ending sequence of tweets, using Twitter's "streaming API":http://dev.twitter.com/pages/streaming_api.
+This snippet prints out a never-ending sequence of tweets:
 
 <pre><code>(use 'aleph.core 'aleph.http)
 	
-(let [ch (wait-for-pipeline
-           (http-request
-             {:request-method :get
-              :headers {"authorization" (str "basic " (base64-encode (str username ":" password)))}
+(let [ch (:body
+           (sync-http-request
+             {:method :get
+              :basic-auth ["aleph_example" "_password"]
               :url "http://stream.twitter.com/1/statuses/sample.json"}))]
-  (doseq [tweet (map :body (lazy-channel-seq ch))]
+  (doseq [tweet (lazy-channel-seq ch)]
     (println tweet)))
 </code></pre>
+
+A more in-depth exploration of this example can be found "here":http://github.com/ztellman/aleph/wiki/Consuming-a-Twitter-Stream.
 
 h4. TCP Client/Server
 
