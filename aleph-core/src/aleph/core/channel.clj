@@ -346,12 +346,13 @@
   ([channel-map]
      (poll channel-map 0))
   ([channel-map timeout]
-     (let [received (atom 0)
+     (let [received (ref false)
 	   result-channel (constant-channel)
 	   enqueue-fn
 	   (fn [k]
 	     (fn [v]
-	       (when (compare-and-set! received 0 1)
+	       (when-not @received
+		 (ref-set received true)
 		 #(enqueue result-channel (when k [k %])))))]
        (doseq [[k ch] channel-map]
 	 (listen ch (enqueue-fn k)))
@@ -362,6 +363,8 @@
        result-channel)))
 
 (defn poll*
+  "More efficient than poll, but loses all messages after
+   the first.  Only use if you know what you're doing."
   ([channel-map]
      (poll channel-map 0))
   ([channel-map timeout]
@@ -423,6 +426,15 @@
       (f msg)
       (when-not (closed? ch)
 	(receive ch callback)))))
+
+(defn siphon
+  [src dst]
+  (receive-all src
+    (fn this [msg]
+      (dosync
+	(if-not (sealed? dst)
+	  (enqueue dst msg)
+	  (cancel-callback src this))))))
 
 ;;;
 
