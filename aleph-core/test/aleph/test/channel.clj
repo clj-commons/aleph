@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.channel
-  (:use [aleph.core.channel] :reload-all)
+  (:use [aleph.core.channel])
   (:use
     [clojure.test]
     [clojure.contrib.def]
@@ -106,6 +106,25 @@
 	  (map
 	    (fn [x] `(enqueue ch ~x))
 	    (range 3)))))))
+
+(deftest test-poll
+  (let [u (channel)
+	v (channel)]
+    (let [colls {:u (atom #{})
+		 :v (atom #{})}]
+      (future
+	(doseq [i (range 100)]
+	  (Thread/sleep 0 1)
+	  (enqueue u i)))
+      (future
+	(doseq [i (range 100)]
+	  (Thread/sleep 0 1)
+	  (enqueue v i)))
+      (doseq [i (range 200)]
+	(let [[ch msg] (wait-for-message (poll {:u u, :v v}))]
+	  (swap! (colls ch) conj msg)))
+      (is (= (set (range 100)) @(:u colls)))
+      (is (= (set (range 100)) @(:v colls))))))
 
 (deftest test-wait-for-message
   (let [num 1e3]

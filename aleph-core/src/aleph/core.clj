@@ -45,6 +45,9 @@
 (import-fn channel/wait-for-message)
 (import-fn channel/receive-in-order)
 (import-fn channel/siphon)
+(import-fn channel/siphon-when)
+(import-fn channel/wrap-channel)
+(import-fn channel/wrap-endpoint)
 (import-fn channel/named-channel)
 (import-fn channel/release-named-channel)
 

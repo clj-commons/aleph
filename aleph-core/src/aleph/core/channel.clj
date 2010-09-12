@@ -52,8 +52,6 @@
 
 ;;;
 
-
-
 (defn constant-channel
   "A channel which can hold zero or one messages in the queue.  Once it has
    a message, that message cannot be consumed.  Meant to communicate a single,
@@ -118,7 +116,7 @@
 	false))))
 
 (defn channel
-  "A basic implementation of a channel with an unbounded queue."
+  "An implementation of a unidirectional channel with an unbounded queue."
   []
   (let [messages (ref [])
 	transient-receivers (ref #{})
@@ -135,37 +133,34 @@
 	      [msg consumers])))
 	sample-listeners
 	(fn []
-	  (try
-	    (ensure listeners)
-	    (ensure transient-listeners)
-	    (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
-	      (when-not (empty? consumers)
-		(loop [msgs (next @messages) consumers [consumers]]
-		  (let [msg-consumers (when msgs (test-listeners msgs @listeners))]
-		    (if msg-consumers
-		      (recur (next msgs) (conj consumers msg-consumers))
-		      (do
-			(ref-set messages (vec msgs))
-			consumers))))))
-	    (finally
-	      (ref-set transient-listeners #{}))))
+	  (ensure listeners)
+	  (ensure transient-listeners)
+	  (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
+	    (ref-set transient-listeners #{})
+	    (when-not (empty? consumers)
+	      (loop [msgs (next @messages) consumers [consumers]]
+		(let [msg-consumers (when msgs (test-listeners msgs @listeners))]
+		  (if msg-consumers
+		    (recur (next msgs) (conj consumers msg-consumers))
+		    (do
+		      (ref-set messages (vec msgs))
+		      consumers)))))))
 	sample-receivers
 	(fn []
-	  (try
-	    (ensure receivers)
-	    (ensure transient-receivers)
-	    (list*
-	      [(first @messages)
-	       (concat @receivers @transient-receivers)]
-	      (partition 2
-		(interleave
-		  (rest (if @sealed (drop-last @messages) @messages))
-		  (repeat @receivers))))
-	    (finally
-	      (if-not (empty? @receivers)
-		(ref-set messages [])
-		(alter messages (comp vec (if @closed nnext next))))
-	      (ref-set transient-receivers #{}))))
+	  (ensure receivers)
+	  (ensure transient-receivers)
+	  (let [result (list*
+			 [(first @messages)
+			  (concat @receivers @transient-receivers)]
+			 (partition 2
+			   (interleave
+			     (rest (if @sealed (drop-last @messages) @messages))
+			     (repeat @receivers))))]
+	    (if-not (empty? @receivers)
+	      (ref-set messages [])
+	      (alter messages (comp vec (if @closed nnext next))))
+	    (ref-set transient-receivers #{})
+	    result))
 	callbacks
 	(fn []
 	  (dosync
@@ -306,31 +301,31 @@
 	(enqueue-and-close ch msg)))))
 
 (defn splice
-  "Takes two undirectional channels, and returns two
-   endpoints of a bidirectional channel."
-  [a b]
+  "Splices together a message source and a message destination
+   into a single channel."
+  [src dst]
   ^{:type ::channel}
   (reify AlephChannel
     (toString [_]
-      (str a))
+      (str src))
     (receive [_ f]
-      (receive a f))
+      (receive src f))
     (receive-all [_ f]
-      (receive-all a f))
+      (receive-all src f))
     (listen [_ f]
-      (listen a f))
+      (listen src f))
     (listen-all [_ f]
-      (listen-all a f))
+      (listen-all src f))
     (cancel-callback [_ f]
-      (cancel-callback a f))
+      (cancel-callback src f))
     (closed? [_]
-      (closed? a))
+      (closed? src))
     (sealed? [_]
-      (sealed? b))
+      (sealed? dst))
     (enqueue [_ msg]
-      (enqueue b msg))
+      (enqueue dst msg))
     (enqueue-and-close [_ msg]
-      (enqueue-and-close b msg))))
+      (enqueue-and-close dst msg))))
 
 (defn channel-pair
   "Creates paired channels, where an enqueued message from one channel
@@ -343,17 +338,25 @@
 ;;;
 
 (defn poll
+  "Allows you to consume exactly one message from multiple channels.
+
+   If the function is called with (poll {:a a, :b b}), and channel 'a' is
+   the first to emit a message, the function will return a constant channel
+   which emits [:a message].
+
+   If the poll times out, the constant channel will emit 'nil'.  If a timeout
+   is not specified, the poll will never time out."
   ([channel-map]
-     (poll channel-map 0))
+     (poll channel-map -1))
   ([channel-map timeout]
      (let [received (ref false)
 	   result-channel (constant-channel)
-	   enqueue-fn
-	   (fn [k]
-	     (fn [v]
-	       (when-not @received
-		 (ref-set received true)
-		 #(enqueue result-channel (when k [k %])))))]
+	   enqueue-fn (fn [k]
+			(fn [v]
+			  (dosync
+			    (when-not @received
+			      (ref-set received true)
+			      #(enqueue result-channel (when k [k %]))))))]
        (doseq [[k ch] channel-map]
 	 (listen ch (enqueue-fn k)))
        (when (zero? timeout)
@@ -366,7 +369,7 @@
   "More efficient than poll, but loses all messages after
    the first.  Only use if you know what you're doing."
   ([channel-map]
-     (poll channel-map 0))
+     (poll channel-map -1))
   ([channel-map timeout]
      (let [received (atom 0)
 	   result-channel (constant-channel)
@@ -384,6 +387,16 @@
        result-channel)))
 
 (defn lazy-channel-seq
+  "Creates a lazy-seq which consumes messages from the channel.  Only elements
+   which are realized will be consumes.
+
+   (take 1 (lazy-channel-seq ch)) will only take a single message from the channel,
+   and no more.  If there are no messages in the channel, execution will halt until
+   a message is enqueued.
+
+   'timeout' controls how long (in ms) the sequence will wait for each element.  If
+   the timeout is exceeded or the channel is closed, the sequence will end.  By default,
+   the sequence will never time out."
   ([ch]
      (lazy-channel-seq ch -1))
   ([ch timeout]
@@ -400,6 +413,12 @@
 	     (concat @value (lazy-channel-seq ch timeout-fn))))))))
 
 (defn channel-seq
+  "Creates a non-lazy sequence which consumes all messages from the channel within the next
+   'timeout' milliseconds.  A timeout of 0, which is the default, will only consume messages
+   currently within the channel.
+
+   This call is synchronous, and will hang the thread until the timeout is reached or the channel
+   is closed."
   ([ch]
      (channel-seq ch 0))
   ([ch timeout]
@@ -409,6 +428,8 @@
 	   #(max 0 (- timeout (- (System/currentTimeMillis) t0))))))))
 
 (defn wait-for-message
+  "Synchronously onsumes a single message from a channel.  If no message is received within the timeout,
+   a java.util.concurrent.TimeoutException is thrown.  By default, this function will not time out."
   ([ch]
      (wait-for-message ch -1))
   ([ch timeout]
@@ -427,20 +448,47 @@
       (when-not (closed? ch)
 	(receive ch callback)))))
 
-(defn siphon
-  [src dst]
+(defn siphon-when
+  "Enqueues all messages that satisify 'pred' from 'src' into 'dst',
+   unless 'dst' has been sealed."
+  [pred src dst]
   (receive-all src
     (fn this [msg]
-      (dosync
-	(if-not (sealed? dst)
-	  (enqueue dst msg)
-	  (cancel-callback src this))))))
+      (if-not (sealed? dst)
+	(when (pred msg)
+	  (enqueue dst msg))
+	(cancel-callback src this)))))
+
+(defn siphon
+  "Automatically enqueues all messages from 'src' into 'dst',
+   unless 'dst' has been sealed."
+  [src dst]
+  (siphon-when (constantly true) src dst))
+
+(defn wrap-channel
+  "Returns a new channel which maps 'f' over all messages from 'ch'."
+  [ch f]
+  (let [ch* (channel)]
+    (receive-all ch #(enqueue ch* (f %)))
+    ch*))
+
+(defn wrap-endpoint [ch receive-fn enqueue-fn]
+  "Returns an endpoint which maps 'receive-fn' over all messages received from
+   the endpoint, and maps 'enqueue-fn' over all messages enqueued into the
+   endpoint."
+  (let [in (channel)
+	out (channel)]
+    (receive-all ch #(enqueue out (receive-fn %)))
+    (receive-all in #(enqueue ch (enqueue-fn %)))
+    (splice out in)))
 
 ;;;
 
 (def named-channels (ref {}))
 
 (defn named-channel
+  "Returns a unique channel for the key.  If no such channel exists,
+   a channel is created, and 'creation-callback' is invoked."
   ([key]
      (named-channel key nil))
   ([key creation-callback]
@@ -454,7 +502,9 @@
 	 (creation-callback ch))
        ch)))
 
-(defn release-named-channel [key]
+(defn release-named-channel
+  "Forgets the channel associated with the key, if one exists."
+  [key]
   (dosync
     (commute named-channels dissoc key)))
 
