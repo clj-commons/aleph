@@ -7,7 +7,7 @@ Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/r
 <pre><code>(use 'aleph.core 'aleph.http)
 	
 (defn hello-world [channel request]
-  (enqueue-and-close channel
+  (enqueue channel
     {:status 200
      :headers {"content-type" "text/html"}
      :body "Hello World!"}))
@@ -31,6 +31,23 @@ This snippet prints out a never-ending sequence of tweets:
 </code></pre>
 
 A more in-depth exploration of this example can be found "here":http://github.com/ztellman/aleph/wiki/Consuming-a-Twitter-Stream.
+
+h4. WebSocket
+
+Making a simple chat client is trivial.  In this, we assume that the first message sent by the client is the user's name:
+
+<pre><code>(use 'aleph.core 'aleph.http)
+
+(def broadcast-channel (channel))
+
+(defn chat-handler [ch handshake]
+  (receive ch
+    (fn [name]
+       (receive-all ch #(enqueue broadcast-channel (str name ": " %)))
+       (siphon broadcast-channel ch))))
+
+(start-http-server chat-handler {:port 8080 :websocket true})
+</code></pre>
 
 h4. TCP Client/Server
 

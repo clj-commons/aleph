@@ -57,7 +57,7 @@
    "/stop" (fn [_]
 	     (try
 	       (deliver latch true) ;;this can be triggered more than once, sometimes
-	       (stop-server @server)
+	       (@server)
 	       (catch Exception e
 		 )))})
 

@@ -31,4 +31,4 @@
 	(let [s (doall (lazy-channel-seq ch 100))]
 	  (is (= s @server-messages))))
       (finally
-	(stop-server server)))))
+	(server)))))

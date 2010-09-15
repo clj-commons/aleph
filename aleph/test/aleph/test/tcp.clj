@@ -37,4 +37,4 @@
 	       (join-and-split (map byte-buffer->string s))
 	       (join-and-split @server-messages)))))
       (finally
-	(stop-server server)))))
+	(server)))))

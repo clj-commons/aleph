@@ -60,64 +60,6 @@
 
 ;;;
 
-(defn- netty-request-method
-  "Get HTTP method from Netty request."
-  [^HttpRequest req]
-  {:request-method (->> req .getMethod .getName .toLowerCase keyword)})
-
-(defn- netty-request-uri
-  "Get URI from Netty request."
-  [^HttpRequest req]
-  (let [paths (.split (.getUri req) "[?]")]
-    {:uri (first paths)
-     :query-string (second paths)}))
-
-(defn transform-netty-request
-  "Transforms a Netty request into a Ring request."
-  [^HttpRequest req]
-  (let [headers (netty-headers req)
-	parts (.split (headers "host") "[:]")
-	host (first parts)
-	port (when-let [port (second parts)]
-	       (Integer/parseInt port))]
-    (merge
-      (netty-request-method req)
-      {:headers headers}
-      {:body (let [body (transform-netty-body (.getContent req) headers)]
-	       (if (final-netty-message? req)
-		 body
-		 (let [ch (channel)]
-		   (when body
-		     (enqueue ch body))
-		   ch)))}
-      {:keep-alive? (HttpHeaders/isKeepAlive req)
-       :server-name host
-       :server-port port}
-      (netty-request-uri req))))
-
-;;;
-
-(defn transform-aleph-response
-  "Turns a Ring response into something Netty can understand."
-  [response options]
-  (let [response (wrap-response response)
-	rsp (DefaultHttpResponse.
-	      HttpVersion/HTTP_1_1
-	      (HttpResponseStatus/valueOf (:status response)))
-	body (:body response)]
-    (doseq [[k v-or-vals] (:headers response)]
-      (when-not (nil? v-or-vals)
-	(if (string? v-or-vals)
-	  (.addHeader rsp (to-str k) v-or-vals)
-	  (doseq [val v-or-vals]
-	    (.addHeader rsp (to-str k) val)))))
-    (when body
-      (.setContent rsp body))
-    (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes))
-    (when (:keep-alive? options)
-      (.setHeader rsp "connection" "keep-alive"))
-    rsp))
-
 (defn- respond-with-string
   ([^Channel netty-channel response options]
      (respond-with-string netty-channel response options "UTF-8"))

@@ -36,36 +36,6 @@
 
 ;;;
 
-(defn transform-aleph-request [scheme ^String host ^Integer port request]
-  (let [request (wrap-client-request request)
-	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
-        req (DefaultHttpRequest.
-	      HttpVersion/HTTP_1_1
-	      (request-methods (:request-method request))
-	      (str
-		(when-not (= \/ (-> uri .getPath first))
-		  "/")
-		(.getPath uri)
-		(when-not (empty? (.getQuery uri))
-		  "?")
-		(.getQuery uri)))]
-    (.setHeader req "host" (str host ":" port))
-    (.setHeader req "accept-encoding" "gzip")
-    (.setHeader req "connection" "keep-alive")
-    (doseq [[k v-or-vals] (:headers request)]
-      (when-not (nil? v-or-vals)
-	(if (string? v-or-vals)
-	  (.addHeader req (to-str k) v-or-vals)
-	  (doseq [val v-or-vals]
-	    (.addHeader req (to-str k) val)))))
-    (when-let [body (:body request)]
-      (if (channel? body)
-	(.setHeader req "transfer-encoding" "chunked")
-	(.setContent req (transform-aleph-body body (:headers request)))))
-    req))
-
-;;;
-
 (defn read-streaming-response [headers in out]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
@@ -189,4 +159,7 @@
 	 (enqueue ch request)
 	 ch))))
 
+;;;
 
+(defn create-websocket-pipeline []
+  )

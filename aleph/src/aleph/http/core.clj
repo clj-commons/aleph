@@ -8,7 +8,7 @@
 
 (ns aleph.http.core
   (:use
-    [aleph netty formats]
+    [aleph netty formats core]
     [aleph.http utils]
     [clojure.contrib.json])
   (:import
@@ -48,6 +48,11 @@
 
 ;;;
 
+(defn final-netty-message? [response]
+  (or
+    (and (instance? HttpChunk response) (.isLast ^HttpChunk response))
+    (and (instance? HttpMessage response) (not (.isChunked ^HttpMessage response)))))
+
 (defn netty-headers
   "Get headers from Netty message."
   [^HttpMessage req]
@@ -74,7 +79,7 @@
 	   (read-json s true false nil)))
 
        :else
-       (channel-buffer->input-stream body)))))
+       (channel-buffer->byte-buffer body)))))
 
 (defn transform-aleph-body
   [body headers]
@@ -82,6 +87,8 @@
 	charset (or (get headers "charset") "UTF-8")]
     (cond
 
+      (instance? ChannelBuffer body)
+      body
 	
       (string? body)
       (-> body (string->byte-buffer charset) byte-buffer->channel-buffer)
@@ -91,6 +98,93 @@
 	
       :else
       (byte-buffer->channel-buffer body))))
+
+;;;
+
+(defn- netty-request-method
+  "Get HTTP method from Netty request."
+  [^HttpRequest req]
+  {:request-method (->> req .getMethod .getName .toLowerCase keyword)})
+
+(defn- netty-request-uri
+  "Get URI from Netty request."
+  [^HttpRequest req]
+  (let [paths (.split (.getUri req) "[?]")]
+    {:uri (first paths)
+     :query-string (second paths)}))
+
+(defn transform-netty-request
+  "Transforms a Netty request into a Ring request."
+  [^HttpRequest req]
+  (let [headers (netty-headers req)
+	parts (.split (headers "host") "[:]")
+	host (first parts)
+	port (when-let [port (second parts)]
+	       (Integer/parseInt port))]
+    (merge
+      (netty-request-method req)
+      {:headers headers}
+      {:body (let [body (transform-netty-body (.getContent req) headers)]
+	       (if (final-netty-message? req)
+		 body
+		 (let [ch (channel)]
+		   (when body
+		     (enqueue ch body))
+		   ch)))}
+      {:keep-alive? (HttpHeaders/isKeepAlive req)
+       :server-name host
+       :server-port port}
+      (netty-request-uri req))))
+
+(defn transform-aleph-request [scheme ^String host ^Integer port request]
+  (let [request (wrap-client-request request)
+	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
+        req (DefaultHttpRequest.
+	      HttpVersion/HTTP_1_1
+	      (request-methods (:request-method request))
+	      (str
+		(when-not (= \/ (-> uri .getPath first))
+		  "/")
+		(.getPath uri)
+		(when-not (empty? (.getQuery uri))
+		  "?")
+		(.getQuery uri)))]
+    (.setHeader req "host" (str host ":" port))
+    (.setHeader req "accept-encoding" "gzip")
+    (.setHeader req "connection" "keep-alive")
+    (doseq [[k v-or-vals] (:headers request)]
+      (when-not (nil? v-or-vals)
+	(if (string? v-or-vals)
+	  (.addHeader req (to-str k) v-or-vals)
+	  (doseq [val v-or-vals]
+	    (.addHeader req (to-str k) val)))))
+    (when-let [body (:body request)]
+      (if (channel? body)
+	(.setHeader req "transfer-encoding" "chunked")
+	(.setContent req (transform-aleph-body body (:headers request)))))
+    req))
+
+(defn transform-aleph-response
+  "Turns a Ring response into something Netty can understand."
+  [response options]
+  (let [response (wrap-response response)
+	rsp (DefaultHttpResponse.
+	      HttpVersion/HTTP_1_1
+	      (HttpResponseStatus/valueOf (:status response)))
+	body (:body response)]
+    (doseq [[k v-or-vals] (:headers response)]
+      (when-not (nil? v-or-vals)
+	(if (string? v-or-vals)
+	  (.addHeader rsp (to-str k) v-or-vals)
+	  (doseq [val v-or-vals]
+	    (.addHeader rsp (to-str k) val)))))
+    (when body
+      (.setContent rsp
+	(transform-aleph-body body (:headers response))))
+    (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes))
+    (when (:keep-alive? options)
+      (.setHeader rsp "connection" "keep-alive"))
+    rsp))
 
 ;;;
 
@@ -110,11 +204,6 @@
 	(call-error-handler options (.getCause future))))))
 
 ;;;
-
-(defn final-netty-message? [response]
-  (or
-    (and (instance? HttpChunk response) (.isLast ^HttpChunk response))
-    (and (instance? HttpMessage response) (not (.isChunked ^HttpMessage response)))))
 
 (defn transform-netty-response [^HttpResponse response headers]
   {:status (-> response .getStatus .getCode)
