@@ -56,194 +56,204 @@
   "A channel which can hold zero or one messages in the queue.  Once it has
    a message, that message cannot be consumed.  Meant to communicate a single,
    constant value via a channel."
-  []
-  (let [result (ref nil)
-	complete (ref false)
-	listeners (ref #{})
-	receivers (ref #{})
-	subscribe
-	(fn [f set handler]
-	  (let [value (dosync
-			(if @complete
-			  @result
-			  (do
-			    (alter set conj f)
-			    ::incomplete)))]
-	    (when-not (= ::incomplete value)
-	      (handler f value)))
-	  nil)]
-    ^{:type ::constant-channel}
-    (reify AlephChannel
-      (toString [_]
-	(if @complete
-	  (->> (with-out-str (pprint @result))
-	    drop-last
-	    (apply str))))
-      (listen [this f]
-	(subscribe f listeners
-	  #(when-let [f (%1 %2)]
-	     (f %2))))
-      (listen-all [this f]
-	(listen this f))
-      (receive-all [this f]
-	(receive this f))
-      (receive [this f]
-	(subscribe f receivers #(%1 %2)))
-      (cancel-callback [_ f]
-	(dosync
-	  (alter listeners disj f)))
-      (enqueue [_ msg]
-	(doseq [f (dosync
-		    (when @complete
-		      (throw (Exception. "Constant channel already contains a result.")))
-		    (ref-set result msg)
-		    (ref-set complete true)
-		    (let [coll (filter identity
-				 (doall
-				   (concat
-				     (map #(% msg) @listeners)
-				     @receivers)))]
-		      (ref-set listeners nil)
-		      (ref-set receivers nil)
-		      coll))]
-	  (f msg))
-	nil)
-      (enqueue-and-close [_ _]
-	(throw (Exception. "Cannot close constant-channel.")))
-      (sealed? [_]
-	@complete)
-      (closed? [_]
-	false))))
+  ([message]
+     (let [ch (constant-channel)]
+       (enqueue ch message)
+       ch))
+  ([]
+     (let [result (ref nil)
+	   complete (ref false)
+	   listeners (ref #{})
+	   receivers (ref #{})
+	   subscribe
+	   (fn [f set handler]
+	     (let [value (dosync
+			   (if @complete
+			     @result
+			     (do
+			       (alter set conj f)
+			       ::incomplete)))]
+	       (when-not (= ::incomplete value)
+		 (handler f value)))
+	     nil)]
+       ^{:type ::constant-channel}
+       (reify AlephChannel
+	 (toString [_]
+	   (if @complete
+	     (->> (with-out-str (pprint @result))
+	       drop-last
+	       (apply str))))
+	 (listen [this f]
+	   (subscribe f listeners
+	     #(when-let [f (%1 %2)]
+		(f %2))))
+	 (listen-all [this f]
+	   (listen this f))
+	 (receive-all [this f]
+	   (receive this f))
+	 (receive [this f]
+	   (subscribe f receivers #(%1 %2)))
+	 (cancel-callback [_ f]
+	   (dosync
+	     (alter listeners disj f)))
+	 (enqueue [_ msg]
+	   (doseq [f (dosync
+		       (when @complete
+			 (throw (Exception. "Constant channel already contains a result.")))
+		       (ref-set result msg)
+		       (ref-set complete true)
+		       (let [coll (filter identity
+				    (doall
+				      (concat
+					(map #(% msg) @listeners)
+					@receivers)))]
+			 (ref-set listeners nil)
+			 (ref-set receivers nil)
+			 coll))]
+	     (f msg))
+	   nil)
+	 (enqueue-and-close [this msg]
+	   (enqueue this msg))
+	 (sealed? [_]
+	   @complete)
+	 (closed? [_]
+	   false)))))
 
 (defn channel
   "An implementation of a unidirectional channel with an unbounded queue."
-  []
-  (let [messages (ref [])
-	transient-receivers (ref #{})
-	receivers (ref #{})
-	transient-listeners (ref #{})
-	listeners (ref #{})
-	closed (ref false)
-	sealed (ref false)
-	test-listeners
-	(fn [messages listeners]
-	  (let [msg (first messages)
-		consumers (filter identity (map #(% msg) listeners))]
-	    (when-not (empty? consumers)
-	      [msg consumers])))
-	sample-listeners
-	(fn []
-	  (ensure listeners)
-	  (ensure transient-listeners)
-	  (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
-	    (ref-set transient-listeners #{})
-	    (when-not (empty? consumers)
-	      (loop [msgs (next @messages) consumers [consumers]]
-		(let [msg-consumers (when msgs (test-listeners msgs @listeners))]
-		  (if msg-consumers
-		    (recur (next msgs) (conj consumers msg-consumers))
-		    (do
-		      (ref-set messages (vec msgs))
-		      consumers)))))))
-	sample-receivers
-	(fn []
-	  (ensure receivers)
-	  (ensure transient-receivers)
-	  (let [result (list*
-			 [(first @messages)
-			  (concat @receivers @transient-receivers)]
-			 (partition 2
-			   (interleave
-			     (rest (if @sealed (drop-last @messages) @messages))
-			     (repeat @receivers))))]
-	    (if-not (empty? @receivers)
-	      (ref-set messages [])
-	      (alter messages (comp vec (if @closed nnext next))))
-	    (ref-set transient-receivers #{})
-	    result))
-	callbacks
-	(fn []
-	  (dosync
-	    (ensure messages)
-	    (when-not (empty? @messages)
-	      (let [close (= ::close (last @messages))]
-		(when close
-		  (ref-set closed true))
-		(let [callbacks (concat
-				  (when-not (and (empty? @receivers) (empty? @transient-receivers))
-				    (sample-receivers))
-				  (when-not (and (empty? @listeners) (empty? @transient-listeners))
-				    (sample-listeners)))]
-		  (when (empty? callbacks)
-		    (ref-set closed false))
-		  callbacks)))))
-	send-to-callbacks
-	(fn [callbacks]
-	  (doseq [[msg fns] callbacks]
-	    (doseq [f fns]
-	      (f msg))))
-	assert-can-enqueue
-	(fn []
-	  (when @sealed
-	    (throw (Exception. "Can't enqueue into a sealed channel."))))
-	assert-can-receive
-	(fn []
-	  (when @closed
-	    (throw (Exception. "Can't receive from a closed channel."))))]
-    ^{:type ::channel}
-    (reify AlephChannel
-      Object
-      (toString [_]
-	(->> (with-out-str (pprint @messages))
-	  drop-last
-	  (apply str)))
-      (receive-all [_ f]
-	(send-to-callbacks
-	  (dosync
-	    (assert-can-receive)
-	    (alter receivers conj f)
-	    (callbacks))))
-      (receive [this f]
-	(send-to-callbacks
-	  (dosync
-	    (assert-can-receive)
-	    (alter transient-receivers conj f)
-	    (callbacks))))
-       (listen [this f]
-	(send-to-callbacks
-	  (dosync
-	    (assert-can-receive)
-	    (alter transient-listeners conj f)
-	    (callbacks))))
-      (listen-all [this f]
-	(send-to-callbacks
-	  (dosync
-	    (assert-can-receive)
-	    (alter listeners conj f)
-	    (callbacks))))
-      (cancel-callback [_ f]
-	(dosync
-	  (alter listeners disj f)
-	  (alter transient-listeners disj f)
-	  (alter receivers disj f)
-	  (alter transient-receivers disj f)))
-      (enqueue [this msg]
-	(send-to-callbacks
-	  (dosync
-	    (assert-can-enqueue)
-	    (alter messages conj msg)
-	    (callbacks))))
-      (enqueue-and-close [_ msg]
-	(send-to-callbacks
-	  (dosync
-	    (assert-can-enqueue)
-	    (ref-set sealed true)
-	    (alter messages concat [msg ::close])
-	    (callbacks))))
-      (sealed? [_]
-	@sealed)
-      (closed? [_]
-	@closed))))
+  ([& messages]
+     (let [ch (channel)]
+       (doseq [msg messages]
+	 (enqueue ch msg))
+       ch))
+  ([]
+     (let [messages (ref [])
+	   transient-receivers (ref #{})
+	   receivers (ref #{})
+	   transient-listeners (ref #{})
+	   listeners (ref #{})
+	   closed (ref false)
+	   sealed (ref false)
+	   test-listeners
+	   (fn [messages listeners]
+	     (let [msg (first messages)
+		   consumers (filter identity (map #(% msg) listeners))]
+	       (when-not (empty? consumers)
+		 [msg consumers])))
+	   sample-listeners
+	   (fn []
+	     (ensure listeners)
+	     (ensure transient-listeners)
+	     (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
+	       (ref-set transient-listeners #{})
+	       (when-not (empty? consumers)
+		 (loop [msgs (next @messages) consumers [consumers]]
+		   (let [msg-consumers (when msgs (test-listeners msgs @listeners))]
+		     (if msg-consumers
+		       (recur (next msgs) (conj consumers msg-consumers))
+		       (do
+			 (ref-set messages (vec msgs))
+			 consumers)))))))
+	   sample-receivers
+	   (fn []
+	     (ensure receivers)
+	     (ensure transient-receivers)
+	     (let [result (list*
+			    [(first @messages)
+			     (concat @receivers @transient-receivers)]
+			    (partition 2
+			      (interleave
+				(rest (if @sealed (drop-last @messages) @messages))
+				(repeat @receivers))))]
+	       (if-not (empty? @receivers)
+		 (ref-set messages [])
+		 (alter messages (comp vec (if @closed nnext next))))
+	       (ref-set transient-receivers #{})
+	       result))
+	   callbacks
+	   (fn []
+	     (dosync
+	       (ensure messages)
+	       (when-not (empty? @messages)
+		 (let [close (= ::close (last @messages))]
+		   (when close
+		     (ref-set closed true))
+		   (let [callbacks (concat
+				     (when-not (and (empty? @receivers) (empty? @transient-receivers))
+				       (sample-receivers))
+				     (when-not (and (empty? @listeners) (empty? @transient-listeners))
+				       (sample-listeners)))]
+		     (when (empty? callbacks)
+		       (ref-set closed false))
+		     callbacks)))))
+	   send-to-callbacks
+	   (fn [callbacks]
+	     (doseq [[msg fns] callbacks]
+	       (doseq [f fns]
+		 (f msg))))
+	   assert-can-enqueue
+	   (fn []
+	     (when @sealed
+	       (throw (Exception. "Can't enqueue into a sealed channel."))))
+	   assert-can-receive
+	   (fn []
+	     (when @closed
+	       (throw (Exception. "Can't receive from a closed channel."))))]
+       ^{:type ::channel}
+       (reify AlephChannel
+	 Object
+	 (toString [_]
+	   (->> (with-out-str (pprint @messages))
+	     drop-last
+	     (apply str)))
+	 (receive-all [_ f]
+	   (send-to-callbacks
+	     (dosync
+	       (assert-can-receive)
+	       (alter receivers conj f)
+	       (callbacks))))
+	 (receive [this f]
+	   (send-to-callbacks
+	     (dosync
+	       (assert-can-receive)
+	       (alter transient-receivers conj f)
+	       (callbacks))))
+	 (listen [this f]
+	   (send-to-callbacks
+	     (dosync
+	       (assert-can-receive)
+	       (alter transient-listeners conj f)
+	       (callbacks))))
+	 (listen-all [this f]
+	   (send-to-callbacks
+	     (dosync
+	       (assert-can-receive)
+	       (alter listeners conj f)
+	       (callbacks))))
+	 (cancel-callback [_ f]
+	   (dosync
+	     (alter listeners disj f)
+	     (alter transient-listeners disj f)
+	     (alter receivers disj f)
+	     (alter transient-receivers disj f)))
+	 (enqueue [this msg]
+	   (send-to-callbacks
+	     (dosync
+	       (assert-can-enqueue)
+	       (alter messages conj msg)
+	       (callbacks))))
+	 (enqueue-and-close [_ msg]
+	   (send-to-callbacks
+	     (dosync
+	       (assert-can-enqueue)
+	       (ref-set sealed true)
+	       (alter messages concat [msg ::close])
+	       (callbacks))))
+	 (sealed? [_]
+	   @sealed)
+	 (closed? [_]
+	   @closed)))))
+
 
 ;;;
 
@@ -272,33 +282,6 @@
       (throw (Exception. "Cannot enqueue into a sealed channel.")))
     (enqueue-and-close [_ msg]
       (throw (Exception. "Cannot enqueue into a sealed channel.")))))
-
-(defn single-shot-channel
-  "Creates a channel which will be closed after a single message."
-  []
-  (let [ch (channel)]
-    ^{:type ::channel}
-    (reify AlephChannel
-      (toString [_]
-	(str ch))
-      (receive [_ f]
-	(receive ch f))
-      (receive-all [_ f]
-	(receive-all ch f))
-      (listen [_ f]
-	(listen ch f))
-      (listen-all [_ f]
-	(listen-all ch f))
-      (cancel-callback [_ f]
-	(cancel-callback ch f))
-      (closed? [_]
-	(closed? ch))
-      (sealed? [_]
-	(sealed? ch))
-      (enqueue [_ msg]
-	(enqueue-and-close ch msg))
-      (enqueue-and-close [_ msg]
-	(enqueue-and-close ch msg)))))
 
 (defn splice
   "Splices together a message source and a message destination

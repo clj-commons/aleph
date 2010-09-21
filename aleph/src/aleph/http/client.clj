@@ -39,7 +39,7 @@
 (defn read-streaming-response [headers in out]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
-    receive-from-channel
+    read-channel
     (fn [^HttpChunk response]
       (let [body (transform-netty-body (.getContent response) headers)]
 	(if (.isLast response)
@@ -51,7 +51,7 @@
 (defn read-responses [netty-channel in out]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
-    receive-from-channel
+    read-channel
     (fn [^HttpResponse response]
       (let [chunked? (.isChunked response)
 	    headers (netty-headers response)
@@ -60,7 +60,7 @@
 	  (enqueue out response)
 	  (let [body (:body response)
 		stream (channel)
-		close (single-shot-channel)
+		close (constant-channel)
 		response (assoc response :body (splice stream close))]
 	    (receive close
 	      (fn [_] (.close netty-channel)))
@@ -76,7 +76,7 @@
 (defn read-streaming-request [in out headers]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
-    receive-from-channel
+    read-channel
     (fn [chunk]
       (enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers)))
       (if (closed? in)
@@ -86,7 +86,7 @@
 (defn read-requests [in out options]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
-    receive-from-channel
+    read-channel
     (fn [request]
       (enqueue out
 	(transform-aleph-request

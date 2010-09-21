@@ -20,7 +20,8 @@
 
 (import-fn pipeline/pipeline)
 (import-fn pipeline/blocking)
-(import-fn pipeline/receive-from-channel)
+(import-fn pipeline/read-channel)
+(import-fn pipeline/read-merge)
 (import-fn pipeline/redirect)
 (import-fn pipeline/restart)
 (import-fn pipeline/run-pipeline)
@@ -39,7 +40,6 @@
 (import-fn channel/channel)
 (import-fn channel/channel-pair)
 (import-fn channel/constant-channel)
-(import-fn channel/single-shot-channel)
 (import-fn channel/channel-seq)
 (import-fn channel/lazy-channel-seq)
 (import-fn channel/wait-for-message)

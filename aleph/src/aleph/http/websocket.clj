@@ -59,35 +59,14 @@
 	     (doto (ByteBuffer/allocate 16)
 	       (.putInt (transform-key (headers "sec-websocket-key1")))
 	       (.putInt (transform-key (headers "sec-websocket-key2")))
-	       (.putLong (-> request :body .getLong))))}))
+	       (.putLong (-> request :body .getLong))))})
 
-(defn standard-websocket-response [request]
-  (let [headers (:headers request)]
-    {:status 101
-     :headers {:WebSocket-Origin (headers "origin")
-	       :WebSocket-Location (str "ws://" (headers "host") "/")
-	       :WebSocket-Protocol (headers "websocket-protocol")}}))
-
-'(defn secure-websocket-response [request headers ^HttpResponse response]
-  (.addHeader response "Sec-WebSocket-Origin" (headers "origin"))
-  (.addHeader response "Sec-WebSocket-Location" (str "ws://" (headers "host") "/"))
-  (when-let [protocol (headers "sec-websocket-protocol")]
-    (.addHeader response "Sec-WebSocket-Protocol" protocol))
-  (let [buf (ChannelBuffers/buffer 16)]
-    (doto buf
-      (.writeInt (transform-key (headers "sec-websocket-key1")))
-      (.writeInt (transform-key (headers "sec-websocket-key2")))
-      (.writeLong (-> request .getContent .getLong)))
-    (.setContent response
-      (-> (MessageDigest/getInstance "MD5")
-	(.digest (.array buf))
-	ChannelBuffers/wrappedBuffer))))
-
-'(defn standard-websocket-response [request headers ^HttpResponse response]
-  (.addHeader response "WebSocket-Origin" (headers "origin"))
-  (.addHeader response "WebSocket-Location" (str "ws://" (headers "host") "/"))
-  (when-let [protocol (headers "websocket-protocol")]
-    (.addHeader response "WebSocket-Protocol" protocol)))
+  (defn standard-websocket-response [request]
+    (let [headers (:headers request)]
+      {:status 101
+       :headers {:WebSocket-Origin (headers "origin")
+		 :WebSocket-Location (str "ws://" (headers "host") "/")
+		 :WebSocket-Protocol (headers "websocket-protocol")}})))
 
 (defn websocket-response [^HttpRequest request]
   (.setHeader request "content-type" "application/octet-stream")

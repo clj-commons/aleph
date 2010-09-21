@@ -82,10 +82,7 @@
 
 (defn create-streaming-response-handler []
   (fn [ch request]
-    (enqueue (channel) 1)
-    (let [body (channel)]
-      (doseq [x "abcdefghi"]
-	(enqueue body (str x)))
+    (let [body (apply channel (map str "abcdefghi"))]
       (enqueue ch
 	{:status 200
 	 :headers {"content-type" "text/plain"}
@@ -141,9 +138,7 @@
 
 (deftest streaming-request
   (with-server (create-streaming-request-handler)
-    (let [ch (channel)]
-      (doseq [x (range 10)]
-	(enqueue ch x))
+    (let [ch (apply channel (range 10))]
       (let [result (sync-http-request
 		     {:url "http://localhost:8080"
 		      :method :get

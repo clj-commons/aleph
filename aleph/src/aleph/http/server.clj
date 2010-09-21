@@ -180,7 +180,7 @@
 (defn read-streaming-request [headers in out]
   (run-pipeline in
     :error-handler (fn [_ ex] (.printStackTrace ex))
-    receive-from-channel
+    read-channel
     (fn [^HttpChunk request]
       (let [last? (.isLast request)
 	    body (transform-netty-body (.getContent request) headers)]
@@ -194,14 +194,14 @@
   (let [remote-addr (->> netty-channel .getRemoteAddress .getAddress .getHostAddress)]
     (run-pipeline in
       :error-handler (fn [_ ex] (.printStackTrace ex))
-      receive-from-channel
+      read-channel
       (fn [^HttpRequest netty-request]
 	(let [chunked? (.isChunked netty-request)
 	      keep-alive? (.isKeepAlive netty-request)
 	      request (assoc (transform-netty-request netty-request)
 			:scheme :http
 			:remote-addr remote-addr)
-	      out (single-shot-channel)]
+	      out (constant-channel)]
 	  (receive out
 	    #(respond
 	       netty-channel

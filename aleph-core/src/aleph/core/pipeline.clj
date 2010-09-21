@@ -197,16 +197,34 @@
 	      (enqueue error [x e])))))
       result)))
 
-(def nil-channel
-  (reify AlephChannel
-    (listen [_ _])
-    (receive [_ _])))
+(defn read-channel
+  "For reading channels within pipelines.  Takes a simple channel,
+   and returns a pipeline channel."
+  ([ch]
+     (read-channel ch -1))
+  ([ch timeout]
+     (let [result (pipeline-channel)
+	   {success :success error :error} result]
+       (receive
+	 (poll {:ch ch} timeout)
+	 #(if %
+	    (enqueue success (second %))
+	    (enqueue error [nil (TimeoutException. (str "read-channel timed out after " timeout " ms"))])))
+       result)))
 
-(defn receive-from-channel
-  "Creates a pipeline stage which takes a basic channel as a parameter,
-   and returns a single message from that channel."
-  [ch]
-  (pipeline-channel ch nil-channel))    
+(defn read-merge
+  "For merging asynchronous reads into a pipeline.
+
+   'read-fn' is a function that takes no parameters and returns a value, which
+   can be a pipeline channel representing an asynchronous read.
+
+   'merge-fn' is a function which takes two parameters - the incoming value from
+   the pipeline and the value from read-fn - and returns a single value that
+   will propagate forward into the pipeline."
+  [read-fn merge-fn]
+  (fn [input]
+    (run-pipeline (read-fn)
+      #(merge-fn input %))))
 
 ;;;
 
