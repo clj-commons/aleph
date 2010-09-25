@@ -24,6 +24,7 @@
 (import-fn pipeline/read-merge)
 (import-fn pipeline/redirect)
 (import-fn pipeline/restart)
+(import-fn pipeline/complete)
 (import-fn pipeline/run-pipeline)
 (import-fn pipeline/on-success)
 (import-fn pipeline/on-error)
