@@ -59,14 +59,14 @@
 	     (doto (ByteBuffer/allocate 16)
 	       (.putInt (transform-key (headers "sec-websocket-key1")))
 	       (.putInt (transform-key (headers "sec-websocket-key2")))
-	       (.putLong (-> request :body .getLong))))})
+	       (.putLong (-> request :body .getLong))))}))
 
-  (defn standard-websocket-response [request]
-    (let [headers (:headers request)]
-      {:status 101
-       :headers {:WebSocket-Origin (headers "origin")
-		 :WebSocket-Location (str "ws://" (headers "host") "/")
-		 :WebSocket-Protocol (headers "websocket-protocol")}})))
+(defn standard-websocket-response [request]
+  (let [headers (:headers request)]
+    {:status 101
+     :headers {:WebSocket-Origin (headers "origin")
+	       :WebSocket-Location (str "ws://" (headers "host") "/")
+	       :WebSocket-Protocol (headers "websocket-protocol")}}))
 
 (defn websocket-response [^HttpRequest request]
   (.setHeader request "content-type" "application/octet-stream")

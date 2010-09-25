@@ -257,9 +257,7 @@
 
 ;;;
 
-(defn closed-channel
-  "Creates a channel which is already closed."
-  []
+(def closed-channel
   ^{:type ::channel}
   (reify AlephChannel
     (toString [_]
@@ -282,6 +280,23 @@
       (throw (Exception. "Cannot enqueue into a sealed channel.")))
     (enqueue-and-close [_ msg]
       (throw (Exception. "Cannot enqueue into a sealed channel.")))))
+
+(def nil-channel
+  ^{:type ::channel}
+  (reify AlephChannel
+    (toString [_]
+      "<== []")
+    (receive [_ f])
+    (receive-all [_ f])
+    (listen [_ f])
+    (listen-all [_ f])
+    (cancel-callback [_ f])
+    (closed? [_]
+      false)
+    (sealed? [_]
+      false)
+    (enqueue [_ msg])
+    (enqueue-and-close [_ msg])))
 
 (defn splice
   "Splices together a message source and a message destination

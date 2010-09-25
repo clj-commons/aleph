@@ -44,9 +44,16 @@
   (when buf
     (.toByteBuffer buf)))
 
+(defn channel-buffer->string
+  ([buf]
+     (channel-buffer->string buf "UTF-8"))
+  ([^ChannelBuffer buf charset]
+     (when buf
+       (.toString buf charset))))
+
 (defn byte-buffer->string
   ([buf]
-     (byte-buffer->string buf "ASCII"))
+     (byte-buffer->string buf "UTF-8"))
   ([^ByteBuffer buf charset]
      (when buf
        (let [ary (byte-array (.remaining buf))]
@@ -55,25 +62,27 @@
 
 (defn string->byte-buffer
   ([s]
-     (string->byte-buffer s "ASCII"))
+     (string->byte-buffer s "UTF-8"))
   ([^String s charset]
      (when s
        (ByteBuffer/wrap (.getBytes s charset)))))
+
+(defn string->channel-buffer
+  ([s]
+     (string->channel-buffer s "UTF-8"))
+  ([s charset]
+     (-> s (string->byte-buffer charset) byte-buffer->channel-buffer)))
 
 ;;;
 
 (defn base64-encode [string]
   (-> string
-    string->byte-buffer
-    byte-buffer->channel-buffer
+    string->channel-buffer
     (Base64/encode)
-    channel-buffer->byte-buffer
-    byte-buffer->string))
+    channel-buffer->string))
 
 (defn base64-decode [string]
   (-> string
-    string->byte-buffer
-    byte-buffer->channel-buffer
+    string->channel-buffer
     (Base64/decode)
-    channel-buffer->byte-buffer
-    byte-buffer->string))
+    channel-buffer->string))

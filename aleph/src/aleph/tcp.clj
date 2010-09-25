@@ -13,8 +13,11 @@
   (:import
     [org.jboss.netty.channel
      Channel
+     ChannelPipeline
      DownstreamMessageEvent
      DefaultChannelFuture]
+    [org.jboss.netty.handler.codec.frame
+     DelimiterBasedFrameDecoder]
     [java.nio
      ByteBuffer]
     [org.jboss.netty.buffer
@@ -22,52 +25,70 @@
     [java.io
      InputStream]))
 
-(defn server-pipeline [handler send-encoder receive-encoder options]
-  (let [[inner outer] (channel-pair)
-	latch (atom false)]
-    (create-netty-pipeline
-      :upstream-error (upstream-stage error-stage-handler)
-      :channel-open (upstream-stage
-		      (channel-open-stage
-			(fn [^Channel netty-channel]
-			  (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
-			  (receive-in-order outer
-			    #(when-let [msg (send-encoder %)]
-			       (.write netty-channel msg))))))
-      :channel-close (upstream-stage
-		       (channel-close-stage
-			 (fn [_] (enqueue-and-close outer nil))))
-      :receive (message-stage
-		 (fn [netty-channel msg]
-		   (enqueue outer (receive-encoder msg))))
-      :downstream-handler (downstream-stage error-stage-handler))))
-
-(defn client-pipeline [ch receive-encoder options]
-  (create-netty-pipeline
-    :upstream-error (upstream-stage error-stage-handler)
-    :receive (message-stage
-	       (fn [netty-channel msg]
-		 (enqueue ch (receive-encoder msg))))
-    :downstream-error (downstream-stage error-stage-handler)))
-
 (defn to-channel-buffer [x]
   (cond
     (instance? ByteBuffer x) (byte-buffer->channel-buffer x)
     (instance? ChannelBuffer x) x
-    (instance? String x) (-> x string->byte-buffer byte-buffer->channel-buffer)
+    (instance? String x) (string->channel-buffer x)
     (instance? InputStream x) (input-stream->channel-buffer x)))
+
+(defn- add-delimiter-stage [pipeline delimiters strip-delimiters]
+  (.addFirst ^ChannelPipeline pipeline "delimiter"
+    (DelimiterBasedFrameDecoder.
+      1048576
+      strip-delimiters
+      (into-array (map to-channel-buffer delimiters)))))
+
+(defn basic-server-pipeline
+  [handler send-encoder receive-encoder options]
+  (let [[inner outer] (channel-pair)
+	pipeline (create-netty-pipeline
+		   :upstream-error (upstream-stage error-stage-handler)
+		   :channel-open (upstream-stage
+				   (channel-open-stage
+				     (fn [^Channel netty-channel]
+				       (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
+				       (receive-in-order outer
+					 #(io!
+					    (when-let [msg (send-encoder %)]
+					      (.write netty-channel msg)))))))
+		   :channel-close (upstream-stage
+				    (channel-close-stage
+				      (fn [_]
+					(enqueue-and-close outer nil)
+					(when-not (sealed? inner)
+					  (enqueue-and-close inner nil)))))
+		   :receive (message-stage
+			      (fn [netty-channel msg]
+				(enqueue outer (receive-encoder msg))))
+		   :downstream-handler (downstream-stage error-stage-handler))]
+    (when-let [delimiters (:delimiters options)]
+      (add-delimiter-stage pipeline delimiters (or (:strip-delimiters? options) true)))
+    pipeline))
+
+(defn basic-client-pipeline
+  [ch receive-encoder options]
+  (let [pipeline (create-netty-pipeline
+		   :upstream-error (upstream-stage error-stage-handler)
+		   :receive (message-stage
+			      (fn [netty-channel msg]
+				(enqueue ch (receive-encoder msg))))
+		   :downstream-error (downstream-stage error-stage-handler))]
+    (when-let [delimiters (:delimiters options)]
+      (add-delimiter-stage pipeline delimiters (or (:strip-delimiters? options) true)))
+    pipeline))
 
 (defn start-tcp-server [handler options]
   (start-server
-    #(server-pipeline
+    #(basic-server-pipeline
        handler
        to-channel-buffer
-       channel-buffer->byte-buffer
+       identity
        options)
     options))
 
 (defn tcp-client [options]
   (create-client
-    #(client-pipeline % channel-buffer->byte-buffer options)
+    #(basic-client-pipeline % identity options)
     to-channel-buffer
     options))

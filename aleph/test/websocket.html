@@ -7,7 +7,7 @@
   function openWebSocket() {
      if (window.WebSocket) {
          socket = new WebSocket('ws://127.0.0.1:10000/');
-         socket.onopen    = function(event) { alert('WebSocket open!');  };
+         socket.onopen    = function(event) { alert('WebSocket open!'); };
          socket.onclose   = function(event) { alert('WebSocket closed'); };
          socket.onmessage = function(event) { parse(event.data);         };
      } else {

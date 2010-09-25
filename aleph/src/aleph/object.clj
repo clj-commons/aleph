@@ -17,13 +17,13 @@
      ObjectDecoder]))
 
 (defn- server-pipeline [handler options]
-  (let [pipeline ^ChannelPipeline (tcp/server-pipeline handler identity identity options)]
+  (let [pipeline ^ChannelPipeline (tcp/basic-server-pipeline handler identity identity options)]
     (.addFirst pipeline "encoder" (ObjectEncoder.))
     (.addFirst pipeline "decoder" (ObjectDecoder.))
     pipeline))
 
 (defn- client-pipeline [ch options]
-  (let [pipeline ^ChannelPipeline (tcp/client-pipeline ch identity options)]
+  (let [pipeline ^ChannelPipeline (tcp/basic-client-pipeline ch identity options)]
     (.addFirst pipeline "encoder" (ObjectEncoder.))
     (.addFirst pipeline "decoder" (ObjectDecoder.))
     pipeline))

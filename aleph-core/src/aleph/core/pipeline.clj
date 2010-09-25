@@ -123,27 +123,6 @@
 
 ;;;
 
-(defn redirect
-  "When returned from a pipeline stage, redirects the execution flow.."
-  ([pipeline val]
-     (when-not (pipeline? pipeline)
-       (throw (Exception. "First parameter must be a pipeline.")))
-     ^{:tag ::redirect}
-     {:pipeline (-> pipeline meta :pipeline)
-      :value val}))
-
-(defn restart
-  "Redirects to the beginning of the current pipeline.  If no value is passed in, defaults
-   to the value previously passed into the pipeline."
-  ([]
-     (restart (initial-value)))
-  ([val]
-     ^{:tag ::redirect}
-     {:pipeline (current-pipeline)
-      :value val}))
-
-;;;
-
 (defn- get-opts [opts+rest]
   (if (-> opts+rest first keyword?)
     (concat (take 2 opts+rest) (get-opts (drop 2 opts+rest)))
@@ -173,6 +152,36 @@
 	   :outer-result ch
 	   :initial-value x})
 	ch))))
+
+(defn redirect
+  "When returned from a pipeline stage, redirects the execution flow.."
+  ([pipeline val]
+     (when-not (pipeline? pipeline)
+       (throw (Exception. "First parameter must be a pipeline.")))
+     ^{:tag ::redirect}
+     {:pipeline (-> pipeline meta :pipeline)
+      :value val}))
+
+(defn restart
+  "Redirects to the beginning of the current pipeline.  If no value is passed in, defaults
+   to the value previously passed into the pipeline."
+  ([]
+     (restart (initial-value)))
+  ([val]
+     ^{:tag ::redirect}
+     {:pipeline (current-pipeline)
+      :value val}))
+
+(defn complete
+  "Short-circuits the pipeline, and passes the result to the outermost pipeline channel."
+  [result]
+  (redirect
+    (pipeline
+      (fn [_]
+	(pipeline-channel
+	  (constant-channel result)
+	  nil-channel)))
+    nil))
 
 (defn run-pipeline
   "Equivalent to ((pipeline opts+stages) initial-value).
