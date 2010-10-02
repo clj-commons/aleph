@@ -116,7 +116,6 @@
 	      (try
 		(recur (f result) (next fns) context)
 		(catch Exception e
-		  ;;(.printStackTrace e)
 		  (let [failure (pipeline-channel)]
 		    (enqueue (:error failure) [result e])
 		    (poll-pipeline-channel failure fns context)))))))))))
@@ -207,8 +206,8 @@
       result)))
 
 (defn read-channel
-  "For reading channels within pipelines.  Takes a simple channel,
-   and returns a pipeline channel."
+  "For reading channels within pipelines.  Takes a simple channel, and returns
+   a pipeline channel."
   ([ch]
      (read-channel ch -1))
   ([ch timeout]
@@ -238,8 +237,7 @@
 ;;;
 
 (defn on-success
-  "Adds a callback to a pipeline channel which will be called if the
-   pipeline succeeds.
+  "Adds a callback to a pipeline channel which will be called if the pipeline succeeds.
 
    The function will be called with (f result)"
   [ch f]

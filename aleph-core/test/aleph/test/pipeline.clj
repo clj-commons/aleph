@@ -61,7 +61,18 @@
     (test-pipeline (pipeline inc (pipeline inc (pipeline inc) inc) inc) 5))
   (testing "Redirected pipelines"
     (test-pipeline (pipeline inc inc #(redirect (pipeline inc inc inc) %)) 5)
-    (test-pipeline (pipeline inc #(if (< % 10) (restart %) %) inc) 11)
+    (let [cat (fn [x] (fn [s] (conj s x)))]
+      (test-pipeline
+	(pipeline (fn [_] [])
+	  (cat "a")
+	  (pipeline
+	    (cat "b")
+	    #(if (< (count %) 3)
+	       (restart %)
+	       %)
+	    (cat "c"))
+	  (cat "d"))
+	(map str (seq "abbcd"))))
     (test-pipeline pipe-b 10))
   (testing "Error propagation"
     (assert-failure (pipeline fail))
