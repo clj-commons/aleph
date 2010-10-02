@@ -25,10 +25,7 @@
   ([url]
      (request url :get))
   ([url method]
-     (->> (http-request {:request-method method :url url})
-       run-pipeline
-       wait-for-pipeline
-       wait-for-message
+     (->> (sync-http-request {:request-method method :url url})
        :body
        StringReader.
        PushbackReader.

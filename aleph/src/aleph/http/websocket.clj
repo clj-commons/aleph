@@ -8,7 +8,8 @@
 
 (ns aleph.http.websocket
   (:use
-    [aleph.http core])
+    [aleph.http core]
+    [aleph formats])
   (:import
     [org.jboss.netty.handler.codec.http.websocket
      DefaultWebSocketFrame
@@ -37,7 +38,7 @@
   (.getTextData frame))
 
 (defn to-websocket-frame [msg]
-  (DefaultWebSocketFrame. msg))
+  (DefaultWebSocketFrame. 0 (to-channel-buffer msg)))
 
 (defn websocket-handshake? [^HttpRequest request]
   (and

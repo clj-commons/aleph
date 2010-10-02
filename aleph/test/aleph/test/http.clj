@@ -103,7 +103,6 @@
 (defn wait-for-request [client path]
   (-> (request client path)
     (wait-for-pipeline 1000)
-    (wait-for-message 1000)
     :body))
 
 (defmacro with-server [handler & body]
@@ -114,8 +113,9 @@
 	 (kill-fn#)))))
 
 '(deftest browser-http-response
-  (let [server (reset! server (start-http-server (create-handler) {:port 8080}))]
-    (is @latch)))
+   (println "waiting for browser test")
+   (let [server (reset! server (start-http-server (create-handler) {:port 8080}))]
+     (is @latch)))
 
 (deftest single-requests
   (with-server (create-basic-handler)

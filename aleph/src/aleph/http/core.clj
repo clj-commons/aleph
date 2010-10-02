@@ -9,8 +9,7 @@
 (ns aleph.http.core
   (:use
     [aleph netty formats core]
-    [aleph.http utils]
-    [clojure.contrib.json])
+    [aleph.http utils])
   (:import
     [org.jboss.netty.channel
      ChannelFutureListener
@@ -29,6 +28,8 @@
     [org.jboss.netty.buffer
      ChannelBuffer
      ChannelBuffers]
+    [java.io
+     InputStreamReader]
     [java.net
      URI]
     [java.nio.charset
@@ -71,12 +72,10 @@
       (cond
 
        (.startsWith content-type "text")
-       (.toString body charset)
+       (channel-buffer->string body charset)
 
        (= content-type "application/json")
-       (let [s (.toString body charset)]
-	 (when-not (empty? s)
-	   (read-json s true false nil)))
+       (-> body channel-buffer->input-stream InputStreamReader. from-json)
 
        :else
        (channel-buffer->byte-buffer body)))))
@@ -87,17 +86,17 @@
 	charset (or (get headers "charset") "UTF-8")]
     (cond
 
-      (instance? ChannelBuffer body)
-      body
-	
-      (string? body)
-      (-> body (string->byte-buffer charset) byte-buffer->channel-buffer)
-	
       (= content-type "application/json")
-      (transform-aleph-body (with-out-str (write-json body (java.io.PrintWriter. *out*))) headers)
+      (to-channel-buffer (to-json body))
+
+      (to-channel-buffer? body)
+      (to-channel-buffer body)
+
+      (sequential? body)
+      (to-channel-buffer (to-json body))
 	
       :else
-      (byte-buffer->channel-buffer body))))
+      (throw (Exception. (str "Can't convert body: " body))))))
 
 ;;;
 

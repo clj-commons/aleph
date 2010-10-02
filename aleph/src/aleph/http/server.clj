@@ -135,7 +135,11 @@
 
 (defn respond [netty-channel response options]
   (try
-    (let [body (:body response)]
+    (let [response (update-in response [:headers]
+		     #(merge
+			{"server" "Aleph (0.1.1)"}
+			%))
+	  body (:body response)]
       (cond
 	(nil? body) (respond-with-string netty-channel (assoc response :body "") options)
 	(string? body) (respond-with-string netty-channel response options)
@@ -158,10 +162,13 @@
   (let [[inner outer] (channel-pair)]
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
+
 	(if-let [msg (message-event evt)]
+
 	  (cond
 	    (instance? WebSocketFrame msg)
 	    (enqueue outer (from-websocket-frame msg))
+
 	    (instance? HttpRequest msg)
 	    (if (websocket-handshake? msg)
 	      (let [ch (.getChannel ctx)]
@@ -174,6 +181,7 @@
 		(respond-to-handshake ctx msg)
 		(handler inner (assoc (transform-netty-request msg) :websocket true)))
 	      (.sendUpstream ctx evt)))
+	  
 	  (if-let [ch (channel-event evt)]
 	    (when-not (.isConnected ch)
 	      (when-not (sealed? outer)

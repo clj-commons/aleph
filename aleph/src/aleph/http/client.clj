@@ -71,6 +71,13 @@
     (fn [_]
       (restart))))
 
+(defn follow-redirect [request-fn response]
+  (run-pipeline response
+    (fn [response]
+      (if (= 301 (:status response))
+	(restart (request-fn response))
+	response))))
+
 ;;;
 
 (defn read-streaming-request [in out headers]
@@ -78,7 +85,8 @@
     :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [chunk]
-      (enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers)))
+      (when chunk
+	(enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers))))
       (if (closed? in)
 	(enqueue out HttpChunk/LAST_CHUNK)
 	(restart)))))
@@ -149,15 +157,25 @@
 
 (defn http-request
   ([request]
-     (http-request
-       (raw-http-client request)
-       request))
+     (let [client (raw-http-client request)
+	   response (http-request client request)]
+       ;;(receive (poll response) (fn [_] (close-http-client client)))
+       response))
   ([client request]
      (run-pipeline client
        create-request-channel
        (fn [ch]
 	 (enqueue ch request)
-	 ch))))
+	 (read-channel ch))
+       )))
+
+'(fn [response]
+  (follow-redirect
+    #(http-request
+       (-> request
+	 (assoc :url (get-in % [:headers "location"]))
+	 (dissoc :query-string :uri :server-port :server-name :scheme)))
+    response))
 
 ;;;
 

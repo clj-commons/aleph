@@ -25,13 +25,6 @@
     [java.io
      InputStream]))
 
-(defn to-channel-buffer [x]
-  (cond
-    (instance? ByteBuffer x) (byte-buffer->channel-buffer x)
-    (instance? ChannelBuffer x) x
-    (instance? String x) (string->channel-buffer x)
-    (instance? InputStream x) (input-stream->channel-buffer x)))
-
 (defn- add-delimiter-stage [pipeline delimiters strip-delimiters]
   (.addFirst ^ChannelPipeline pipeline "delimiter"
     (DelimiterBasedFrameDecoder.

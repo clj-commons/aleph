@@ -11,7 +11,9 @@
     [clojure.contrib.json])
   (:import
     [java.io
-     InputStream]
+     InputStream
+     PrintWriter
+     ByteArrayOutputStream]
     [java.nio
      ByteBuffer]
     [org.jboss.netty.handler.codec.base64
@@ -22,22 +24,12 @@
      ChannelBufferInputStream
      ByteBufferBackedChannelBuffer]))
 
-(defn input-stream->channel-buffer
-  [^InputStream stream]
-  (when stream
-    (let [ary (make-array Byte/TYPE (.available stream))]
-      (.read stream ary)
-      (ChannelBuffers/wrappedBuffer ary))))
+;;;
 
 (defn channel-buffer->input-stream
   [^ChannelBuffer buf]
   (when buf
     (ChannelBufferInputStream. buf)))
-
-(defn byte-buffer->channel-buffer
-  [^ByteBuffer buf]
-  (when buf
-    (ByteBufferBackedChannelBuffer. buf)))
 
 (defn channel-buffer->byte-buffer
   [^ChannelBuffer buf]
@@ -50,6 +42,8 @@
   ([^ChannelBuffer buf charset]
      (when buf
        (.toString buf charset))))
+
+;;;
 
 (defn byte-buffer->string
   ([buf]
@@ -67,11 +61,39 @@
      (when s
        (ByteBuffer/wrap (.getBytes s charset)))))
 
+;;;
+
+(defn input-stream->channel-buffer
+  [^InputStream stream]
+  (when stream
+    (let [ary (make-array Byte/TYPE (.available stream))]
+      (.read stream ary)
+      (ChannelBuffers/wrappedBuffer ary))))
+
+(defn byte-buffer->channel-buffer
+  [^ByteBuffer buf]
+  (when buf
+    (ByteBufferBackedChannelBuffer. buf)))
+
 (defn string->channel-buffer
   ([s]
      (string->channel-buffer s "UTF-8"))
   ([s charset]
      (-> s (string->byte-buffer charset) byte-buffer->channel-buffer)))
+
+(defn to-channel-buffer [data]
+  (cond
+    (instance? ChannelBuffer data) data
+    (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
+    (instance? InputStream data) (input-stream->channel-buffer data)
+    (instance? String data) (string->channel-buffer data)))
+
+(defn to-channel-buffer? [data]
+  (or
+    (instance? ChannelBuffer data)
+    (instance? ByteBuffer data)
+    (instance? InputStream data)
+    (instance? String data)))
 
 ;;;
 
@@ -86,3 +108,15 @@
     string->channel-buffer
     (Base64/decode)
     channel-buffer->string))
+
+;;;
+
+(defn from-json [data]
+  (read-json-from data true false nil))
+
+(defn to-json [x]
+  (let [output (ByteArrayOutputStream.)
+	writer (PrintWriter. output)]
+    (write-json x writer)
+    (.flush writer)
+    (-> output .toByteArray ByteBuffer/wrap)))

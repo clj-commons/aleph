@@ -29,8 +29,7 @@
      (sync-http-request (raw-http-client request) request))
   ([client request]
      (->> (http-request client request)
-       wait-for-pipeline
-       wait-for-message)))
+       wait-for-pipeline)))
 
 (import-fn policy/start-policy-file-server)
 
