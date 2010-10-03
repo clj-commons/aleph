@@ -358,7 +358,9 @@
        (doseq [[k ch] channel-map]
 	 (listen ch (enqueue-fn k)))
        (when (zero? timeout)
-	 ((enqueue-fn nil) nil))
+	 (let [enqueue-fn* ((enqueue-fn nil) nil)]
+	   (when enqueue-fn*
+	     (enqueue-fn* nil))))
        (when (< 0 timeout)
 	 (delay-invoke #(((enqueue-fn nil) nil) nil) timeout))
        result-channel)))
@@ -403,7 +405,7 @@
 			(constantly timeout))]
        (lazy-seq
 	 (let [value (promise)]
-	   (receive (poll* {:ch ch} (timeout-fn))
+	   (receive (poll {:ch ch} (timeout-fn))
 	     #(deliver value
 		(when (first %)
 		  [(second %)])))
