@@ -383,13 +383,14 @@
 			timeout
 			(constantly timeout))]
        (lazy-seq
-	 (let [value (promise)]
-	   (receive (poll {:ch ch} (timeout-fn))
-	     #(deliver value
-		(when (first %)
-		  [(second %)])))
-	   (when @value
-	     (concat @value (lazy-channel-seq ch timeout-fn))))))))
+	 (when-not (closed? ch)
+	   (let [value (promise)]
+	     (receive (poll {:ch ch} (timeout-fn))
+	       #(deliver value
+		  (when (first %)
+		    [(second %)])))
+	     (when @value
+	       (concat @value (lazy-channel-seq ch timeout-fn)))))))))
 
 (defn channel-seq
   "Creates a non-lazy sequence which consumes all messages from the channel within the next
