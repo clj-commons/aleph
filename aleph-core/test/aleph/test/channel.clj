@@ -135,3 +135,18 @@
 	  (Thread/sleep 0 1)))
       (dotimes [i num]
 	(is (= i (wait-for-message ch)))))))
+
+(deftest test-channel-seq
+  (let [ch (channel)
+        in (take 100 (iterate inc 0))
+        out (do (future
+                 (doseq [i in]
+                   (enqueue ch i)
+                   (Thread/sleep 1)))
+                (loop [out []]
+                  (Thread/sleep 3)
+                  (let [n (channel-seq ch)]
+                    (if (seq n)
+                      (recur (concat out n))
+                      out))))]
+    (is (= in out))))
