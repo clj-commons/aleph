@@ -365,27 +365,6 @@
 	 (delay-invoke #(((enqueue-fn nil) nil) nil) timeout))
        result-channel)))
 
-(defn poll*
-  "More efficient than poll, but loses all messages after
-   the first.  Only use if you know what you're doing."
-  ([channel-map]
-     (poll channel-map -1))
-  ([channel-map timeout]
-     (let [received (atom 0)
-	   result-channel (constant-channel)
-	   enqueue-fn
-	   (fn [k]
-	     (fn [v]
-	       (when (compare-and-set! received 0 1)
-		 (enqueue result-channel (when k [k v])))))]
-       (doseq [[k ch] channel-map]
-	 (receive ch (enqueue-fn k)))
-       (when (zero? timeout)
-	 ((enqueue-fn nil) nil))
-       (when (< 0 timeout)
-	 (delay-invoke #((enqueue-fn nil) nil) timeout))
-       result-channel)))
-
 (defn lazy-channel-seq
   "Creates a lazy-seq which consumes messages from the channel.  Only elements
    which are realized will be consumes.

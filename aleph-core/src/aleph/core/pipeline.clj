@@ -71,7 +71,7 @@
 (declare handle-result)
 
 (defn- poll-pipeline-channel [chs fns context]
-  (receive (poll* chs -1)
+  (receive (poll chs -1)
     (fn [[typ result]]
       (with-context context
 	(case typ
@@ -258,7 +258,7 @@
      (wait-for-pipeline pipeline-channel -1))
   ([pipeline-channel timeout]
      (let [value (promise)]
-       (receive (poll* pipeline-channel timeout)
+       (receive (poll pipeline-channel timeout)
 	 #(deliver value %))
        (let [value @value]
 	 (if (nil? value)
