@@ -19,15 +19,22 @@
     @val))
 
 (defvar a nil)
-(defvar ch nil)
 (defvar f nil)
+(defvar ch nil)
+(defvar enqueue-fn nil)
 
 (defmacro run-test [& body]
-  `(binding [a (atom [])
-	     ch (channel)
-	     f (fn [x#] (swap! a conj x#) true)]
-     ~@body
-     (deref a)))
+  `(let [enqueue-count# (atom 0)]
+     (binding [a (atom [])
+	       ch (channel)
+	       f (fn [x#] (swap! a conj x#) true)
+	       enqueue-fn #(do
+			     (swap! enqueue-count# inc)
+			     (if (= 3 @enqueue-count#)
+			       (enqueue-and-close ch %)
+			       (enqueue ch %)))]
+      ~@body
+      (deref a))))
 
 (defn try-all [f exprs]
   (let [fns (map
@@ -65,7 +72,7 @@
     (list*
       `(receive-all ch f)
       (map
-	(fn [x] `(enqueue ch ~x))
+	(fn [x] `(enqueue-fn ~x))
 	(range 3)))))
 
 (deftest test-receive
@@ -80,17 +87,8 @@
 	    (fn [_] `(receive ch (fn [x#] (f x#))))
 	    (range 3))
 	  (map
-	    (fn [x] `(enqueue ch ~x))
+	    (fn [x] `(enqueue-fn ~x))
 	    (range 3)))))))
-
-(deftest test-listen-all
-  (try-all
-    #(is (= (range 3) %))
-    (list*
-      `(listen-all ch (constantly f))
-      (map
-	(fn [x] `(enqueue ch ~x))
-	(range 3)))))
 
 (deftest test-listen
   (doall
@@ -104,7 +102,7 @@
 	    (fn [_] `(listen ch (constantly f)))
 	    (range 3))
 	  (map
-	    (fn [x] `(enqueue ch ~x))
+	    (fn [x] `(enqueue-fn ~x))
 	    (range 3)))))))
 
 (deftest test-poll
@@ -135,7 +133,9 @@
     (let [ch (channel)]
       (future
 	(dotimes [i num]
-	  (enqueue ch i)
+	  (if (= i (dec num))
+	    (enqueue-and-close ch i)
+	    (enqueue ch i))
 	  (Thread/sleep 0 1)))
       (dotimes [i num]
 	(is (= i (wait-for-message ch)))))))

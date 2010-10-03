@@ -22,8 +22,6 @@
      may receive the same message multiple times.
 
      This exists to support poll, don't use it directly unless you know what you're doing.")
-  (listen-all [ch f]
-    "Same as listen, but for all messages that comes through the queue.")
   (receive [ch f]
     "Adds a callback which will receive the next message from the channel.")
   (receive-all [ch f]
@@ -87,8 +85,6 @@
 	   (subscribe f listeners
 	     #(when-let [f (%1 %2)]
 		(f %2))))
-	 (listen-all [this f]
-	   (listen this f))
 	 (receive-all [this f]
 	   (receive this f))
 	 (receive [this f]
@@ -130,74 +126,57 @@
      (let [messages (ref [])
 	   transient-receivers (ref #{})
 	   receivers (ref #{})
-	   transient-listeners (ref #{})
 	   listeners (ref #{})
-	   closed (ref false)
 	   sealed (ref false)
-	   test-listeners
-	   (fn [messages listeners]
-	     (let [msg (first messages)
-		   consumers (filter identity (map #(% msg) listeners))]
-	       (when-not (empty? consumers)
-		 [msg consumers])))
-	   sample-listeners
+
+	   listener-callbacks
 	   (fn []
 	     (ensure listeners)
-	     (ensure transient-listeners)
-	     (let [consumers (test-listeners @messages (concat @listeners @transient-listeners))]
-	       (ref-set transient-listeners #{})
-	       (when-not (empty? consumers)
-		 (loop [msgs (next @messages) consumers [consumers]]
-		   (let [msg-consumers (when msgs (test-listeners msgs @listeners))]
-		     (if msg-consumers
-		       (recur (next msgs) (conj consumers msg-consumers))
-		       (do
-			 (ref-set messages (vec msgs))
-			 consumers)))))))
-	   sample-receivers
+	     (let [msg (first @messages)
+		   callbacks (filter identity (map #(% msg) @listeners))]
+	       (ref-set listeners #{})
+	       (when-not (empty? callbacks)
+		 [[msg callbacks]])))
+
+	   receiver-callbacks
 	   (fn []
 	     (ensure receivers)
+	     (let [callbacks @receivers]
+	       (when-not (empty? callbacks)
+		 (map #(list % callbacks) @messages))))
+
+	   transient-receiver-callbacks
+	   (fn []
 	     (ensure transient-receivers)
-	     (let [result (list*
-			    [(first @messages)
-			     (concat @receivers @transient-receivers)]
-			    (partition 2
-			      (interleave
-				(rest (if @sealed (drop-last @messages) @messages))
-				(repeat @receivers))))]
-	       (if-not (empty? @receivers)
-		 (ref-set messages [])
-		 (alter messages (comp vec (if @closed nnext next))))
-	       (ref-set transient-receivers #{})
-	       result))
+	     (let [callbacks @transient-receivers]
+	       (when-not (empty? callbacks)
+		 (ref-set transient-receivers #{})
+		 [[(first @messages) callbacks]])))
+
 	   callbacks
 	   (fn []
-	     (dosync
-	       (ensure messages)
-	       (when-not (empty? @messages)
-		 (let [close (= ::close (last @messages))]
-		   (when close
-		     (ref-set closed true))
-		   (let [callbacks (concat
-				     (when-not (and (empty? @receivers) (empty? @transient-receivers))
-				       (sample-receivers))
-				     (when-not (and (empty? @listeners) (empty? @transient-listeners))
-				       (sample-listeners)))]
-		     (when (empty? callbacks)
-		       (ref-set closed false))
-		     callbacks)))))
+	     (ensure messages)
+	     (when-not (empty? @messages)
+	       (let [callbacks [(listener-callbacks)
+				(receiver-callbacks)
+				(transient-receiver-callbacks)]]
+		 (alter messages #(vec (drop (apply max (map count callbacks)) %)))
+		 (apply concat callbacks))))
+
 	   send-to-callbacks
 	   (fn [callbacks]
 	     (doseq [[msg fns] callbacks]
 	       (doseq [f fns]
 		 (f msg))))
+
 	   assert-can-enqueue
 	   (fn []
 	     (when @sealed
 	       (throw (Exception. "Can't enqueue into a sealed channel."))))
+
 	   assert-can-receive
 	   (fn []
-	     (when @closed
+	     (when (and @sealed (empty? @messages))
 	       (throw (Exception. "Can't receive from a closed channel."))))]
        ^{:type ::channel}
        (reify AlephChannel
@@ -222,18 +201,11 @@
 	   (send-to-callbacks
 	     (dosync
 	       (assert-can-receive)
-	       (alter transient-listeners conj f)
-	       (callbacks))))
-	 (listen-all [this f]
-	   (send-to-callbacks
-	     (dosync
-	       (assert-can-receive)
 	       (alter listeners conj f)
 	       (callbacks))))
 	 (cancel-callback [_ f]
 	   (dosync
 	     (alter listeners disj f)
-	     (alter transient-listeners disj f)
 	     (alter receivers disj f)
 	     (alter transient-receivers disj f)))
 	 (enqueue [this msg]
@@ -247,12 +219,12 @@
 	     (dosync
 	       (assert-can-enqueue)
 	       (ref-set sealed true)
-	       (alter messages concat [msg ::close])
+	       (alter messages conj msg)
 	       (callbacks))))
 	 (sealed? [_]
 	   @sealed)
 	 (closed? [_]
-	   @closed)))))
+	   (and @sealed (empty? @messages)))))))
 
 
 ;;;
@@ -267,8 +239,6 @@
     (receive-all [_ f]
       (throw (Exception. "Cannot receive from a closed channel.")))
     (listen [_ f]
-      (throw (Exception. "Cannot receive from a closed channel.")))
-    (listen-all [_ f]
       (throw (Exception. "Cannot receive from a closed channel.")))
     (cancel-callback [_ f]
       )
@@ -289,7 +259,6 @@
     (receive [_ f])
     (receive-all [_ f])
     (listen [_ f])
-    (listen-all [_ f])
     (cancel-callback [_ f])
     (closed? [_]
       false)
@@ -312,8 +281,6 @@
       (receive-all src f))
     (listen [_ f]
       (listen src f))
-    (listen-all [_ f]
-      (listen-all src f))
     (cancel-callback [_ f]
       (cancel-callback src f))
     (closed? [_]
