@@ -126,6 +126,10 @@
       (is (= (set (range 100)) @(:u colls)))
       (is (= (set (range 100)) @(:v colls))))))
 
+(deftest test-poll-timeout
+  (let [ch (channel)]
+    (is (= nil (wait-for-message (poll {:ch ch} 0) 0)))))
+
 (deftest test-wait-for-message
   (let [num 1e3]
     (let [ch (channel)]
