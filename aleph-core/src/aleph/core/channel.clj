@@ -63,6 +63,7 @@
 	   complete (ref false)
 	   listeners (ref #{})
 	   receivers (ref #{})
+
 	   subscribe
 	   (fn [f set handler]
 	     (let [value (dosync
@@ -74,6 +75,7 @@
 	       (when-not (= ::incomplete value)
 		 (handler f value)))
 	     nil)]
+
        ^{:type ::constant-channel}
        (reify AlephChannel
 	 (toString [_]
@@ -84,30 +86,38 @@
 	 (listen [this f]
 	   (subscribe f listeners
 	     #(when-let [f (%1 %2)]
-		(f %2))))
+		(f %2)))
+	   true)
 	 (receive-all [this f]
-	   (receive this f))
+	   (receive this f)
+	   true)
 	 (receive [this f]
-	   (subscribe f receivers #(%1 %2)))
+	   (subscribe f receivers #(%1 %2))
+	   true)
 	 (cancel-callback [_ f]
 	   (dosync
 	     (alter listeners disj f)))
 	 (enqueue [_ msg]
-	   (doseq [f (dosync
-		       (when @complete
-			 (throw (Exception. "Constant channel already contains a result.")))
-		       (ref-set result msg)
-		       (ref-set complete true)
-		       (let [coll (filter identity
-				    (doall
-				      (concat
-					(map #(% msg) @listeners)
-					@receivers)))]
-			 (ref-set listeners nil)
-			 (ref-set receivers nil)
-			 coll))]
-	     (f msg))
-	   nil)
+	   (let [callbacks (dosync
+			     (if @complete
+			       ::invalid
+			       (do
+				 (ref-set result msg)
+				 (ref-set complete true)
+				 (let [coll (filter identity
+					      (doall
+						(concat
+						  (map #(% msg) @listeners)
+						  @receivers)))]
+				   (ref-set listeners nil)
+				   (ref-set receivers nil)
+				   coll))))]
+	     (if (= ::invalid callbacks)
+	       false
+	       (do
+		 (doseq [f callbacks]
+		   (f msg))
+		 true))))
 	 (enqueue-and-close [this msg]
 	   (enqueue this msg))
 	 (sealed? [_]
@@ -161,23 +171,27 @@
 				(receiver-callbacks)
 				(transient-receiver-callbacks)]]
 		 (alter messages #(vec (drop (apply max (map count callbacks)) %)))
+		 (when (and (empty? @messages) @sealed)
+		   (ref-set receivers nil))
 		 (apply concat callbacks))))
 
 	   send-to-callbacks
 	   (fn [callbacks]
-	     (doseq [[msg fns] callbacks]
-	       (doseq [f fns]
-		 (f msg))))
+	     (if (= ::invalid callbacks)
+	       false
+	       (do
+		 (doseq [[msg fns] callbacks]
+		   (doseq [f fns]
+		     (f msg)))
+		 true)))
 
-	   assert-can-enqueue
+	   can-enqueue?
 	   (fn []
-	     (when @sealed
-	       (throw (Exception. "Can't enqueue into a sealed channel."))))
+	     (not @sealed))
 
-	   assert-can-receive
+	   can-receive?
 	   (fn []
-	     (when (and @sealed (empty? @messages))
-	       (throw (Exception. "Can't receive from a closed channel."))))]
+	     (not (and @sealed (empty? @messages))))]
        ^{:type ::channel}
        (reify AlephChannel
 	 Object
@@ -188,21 +202,27 @@
 	 (receive-all [_ f]
 	   (send-to-callbacks
 	     (dosync
-	       (assert-can-receive)
-	       (alter receivers conj f)
-	       (callbacks))))
+	       (if-not (can-receive?)
+		 ::invalid
+		 (do
+		   (alter receivers conj f)
+		   (callbacks))))))
 	 (receive [this f]
 	   (send-to-callbacks
 	     (dosync
-	       (assert-can-receive)
-	       (alter transient-receivers conj f)
-	       (callbacks))))
+	       (if-not (can-receive?)
+		 ::invalid
+		 (do
+		   (alter transient-receivers conj f)
+		   (callbacks))))))
 	 (listen [this f]
 	   (send-to-callbacks
 	     (dosync
-	       (assert-can-receive)
-	       (alter listeners conj f)
-	       (callbacks))))
+	       (if-not (can-receive?)
+		 ::invalid
+		 (do
+		   (alter listeners conj f)
+		   (callbacks))))))
 	 (cancel-callback [_ f]
 	   (dosync
 	     (alter listeners disj f)
@@ -211,16 +231,20 @@
 	 (enqueue [this msg]
 	   (send-to-callbacks
 	     (dosync
-	       (assert-can-enqueue)
-	       (alter messages conj msg)
-	       (callbacks))))
+	       (if-not (can-enqueue?)
+		 ::invalid
+		 (do
+		   (alter messages conj msg)
+		   (callbacks))))))
 	 (enqueue-and-close [_ msg]
 	   (send-to-callbacks
 	     (dosync
-	       (assert-can-enqueue)
-	       (ref-set sealed true)
-	       (alter messages conj msg)
-	       (callbacks))))
+	       (if-not (can-enqueue?)
+		 ::invalid
+		 (do
+		   (ref-set sealed true)
+		   (alter messages conj msg)
+		   (callbacks))))))
 	 (sealed? [_]
 	   @sealed)
 	 (closed? [_]
@@ -235,11 +259,11 @@
     (toString [_]
       "<== []")
     (receive [_ f]
-      (throw (Exception. "Cannot receive from a closed channel.")))
+      false)
     (receive-all [_ f]
-      (throw (Exception. "Cannot receive from a closed channel.")))
+      false)
     (listen [_ f]
-      (throw (Exception. "Cannot receive from a closed channel.")))
+      false)
     (cancel-callback [_ f]
       )
     (closed? [_]
@@ -247,9 +271,9 @@
     (sealed? [_]
       true)
     (enqueue [_ msg]
-      (throw (Exception. "Cannot enqueue into a sealed channel.")))
+      false)
     (enqueue-and-close [_ msg]
-      (throw (Exception. "Cannot enqueue into a sealed channel.")))))
+      false)))
 
 (def nil-channel
   ^{:type ::channel}
@@ -324,10 +348,13 @@
 			      #(enqueue result-channel (when k [k %]))))))]
        (doseq [[k ch] channel-map]
 	 (listen ch (enqueue-fn k)))
-       (when (zero? timeout)
-	 (let [enqueue-fn* ((enqueue-fn nil) nil)]
-	   (when enqueue-fn*
-	     (enqueue-fn* nil))))
+       (let [listen-results (map
+			      (fn [[k ch]] (listen ch (enqueue-fn k)))
+			      channel-map)]
+	 (when (or (zero? timeout) (every? #(not %) listen-results))
+	   (let [enqueue-fn* ((enqueue-fn nil) nil)]
+	     (when enqueue-fn*
+	       (enqueue-fn* nil)))))
        (when (< 0 timeout)
 	 (delay-invoke #(((enqueue-fn nil) nil) nil) timeout))
        result-channel)))
@@ -401,10 +428,11 @@
   [pred src dst]
   (receive-all src
     (fn this [msg]
-      (if-not (sealed? dst)
-	(when (pred msg)
-	  (enqueue dst msg))
-	(cancel-callback src this)))))
+      (let [cancel (if (pred msg)
+		     (enqueue dst msg)
+		     (sealed? dst))]
+	(when cancel
+	  (cancel-callback src this))))))
 
 (defn siphon
   "Automatically enqueues all messages from 'src' into 'dst',

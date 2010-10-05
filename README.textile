@@ -43,7 +43,7 @@ Making a simple chat client is trivial.  In this, we assume that the first messa
 (defn chat-handler [ch handshake]
   (receive ch
     (fn [name]
-       (receive-all ch #(enqueue broadcast-channel (str name ": " %)))
+       (receive-all ch #(when % (enqueue broadcast-channel (str name ": " %))))
        (siphon broadcast-channel ch))))
 
 (start-http-server chat-handler {:port 8080 :websocket true})
@@ -55,8 +55,8 @@ Here is a basic echo server:
 
 <pre><code>(use 'aleph.core 'aleph.tcp)
 	
-(defn echo-handler [channel connection-info]
-  (receive-all channel #(enqueue channel %)))
+(defn echo-handler [channel client-info]
+  (siphon channel channel))
 
 (start-tcp-server echo-handler {:port 1234})
 </code></pre>

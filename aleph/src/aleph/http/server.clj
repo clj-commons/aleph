@@ -184,10 +184,8 @@
 	  
 	  (if-let [ch (channel-event evt)]
 	    (when-not (.isConnected ch)
-	      (when-not (sealed? outer)
-		(enqueue-and-close outer nil))
-	      (when-not (sealed? inner)
-		(enqueue-and-close inner nil)))
+	      (enqueue-and-close inner nil)
+	      (enqueue-and-close outer nil))
 	    (.sendUpstream ctx evt)))))))
 
 ;;;

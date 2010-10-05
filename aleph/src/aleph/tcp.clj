@@ -48,9 +48,8 @@
 		   :channel-close (upstream-stage
 				    (channel-close-stage
 				      (fn [_]
-					(enqueue-and-close outer nil)
-					(when-not (sealed? inner)
-					  (enqueue-and-close inner nil)))))
+					(enqueue-and-close inner nil)
+					(enqueue-and-close outer nil))))
 		   :receive (message-stage
 			      (fn [netty-channel msg]
 				(enqueue outer (receive-encoder msg))))
