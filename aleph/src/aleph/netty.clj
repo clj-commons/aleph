@@ -77,6 +77,7 @@
   [handler]
   (reify ChannelUpstreamHandler
     (handleUpstream [_ ctx evt]
+      ;;(println "stage:" (.getName ctx))
       (if-let [upstream-evt (handler evt)]
 	(.sendUpstream ctx upstream-evt)
 	(.sendUpstream ctx evt)))))
@@ -103,14 +104,16 @@
     (fn [evt]
       (when-let [ch (channel-event evt)]
 	(when (and (.isConnected ch) (compare-and-set! latch false true))
-	  (f ch))))))
+	  (f ch)))
+      nil)))
 
 (defn channel-close-stage [f]
   (let [latch (atom false)]
     (fn [evt]
       (when-let [ch (channel-event evt)]
 	(when (and (not (.isConnected ch)) (compare-and-set! latch false true))
-	  (f ch))))))
+	  (f ch)))
+      nil)))
 
 (defn error-stage-handler [evt]
   (when (instance? ExceptionEvent evt)

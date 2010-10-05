@@ -260,7 +260,8 @@
       (fn [netty-channel request]
 	(when (compare-and-set! init? false true)
 	  (read-requests ch netty-channel handler options))
-	(enqueue ch request)))))
+	(enqueue ch request)
+	nil))))
 
 (defn create-pipeline
   "Creates an HTTP pipeline."

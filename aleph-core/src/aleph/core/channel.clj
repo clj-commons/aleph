@@ -429,7 +429,7 @@
   (receive-all src
     (fn this [msg]
       (let [cancel (if (pred msg)
-		     (enqueue dst msg)
+		     (not (enqueue dst msg))
 		     (sealed? dst))]
 	(when cancel
 	  (cancel-callback src this))))))

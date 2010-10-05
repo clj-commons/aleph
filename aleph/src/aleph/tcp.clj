@@ -36,6 +36,8 @@
   [handler send-encoder receive-encoder options]
   (let [[inner outer] (channel-pair)
 	pipeline (create-netty-pipeline
+		   ;;:upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
+		   ;;:downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
 		   :upstream-error (upstream-stage error-stage-handler)
 		   :channel-open (upstream-stage
 				   (channel-open-stage
@@ -52,7 +54,8 @@
 					(enqueue-and-close outer nil))))
 		   :receive (message-stage
 			      (fn [netty-channel msg]
-				(enqueue outer (receive-encoder msg))))
+				(enqueue outer (receive-encoder msg))
+			        nil))
 		   :downstream-handler (downstream-stage error-stage-handler))]
     (when-let [delimiters (:delimiters options)]
       (add-delimiter-stage pipeline delimiters (or (:strip-delimiters? options) true)))
@@ -64,7 +67,8 @@
 		   :upstream-error (upstream-stage error-stage-handler)
 		   :receive (message-stage
 			      (fn [netty-channel msg]
-				(enqueue ch (receive-encoder msg))))
+				(enqueue ch (receive-encoder msg))
+				nil))
 		   :downstream-error (downstream-stage error-stage-handler))]
     (when-let [delimiters (:delimiters options)]
       (add-delimiter-stage pipeline delimiters (or (:strip-delimiters? options) true)))

@@ -122,7 +122,8 @@
 		  (fn [netty-channel rsp]
 		    (when (compare-and-set! init? false true)
 		      (read-responses netty-channel responses client))
-		    (enqueue responses rsp)))
+		    (enqueue responses rsp)
+		    nil))
       :downstream-error (downstream-stage error-stage-handler))))
 
 ;;;
