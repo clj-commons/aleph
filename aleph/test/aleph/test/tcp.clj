@@ -38,3 +38,35 @@
 	       (join-and-split @server-messages)))))
       (finally
 	(server)))))
+
+(deftest client-enqueue-and-close
+  (dosync
+    (ref-set server-messages []))
+  (let [server (start-tcp-server
+		 (fn [ch _]
+		   (receive-all ch
+		     (fn [x]
+		       (append-to-server x))))
+		 {:port 8888
+		  :delimiters ["x"]})]
+    (try
+      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
+	(enqueue ch "ax")
+	(enqueue ch "bx")
+	(enqueue-and-close ch "cx")
+	(Thread/sleep 100)
+	(is (= ["a" "b" "c" nil] @server-messages)))
+      (finally
+	(server)))))
+
+(deftest server-enqueue-and-close
+  (let [server (start-tcp-server
+		 (fn [ch _]
+		   (enqueue-and-close ch "a"))
+		 {:port 8888})]
+    (try
+      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
+	(is (= ["a" nil] (map #(when % (channel-buffer->string %)) (channel-seq ch 1000)))))
+      (finally
+	(server)))))
+

@@ -96,16 +96,18 @@
     :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [request]
-      (enqueue out
-	(transform-aleph-request
-	  (:scheme options)
-	  (:server-name options)
-	  (:server-port options)
-	  request))
-      (when (channel? (:body request))
-	(read-streaming-request (:body request) out (:headers request))))
+      (when request
+	(enqueue out
+	  (transform-aleph-request
+	    (:scheme options)
+	    (:server-name options)
+	    (:server-port options)
+	    request))
+	(when (channel? (:body request))
+	  (read-streaming-request (:body request) out (:headers request)))))
     (fn [_]
-      (restart))))
+      (when-not (closed? in)
+	(restart)))))
 
 ;;;
 
@@ -153,12 +155,14 @@
 	(run-pipeline client
 	  #(splice % requests)))
       (close-http-client [_]
-	(enqueue-and-close (-> client run-pipeline wait-for-pipeline)
-	  nil)))))
+	(enqueue-and-close requests nil)
+	(run-pipeline client
+	  #(enqueue-and-close % nil))))))
 
 (defn http-request
   ([request]
-     (let [client (raw-http-client request)
+     (let [;;request (assoc-in request [:headers "connection"] "close")
+	   client (raw-http-client request)
 	   response (http-request client request)]
        response))
   ([client request]
@@ -167,15 +171,13 @@
        (fn [ch]
 	 (enqueue ch request)
 	 (read-channel ch))
-       )))
-
-'(fn [response]
-  (follow-redirect
-    #(http-request
-       (-> request
-	 (assoc :url (get-in % [:headers "location"]))
-	 (dissoc :query-string :uri :server-port :server-name :scheme)))
-    response))
+       (fn [response]
+	 (if (= 301 (:status response))
+	   (http-request
+	     (-> request
+	       (assoc :url (get-in response [:headers "location"]))
+	       (dissoc :query-string :uri :server-port :server-name :scheme)))
+	   response)))))
 
 ;;;
 

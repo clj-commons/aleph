@@ -44,9 +44,7 @@
 				     (fn [^Channel netty-channel]
 				       (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
 				       (receive-in-order outer
-					 #(io!
-					    (when-let [msg (send-encoder %)]
-					      (.write netty-channel msg)))))))
+					 #(write-to-channel netty-channel (send-encoder %) (closed? outer))))))
 		   :channel-close (upstream-stage
 				    (channel-close-stage
 				      (fn [_]
@@ -71,7 +69,12 @@
 				nil))
 		   :downstream-error (downstream-stage error-stage-handler))]
     (when-let [delimiters (:delimiters options)]
-      (add-delimiter-stage pipeline delimiters (or (:strip-delimiters? options) true)))
+      (add-delimiter-stage
+	pipeline
+	delimiters
+	(if (contains? options :strip-delimiters?)
+	  (:strip-delimiters? options)
+	  true)))
     pipeline))
 
 (defn start-tcp-server [handler options]

@@ -42,6 +42,7 @@
     [java.util.concurrent
      Executors]
     [java.net
+     URI
      InetSocketAddress]
     [java.io
      InputStream]
@@ -151,6 +152,22 @@
 	  nil)))
     ch))
 
+(defn write-to-channel
+  ([netty-channel msg close?]
+     (write-to-channel netty-channel msg close? nil))
+  ([netty-channel msg close? close-fn]
+     (run-pipeline
+       (when msg
+	 (io! (.write netty-channel msg)))
+       (fn [future]
+	 (when future
+	   (wrap-netty-future future)))
+       (fn [_]
+	 (when close?
+	   (io! (.close netty-channel))
+	   (when close-fn
+	     (close-fn)))))))
+
 ;;;
 
 (def default-server-options
@@ -192,8 +209,12 @@
       (create-pipeline-factory channel-group pipeline-fn))
     (.add channel-group (.bind server (InetSocketAddress. port)))
     (fn []
-      (-> channel-group .close .awaitUninterruptibly)
-      (.releaseExternalResources server))))
+      (run-pipeline
+	(.close channel-group)
+	wrap-netty-future
+	(fn [_] (.releaseExternalResources server))))))
+
+;;;
 
 (def default-client-options
   {"tcpNoDelay" true,
@@ -224,16 +245,18 @@
     (run-pipeline (.connect client (InetSocketAddress. host port))
       wrap-netty-future
       (fn [^Channel netty-channel]
+	(run-pipeline (.getCloseFuture netty-channel)
+	  wrap-netty-future
+	  (fn [_]
+	    (enqueue-and-close inner nil)
+	    (enqueue-and-close outer nil)))
 	(.add channel-group netty-channel)
 	(receive-in-order outer
-	  #(try
-	     (when-let [msg (and % (send-fn %))]
-	       (.write netty-channel msg))
-	     (when (closed? outer)
-	       (-> channel-group .close .awaitUninterruptibly)
-	       (.releaseExternalResources client))
-	     (catch Exception e
-	       (.printStackTrace e))))
+	  #(write-to-channel
+	     netty-channel
+	     (send-fn %)
+	     (closed? outer)
+	     (fn [_] (.releaseExternalResources client))))
 	inner))))
 
 ;;;
