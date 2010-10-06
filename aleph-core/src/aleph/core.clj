@@ -45,7 +45,6 @@
 (import-fn channel/channel-seq)
 (import-fn channel/lazy-channel-seq)
 (import-fn channel/wait-for-message)
-(import-fn channel/receive-in-order)
 (import-fn channel/siphon)
 (import-fn channel/siphon-when)
 (import-fn channel/wrap-channel)
@@ -53,4 +52,13 @@
 (import-fn channel/named-channel)
 (import-fn channel/release-named-channel)
 
-
+(defn receive-in-order
+  "Consumes messages from a channel one at a time.  The callback will only
+   receive the next message once it has completed processing the previous one."
+  [ch f]
+  (run-pipeline ch
+    read-channel
+    (fn [msg]
+      (f msg)
+      (when-not (closed? ch)
+	(restart)))))

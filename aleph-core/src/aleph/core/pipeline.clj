@@ -21,8 +21,11 @@
 
 (defvar *context* nil)
 
-(defn- outer-result []
-  (:outer-result *context*))
+(defn- outer-result
+  ([]
+     (outer-result *context*))
+  ([context]
+     (:outer-result context)))
 
 (defn- inner-error-handler []
   (when-not (= (:inner-error-handler *context*) (:outer-error-handler *context*))
@@ -70,13 +73,13 @@
 
 (declare handle-result)
 
-(defn- poll-pipeline-channel [chs fns context]
+(defn- poll-pipeline-channel [chs fns ctx]
   (receive (poll chs -1)
     (fn [[typ result]]
-      (with-context context
+      (with-context ctx
 	(case typ
 	  :success
-	  (handle-result result fns context)
+	  (handle-result result fns ctx)
 	  :error
 	  (let [possible-redirect (when (inner-error-handler)
 				    (apply (inner-error-handler) result))
@@ -87,38 +90,43 @@
 	      (handle-result
 		(:value possible-redirect)
 		(-> possible-redirect :pipeline :stages)
-		(assoc context
+		(assoc ctx
 		  :inner-error-handler (-> possible-redirect :pipeline :error-handler)
 		  :initial-value (:value possible-redirect)
 		  :pipeline (-> possible-redirect :pipeline)))
-	      (enqueue (-> context :outer-result :error) result))))))))
+	      (enqueue (-> ctx :outer-result :error) result))))))))
 
-(defn- handle-result [result fns context]
-  (with-context context
-    (cond
-      (redirect? result)
-      (recur
-	(:value result)
-	(-> result :pipeline :stages)
-	(assoc context
-	  :pipeline (:pipeline result)
-	  :initial-value (:value result)
-	  :inner-error-handler (-> result :pipeline :error-handler)))
-      (pipeline-channel? result)
-      (poll-pipeline-channel result fns context)
-      :else
-      (let [{outer-success :success outer-error :error} (outer-result)]
-	(if (empty? fns)
-	  (enqueue outer-success result)
-	  (let [f (first fns)]
-	    (if (pipeline? f)
-	      (poll-pipeline-channel (f result) (next fns) context)
-	      (try
-		(recur (f result) (next fns) context)
-		(catch Exception e
-		  (let [failure (pipeline-channel)]
-		    (enqueue (:error failure) [result e])
-		    (poll-pipeline-channel failure fns context)))))))))))
+(defn- handle-result [result fns ctx]
+  (cond
+    (redirect? result)
+    (recur
+      (:value result)
+      (-> result :pipeline :stages)
+      (assoc ctx
+	:pipeline (:pipeline result)
+	:initial-value (:value result)
+	:inner-error-handler (-> result :pipeline :error-handler)))
+    (pipeline-channel? result)
+    (poll-pipeline-channel result fns ctx)
+    :else
+    (let [{outer-success :success outer-error :error} (outer-result ctx)]
+      (if (empty? fns)
+	(enqueue outer-success result)
+	(let [f (first fns)]
+	  (if (pipeline? f)
+	    (poll-pipeline-channel
+	      (with-context ctx (f result))
+	      (next fns)
+	      ctx)
+	    (try
+	      (recur
+		(with-context ctx (f result))
+		(next fns)
+		ctx)
+	      (catch Exception e
+		(let [failure (pipeline-channel)]
+		  (enqueue (:error failure) [result e])
+		  (poll-pipeline-channel failure fns ctx))))))))))
 
 ;;;
 

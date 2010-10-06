@@ -412,16 +412,6 @@
 	 (throw (TimeoutException. "Timed out waiting for message from channel."))
 	 (first msg)))))
 
-(defn receive-in-order
-  "Consumes messages from a channel one at a time.  The callback will only
-   receive the next message once it has completed processing the previous one."
-  [ch f]
-  (receive ch
-    (fn callback [msg]
-      (f msg)
-      (when-not (closed? ch)
-	(receive ch callback)))))
-
 (defn siphon-when
   "Enqueues all messages that satisify 'pred' from 'src' into 'dst',
    unless 'dst' has been sealed."

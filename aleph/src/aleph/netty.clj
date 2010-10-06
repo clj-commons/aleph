@@ -11,7 +11,8 @@
   aleph.netty
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
-    [aleph.core channel pipeline]
+    [aleph.core]
+    [aleph.core.pipeline :only (pipeline-channel)]
     [aleph formats])
   (:require
     [clj-http.client :as client])
@@ -77,7 +78,6 @@
   [handler]
   (reify ChannelUpstreamHandler
     (handleUpstream [_ ctx evt]
-      ;;(println "stage:" (.getName ctx))
       (if-let [upstream-evt (handler evt)]
 	(.sendUpstream ctx upstream-evt)
 	(.sendUpstream ctx evt)))))

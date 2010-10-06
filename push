@@ -4,3 +4,5 @@ cd aleph-core
 ./push
 cd ../aleph
 ./push
+cd ..
+git push

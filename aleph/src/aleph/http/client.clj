@@ -160,7 +160,6 @@
   ([request]
      (let [client (raw-http-client request)
 	   response (http-request client request)]
-       ;;(receive (poll response) (fn [_] (close-http-client client)))
        response))
   ([client request]
      (run-pipeline client

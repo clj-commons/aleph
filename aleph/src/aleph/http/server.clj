@@ -12,7 +12,7 @@
   (:use
     [aleph netty formats]
     [aleph.http utils core websocket]
-    [aleph.core channel pipeline]
+    [aleph.core]
     [clojure.pprint])
   (:import
     [org.jboss.netty.handler.codec.http
@@ -131,7 +131,7 @@
 	      (cancel-callback close-channel close-callback)
 	      (-> netty-channel
 		(.write HttpChunk/LAST_CHUNK)
-		(.addListener (response-listener (assoc options :close (not keep-alive?))))))))))))
+		(.addListener (response-listener (assoc options :close? (not keep-alive?))))))))))))
 
 (defn respond [netty-channel response options]
   (try
