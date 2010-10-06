@@ -139,6 +139,8 @@
 	stages (drop (* 2 (count opts)) opts+stages)
 	pipeline {:stages stages
 		  :error-handler (:error-handler opts)}]
+    (when-not (every? fn? stages)
+      (throw (Exception. "Every stage in a pipeline must be a function.")))
     ^{:tag ::pipeline
       :pipeline pipeline}
     (fn [x]
