@@ -1,0 +1,1 @@
+lein jar && rm ../aleph/lib/aleph-core* && cp aleph-core* ../aleph/lib

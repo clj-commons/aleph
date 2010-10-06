@@ -1,0 +1,6 @@
+#!/bin/sh
+
+cd aleph-core
+./push
+cd ../aleph
+./push
