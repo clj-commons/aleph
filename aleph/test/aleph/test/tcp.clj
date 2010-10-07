@@ -66,7 +66,8 @@
 		 {:port 8888})]
     (try
       (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
-	(is (= ["a" nil] (map #(when % (channel-buffer->string %)) (channel-seq ch 1000)))))
+	(is (= ["a" nil] (map #(when % (channel-buffer->string %)) (channel-seq ch 1000))))
+	(is (closed? ch)))
       (finally
 	(server)))))
 

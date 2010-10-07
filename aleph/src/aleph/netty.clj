@@ -32,7 +32,9 @@
      ChannelFuture
      ChannelFutureListener]
     [org.jboss.netty.channel.group
-     DefaultChannelGroup]
+     DefaultChannelGroup
+     ChannelGroupFuture
+     ChannelGroupFutureListener]
     [org.jboss.netty.channel.socket.nio
      NioServerSocketChannelFactory
      NioClientSocketChannelFactory]
@@ -138,7 +140,7 @@
 
 ;;;
 
-(defn wrap-netty-future
+(defn wrap-netty-channel-future
   "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
    a Netty Channel."
   [^ChannelFuture netty-future]
@@ -152,6 +154,21 @@
 	  nil)))
     ch))
 
+(defn wrap-netty-channel-group-future
+  "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
+   a Netty Channel."
+  [^ChannelGroupFuture netty-future]
+  (let [ch (pipeline-channel)]
+    (.addListener netty-future
+      (reify ChannelGroupFutureListener
+	(operationComplete [_ netty-future]
+	  (if (.isCompleteSuccess netty-future)
+	    (enqueue (:success ch) (.getGroup netty-future))
+	    (enqueue (:error ch) [nil (Exception. "Channel-group operation was not completely successful")]))
+	  nil)))
+    ch))
+
+
 (defn write-to-channel
   ([netty-channel msg close?]
      (write-to-channel netty-channel msg close? nil))
@@ -161,7 +178,7 @@
 	 (io! (.write netty-channel msg)))
        (fn [future]
 	 (when future
-	   (wrap-netty-future future)))
+	   (wrap-netty-channel-future future)))
        (fn [_]
 	 (when close?
 	   (io! (.close netty-channel))
@@ -211,7 +228,7 @@
     (fn []
       (run-pipeline
 	(.close channel-group)
-	wrap-netty-future
+	wrap-netty-channel-group-future
 	(fn [_] (.releaseExternalResources server))))))
 
 ;;;
@@ -243,10 +260,10 @@
     (.setPipelineFactory client
       (create-pipeline-factory channel-group pipeline-fn outer))
     (run-pipeline (.connect client (InetSocketAddress. host port))
-      wrap-netty-future
+      wrap-netty-channel-future
       (fn [^Channel netty-channel]
 	(run-pipeline (.getCloseFuture netty-channel)
-	  wrap-netty-future
+	  wrap-netty-channel-future
 	  (fn [_]
 	    (enqueue-and-close inner nil)
 	    (enqueue-and-close outer nil)))

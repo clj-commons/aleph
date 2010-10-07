@@ -163,7 +163,7 @@
 	ch))))
 
 (defn redirect
-  "When returned from a pipeline stage, redirects the execution flow.."
+  "When returned from a pipeline stage, redirects the execution flow."
   ([pipeline val]
      (when-not (pipeline? pipeline)
        (throw (Exception. "First parameter must be a pipeline.")))
