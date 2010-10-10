@@ -82,12 +82,12 @@
     #(basic-server-pipeline
        handler
        to-channel-buffer
-       identity
+       channel-buffer->byte-buffer
        options)
     options))
 
 (defn tcp-client [options]
   (create-client
-    #(basic-client-pipeline % identity options)
+    #(basic-client-pipeline % channel-buffer->byte-buffer options)
     to-channel-buffer
     options))

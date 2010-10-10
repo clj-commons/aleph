@@ -12,7 +12,7 @@
 (def server-messages (ref []))
 
 (defn append-to-server [msg]
-  (dosync (alter server-messages conj (channel-buffer->string msg))))
+  (dosync (alter server-messages conj (byte-buffer->string msg))))
 
 (defn join-and-split [s]
   (seq (.split (apply str s) "\0")))
@@ -34,7 +34,7 @@
 	  (enqueue ch (str i "\0")))
 	(let [s (doall (lazy-channel-seq ch 100))]
 	  (is (=
-	       (join-and-split (map channel-buffer->string s))
+	       (join-and-split (map byte-buffer->string s))
 	       (join-and-split @server-messages)))))
       (finally
 	(server)))))
@@ -66,7 +66,7 @@
 		 {:port 8888})]
     (try
       (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
-	(is (= ["a" nil] (map #(when % (channel-buffer->string %)) (channel-seq ch 1000))))
+	(is (= ["a" nil] (map #(when % (byte-buffer->string %)) (channel-seq ch 1000))))
 	(is (closed? ch)))
       (finally
 	(server)))))
