@@ -180,7 +180,8 @@
     (when body
       (.setContent rsp
 	(transform-aleph-body body (:headers response))))
-    (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes))
+    (when-not (channel? body)
+      (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes)))
     (when (:keep-alive? options)
       (.setHeader rsp "connection" "keep-alive"))
     rsp))

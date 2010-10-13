@@ -116,22 +116,16 @@
 	close-channel (:close-channel options)
 	close-callback (fn [_] (enqueue-and-close close-channel ch))]
     (receive close-channel close-callback)
-    (-> netty-channel
-      (.write initial-response)
-      (.addListener (response-listener (assoc options :close? false))))
+    (write-to-channel netty-channel initial-response false)
     (receive-in-order ch
       (fn [msg]
 	(when msg
 	  (let [msg (transform-aleph-body msg (:headers response))
 		chunk (DefaultHttpChunk. msg)]
-	    (-> netty-channel
-	      (.write chunk)
-	      (.addListener (response-listener (assoc options :close? false))))
-	    (when (closed? ch)
-	      (cancel-callback close-channel close-callback)
-	      (-> netty-channel
-		(.write HttpChunk/LAST_CHUNK)
-		(.addListener (response-listener (assoc options :close? (not keep-alive?))))))))))))
+	    (write-to-channel netty-channel chunk false)))
+	(when (closed? ch)
+	  (cancel-callback close-channel close-callback)
+	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK (not keep-alive?)))))))
 
 (defn respond [netty-channel response options]
   (try
