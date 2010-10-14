@@ -10,6 +10,8 @@
   (:use
     [aleph netty formats core]
     [aleph.http utils])
+  (:require
+    [clojure.string :as str])
   (:import
     [org.jboss.netty.channel
      ChannelFutureListener
@@ -83,7 +85,7 @@
 (defn transform-aleph-body
   [body headers]
   (let [content-type (or (get headers "content-type") "text/plain")
-	charset (or (get headers "charset") "UTF-8")]
+	charset (or (get headers "charset") "utf-8")]
     (cond
 
       (= content-type "application/json")
@@ -135,7 +137,27 @@
        :server-port port}
       (netty-request-uri req))))
 
-(defn transform-aleph-request [scheme ^String host ^Integer port request]
+(defn transform-aleph-message [^HttpMessage netty-msg msg options]
+  (let [body (:body msg)]
+    (doseq [[k v-or-vals] (:headers msg)]
+      (when-not (nil? v-or-vals)
+	(let [k (->> (str/split k #"-") (map str/capitalize) (str/join "-"))]
+	  (if (string? v-or-vals)
+	    (.addHeader netty-msg (to-str k) v-or-vals)
+	    (doseq [val v-or-vals]
+	      (.addHeader netty-msg (to-str k) val))))))
+    (if body
+      (if (channel? body)
+	(.setHeader netty-msg "Transfer-Encoding" "chunked")
+	(do
+	  (.setContent netty-msg (transform-aleph-body body (:headers msg)))
+	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
+      (HttpHeaders/setContentLength netty-msg 0))
+    (when (:keep-alive? options)
+      (.setHeader netty-msg "Connection" "keep-alive"))
+    netty-msg))
+
+(defn transform-aleph-request [scheme ^String host ^Integer port request options]
   (let [request (wrap-client-request request)
 	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
@@ -147,21 +169,11 @@
 		(.getPath uri)
 		(when-not (empty? (.getQuery uri))
 		  "?")
-		(.getQuery uri)))]
-    (.setHeader req "host" (str host ":" port))
-    (.setHeader req "accept-encoding" "gzip")
-    (.setHeader req "connection" "keep-alive")
-    (doseq [[k v-or-vals] (:headers request)]
-      (when-not (nil? v-or-vals)
-	(if (string? v-or-vals)
-	  (.addHeader req (to-str k) v-or-vals)
-	  (doseq [val v-or-vals]
-	    (.addHeader req (to-str k) val)))))
-    (when-let [body (:body request)]
-      (if (channel? body)
-	(.setHeader req "transfer-encoding" "chunked")
-	(.setContent req (transform-aleph-body body (:headers request)))))
-    req))
+		(.getQuery uri)))
+	body (:body request)]
+    (.setHeader req "Host" (str host ":" port))
+    (.setHeader req "Accept-Encoding" "gzip")
+    (transform-aleph-message req request options)))
 
 (defn transform-aleph-response
   "Turns a Ring response into something Netty can understand."
@@ -169,39 +181,8 @@
   (let [response (wrap-response response)
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
-	      (HttpResponseStatus/valueOf (:status response)))
-	body (:body response)]
-    (doseq [[k v-or-vals] (:headers response)]
-      (when-not (nil? v-or-vals)
-	(if (string? v-or-vals)
-	  (.addHeader rsp (to-str k) v-or-vals)
-	  (doseq [val v-or-vals]
-	    (.addHeader rsp (to-str k) val)))))
-    (when body
-      (.setContent rsp
-	(transform-aleph-body body (:headers response))))
-    (when-not (channel? body)
-      (HttpHeaders/setContentLength rsp (-> rsp .getContent .readableBytes)))
-    (when (:keep-alive? options)
-      (.setHeader rsp "connection" "keep-alive"))
-    rsp))
-
-;;;
-
-(defn call-error-handler
-  "Calls the error-handling function."
-  [options e]
-  ((or (:error-handler options) #(.printStackTrace %)) e))
-
-(defn response-listener
-  "Handles the completion of the response."
-  [options]
-  (reify ChannelFutureListener
-    (operationComplete [_ future]
-      (when (:close? options)
-	(Channels/close (.getChannel future)))
-      (when-not (.isSuccess future)
-	(call-error-handler options (.getCause future))))))
+	      (HttpResponseStatus/valueOf (:status response)))]
+    (transform-aleph-message rsp response options)))
 
 ;;;
 

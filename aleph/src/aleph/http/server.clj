@@ -62,7 +62,7 @@
 
 (defn- respond-with-string
   ([^Channel netty-channel response options]
-     (respond-with-string netty-channel response options "UTF-8"))
+     (respond-with-string netty-channel response options "utf-8"))
   ([^Channel netty-channel response options charset]
      (let [body (-> response :body (string->byte-buffer charset) byte-buffer->channel-buffer)
 	   response (transform-aleph-response
@@ -70,9 +70,7 @@
 			(update-in [:headers] assoc "charset" charset)
 			(assoc :body body))
 		      options)]
-       (-> netty-channel
-	 (.write response)
-	 (.addListener (response-listener options))))))
+       (write-to-channel netty-channel response (:close? options)))))
 
 (defn- respond-with-sequence
   ([netty-channel response options]
@@ -86,9 +84,7 @@
   (let [response (transform-aleph-response
 		   (update-in response [:body] #(input-stream->channel-buffer %))
 		   options)]
-    (-> netty-channel
-      (.write response)
-      (.addListener (response-listener options)))))
+    (write-to-channel netty-channel response (:close? options))))
 
 ;;TODO: use a more efficient file serving mechanism
 (defn- respond-with-file
@@ -108,9 +104,8 @@
   [netty-channel response options]
   (let [charset (or (get-in response [:headers "charset"]) "UTF-8")
 	response (-> response
-		   (assoc-in [:headers "charset"] charset)
-		   (assoc-in [:headers "transfer-encoding"] "chunked"))
-	initial-response ^HttpResponse (transform-aleph-response (dissoc response :body) options)
+		   (assoc-in [:headers "charset"] charset))
+	initial-response ^HttpResponse (transform-aleph-response response options)
 	keep-alive? (:keep-alive? options)
 	ch (:body response)
 	close-channel (:close-channel options)
@@ -270,7 +265,6 @@
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
 	  :upstream-error (upstream-stage error-stage-handler)
-	  ;;:close (channel-close-stage (fn [_] (enqueue close-channel nil)))
 	  :http-request (http-session-handler handler close-channel options)
 	  :downstream-error (downstream-stage error-stage-handler))]
     (when (:websocket options)
