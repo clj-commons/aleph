@@ -172,18 +172,15 @@
 (defn write-to-channel
   ([netty-channel msg close?]
      (write-to-channel netty-channel msg close? nil))
-  ([netty-channel msg close? close-fn]
-     (run-pipeline
-       (when msg
-	 (io! (.write netty-channel msg)))
-       (fn [future]
-	 (when future
-	   (wrap-netty-channel-future future)))
-       (fn [_]
-	 (when close?
-	   (io! (.close netty-channel))
-	   (when close-fn
-	     (close-fn)))))))
+  ([^Channel netty-channel msg close? close-fn]
+     (when (and msg (.isOpen netty-channel))
+       (run-pipeline (io! (.write netty-channel msg))
+	 #(wrap-netty-channel-future %)
+	 (fn [_]
+	   (when close?
+	     (io! (.close netty-channel))
+	     (when close-fn
+	       (close-fn))))))))
 
 ;;;
 

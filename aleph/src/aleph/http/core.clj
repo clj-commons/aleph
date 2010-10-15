@@ -153,8 +153,10 @@
 	  (.setContent netty-msg (transform-aleph-body body (:headers msg)))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
       (HttpHeaders/setContentLength netty-msg 0))
-    (when (:keep-alive? options)
-      (.setHeader netty-msg "Connection" "keep-alive"))
+    (.setHeader netty-msg "Connection"
+      (if (:keep-alive? options)
+	"keep-alive"
+	"close"))
     netty-msg))
 
 (defn transform-aleph-request [scheme ^String host ^Integer port request options]

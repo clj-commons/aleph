@@ -53,9 +53,9 @@
 (defn secure-websocket-response [request]
   (let [headers (:headers request)]
     {:status 101
-     :headers {:Sec-WebSocket-Origin (headers "origin")
-	       :Sec-WebSocket-Location (str "ws://" (headers "host") (:uri request))
-	       :Sec-WebSocket-Protocol (headers "sec-websocket-protocol")}
+     :headers {"Sec-WebSocket-Origin" (headers "origin")
+	       "Sec-WebSocket-Location" (str "ws://" (headers "host") (:uri request))
+	       "Sec-WebSocket-Protocol" (headers "sec-websocket-protocol")}
      :body (md5-hash
 	     (doto (ByteBuffer/allocate 16)
 	       (.putInt (transform-key (headers "sec-websocket-key1")))
@@ -65,9 +65,9 @@
 (defn standard-websocket-response [request]
   (let [headers (:headers request)]
     {:status 101
-     :headers {:WebSocket-Origin (headers "origin")
-	       :WebSocket-Location (str "ws://" (headers "host") (:uri request))
-	       :WebSocket-Protocol (headers "websocket-protocol")}}))
+     :headers {"WebSocket-Origin" (headers "origin")
+	       "WebSocket-Location" (str "ws://" (headers "host") (:uri request))
+	       "WebSocket-Protocol" (headers "websocket-protocol")}}))
 
 (defn websocket-response [^HttpRequest request]
   (.setHeader request "content-type" "application/octet-stream")
@@ -79,6 +79,6 @@
     (transform-aleph-response
       (update-in response [:headers]
 	#(assoc %
-	   :Upgrade "WebSocket"
-	   :Connection "Upgrade"))
+	   "upgrade" "WebSocket"
+	   "connection" "Upgrade"))
       nil)))

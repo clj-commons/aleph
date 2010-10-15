@@ -140,7 +140,8 @@
   [options]
   (let [options (-> options
 		  split-url
-		  (update-in [:server-port] #(or % 80)))
+		  (update-in [:server-port] #(or % 80))
+		  (update-in [:keep-alive?] #(or % true)))
 	requests (channel)
 	client (create-client
 		 #(create-pipeline
@@ -162,8 +163,7 @@
 
 (defn http-request
   ([request]
-     (let [;;request (assoc-in request [:headers "connection"] "close")
-	   client (raw-http-client request)
+     (let [client (raw-http-client (assoc request :keep-alive? false))
 	   response (http-request client request)]
        response))
   ([client request]

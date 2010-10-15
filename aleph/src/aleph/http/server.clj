@@ -142,34 +142,44 @@
 ;;;
 
 (defn- respond-to-handshake [ctx ^HttpRequest request]
-  (let [pipeline (-> ctx .getChannel .getPipeline)]
+  (let [channel (.getChannel ctx)
+	pipeline (.getPipeline channel)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (-> ctx .getChannel (.write (websocket-response request)))
+    (write-to-channel channel (websocket-response request) false)
     (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
 
 (defn websocket-handshake-handler [handler options]
-  (let [[inner outer] (channel-pair)]
+  (let [[inner outer] (channel-pair)
+	close-atom (atom false)
+	close? #(not (compare-and-set! close-atom false true))]
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
 
 	(if-let [msg (message-event evt)]
 
-	  (cond
-	    (instance? WebSocketFrame msg)
-	    (enqueue outer (from-websocket-frame msg))
-
-	    (instance? HttpRequest msg)
-	    (if (websocket-handshake? msg)
-	      (let [ch (.getChannel ctx)]
-		(receive-all outer
-		  (fn [msg]
-		    (when msg
-		      (.write ch (to-websocket-frame msg)))
-		    (when (closed? outer)
-		      (.close ch))))
-		(respond-to-handshake ctx msg)
-		(handler inner (assoc (transform-netty-request msg) :websocket true)))
-	      (.sendUpstream ctx evt)))
+	  (let [ch (.getChannel ctx)]
+	    (cond
+	      (instance? WebSocketFrame msg)
+	      (if (= msg WebSocketFrame/CLOSING_HANDSHAKE)
+		(do
+		  (enqueue-and-close outer nil)
+		  '(when (close?)
+		    (.close ch)))
+		(enqueue outer (from-websocket-frame msg)))
+	      
+	      (instance? HttpRequest msg)
+	      (if (websocket-handshake? msg)
+		(do
+		  (receive-all outer
+		    (fn [msg]
+		      (when msg
+			(write-to-channel ch (to-websocket-frame msg) false))
+		      (when (closed? outer)
+			'(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
+			(.close ch))))
+		  (respond-to-handshake ctx msg)
+		  (handler inner (assoc (transform-netty-request msg) :websocket true)))
+		(.sendUpstream ctx evt))))
 	  
 	  (if-let [ch (channel-event evt)]
 	    (when-not (.isConnected ch)
