@@ -54,7 +54,7 @@
      ByteArrayInputStream
      InputStream
      File
-     FileInputStream]
+     RandomAccessFile]
     [java.net
      URLConnection]))
 
@@ -86,19 +86,20 @@
 		   options)]
     (write-to-channel netty-channel response (:close? options))))
 
-;;TODO: use a more efficient file serving mechanism
 (defn- respond-with-file
   [netty-channel response options]
   (let [file ^File (:body response)
 	content-type (or
 		       (URLConnection/guessContentTypeFromName (.getName file))
-		       "application/octet-stream")]
-    (respond-with-stream
-      netty-channel
-      (-> response
-	(update-in [:headers "content-type"] #(or % content-type))
-	(update-in [:body] #(FileInputStream. ^File %)))
-      options)))
+		       "application/octet-stream")
+	fc (.getChannel (RandomAccessFile. file "r"))
+	response (-> response
+		   (update-in [:headers "content-type"] #(or % content-type))
+		   (assoc :body fc))]
+    (write-to-channel netty-channel
+      (transform-aleph-response response options)
+      (:close? options)
+      :on-write #(.close fc))))
 
 (defn- respond-with-channel
   [netty-channel response options]
@@ -126,7 +127,7 @@
   (try
     (let [response (update-in response [:headers]
 		     #(merge
-			{"server" "Aleph (0.1.1)"}
+			{"server" "Aleph (0.1.2)"}
 			%))
 	  body (:body response)]
       (cond

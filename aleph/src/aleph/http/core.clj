@@ -35,7 +35,10 @@
     [java.net
      URI]
     [java.nio.charset
-     Charset]))
+     Charset]
+    [java.nio.channels
+     FileChannel
+     FileChannel$MapMode]))
 
 ;;;
 
@@ -87,6 +90,10 @@
   (let [content-type (or (get headers "content-type") "text/plain")
 	charset (or (get headers "charset") "utf-8")]
     (cond
+
+      (instance? FileChannel body)
+      (let [fc ^FileChannel body]
+	(ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc))))
 
       (= content-type "application/json")
       (to-channel-buffer (to-json body))

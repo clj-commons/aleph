@@ -170,17 +170,19 @@
 
 
 (defn write-to-channel
-  ([netty-channel msg close?]
-     (write-to-channel netty-channel msg close? nil))
-  ([^Channel netty-channel msg close? close-fn]
+  ([^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write}]
      (when (and msg (.isOpen netty-channel))
        (run-pipeline (io! (.write netty-channel msg))
-	 #(wrap-netty-channel-future %)
+	 wrap-netty-channel-future
 	 (fn [_]
+	   (when write-callback
+	     (write-callback))
 	   (when close?
-	     (io! (.close netty-channel))
-	     (when close-fn
-	       (close-fn))))))))
+	     (run-pipeline (io! (.close netty-channel))
+	       wrap-netty-channel-future
+	       (fn [_]
+		 (when close-callback
+		   (close-callback))))))))))
 
 ;;;
 
@@ -266,11 +268,12 @@
 	    (enqueue-and-close outer nil)))
 	(.add channel-group netty-channel)
 	(receive-in-order outer
-	  #(write-to-channel
-	     netty-channel
-	     (send-fn %)
-	     (closed? outer)
-	     (fn [_] (.releaseExternalResources client))))
+	  (fn [msg]
+	    (write-to-channel
+	      netty-channel
+	      (send-fn msg)
+	      (closed? outer)
+	      :on-close #(.releaseExternalResources client))))
 	inner))))
 
 ;;;
