@@ -42,6 +42,7 @@
 (import-fn channel/channel)
 (import-fn channel/channel-pair)
 (import-fn channel/constant-channel)
+(import-fn channel/finite-channel)
 (import-fn channel/channel-seq)
 (import-fn channel/lazy-channel-seq)
 (import-fn channel/wait-for-message)
@@ -56,9 +57,13 @@
   "Consumes messages from a channel one at a time.  The callback will only
    receive the next message once it has completed processing the previous one."
   [ch f]
-  (run-pipeline ch
-    read-channel
-    (fn [msg]
-      (f msg)
-      (when-not (closed? ch)
-	(restart)))))
+  (if (closed? ch)
+    (pipeline/pipeline-channel
+      (constant-channel nil)
+      channel/nil-channel)
+    (run-pipeline ch
+      read-channel
+      (fn [msg]
+	(f msg)
+	(when-not (closed? ch)
+	  (restart))))))

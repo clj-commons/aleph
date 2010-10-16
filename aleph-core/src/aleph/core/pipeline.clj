@@ -221,14 +221,16 @@
   ([ch]
      (read-channel ch -1))
   ([ch timeout]
-     (let [result (pipeline-channel)
-	   {success :success error :error} result]
-       (receive
-	 (poll {:ch ch} timeout)
-	 #(if %
-	    (enqueue success (second %))
-	    (enqueue error [nil (TimeoutException. (str "read-channel timed out after " timeout " ms"))])))
-       result)))
+     (if (closed? ch)
+       (throw (Exception. "Cannot read from a closed channel."))
+       (let [result (pipeline-channel)
+	     {success :success error :error} result]
+	 (receive
+	   (poll {:ch ch} timeout)
+	   #(if %
+	      (enqueue success (second %))
+	      (enqueue error [nil (TimeoutException. (str "read-channel timed out after " timeout " ms"))])))
+	 result))))
 
 (defn read-merge
   "For merging asynchronous reads into a pipeline.

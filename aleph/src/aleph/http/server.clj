@@ -70,7 +70,7 @@
 			(update-in [:headers] assoc "charset" charset)
 			(assoc :body body))
 		      options)]
-       (write-to-channel netty-channel response (:close? options)))))
+       (write-to-channel netty-channel response false))))
 
 (defn- respond-with-sequence
   ([netty-channel response options]
@@ -84,7 +84,7 @@
   (let [response (transform-aleph-response
 		   (update-in response [:body] #(input-stream->channel-buffer %))
 		   options)]
-    (write-to-channel netty-channel response (:close? options))))
+    (write-to-channel netty-channel response false)))
 
 (defn- respond-with-file
   [netty-channel response options]
@@ -98,7 +98,7 @@
 		   (assoc :body fc))]
     (write-to-channel netty-channel
       (transform-aleph-response response options)
-      (:close? options)
+      false
       :on-write #(.close fc))))
 
 (defn- respond-with-channel
@@ -107,7 +107,6 @@
 	response (-> response
 		   (assoc-in [:headers "charset"] charset))
 	initial-response ^HttpResponse (transform-aleph-response response options)
-	keep-alive? (:keep-alive? options)
 	ch (:body response)
 	close-channel (:close-channel options)
 	close-callback (fn [_] (enqueue-and-close close-channel ch))]
@@ -121,24 +120,25 @@
 	    (write-to-channel netty-channel chunk false)))
 	(when (closed? ch)
 	  (cancel-callback close-channel close-callback)
-	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK (not keep-alive?)))))))
+	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))
 
-(defn respond [netty-channel response options]
-  (try
-    (let [response (update-in response [:headers]
-		     #(merge
-			{"server" "Aleph (0.1.2)"}
-			%))
-	  body (:body response)]
+(defn respond [^Channel netty-channel response options]
+  (let [response (update-in response [:headers]
+		   #(merge
+		      {"server" "aleph (0.1.2)"}
+		      %))
+	body (:body response)]
+    (run-pipeline
       (cond
 	(nil? body) (respond-with-string netty-channel (assoc response :body "") options)
 	(string? body) (respond-with-string netty-channel response options)
 	(sequential? body) (respond-with-sequence netty-channel response options)
 	(channel? body) (respond-with-channel netty-channel response options)
 	(instance? InputStream body) (respond-with-stream netty-channel response options)
-	(instance? File body) (respond-with-file netty-channel response options)))
-    (catch Exception e
-      (.printStackTrace e))))
+	(instance? File body) (respond-with-file netty-channel response options))
+      (fn [_]
+	(when (:close? options)
+	  (.close netty-channel))))))
 
 ;;;
 
@@ -153,6 +153,7 @@
   (let [[inner outer] (channel-pair)
 	close-atom (atom false)
 	close? #(not (compare-and-set! close-atom false true))]
+    
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
 

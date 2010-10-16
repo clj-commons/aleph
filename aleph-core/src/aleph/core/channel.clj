@@ -258,36 +258,34 @@
 	 (closed? [_]
 	   (and @sealed (empty? @messages)))))))
 
-
 ;;;
-
-(def closed-channel
-  ^{:type ::channel}
-  (reify AlephChannel Counted
-    (count [_] 0)
-    (toString [_] "<== []")
-    (receive [_ f] false)
-    (receive-all [_ f] false)
-    (listen [_ f] false)
-    (cancel-callback [_ f] )
-    (closed? [_] true)
-    (sealed? [_] true)
-    (enqueue [_ msg] false)
-    (enqueue-and-close [_ msg] false)))
 
 (def nil-channel
   ^{:type ::channel}
   (reify AlephChannel Counted
     (count [_] 0)
-    (toString [_] "<== []")
+    (toString [_] "[]")
     (receive [_ f])
     (receive-all [_ f])
     (listen [_ f])
     (cancel-callback [_ f])
-    (closed? [_] false)
-    (sealed? [_] false)
+    (closed? [_] true)
+    (sealed? [_] true)
     (enqueue [_ msg])
     (enqueue-and-close [_ msg])))
+
+(defn finite-channel
+  [& messages]
+  (if (empty? messages)
+    nil-channel
+    (let [ch (channel)]
+      (loop [s messages]
+	(when-not (empty? s)
+	  (if (= 1 (count s))
+	    (enqueue-and-close ch (first s))
+	    (enqueue ch (first s)))
+	  (recur (rest s))))
+      ch)))
 
 (defn splice
   "Splices together a message source and a message destination
