@@ -74,27 +74,31 @@
 (declare handle-result)
 
 (defn- poll-pipeline-channel [chs fns ctx]
-  (receive (poll chs -1)
-    (fn [[typ result]]
-      (with-context ctx
-	(case typ
-	  :success
-	  (handle-result result fns ctx)
-	  :error
-	  (let [possible-redirect (when (inner-error-handler)
-				    (apply (inner-error-handler) result))
-		possible-redirect (if (or (redirect? possible-redirect) (not (outer-error-handler)))
-				    possible-redirect
-				    (apply (outer-error-handler) result))]
-	    (if (redirect? possible-redirect)
-	      (handle-result
-		(:value possible-redirect)
-		(-> possible-redirect :pipeline :stages)
-		(assoc ctx
-		  :inner-error-handler (-> possible-redirect :pipeline :error-handler)
-		  :initial-value (:value possible-redirect)
-		  :pipeline (-> possible-redirect :pipeline)))
-	      (enqueue (-> ctx :outer-result :error) result))))))))
+  (if (-> chs :success count pos?)
+    (wait-for-message (:success chs) 0) ;;gross hack for faux tail recursion
+    (do
+      (receive (poll chs -1)
+	(fn [[typ result]]
+	  (with-context ctx
+	    (case typ
+	      :success
+	      (handle-result result fns ctx)
+	      :error
+	      (let [possible-redirect (when (inner-error-handler)
+					(apply (inner-error-handler) result))
+		    possible-redirect (if (or (redirect? possible-redirect) (not (outer-error-handler)))
+					possible-redirect
+					(apply (outer-error-handler) result))]
+		(if (redirect? possible-redirect)
+		  (handle-result
+		    (:value possible-redirect)
+		    (-> possible-redirect :pipeline :stages)
+		    (assoc ctx
+		      :inner-error-handler (-> possible-redirect :pipeline :error-handler)
+		      :initial-value (:value possible-redirect)
+		      :pipeline (-> possible-redirect :pipeline)))
+		  (enqueue (-> ctx :outer-result :error) result)))))))
+      nil)))
 
 (defn- handle-result [result fns ctx]
   (cond
@@ -107,22 +111,18 @@
 	:initial-value (:value result)
 	:inner-error-handler (-> result :pipeline :error-handler)))
     (pipeline-channel? result)
-    (poll-pipeline-channel result fns ctx)
+    (when-let [result (poll-pipeline-channel result fns ctx)]
+      (recur result fns ctx))
     :else
     (let [{outer-success :success outer-error :error} (outer-result ctx)]
       (if (empty? fns)
 	(enqueue outer-success result)
 	(let [f (first fns)]
 	  (if (pipeline? f)
-	    (poll-pipeline-channel
-	      (with-context ctx (f result))
-	      (next fns)
-	      ctx)
+	    (when-let [result (poll-pipeline-channel (with-context ctx (f result)) (next fns) ctx)]
+	      (recur result (next fns) ctx))
 	    (try
-	      (recur
-		(with-context ctx (f result))
-		(next fns)
-		ctx)
+	      (recur (with-context ctx (f result)) (next fns) ctx)
 	      (catch Exception e
 		(let [failure (pipeline-channel)]
 		  (enqueue (:error failure) [result e])

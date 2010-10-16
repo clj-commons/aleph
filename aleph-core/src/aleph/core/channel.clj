@@ -13,7 +13,9 @@
      ConcurrentLinkedQueue
      ScheduledThreadPoolExecutor
      TimeUnit
-     TimeoutException]))
+     TimeoutException]
+    [clojure.lang
+     Counted]))
 
 (defprotocol AlephChannel
   (listen [ch f]
@@ -77,7 +79,9 @@
 	     nil)]
 
        ^{:type ::constant-channel}
-       (reify AlephChannel
+       (reify AlephChannel Counted
+	 (count [_]
+	   (if @complete 1 0))
 	 (toString [_]
 	   (if @complete
 	     (->> (with-out-str (pprint @result))
@@ -129,16 +133,16 @@
   "An implementation of a unidirectional channel with an unbounded queue."
   ([& messages]
      (let [ch (channel)]
-       (doseq [msg messages]
-	 (enqueue ch msg))
+       (doseq [m messages]
+	 (enqueue ch m))
        ch))
   ([]
-     (let [messages (ref [])
+     (let [messages (ref clojure.lang.PersistentQueue/EMPTY)
 	   transient-receivers (ref #{})
 	   receivers (ref #{})
 	   listeners (ref #{})
 	   sealed (ref false)
-
+	   
 	   listener-callbacks
 	   (fn []
 	     (ensure listeners)
@@ -147,14 +151,14 @@
 	       (ref-set listeners #{})
 	       (when-not (empty? callbacks)
 		 [[msg callbacks]])))
-
+	   
 	   receiver-callbacks
 	   (fn []
 	     (ensure receivers)
 	     (let [callbacks @receivers]
 	       (when-not (empty? callbacks)
 		 (map #(list % callbacks) @messages))))
-
+	   
 	   transient-receiver-callbacks
 	   (fn []
 	     (ensure transient-receivers)
@@ -162,7 +166,7 @@
 	       (when-not (empty? callbacks)
 		 (ref-set transient-receivers #{})
 		 [[(first @messages) callbacks]])))
-
+	   
 	   callbacks
 	   (fn []
 	     (ensure messages)
@@ -170,11 +174,14 @@
 	       (let [callbacks [(listener-callbacks)
 				(receiver-callbacks)
 				(transient-receiver-callbacks)]]
-		 (alter messages #(vec (drop (apply max (map count callbacks)) %)))
+		 (let [message-count (apply max (map count callbacks))]
+		   (if (= 1 message-count)
+		     (alter messages pop)
+		     (alter messages #(reduce (fn [s f] (f s)) % (repeat message-count pop)))))
 		 (when (and (empty? @messages) @sealed)
 		   (ref-set receivers nil))
 		 (apply concat callbacks))))
-
+	   
 	   send-to-callbacks
 	   (fn [callbacks]
 	     (if (= ::invalid callbacks)
@@ -184,19 +191,20 @@
 		   (doseq [f fns]
 		     (f msg)))
 		 true)))
-
+	   
 	   can-enqueue?
 	   (fn []
 	     (not @sealed))
-
+	   
 	   can-receive?
 	   (fn []
 	     (not (and @sealed (empty? @messages))))]
        ^{:type ::channel}
-       (reify AlephChannel
-	 Object
+       (reify AlephChannel Counted
+	 (count [_]
+	   (count @messages))
 	 (toString [_]
-	   (->> (with-out-str (pprint @messages))
+	   (->> (with-out-str (pprint (vec @messages)))
 	     drop-last
 	     (apply str)))
 	 (receive-all [_ f]
@@ -255,39 +263,29 @@
 
 (def closed-channel
   ^{:type ::channel}
-  (reify AlephChannel
-    (toString [_]
-      "<== []")
-    (receive [_ f]
-      false)
-    (receive-all [_ f]
-      false)
-    (listen [_ f]
-      false)
-    (cancel-callback [_ f]
-      )
-    (closed? [_]
-      true)
-    (sealed? [_]
-      true)
-    (enqueue [_ msg]
-      false)
-    (enqueue-and-close [_ msg]
-      false)))
+  (reify AlephChannel Counted
+    (count [_] 0)
+    (toString [_] "<== []")
+    (receive [_ f] false)
+    (receive-all [_ f] false)
+    (listen [_ f] false)
+    (cancel-callback [_ f] )
+    (closed? [_] true)
+    (sealed? [_] true)
+    (enqueue [_ msg] false)
+    (enqueue-and-close [_ msg] false)))
 
 (def nil-channel
   ^{:type ::channel}
-  (reify AlephChannel
-    (toString [_]
-      "<== []")
+  (reify AlephChannel Counted
+    (count [_] 0)
+    (toString [_] "<== []")
     (receive [_ f])
     (receive-all [_ f])
     (listen [_ f])
     (cancel-callback [_ f])
-    (closed? [_]
-      false)
-    (sealed? [_]
-      false)
+    (closed? [_] false)
+    (sealed? [_] false)
     (enqueue [_ msg])
     (enqueue-and-close [_ msg])))
 
@@ -296,7 +294,9 @@
    into a single channel."
   [src dst]
   ^{:type ::channel}
-  (reify AlephChannel
+  (reify AlephChannel Counted
+    (count [_]
+      (count src))
     (toString [_]
       (str src))
     (receive [_ f]

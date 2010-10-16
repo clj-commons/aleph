@@ -39,7 +39,7 @@
   (blocking (fn [_] (fail))))
 
 (defn fail-times [n]
-  (let [counter (atom 3)]
+  (let [counter (atom n)]
     (fn [x]
       (swap! counter dec)
       (if (pos? @counter)
@@ -52,81 +52,109 @@
 
 ;;;
 
-(deftest test-pipelines
-  (testing "Basic pipelines"
-    (test-pipeline (apply pipeline (take 1e3 (repeat inc))) 1e3)
-    (test-pipeline (apply pipeline (take 1e3 (repeat (blocking inc)))) 1e3)
-    (test-pipeline (apply pipeline (take 100 (repeat slow-inc))) 100))
-  (testing "Nested pipelines"
-    (test-pipeline (pipeline inc (pipeline inc (pipeline inc) inc) inc) 5))
-  (testing "Redirected pipelines"
-    (test-pipeline (pipeline inc inc #(redirect (pipeline inc inc inc) %)) 5)
-    (let [cat (fn [x] (fn [s] (conj s x)))]
-      (test-pipeline
-	(pipeline (fn [_] [])
-	  (cat "a")
-	  (pipeline
-	    (cat "b")
-	    #(if (< (count %) 3)
-	       (restart %)
-	       %)
-	    (cat "c"))
-	  (cat "d"))
-	(map str (seq "abbcd"))))
-    (test-pipeline pipe-b 10))
-  (testing "Error propagation"
-    (assert-failure (pipeline fail))
-    (assert-failure (pipeline inc fail))
-    (assert-failure (pipeline inc fail inc))
-    (assert-failure (pipeline slow-inc slow-fail))
-    (assert-failure (pipeline inc (pipeline inc fail) inc))
-    (assert-failure (pipeline inc #(redirect (pipeline inc fail) %))))
-  (testing "Redirection and error handlers"
-    (let [n (atom 0)
-	  f (fn [n _] (swap! n inc))]
-      (run-pipeline n
+(deftest test-basic-pipelines
+  (test-pipeline (apply pipeline (take 1e3 (repeat inc))) 1e3)
+  (test-pipeline (apply pipeline (take 1e3 (repeat (blocking inc)))) 1e3)
+  (test-pipeline (apply pipeline (take 100 (repeat slow-inc))) 100))
+
+(deftest test-nested-pipelines
+  (test-pipeline (pipeline inc (pipeline inc (pipeline inc) inc) inc) 5))
+
+(deftest test-redirected-pipelines
+  (test-pipeline (pipeline inc inc #(redirect (pipeline inc inc inc) %)) 5)
+  (test-pipeline pipe-b 10)
+
+  (let [cat (fn [x] (fn [s] (conj s x)))]
+    (test-pipeline
+      (pipeline (fn [_] [])
+	(cat "a")
+	(pipeline
+	  (cat "b")
+	  #(if (< (count %) 3)
+	     (restart %)
+	     %)
+	  (cat "c"))
+	(cat "d"))
+      (map str (seq "abbcd")))))
+
+(deftest test-error-propagation
+  (assert-failure (pipeline fail))
+  (assert-failure (pipeline inc fail))
+  (assert-failure (pipeline inc fail inc))
+  (assert-failure (pipeline slow-inc slow-fail))
+  (assert-failure (pipeline inc (pipeline inc fail) inc))
+  (assert-failure (pipeline inc #(redirect (pipeline inc fail) %))))
+
+(deftest test-redirection-and-error-handlers
+
+  (let [n (atom 0)
+	f (fn [n _] (swap! n inc))]
+    (run-pipeline n
+      (pipeline :error-handler f
 	(pipeline :error-handler f
 	  (pipeline :error-handler f
-	    (pipeline :error-handler f
-	      fail))))
-      (is (= 3 @n)))
-    (let [n (atom #{})
-	  f (fn [val] (fn [n _] (swap! n conj val)))]
-      (run-pipeline n
-	(pipeline :error-handler (f 1)
-	  (fn [x]
-	    (redirect
-	      (pipeline :error-handler (f 2)
-		(fn [x]
-		  (redirect
-		    (pipeline :error-handler (f 3)
-		      fail)
-		    x)))
-	      x))))
-      (is (= #{1 3} @n))))
-  (testing "Error handling"
-    (test-pipeline
-      (pipeline :error-handler (fn [val ex] (redirect (pipeline inc) val))
-	inc
-	fail)
-      2)
-    (test-pipeline
+	    fail))))
+    (is (= 3 @n)))
+
+  (let [n (atom #{})
+	f (fn [val] (fn [n _] (swap! n conj val)))]
+    (run-pipeline n
+      (pipeline :error-handler (f 1)
+	(fn [x]
+	  (redirect
+	    (pipeline :error-handler (f 2)
+	      (fn [x]
+		(redirect
+		  (pipeline :error-handler (f 3)
+		    fail)
+		  x)))
+	    x))))
+    (is (= #{1 3} @n))))
+
+(deftest test-error-handling
+
+  (test-pipeline
+    (pipeline :error-handler (fn [val ex] (redirect (pipeline inc) val))
+      inc
+      fail)
+    2)
+
+  (test-pipeline
+    (pipeline :error-handler (fn [val ex] (restart val))
+      inc
+      (fail-times 3)
+      inc)
+    4)
+
+  (test-pipeline
+    (pipeline :error-handler (fn [val ex] (restart))
+      inc
+      (fail-times 3)
+      inc)
+    2)
+
+  (test-pipeline
+    (pipeline
+      inc
       (pipeline :error-handler (fn [val ex] (restart val))
 	inc
-	(fail-times 3)
-	inc)
-      4)
-    (test-pipeline
-      (pipeline :error-handler (fn [val ex] (restart))
-	inc
-	(fail-times 3)
-	inc)
-      2)
-    (test-pipeline
-      (pipeline
-	inc
-	(pipeline :error-handler (fn [val ex] (restart val))
-	inc
 	(fail-times 3))
-	inc)
-      5)))
+      inc)
+    5))
+
+(deftest test-tail-recursion
+  (let [ch (apply channel (range 1e4))]
+    (run-pipeline ch
+      read-channel
+      (fn [x]
+	(when-not (closed? ch)
+	  (restart)))))
+
+  (run-pipeline 1e4
+    #(when (pos? %)
+       (restart (dec %))))
+
+  ;;TODO: make this test not fail
+  '(run-pipeline nil
+    :error-handler (fn [_ _] (restart))
+    (fail-times 1e4)))

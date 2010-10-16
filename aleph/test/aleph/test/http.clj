@@ -111,7 +111,7 @@
        (finally
 	 (kill-fn#)))))
 
-(deftest browser-http-response
+'(deftest browser-http-response
    (println "waiting for browser test")
    (let [server (reset! server (start-http-server (create-basic-handler) {:port 8080}))]
      (is @latch)))
