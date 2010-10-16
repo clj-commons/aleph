@@ -81,7 +81,7 @@
 
 (defn create-streaming-response-handler []
   (fn [ch request]
-    (let [body (apply channel (map str "abcdefghi"))]
+    (let [body (apply finite-channel (map str "abcdefghi"))]
       (enqueue ch
 	{:status 200
 	 :headers {"content-type" "text/plain"}
@@ -133,16 +133,20 @@
 (deftest streaming-response
   (with-server (create-streaming-response-handler)
     (let [result (sync-http-request {:url "http://localhost:8080" :method :get})]
-      (= "abcdeghi" (channel-seq (:body result) 250)))))
+      (is
+	(= (concat (map str "abcdefghi") [nil])
+	   (channel-seq (:body result) 250))))))
 
 (deftest streaming-request
   (with-server (create-streaming-request-handler)
-    (let [ch (apply channel (range 10))]
+    (let [ch (apply finite-channel (range 10))]
       (let [result (sync-http-request
 		     {:url "http://localhost:8080"
-		      :method :get
+		      :method :post
 		      :headers {"content-type" "application/json"}
 		      :body ch})]
-	(is (= (range 10) (channel-seq (:body result) 1000)))))))
+	(is
+	  (= (concat (range 10) [nil])
+	     (channel-seq (:body result) 1000)))))))
 
 
