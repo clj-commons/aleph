@@ -38,7 +38,6 @@
 
 (defn read-streaming-response [headers in out]
   (run-pipeline in
-    :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [^HttpChunk response]
       (let [body (transform-netty-body (.getContent response) headers)]
@@ -50,7 +49,6 @@
 
 (defn read-responses [netty-channel in out]
   (run-pipeline in
-    :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [^HttpResponse response]
       (let [chunked? (.isChunked response)
@@ -82,7 +80,6 @@
 
 (defn read-streaming-request [in out headers]
   (run-pipeline in
-    :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [chunk]
       (when chunk
@@ -93,7 +90,6 @@
 
 (defn read-requests [in out options]
   (run-pipeline in
-    :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [request]
       (when request

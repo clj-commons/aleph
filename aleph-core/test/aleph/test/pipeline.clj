@@ -78,18 +78,19 @@
       (map str (seq "abbcd")))))
 
 (deftest test-error-propagation
-  (assert-failure (pipeline fail))
-  (assert-failure (pipeline inc fail))
-  (assert-failure (pipeline inc fail inc))
-  (assert-failure (pipeline slow-inc slow-fail))
-  (assert-failure (pipeline inc (pipeline inc fail) inc))
-  (assert-failure (pipeline inc #(redirect (pipeline inc fail) %))))
+  (assert-failure (pipeline :error-handler (fn [_ _]) fail))
+  (assert-failure (pipeline :error-handler (fn [_ _]) inc fail))
+  (assert-failure (pipeline :error-handler (fn [_ _]) inc fail inc))
+  (assert-failure (pipeline :error-handler (fn [_ _]) slow-inc slow-fail))
+  (assert-failure (pipeline :error-handler (fn [_ _]) inc (pipeline :error-handler (fn [_ _]) inc fail) inc))
+  (assert-failure (pipeline :error-handler (fn [_ _]) inc #(redirect (pipeline :error-handler (fn [_ _]) inc fail) %))))
 
 (deftest test-redirection-and-error-handlers
 
   (let [n (atom 0)
 	f (fn [n _] (swap! n inc))]
     (run-pipeline n
+      :error-handler (fn [_ _])
       (pipeline :error-handler f
 	(pipeline :error-handler f
 	  (pipeline :error-handler f
@@ -99,6 +100,7 @@
   (let [n (atom #{})
 	f (fn [val] (fn [n _] (swap! n conj val)))]
     (run-pipeline n
+      :error-handler (fn [_ _])
       (pipeline :error-handler (f 1)
 	(fn [x]
 	  (redirect
@@ -134,7 +136,7 @@
     2)
 
   (test-pipeline
-    (pipeline
+    (pipeline :error-handler (fn [_ _])
       inc
       (pipeline :error-handler (fn [val ex] (restart val))
 	inc

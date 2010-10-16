@@ -193,7 +193,6 @@
 
 (defn read-streaming-request [headers in out]
   (run-pipeline in
-    :error-handler (fn [_ ex] (.printStackTrace ex))
     read-channel
     (fn [^HttpChunk request]
       (let [last? (.isLast request)
@@ -209,7 +208,6 @@
 	close-channel (:close-channel options)
 	cancel-close-callback #(cancel-callback close-channel %)]
     (run-pipeline in
-      :error-handler (fn [_ ex] (.printStackTrace ex))
       read-channel
       (fn [^HttpRequest netty-request]
 	(let [chunked? (.isChunked netty-request)
@@ -288,8 +286,7 @@
   [handler options]
   (start-server
     #(create-pipeline handler options)
-    (assoc options
-      :error-handler (fn [^Throwable e] (.printStackTrace e)))))
+    options))
 
 
 

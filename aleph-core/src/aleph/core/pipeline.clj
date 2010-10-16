@@ -13,6 +13,8 @@
     [clojure.contrib.def :only (defmacro- defvar)]
     [aleph.core.channel]
     [clojure.pprint])
+  (:require
+    [clojure.contrib.logging :as log])
   (:import
     [java.util.concurrent
      TimeoutException]))
@@ -146,7 +148,7 @@
   (let [opts (apply hash-map (get-opts opts+stages))
 	stages (drop (* 2 (count opts)) opts+stages)
 	pipeline {:stages stages
-		  :error-handler (:error-handler opts)}]
+		  :error-handler (or (:error-handler opts) (fn [val ex] (log/error "aleph.core.pipeline" ex)))}]
     (when-not (every? fn? stages)
       (throw (Exception. "Every stage in a pipeline must be a function.")))
     ^{:tag ::pipeline
