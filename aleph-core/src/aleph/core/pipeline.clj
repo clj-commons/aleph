@@ -77,7 +77,7 @@
 
 (defn- poll-pipeline-channel [chs fns ctx]
   (if (-> chs :success count pos?)
-    (wait-for-message (:success chs) 0) ;;gross hack for faux tail recursion
+    (wait-for-message (:success chs) 0)
     (do
       (receive (poll chs -1)
 	(fn [[typ result]]
@@ -100,7 +100,7 @@
 		      :initial-value (:value possible-redirect)
 		      :pipeline (-> possible-redirect :pipeline)))
 		  (enqueue (-> ctx :outer-result :error) result)))))))
-      nil)))
+      ::waiting)))
 
 (defn- handle-result [result fns ctx]
   (cond
@@ -113,16 +113,18 @@
 	:initial-value (:value result)
 	:inner-error-handler (-> result :pipeline :error-handler)))
     (pipeline-channel? result)
-    (when-let [result (poll-pipeline-channel result fns ctx)]
-      (recur result fns ctx))
+    (let [result (poll-pipeline-channel result fns ctx)]
+      (when-not (= result ::waiting)
+	(recur result fns ctx)))
     :else
     (let [{outer-success :success outer-error :error} (outer-result ctx)]
       (if (empty? fns)
 	(enqueue outer-success result)
 	(let [f (first fns)]
 	  (if (pipeline? f)
-	    (when-let [result (poll-pipeline-channel (with-context ctx (f result)) (next fns) ctx)]
-	      (recur result (next fns) ctx))
+	    (let [result (poll-pipeline-channel (with-context ctx (f result)) (next fns) ctx)]
+	      (when-not (= result ::waiting)
+		(recur result (next fns) ctx)))
 	    (try
 	      (recur (with-context ctx (f result)) (next fns) ctx)
 	      (catch Exception e

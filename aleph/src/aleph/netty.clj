@@ -168,21 +168,21 @@
 	  nil)))
     ch))
 
-
 (defn write-to-channel
-  ([^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write}]
-     (when (and msg (.isOpen netty-channel))
-       (run-pipeline (io! (.write netty-channel msg))
-	 wrap-netty-channel-future
-	 (fn [_]
-	   (when write-callback
-	     (write-callback))
-	   (when close?
-	     (run-pipeline (io! (.close netty-channel))
-	       wrap-netty-channel-future
-	       (fn [_]
-		 (when close-callback
-		   (close-callback))))))))))
+  [^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write}]
+  (when (and msg (.isOpen netty-channel))
+    (run-pipeline (io! (.write netty-channel msg))
+      wrap-netty-channel-future
+      (fn [_]
+	(when write-callback
+	  (write-callback))
+	(when close?
+	  (run-pipeline (.close netty-channel)
+	    wrap-netty-channel-future
+	    (fn [_]
+	      (when close-callback
+		(close-callback)
+		nil))))))))
 
 ;;;
 

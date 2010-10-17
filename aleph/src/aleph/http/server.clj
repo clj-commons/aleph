@@ -30,20 +30,13 @@
      HttpRequestDecoder
      HttpResponseEncoder
      HttpContentCompressor]
-    [org.jboss.netty.handler.codec.http.websocket
-     WebSocketFrame
-     WebSocketFrameDecoder
-     WebSocketFrameEncoder]
     [org.jboss.netty.channel
      Channel
      Channels
      ChannelPipeline
-     ChannelUpstreamHandler
      ChannelFuture
      MessageEvent
      ExceptionEvent
-     ChannelFutureListener
-     ChannelFutureProgressListener
      Channels
      DefaultFileRegion]
     [org.jboss.netty.buffer
@@ -61,33 +54,30 @@
 ;;;
 
 (defn- respond-with-string
-  ([^Channel netty-channel response options]
-     (respond-with-string netty-channel response options "utf-8"))
-  ([^Channel netty-channel response options charset]
+  ([^Channel netty-channel response]
+     (respond-with-string netty-channel response "utf-8"))
+  ([^Channel netty-channel response charset]
      (let [body (-> response :body (string->byte-buffer charset) byte-buffer->channel-buffer)
 	   response (transform-aleph-response
 		      (-> response
 			(update-in [:headers] assoc "charset" charset)
-			(assoc :body body))
-		      options)]
+			(assoc :body body)))]
        (write-to-channel netty-channel response false))))
 
 (defn- respond-with-sequence
-  ([netty-channel response options]
-     (respond-with-sequence netty-channel response options "UTF-8"))
-  ([netty-channel response options charset]
+  ([netty-channel response]
+     (respond-with-sequence netty-channel response "UTF-8"))
+  ([netty-channel response charset]
      (respond-with-string netty-channel
-       (update-in response [:body] #(apply str %)) options charset)))
+       (update-in response [:body] #(apply str %)) charset)))
 
 (defn- respond-with-stream
-  [^Channel netty-channel response options]
-  (let [response (transform-aleph-response
-		   (update-in response [:body] #(input-stream->channel-buffer %))
-		   options)]
+  [^Channel netty-channel response]
+  (let [response (transform-aleph-response (update-in response [:body] #(input-stream->channel-buffer %)))]
     (write-to-channel netty-channel response false)))
 
 (defn- respond-with-file
-  [netty-channel response options]
+  [netty-channel response]
   (let [file ^File (:body response)
 	content-type (or
 		       (URLConnection/guessContentTypeFromName (.getName file))
@@ -97,97 +87,45 @@
 		   (update-in [:headers "content-type"] #(or % content-type))
 		   (assoc :body fc))]
     (write-to-channel netty-channel
-      (transform-aleph-response response options)
+      (transform-aleph-response response)
       false
       :on-write #(.close fc))))
 
 (defn- respond-with-channel
-  [netty-channel response options]
+  [netty-channel response]
   (let [charset (or (get-in response [:headers "charset"]) "UTF-8")
 	response (-> response
 		   (assoc-in [:headers "charset"] charset))
-	initial-response ^HttpResponse (transform-aleph-response response options)
+	initial-response ^HttpResponse (transform-aleph-response response)
 	ch (:body response)
-	close-channel (:close-channel options)
+	close-channel (channel)
 	close-callback (fn [_] (enqueue-and-close close-channel ch))]
     (receive close-channel close-callback)
-    (write-to-channel netty-channel initial-response false)
-    (receive-in-order ch
-      (fn [msg]
-	(when msg
-	  (let [msg (transform-aleph-body msg (:headers response))
-		chunk (DefaultHttpChunk. msg)]
-	    (write-to-channel netty-channel chunk false)))
-	(when (closed? ch)
-	  (cancel-callback close-channel close-callback)
-	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))
+    (run-pipeline (write-to-channel netty-channel initial-response false)
+      (fn [_]
+	(receive-in-order ch
+	  (fn [msg]
+	    (when msg
+	      (let [msg (transform-aleph-body msg (:headers response))
+		    chunk (DefaultHttpChunk. msg)]
+		(write-to-channel netty-channel chunk false)))
+	    (when (closed? ch)
+	      (cancel-callback close-channel close-callback)
+	      (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))))
 
-(defn respond [^Channel netty-channel response options]
+(defn respond [^Channel netty-channel response]
   (let [response (update-in response [:headers]
 		   #(merge
 		      {"server" "aleph (0.1.2)"}
 		      %))
 	body (:body response)]
-    (run-pipeline
-      (cond
-	(nil? body) (respond-with-string netty-channel (assoc response :body "") options)
-	(string? body) (respond-with-string netty-channel response options)
-	(sequential? body) (respond-with-sequence netty-channel response options)
-	(channel? body) (respond-with-channel netty-channel response options)
-	(instance? InputStream body) (respond-with-stream netty-channel response options)
-	(instance? File body) (respond-with-file netty-channel response options))
-      (fn [_]
-	(when (:close? options)
-	  (.close netty-channel))))))
-
-;;;
-
-(defn- respond-to-handshake [ctx ^HttpRequest request]
-  (let [channel (.getChannel ctx)
-	pipeline (.getPipeline channel)]
-    (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (write-to-channel channel (websocket-response request) false)
-    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
-
-(defn websocket-handshake-handler [handler options]
-  (let [[inner outer] (channel-pair)
-	close-atom (atom false)
-	close? #(not (compare-and-set! close-atom false true))]
-    
-    (reify ChannelUpstreamHandler
-      (handleUpstream [_ ctx evt]
-
-	(if-let [msg (message-event evt)]
-
-	  (let [ch (.getChannel ctx)]
-	    (cond
-	      (instance? WebSocketFrame msg)
-	      (if (= msg WebSocketFrame/CLOSING_HANDSHAKE)
-		(do
-		  (enqueue-and-close outer nil)
-		  '(when (close?)
-		    (.close ch)))
-		(enqueue outer (from-websocket-frame msg)))
-	      
-	      (instance? HttpRequest msg)
-	      (if (websocket-handshake? msg)
-		(do
-		  (receive-all outer
-		    (fn [msg]
-		      (when msg
-			(write-to-channel ch (to-websocket-frame msg) false))
-		      (when (closed? outer)
-			'(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
-			(.close ch))))
-		  (respond-to-handshake ctx msg)
-		  (handler inner (assoc (transform-netty-request msg) :websocket true)))
-		(.sendUpstream ctx evt))))
-	  
-	  (if-let [ch (channel-event evt)]
-	    (when-not (.isConnected ch)
-	      (enqueue-and-close inner nil)
-	      (enqueue-and-close outer nil))
-	    (.sendUpstream ctx evt)))))))
+    (cond
+      (nil? body) (respond-with-string netty-channel (assoc response :body ""))
+      (string? body) (respond-with-string netty-channel response)
+      (sequential? body) (respond-with-sequence netty-channel response)
+      (channel? body) (respond-with-channel netty-channel response)
+      (instance? InputStream body) (respond-with-stream netty-channel response)
+      (instance? File body) (respond-with-file netty-channel response))))
 
 ;;;
 
@@ -203,71 +141,58 @@
 	(when-not last?
 	  (restart))))))
 
-(defn read-requests [in netty-channel handler options]
-  (let [remote-addr (->> netty-channel .getRemoteAddress .getAddress .getHostAddress)
-	close-channel (:close-channel options)
-	cancel-close-callback #(cancel-callback close-channel %)]
-    (run-pipeline in
-      read-channel
-      (fn [^HttpRequest netty-request]
-	(let [chunked? (.isChunked netty-request)
-	      keep-alive? (.isKeepAlive netty-request)
-	      request (assoc (transform-netty-request netty-request)
-			:scheme :http
-			:remote-addr remote-addr)
-	      out (constant-channel)
-	      close-callback (fn [_]
-			       (when-not (sealed? out)
-				 (enqueue-and-close out nil)))]
-	  ;; handle connection closing
-	  (receive close-channel close-callback)	  
-	  ;; response handling
-	  (receive out
-	    #(io!
-	       (respond
-		 netty-channel
-		 %
-		 (assoc options
-		   :keep-alive? keep-alive?
-		   :close? (not (or keep-alive? (channel? (:body %))))))))
-	  ;; request handling
-	  (if-not chunked?
-	    (do
-	      (handler out request)
-	      close-callback)
-	    (let [headers (:headers request)
-		  stream (channel)
-		  streaming-close-callback (fn [_]
-					     (when-not (sealed? stream)
-					       (enqueue-and-close stream nil)))]
-	      (receive close-channel streaming-close-callback)
-	      (when (pos? (.readableBytes (.getContent netty-request)))
-		(enqueue stream (transform-netty-body (.getContent netty-request) headers)))
-	      (handler out (assoc request :body stream))
-	      (run-pipeline (read-streaming-request headers in stream)
-		(fn [_]
-		  (cancel-close-callback streaming-close-callback)
-		  close-callback))))))
-      (fn [callback]
-	(cancel-close-callback callback)
-	(restart)))))
+(defn handle-request [^HttpRequest netty-request ^Channel netty-channel handler in out]
+  (let [chunked? (.isChunked netty-request)
+	request (assoc (transform-netty-request netty-request)
+		  :scheme :http
+		  :remote-addr (->> netty-channel .getRemoteAddress .getAddress .getHostAddress))
+	close-channel (channel)
+	close-callback (fn [_] (enqueue-and-close out nil))
+	cancel-close-callback (fn [_] (cancel-callback close-channel close-callback))]
+    (receive close-channel close-callback)
+    (receive out cancel-close-callback)
+    (if-not chunked?
+      (do
+	(handler out request)
+	nil)
+      (let [headers (:headers request)
+	    stream (channel)
+	    streaming-close-callback (fn [_] (enqueue-and-close stream nil))]
+	(receive close-channel streaming-close-callback)
+	(handler out (assoc request :body stream))
+	(run-pipeline (read-streaming-request headers in stream)
+	  (fn [_] (cancel-callback close-channel streaming-close-callback)))))))
 
-(defn http-session-handler [handler close-channel options]
+(defn non-pipelined-loop [^Channel netty-channel in handler]
+  (run-pipeline in
+    read-channel
+    (fn [^HttpRequest request]
+      (let [out (constant-channel)]
+	(run-pipeline
+	  (handle-request request netty-channel handler in out)
+	  (fn [_] out)
+	  read-channel
+	  (fn [response] (respond netty-channel response))
+	  (fn [_] request))))
+    (fn [^HttpRequest request]
+      (if (HttpHeaders/isKeepAlive request)
+	(restart)
+	(.close netty-channel)))))
+
+(defn http-session-handler [handler options]
   (let [init? (atom false)
 	ch (channel)]
     (message-stage
       (fn [netty-channel request]
 	(when (compare-and-set! init? false true)
-	  (read-requests ch netty-channel handler options))
+	  (non-pipelined-loop netty-channel ch handler))
 	(enqueue ch request)
 	nil))))
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
   [handler options]
-  (let [close-channel (constant-channel)
-	options (assoc options :close-channel close-channel)
-	pipeline ^ChannelPipeline
+  (let [pipeline ^ChannelPipeline
 	(create-netty-pipeline
 	  :decoder (HttpRequestDecoder.)
 	  ;;:upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
@@ -275,7 +200,7 @@
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
 	  :upstream-error (upstream-stage error-stage-handler)
-	  :http-request (http-session-handler handler close-channel options)
+	  :http-request (http-session-handler handler options)
 	  :downstream-error (downstream-stage error-stage-handler))]
     (when (:websocket options)
       (.addBefore pipeline "http-request" "websocket" (websocket-handshake-handler handler options)))

@@ -132,7 +132,7 @@
 
 (deftest streaming-response
   (with-server (create-streaming-response-handler)
-    (let [result (sync-http-request {:url "http://localhost:8080" :method :get})]
+    (let [result (sync-http-request {:url "http://localhost:8080", :method :get})]
       (is
 	(= (concat (map str "abcdefghi") [nil])
 	   (channel-seq (:body result) 250))))))

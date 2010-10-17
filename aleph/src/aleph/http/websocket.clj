@@ -8,12 +8,15 @@
 
 (ns aleph.http.websocket
   (:use
+    [aleph.core]
     [aleph.http core]
-    [aleph formats])
+    [aleph formats netty])
   (:import
     [org.jboss.netty.handler.codec.http.websocket
      DefaultWebSocketFrame
-     WebSocketFrame]
+     WebSocketFrame
+     WebSocketFrameEncoder
+     WebSocketFrameDecoder]
     [org.jboss.netty.handler.codec.http
      HttpRequest
      HttpResponse
@@ -23,6 +26,8 @@
      HttpResponseStatus]
     [org.jboss.netty.buffer
      ChannelBuffers]
+    [org.jboss.netty.channel
+     ChannelUpstreamHandler]
     [java.nio
      ByteBuffer]
     [java.security
@@ -82,3 +87,51 @@
 	   "upgrade" "WebSocket"
 	   "connection" "Upgrade"))
       nil)))
+
+(defn- respond-to-handshake [ctx ^HttpRequest request]
+  (let [channel (.getChannel ctx)
+	pipeline (.getPipeline channel)]
+    (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
+    (write-to-channel channel (websocket-response request) false)
+    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
+
+;;TODO: uncomment out closing handshake, and add in timeout so that we're not waiting forever
+(defn websocket-handshake-handler [handler options]
+  (let [[inner outer] (channel-pair)
+	close-atom (atom false)
+	close? #(not (compare-and-set! close-atom false true))]
+    
+    (reify ChannelUpstreamHandler
+      (handleUpstream [_ ctx evt]
+
+	(if-let [msg (message-event evt)]
+
+	  (let [ch (.getChannel ctx)]
+	    (cond
+	      (instance? WebSocketFrame msg)
+	      (if (= msg WebSocketFrame/CLOSING_HANDSHAKE)
+		(do
+		  (enqueue-and-close outer nil)
+		  '(when (close?)
+		    (.close ch)))
+		(enqueue outer (from-websocket-frame msg)))
+	      
+	      (instance? HttpRequest msg)
+	      (if (websocket-handshake? msg)
+		(do
+		  (receive-all outer
+		    (fn [msg]
+		      (when msg
+			(write-to-channel ch (to-websocket-frame msg) false))
+		      (when (closed? outer)
+			'(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
+			(.close ch))))
+		  (respond-to-handshake ctx msg)
+		  (handler inner (assoc (transform-netty-request msg) :websocket true)))
+		(.sendUpstream ctx evt))))
+	  
+	  (if-let [ch (channel-event evt)]
+	    (when-not (.isConnected ch)
+	      (enqueue-and-close inner nil)
+	      (enqueue-and-close outer nil))
+	    (.sendUpstream ctx evt)))))))

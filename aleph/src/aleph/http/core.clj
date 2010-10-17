@@ -139,12 +139,11 @@
 		   (when body
 		     (enqueue ch body))
 		   ch)))}
-      {:keep-alive? (HttpHeaders/isKeepAlive req)
-       :server-name host
+      {:server-name host
        :server-port port}
       (netty-request-uri req))))
 
-(defn transform-aleph-message [^HttpMessage netty-msg msg options]
+(defn transform-aleph-message [^HttpMessage netty-msg msg]
   (let [body (:body msg)]
     (doseq [[k v-or-vals] (:headers msg)]
       (when-not (nil? v-or-vals)
@@ -160,13 +159,9 @@
 	  (.setContent netty-msg (transform-aleph-body body (:headers msg)))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
       (HttpHeaders/setContentLength netty-msg 0))
-    (.setHeader netty-msg "Connection"
-      (if (:keep-alive? options)
-	"keep-alive"
-	"close"))
     netty-msg))
 
-(defn transform-aleph-request [scheme ^String host ^Integer port request options]
+(defn transform-aleph-request [scheme ^String host ^Integer port request]
   (let [request (wrap-client-request request)
 	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
@@ -182,16 +177,16 @@
 	body (:body request)]
     (.setHeader req "Host" (str host ":" port))
     (.setHeader req "Accept-Encoding" "gzip")
-    (transform-aleph-message req request options)))
+    (transform-aleph-message req request)))
 
 (defn transform-aleph-response
   "Turns a Ring response into something Netty can understand."
-  [response options]
+  [response]
   (let [response (wrap-response response)
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))]
-    (transform-aleph-message rsp response options)))
+    (transform-aleph-message rsp response)))
 
 ;;;
 

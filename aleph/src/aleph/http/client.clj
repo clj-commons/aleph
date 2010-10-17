@@ -98,8 +98,7 @@
 	    (:scheme options)
 	    (:server-name options)
 	    (:server-port options)
-	    request
-	    options))
+	    request))
 	(when (channel? (:body request))
 	  (read-streaming-request (:body request) out (:headers request)))))
     (fn [_]
