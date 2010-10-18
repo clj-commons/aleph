@@ -129,7 +129,9 @@
 
 ;;;
 
-(defn read-streaming-request [headers in out]
+(defn read-streaming-request
+  "Read in all the chunks for a streamed request."
+  [headers in out]
   (run-pipeline in
     read-channel
     (fn [^HttpChunk request]
@@ -141,7 +143,9 @@
 	(when-not last?
 	  (restart))))))
 
-(defn handle-request [^HttpRequest netty-request ^Channel netty-channel handler in out]
+(defn handle-request
+  "Consumes a single request from 'in', and feed the response into 'out'."
+  [^HttpRequest netty-request ^Channel netty-channel handler in out]
   (let [chunked? (.isChunked netty-request)
 	request (assoc (transform-netty-request netty-request)
 		  :scheme :http
@@ -163,7 +167,9 @@
 	(run-pipeline (read-streaming-request headers in stream)
 	  (fn [_] (cancel-callback close-channel streaming-close-callback)))))))
 
-(defn non-pipelined-loop [^Channel netty-channel in handler]
+(defn non-pipelined-loop
+  "Wait for the response for each request before processing the next one."
+  [^Channel netty-channel in handler]
   (run-pipeline in
     read-channel
     (fn [^HttpRequest request]
