@@ -23,10 +23,12 @@
 (defvar ch nil)
 (defvar enqueue-fn nil)
 
-(defmacro run-test [& body]
+
+
+(defmacro run-test [channel & body]
   `(let [enqueue-count# (atom 0)]
      (binding [a (atom [])
-	       ch (channel)
+	       ch ~channel
 	       f (fn [x#] (swap! a conj x#) true)
 	       enqueue-fn #(do
 			     (swap! enqueue-count# inc)
@@ -41,9 +43,15 @@
 	      (fn [expr] (eval `(fn [] ~expr)))
 	      exprs)]
     (map
-      #(f (run-test
-	    (doseq [x %]
-	      (x))))
+      (fn [s]
+	(f
+	  (run-test
+	    (channel)
+	    (doseq [x s] (x))))
+	(f
+	  (run-test
+	    (let [ch (channel)] (splice ch ch))
+	    (doseq [x s] (x)))))
       (permutations fns))))
 
 (defn expected-result [s]
