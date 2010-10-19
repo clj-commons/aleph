@@ -45,7 +45,6 @@
 (import-fn channel/map*)
 (import-fn channel/filter*)
 (import-fn channel/take*)
-(import-fn channel/take-while*)
 
 ;; named channels
 (import-fn channel/named-channel)
@@ -85,7 +84,7 @@
   "Consumes messages from a channel one at a time.  The callback will only receive the next message once
    it has completed processing the previous one.
 
-   This is a lossy iteration over the channel.  Fork the channel is there is another consumer."
+   This is a lossy iteration over the channel.  Fork the channel if there is another consumer."
   [ch f]
   (if (closed? ch)
     (pipeline/pipeline-channel
@@ -97,3 +96,58 @@
 	(f msg)
 	(when-not (closed? ch)
 	  (restart))))))
+
+(defn- reduce- [f val ch]
+  (:success
+    (run-pipeline val
+      (read-merge
+	#(read-channel ch)
+	#(if (and (nil? %2) (closed? ch))
+	   %1
+	   (f %1 %2)))
+      (fn [val]
+	(if (closed? ch)
+	  val
+	  (restart val))))))
+
+(defn reduce*
+  "Returns a constant-channel which will return the result of the reduce once the channel has been exhausted."
+  ([f ch]
+     (let [ch (fork ch)]
+       (:success
+	 (run-pipeline ch
+	   read-channel
+	   #(reduce- f %1 ch)
+	   read-channel))))
+  ([f val ch]
+     (let [ch (fork ch)]
+       (reduce- f val ch))))
+
+(defn reductions- [f val ch]
+  (let [ch* (channel)]
+    (run-pipeline val
+      (read-merge
+	#(read-channel ch)
+	#(if (and (nil? %2) (closed? ch))
+	   %1
+	   (f %1 %2)))
+      (fn [val]
+	(if (closed? ch)
+	  (enqueue-and-close ch* val)
+	  (do
+	    (enqueue ch* val)
+	    (restart val)))))
+    ch*))
+
+(defn reductions*
+  "Returns a channel which contains the intermediate results of the reduce operation."
+  ([f ch]
+     (let [ch (fork ch)]
+       (wait-for-message
+	 (:success
+	   (run-pipeline ch
+	     read-channel
+	     #(reductions- f %1 ch))))))
+  ([f val ch]
+     (let [ch (fork ch)]
+       (reductions- f val ch))))

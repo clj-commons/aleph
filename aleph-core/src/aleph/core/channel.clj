@@ -531,23 +531,18 @@
 	   chs))
        chs)))
 
-(defn map* [f ch]
+(defn map*
+  "Maps 'f' over all messages from 'ch'.  Returns a new channel which is receive-only."
+  [f ch]
   (wrap-channel ch f))
 
 (defn filter* [f ch]
+  "Filters all messages from 'ch'.  Returns a new channel which is receive-only."
   (wrap-channel ch #(if (f %) % ::ignore)))
 
-(defn take-while* [f ch]
-  (let [ch* (channel)]
-    (receive-while ch
-      (fn [msg]
-	(if (= msg ::close)
-	  (enqueue-and-close ch* nil)
-	  (enqueue ch* msg)))
-      f)
-    ch*))
-
-(defn take* [n ch]
+(defn take*
+  "Returns a receive-only channel which will contain the first 'n' messages from 'ch'."
+  [n ch]
   (let [pred-cnt (ref 0)
 	receive-cnt (atom 0)
 	ch* (channel)]
@@ -558,7 +553,7 @@
 	  (enqueue-and-close ch* msg)))
       (fn [msg]
 	(<= (alter pred-cnt inc) n)))
-    ch*))
+    (splice ch* nil-channel)))
 
 ;;;
 
