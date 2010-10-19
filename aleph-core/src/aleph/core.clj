@@ -41,8 +41,11 @@
 (import-fn channel/siphon)
 (import-fn channel/siphon-while)
 (import-fn channel/fork)
+(import-fn channel/fork-while)
 (import-fn channel/map*)
 (import-fn channel/filter*)
+(import-fn channel/take*)
+(import-fn channel/take-while*)
 
 ;; named channels
 (import-fn channel/named-channel)

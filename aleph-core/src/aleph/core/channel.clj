@@ -470,18 +470,17 @@
 (defn siphon-while
   "Enqueues all messages from the source channel to the destination channels until (pred msg) fails or
    the destination is sealed."
-  [pred source & destinations]
-  (apply receive-while source 
+  [source & {:as destination-predicate-map}]
+  (apply receive-while source
     (interleave
       (map
 	(fn [dst]
 	  (fn this [msg]
 	    (when-not (= msg ::close)
-	      (let [cancel (not (enqueue dst msg))]
-		(when cancel
-		  (cancel-callback source this))))))
-	destinations)
-      (repeat pred))))
+	      (when (not (enqueue dst msg))
+		(cancel-callback source this)))))
+	(keys destination-predicate-map))
+      (vals destination-predicate-map))))
 
 (defn siphon
   "Automatically enqueues all messages from source into each destination, unless it has been sealed.
@@ -492,10 +491,27 @@
     (map
       (fn [dst]
 	(fn this [msg]
-	  (let [cancel (not (enqueue dst msg))]
-	    (when cancel
-	      (cancel-callback source this)))))
+	  (when-not (enqueue dst msg)
+	    (cancel-callback source this))))
       destinations)))
+
+(defn fork-while
+  [ch & predicates]
+  (let [chs (take (count predicates) (repeatedly channel))]
+    (apply receive-while ch
+      (interleave
+	(map
+	  (fn [dst]
+	    (fn this [msg]
+	      (if (= msg ::close)
+		(enqueue-and-close dst nil)
+		(when-not (if (closed? ch)
+			    (enqueue-and-close dst msg)
+			    (enqueue dst msg))
+		  (cancel-callback ch this)))))
+	  chs)
+	predicates))
+    chs))
 
 (defn fork
   "Creates copies of a channel.  If no number is given, a single copy is returned.  Otherwise, a seq
@@ -508,11 +524,10 @@
 	 (map
 	   (fn [dst]
 	     (fn this [msg]
-	       (let [cancel (not (if (closed? ch)
-				   (enqueue-and-close dst msg)
-				   (enqueue dst msg)))]
-		 (when cancel
-		   (cancel-callback ch this)))))
+	       (when-not (if (closed? ch)
+			   (enqueue-and-close dst msg)
+			   (enqueue dst msg))
+		 (cancel-callback ch this))))
 	   chs))
        chs)))
 
