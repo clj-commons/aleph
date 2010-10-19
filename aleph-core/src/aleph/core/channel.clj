@@ -9,7 +9,8 @@
 (ns aleph.core.channel
   (:use
     [clojure.pprint]
-    [clojure.contrib.seq :only (separate)])
+    [clojure.contrib.seq :only (separate)]
+    [clojure.set :only (difference)])
   (:import
     [java.util.concurrent
      ConcurrentLinkedQueue
@@ -75,13 +76,6 @@
    the channel will be closed."
   [ch & messages]
   (enqueue-and-close- ch messages))
-
-;;;
-
-(def delayed-executor (ScheduledThreadPoolExecutor. 1))
-
-(defn delay-invoke [f delay]
-  (.schedule ^ScheduledThreadPoolExecutor delayed-executor ^Runnable f (long delay) TimeUnit/MILLISECONDS))
 
 ;;;
 
@@ -184,71 +178,88 @@
 	sealed (ref false)
 	   
 	listener-callbacks
-	(fn []
+	(fn [messages]
 	  (ensure listeners)
-	  (let [msg (first @messages)
-		callbacks (filter identity (map #(% msg) @listeners))]
+	  (let [msg (first messages)
+		callbacks (doall (filter identity (map #(% msg) @listeners)))]
 	    (ref-set listeners #{})
 	    (when-not (empty? callbacks)
 	      [[msg callbacks]])))
 	   
 	receiver-callbacks
-	(fn []
+	(fn [messages]
 	  (ensure receivers)
 	  (let [callbacks @receivers]
 	    (when-not (empty? callbacks)
-	      (map #(list % callbacks) @messages))))
+	      (map #(list % callbacks) messages))))
 
 	conditional-receiver-callbacks
-	(fn []
+	(fn [messages]
 	  (ensure conditional-receivers)
 	  (let [receiver-map @conditional-receivers]
 	    (when-not (empty? receiver-map)
-	      (loop [messages @messages, receivers (keys receiver-map), callbacks []]
+	      (loop [messages messages, receivers (set (keys receiver-map)), callbacks []]
 		(if (empty? messages)
 		  (do
 		    (alter conditional-receivers #(apply hash-map (mapcat list receivers (map % receivers))))
 		    callbacks)
 		 (let [msg (first messages)
-		       receivers (filter #((receiver-map %) msg) receivers)]
-		   (if (empty? receivers)
+		       receivers* (set (filter #((receiver-map %) msg) receivers))
+		       closed-receivers (difference receivers receivers*)
+		       callbacks* (cond
+				    (empty? receivers*) (conj callbacks [::close closed-receivers])
+				    (empty? closed-receivers) (conj callbacks [msg receivers*])
+				    :else (conj callbacks [msg receivers*] [::close closed-receivers]))]
+		   (if (empty? receivers*)
 		     (do
 		       (ref-set conditional-receivers {})
-		       callbacks)
-		     (recur (rest messages) receivers (conj callbacks [msg receivers])))))))))
+		       callbacks*)
+		     (recur (rest messages) receivers* callbacks*))))))))
 	   
 	transient-receiver-callbacks
-	(fn []
+	(fn [messages]
 	  (ensure transient-receivers)
 	  (let [callbacks @transient-receivers]
 	    (when-not (empty? callbacks)
 	      (ref-set transient-receivers #{})
-	      [[(first @messages) callbacks]])))
+	      [[(first messages) callbacks]])))
 	   
 	callbacks
-	(fn []
-	  (ensure messages)
-	  (when-not (empty? @messages)
-	    (let [callbacks [(listener-callbacks)
-			     (receiver-callbacks)
-			     (transient-receiver-callbacks)
-			     (conditional-receiver-callbacks)]]
-	      (let [message-count (apply max (map count callbacks))]
-		(if (= 1 message-count)
-		  (alter messages pop)
-		  (alter messages #(reduce (fn [s f] (f s)) % (repeat message-count pop)))))
-	      (when (and (empty? @messages) @sealed)
-		(ref-set receivers nil))
-	      (apply concat callbacks))))
+	(fn callbacks
+	  ([]
+	     (ensure messages)
+	     (let [msgs @messages]
+	       (if (and @sealed (> (count msgs) 1))
+		 (callbacks (drop-last msgs))
+		 (callbacks msgs))))
+	  ([msgs]
+	     (when-not (empty? msgs)
+	       (let [callbacks [(listener-callbacks msgs)
+				(receiver-callbacks msgs)
+				(transient-receiver-callbacks msgs)
+				(conditional-receiver-callbacks msgs)]]
+		 (let [message-count (apply max
+				       (count (filter #(not= (first %) ::close) (last callbacks)))
+				       (map count (take 3 callbacks)))]
+		   (if (= 1 message-count)
+		     (alter messages pop)
+		     (alter messages #(reduce (fn [s f] (f s)) % (repeat message-count pop)))))
+		 (when (and (empty? @messages) @sealed)
+		   (ref-set receivers nil))
+		 (apply concat callbacks)))))
 	   
 	send-to-callbacks
-	(fn [callbacks]
-	  (if (= ::invalid callbacks)
+	(fn send-to-callbacks [s]
+	  (if (= ::invalid s)
 	    false
 	    (do
-	      (doseq [[msg fns] callbacks]
+	      (doseq [[msg fns] s]
 		(doseq [f fns]
 		  (f msg)))
+	      (if (and @sealed (= 1 (count @messages)))
+		(doseq [[msg fns] (dosync (callbacks @messages))]
+		  (doseq [f fns]
+		    (f msg))))
 	      true)))
 	   
 	can-enqueue?
@@ -337,8 +348,6 @@
       (closed? [_]
 	(and @sealed (empty? @messages))))))
 
-;;;
-
 (def nil-channel
   ^{:type ::channel}
   (reify AlephChannel Counted
@@ -354,14 +363,6 @@
     (enqueue- [_ msgs] false)
     (enqueue-and-close- [_ msgs] false)))
 
-(defn sealed-channel
-  "Returns a channel containing 'messages' which is already sealed."
-  [& messages]
-  (if (empty? messages)
-    nil-channel
-    (let [ch (channel)]
-      (enqueue-and-close- ch messages)
-      ch)))
 
 (defn splice
   "Splices together a message source and a message destination
@@ -400,7 +401,156 @@
   ([a b]
      [(splice a b) (splice b a)]))
 
+(defn wrap-channel
+  "Returns a receive-only channel which maps 'f' over all messages from 'ch'."
+  [ch f]
+  (let [callback-map (atom {})
+	transform-predicate (fn [predicate]
+			      (fn [msg]
+				(if (and (nil? msg) (closed? ch))
+				  true
+				  (let [val (f msg)]
+				    (if (= ::ignore val)
+				      true
+				      (predicate val))))))
+	transform-callback (fn [callback]
+			     (fn [msg]
+			       (if (and (nil? msg) (closed? ch))
+				 (callback nil)
+				 (let [val (f msg)]
+				   (if-not (= ::ignore val)
+				     (callback val)
+				     (when (closed? ch)
+				       (callback nil)))))))
+	transform-callbacks (fn [callbacks]
+			      (let [callbacks* (map transform-callback callbacks)]
+				(swap! callback-map #(merge (zipmap callbacks callbacks*) %))
+				callbacks*))
+	remove-callbacks (fn [callbacks]
+			   (let [callbacks* (map @callback-map callbacks)]
+			     (apply swap! callback-map dissoc callbacks)
+			     callbacks*))]
+    ^{:type ::channel}
+    (reify AlephChannel
+      (toString [_]
+	"[ ... wrapped channel ... ]")
+      (receive- [_ fs]
+	(receive- ch (transform-callbacks fs)))
+      (receive-all- [_ fs]
+	(receive-all- ch (transform-callbacks fs)))
+      (receive-while- [_ callback-predicate-map]
+	(receive-while ch
+	  (zipmap
+	    (transform-callbacks (keys callback-predicate-map))
+	    (map transform-predicate (vals callback-predicate-map)))))
+      (listen- [_ fs]
+	(listen- ch (transform-callbacks fs)))
+      (cancel-callback- [_ fs]
+	(cancel-callback- ch (remove-callbacks fs)))
+      (closed? [_]
+	(closed? ch))
+      (sealed? [_]
+	true)
+      (enqueue- [_ msgs]
+	false)
+      (enqueue-and-close- [_ msgs]
+	false))))
+
+(defn sealed-channel
+  "Returns a channel containing 'messages' which is already sealed."
+  [& messages]
+  (if (empty? messages)
+    nil-channel
+    (let [ch (channel)]
+      (apply enqueue-and-close ch messages)
+      ch)))
+
 ;;;
+
+(defn siphon-while
+  "Enqueues all messages from the source channel to the destination channels until (pred msg) fails or
+   the destination is sealed."
+  [pred source & destinations]
+  (apply receive-while source 
+    (interleave
+      (map
+	(fn [dst]
+	  (fn this [msg]
+	    (when-not (= msg ::close)
+	      (let [cancel (not (enqueue dst msg))]
+		(when cancel
+		  (cancel-callback source this))))))
+	destinations)
+      (repeat pred))))
+
+(defn siphon
+  "Automatically enqueues all messages from source into each destination, unless it has been sealed.
+
+   The final message from a closed source will *not* seal the destination channels."
+  [source & destinations]
+  (apply receive-all source
+    (map
+      (fn [dst]
+	(fn this [msg]
+	  (let [cancel (not (enqueue dst msg))]
+	    (when cancel
+	      (cancel-callback source this)))))
+      destinations)))
+
+(defn fork
+  "Creates copies of a channel.  If no number is given, a single copy is returned.  Otherwise, a seq
+   containing 'n' copies is returned."
+  ([ch]
+     (first (fork 1 ch)))
+  ([n ch]
+     (let [chs (take n (repeatedly channel))]
+       (apply receive-all ch
+	 (map
+	   (fn [dst]
+	     (fn this [msg]
+	       (let [cancel (not (if (closed? ch)
+				   (enqueue-and-close dst msg)
+				   (enqueue dst msg)))]
+		 (when cancel
+		   (cancel-callback ch this)))))
+	   chs))
+       chs)))
+
+(defn map* [f ch]
+  (wrap-channel ch f))
+
+(defn filter* [f ch]
+  (wrap-channel ch #(if (f %) % ::ignore)))
+
+(defn take-while* [f ch]
+  (let [ch* (channel)]
+    (receive-while ch
+      (fn [msg]
+	(if (= msg ::close)
+	  (enqueue-and-close ch* nil)
+	  (enqueue ch* msg)))
+      f)
+    ch*))
+
+(defn take* [n ch]
+  (let [pred-cnt (ref 0)
+	receive-cnt (atom 0)
+	ch* (channel)]
+    (receive-while ch
+      (fn [msg]
+	(if (< (swap! receive-cnt inc) n)
+	  (enqueue ch* msg)
+	  (enqueue-and-close ch* msg)))
+      (fn [msg]
+	(<= (alter pred-cnt inc) n)))
+    ch*))
+
+;;;
+
+(def delayed-executor (ScheduledThreadPoolExecutor. 1))
+
+(defn delay-invoke [f delay]
+  (.schedule ^ScheduledThreadPoolExecutor delayed-executor ^Runnable f (long delay) TimeUnit/MILLISECONDS))
 
 (defn poll
   "Allows you to consume exactly one message from multiple channels.
@@ -488,31 +638,6 @@
 	 (throw (TimeoutException. "Timed out waiting for message from channel."))
 	 (first msg)))))
 
-(defn siphon-while
-  "Enqueues all messages from src to dst until (pred msg) fails or dst is sealed."
-  [pred src dst]
-  (receive-while src pred
-    (fn this [msg]
-      (let [cancel (not (enqueue dst msg))]
-	(when cancel
-	  (cancel-callback src this))))))
-
-(defn siphon
-  "Automatically enqueues all messages from 'src' into 'dst',
-   unless 'dst' has been sealed."
-  [src dst]
-  (receive-all src
-    (fn this [msg]
-      (let [cancel (not (enqueue dst msg))]
-	(when cancel
-	  (cancel-callback src this))))))
-
-(defn wrap-channel
-  "Returns a new channel which maps 'f' over all messages from 'ch'."
-  [ch f]
-  (let [ch* (channel)]
-    (receive-all ch #(enqueue ch* (f %)))
-    ch*))
 
 ;;;
 

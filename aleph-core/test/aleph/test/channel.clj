@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.channel
-  (:use [aleph.core.channel])
+  (:use [aleph.core] [aleph.core.channel :only (listen)])
   (:use
     [clojure.test]
     [clojure.contrib.def]
@@ -22,8 +22,6 @@
 (defvar f nil)
 (defvar ch nil)
 (defvar enqueue-fn nil)
-
-
 
 (defmacro run-test [channel & body]
   `(let [enqueue-count# (atom 0)]
