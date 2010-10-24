@@ -33,9 +33,35 @@
 
 (import-fn policy/start-policy-file-server)
 
-(defn wrap-ring-handler [f]
+(defn wrap-ring-handler
+  "Wraps a synchronous Ring handler, such that it can be used in start-http-server."
+  [f]
   (fn [channel request]
     (enqueue-and-close channel
       (f request))))
+
+(defn outer-middleware-wrapper
+  "Allows for asynchronous use of Ring middleware that only transforms the request, as opposed
+   to middleware that transforms both request and response, which requires a synchronous
+   request/response model.
+
+   Use in conjunction with inner-middleware-wrapper, like so:
+
+   -> f inner-middleware-wrapper ... other middleware ... outer-middleware-wrapper"
+  [f]
+  (fn [ch request]
+    (f (assoc request :channel ch))))
+
+(defn inner-middleware-wrapper
+  "Allows for asynchronous use of Ring middleware that only transforms the request, as opposed
+   to middleware that transforms both request and response, which requires a synchronous
+   request/response model.
+
+   Use in conjunction with outer-middleware-wrapper, like so:
+
+   -> f inner-middleware-wrapper ... other middleware ... outer-middleware-wrapper"
+  [f]
+  (fn [request]
+    (f (:channel request) (dissoc request :channel))))
 
 
