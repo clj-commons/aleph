@@ -45,6 +45,7 @@
 (import-fn channel/map*)
 (import-fn channel/filter*)
 (import-fn channel/take*)
+(import-fn channel/take-while*)
 
 ;; named channels
 (import-fn channel/named-channel)
@@ -73,10 +74,7 @@
 (import-fn pipeline/complete)
 
 ;; pipeline result hooks
-(import-fn pipeline/on-success)
-(import-fn pipeline/on-error)
 (import-fn pipeline/wait-for-pipeline)
-
 
 ;;;
 

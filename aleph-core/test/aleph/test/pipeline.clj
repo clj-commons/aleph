@@ -144,7 +144,7 @@
       inc)
     5))
 
-(deftest test-tail-recursion
+'(deftest test-tail-recursion
   (let [ch (apply sealed-channel (range 1e4))]
     (run-pipeline ch
       read-channel

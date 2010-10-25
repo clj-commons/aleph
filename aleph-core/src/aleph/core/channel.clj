@@ -28,6 +28,7 @@
   (cancel-callback- [ch fs])
   (enqueue- [ch msgs])
   (enqueue-and-close- [ch msgs])
+  (on-zero-callbacks- [ch fs])
   (sealed? [ch]
     "Returns true if no further messages can be enqueued.")
   (closed? [ch]
@@ -65,6 +66,10 @@
   "Cancels one or more callbacks."
   [ch & callbacks]
   (cancel-callback- ch callbacks))
+
+(defn on-zero-callbacks
+  [ch & callbacks]
+  (on-zero-callbacks- ch callbacks))
 
 (defn enqueue
   "Enqueues messages into the channel."
@@ -132,7 +137,9 @@
 	   true)
 	 (cancel-callback- [_ fs]
 	   (dosync
-	     (apply alter listeners disj fs)))
+	     (apply alter listeners disj fs)
+	     (apply alter receivers disj fs)))
+	 (on-zero-callbacks- [_ fs])
 	 (enqueue- [_ msgs]
 	   (when-not (= 1 (count msgs))
 	     (throw (Exception. "Constant channels can only contain a single message.")))
@@ -174,8 +181,12 @@
 	receivers (ref #{})
 	listeners (ref #{})
 	conditional-receivers (ref {})
+
+	empty-callbacks (ref #{}) ;; on the removal of all callbacks
 	   
 	sealed (ref false)
+
+	unique-callback (ref nil)
 	   
 	listener-callbacks
 	(fn [messages]
@@ -203,18 +214,18 @@
 		  (do
 		    (alter conditional-receivers #(apply hash-map (mapcat list receivers (map % receivers))))
 		    callbacks)
-		 (let [msg (first messages)
-		       receivers* (set (filter #((receiver-map %) msg) receivers))
-		       closed-receivers (difference receivers receivers*)
-		       callbacks* (cond
-				    (empty? receivers*) (conj callbacks [::close closed-receivers])
-				    (empty? closed-receivers) (conj callbacks [msg receivers*])
-				    :else (conj callbacks [msg receivers*] [::close closed-receivers]))]
-		   (if (empty? receivers*)
-		     (do
-		       (ref-set conditional-receivers {})
-		       callbacks*)
-		     (recur (rest messages) receivers* callbacks*))))))))
+		  (let [msg (first messages)
+			receivers* (set (filter #((receiver-map %) msg) receivers))
+			closed-receivers (difference receivers receivers*)
+			callbacks* (cond
+				     (empty? receivers*) (conj callbacks [::close closed-receivers])
+				     (empty? closed-receivers) (conj callbacks [msg receivers*])
+				     :else (conj callbacks [msg receivers*] [::close closed-receivers]))]
+		    (if (empty? receivers*)
+		      (do
+			(ref-set conditional-receivers {})
+			callbacks*)
+		      (recur (rest messages) receivers* callbacks*))))))))
 	   
 	transient-receiver-callbacks
 	(fn [messages]
@@ -223,6 +234,25 @@
 	    (when-not (empty? callbacks)
 	      (ref-set transient-receivers #{})
 	      [[(first messages) callbacks]])))
+
+	update-unique-callback
+	(fn []
+	  (ref-set unique-callback
+	    (when (and
+		    (= 1 (count @receivers))
+		    (empty? @transient-receivers)
+		    (empty? @conditional-receivers)
+		    (empty? @listeners))
+	      (first @receivers))))
+
+	on-zero-callbacks
+	(fn []
+	  (doseq [f @empty-callbacks]
+	    (f))
+	  (dosync
+	    (ref-set empty-callbacks nil)
+	    (ref-set receivers nil)
+	    (ref-set conditional-receivers nil)))
 	   
 	callbacks
 	(fn callbacks
@@ -260,19 +290,24 @@
 		(doseq [[msg fns] (dosync (callbacks @messages))]
 		  (doseq [f fns]
 		    (f msg))))
+	      (when (and @sealed (zero? (count @messages)))
+		(on-zero-callbacks))
 	      true)))
+
+	callback-count
+	(fn []
+	  (apply + (map #(count @%) [listeners receivers transient-receivers conditional-receivers])))
 	   
 	can-enqueue?
-	(fn []
-	  (not @sealed))
+	#(not @sealed)
 	   
 	can-receive?
-	(fn []
-	  (not (and @sealed (empty? @messages))))
+	#(not (and @sealed (empty? @messages)))
 
 	assert-fns
-	(fn [fs]
-	  (when-not (every? fn? fs) (throw (Exception. "All callbacks must be functions."))))]
+	#(when-not (every? fn? %)
+	   (throw (Exception. "All callbacks must be functions.")))]
+    
     ^{:type ::channel}
     (reify AlephChannel Counted
       (count [_]
@@ -289,6 +324,7 @@
 	      ::invalid
 	      (do
 		(apply alter receivers conj fs)
+		(update-unique-callback)
 		(callbacks))))))
       (receive- [this fs]
 	(assert-fns fs)
@@ -298,6 +334,7 @@
 	      ::invalid
 	      (do
 		(apply alter transient-receivers conj fs)
+		(update-unique-callback)
 		(callbacks))))))
       (receive-while- [this callback-predicate-map]
 	(assert-fns (keys callback-predicate-map))
@@ -308,6 +345,7 @@
 	      ::invalid
 	      (do
 		(apply alter conditional-receivers merge callback-predicate-map)
+		(update-unique-callback)
 		(callbacks))))))
       (listen- [this fs]
 	(assert-fns fs)
@@ -316,24 +354,39 @@
 	    (if-not (can-receive?)
 	      ::invalid
 	      (do
-		(when-not (every? fn? fs) (throw (Exception. "all callbacks must be functions")))
 		(apply alter listeners conj fs)
+		(update-unique-callback)
 		(callbacks))))))
       (cancel-callback- [_ fs]
 	(assert-fns fs)
+	(when (dosync
+		(let [cnt (callback-count)]
+		  (apply alter listeners disj fs)
+		  (apply alter receivers disj fs)
+		  (apply alter transient-receivers disj fs)
+		  (apply alter conditional-receivers dissoc fs)
+		  (and (pos? cnt) (zero? (callback-count)))))
+	  (on-zero-callbacks)))
+      (on-zero-callbacks- [_ fs]
+	(assert-fns fs)
 	(dosync
-	  (apply alter listeners disj fs)
-	  (apply alter receivers disj fs)
-	  (apply alter transient-receivers disj fs)
-	  (apply alter conditional-receivers dissoc fs)))
+	  (apply alter empty-callbacks conj fs))
+	nil)
       (enqueue- [this msgs]
-	(send-to-callbacks
-	  (dosync
-	    (if-not (can-enqueue?)
-	      ::invalid
-	      (do
-		(apply alter messages conj msgs)
-		(callbacks))))))
+	(if-let [f @unique-callback]
+	  (if-not (can-enqueue?)
+	    false
+	    (do
+	      (doseq [msg msgs]
+		(f msg))
+	      true))
+	  (send-to-callbacks
+	    (dosync
+	      (if-not (can-enqueue?)
+		::invalid
+		(do
+		  (apply alter messages conj msgs)
+		  (callbacks)))))))
       (enqueue-and-close- [_ msgs]
 	(send-to-callbacks
 	  (dosync
@@ -360,6 +413,7 @@
     (cancel-callback- [_ fs])
     (closed? [_] true)
     (sealed? [_] true)
+    (on-zero-callbacks- [_ fs])
     (enqueue- [_ msgs] false)
     (enqueue-and-close- [_ msgs] false)))
 
@@ -384,6 +438,8 @@
       (listen- src fs))
     (cancel-callback- [_ fs]
       (cancel-callback- src fs))
+    (on-zero-callbacks- [_ fs]
+      (on-zero-callbacks- src fs))
     (closed? [_]
       (closed? src))
     (sealed? [_]
@@ -447,6 +503,8 @@
 	(listen- ch (transform-callbacks fs)))
       (cancel-callback- [_ fs]
 	(cancel-callback- ch (remove-callbacks fs)))
+      (on-zero-callbacks- [_ fs]
+	(on-zero-callbacks- ch fs))
       (closed? [_]
 	(closed? ch))
       (sealed? [_]
@@ -497,20 +555,20 @@
 
 (defn fork-while
   [ch & predicates]
-  (let [chs (take (count predicates) (repeatedly channel))]
-    (apply receive-while ch
-      (interleave
-	(map
-	  (fn [dst]
-	    (fn this [msg]
-	      (if (= msg ::close)
-		(enqueue-and-close dst nil)
-		(when-not (if (closed? ch)
-			    (enqueue-and-close dst msg)
-			    (enqueue dst msg))
-		  (cancel-callback ch this)))))
-	  chs)
-	predicates))
+  (let [chs (take (count predicates) (repeatedly channel))
+	receivers (map
+		    (fn [dst]
+		      (fn this [msg]
+			(if (= msg ::close)
+			  (enqueue-and-close dst nil)
+			  (when-not (if (closed? ch)
+				      (enqueue-and-close dst msg)
+				      (enqueue dst msg))
+			    (cancel-callback ch this)))))
+		    chs)]
+    (doseq [[f c] (map vector receivers chs)]
+      (on-zero-callbacks c #(cancel-callback c f)))
+    (apply receive-while ch (interleave receivers predicates))
     chs))
 
 (defn fork
@@ -519,26 +577,28 @@
   ([ch]
      (first (fork 1 ch)))
   ([n ch]
-     (let [chs (take n (repeatedly channel))]
-       (apply receive-all ch
-	 (map
-	   (fn [dst]
-	     (fn this [msg]
-	       (when-not (if (closed? ch)
-			   (enqueue-and-close dst msg)
-			   (enqueue dst msg))
-		 (cancel-callback ch this))))
-	   chs))
-       chs)))
+     (let [chs (take n (repeatedly channel))
+	   receivers (map
+		       (fn [dst]
+			 (fn this [msg]
+			   (when-not (if (closed? ch)
+				       (enqueue-and-close dst msg)
+				       (enqueue dst msg))
+			     (cancel-callback ch this))))
+		       chs)]
+       (doseq [[f c] (map vector receivers chs)]
+	 (on-zero-callbacks c #(cancel-callback ch f)))
+       (apply receive-all ch receivers)
+       (map #(splice % nil-channel) chs))))
 
 (defn map*
   "Maps 'f' over all messages from 'ch'.  Returns a new channel which is receive-only."
   [f ch]
-  (wrap-channel ch f))
+  (fork (wrap-channel ch f)))
 
 (defn filter* [f ch]
   "Filters all messages from 'ch'.  Returns a new channel which is receive-only."
-  (wrap-channel ch #(if (f %) % ::ignore)))
+  (fork (wrap-channel ch #(if (f %) % ::ignore))))
 
 (defn take*
   "Returns a receive-only channel which will contain the first 'n' messages from 'ch'."
@@ -554,6 +614,10 @@
       (fn [msg]
 	(<= (alter pred-cnt inc) n)))
     (splice ch* nil-channel)))
+
+(defn take-while*
+  [f ch]
+  (first (fork-while ch f)))
 
 ;;;
 
@@ -619,8 +683,12 @@
 	       #(deliver value
 		  (when (first %)
 		    [(second %)])))
-	     (when @value
-	       (concat @value (lazy-channel-seq ch timeout-fn)))))))))
+	     (let [val @value]
+	       (when (and val
+		       (or
+			 (not (closed? ch))
+			 (not (nil? (first val)))))
+		 (concat val (lazy-channel-seq ch timeout-fn))))))))))
 
 (defn channel-seq
   "Creates a non-lazy sequence which consumes all messages from the channel within the next

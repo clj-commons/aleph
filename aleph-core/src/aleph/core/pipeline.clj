@@ -252,21 +252,6 @@
 
 ;;;
 
-(defn on-success
-  "Adds a callback to a pipeline channel which will be called if the pipeline succeeds.
-
-   The function will be called with (f result)"
-  [ch f]
-  (receive (:success ch) f))
-
-(defn on-error
-  "Adds a callback to a pipeline channel which will be called if the
-   pipeline terminates due to an error.
-
-   The function will be called with (f intermediate-result exception)."
-  [ch f]
-  (receive (:error ch) (fn [[result exception]] (f result exception))))
-
 (defn wait-for-pipeline
   "Waits for a pipeline to complete.  If it succeeds, returns the result.
    If there was an error, the exception is re-thrown."

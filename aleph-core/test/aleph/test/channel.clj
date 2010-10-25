@@ -13,10 +13,21 @@
     [clojure.contrib.def]
     [clojure.contrib.combinatorics]))
 
+;;
+
 (defn head [ch]
   (let [val (promise)]
     (listen ch #(do (deliver val %) false))
     @val))
+
+(defn slow-enqueue [ch s]
+  (future
+    (doseq [x s]
+      (enqueue ch x)
+      (Thread/sleep 1))
+    (enqueue-and-close ch nil)))
+
+;; permutations
 
 (defvar a nil)
 (defvar f nil)
@@ -37,9 +48,7 @@
       (deref a))))
 
 (defn try-all [f exprs]
-  (let [fns (map
-	      (fn [expr] (eval `(fn [] ~expr)))
-	      exprs)]
+  (let [fns (map (fn [expr] (eval `(fn [] ~expr))) exprs)]
     (map
       (fn [s]
 	(f
@@ -111,6 +120,8 @@
 	    (fn [x] `(enqueue-fn ~x))
 	    (range 3)))))))
 
+;; polling
+
 (deftest test-poll
   (let [u (channel)
 	v (channel)]
@@ -134,6 +145,8 @@
   (let [ch (channel)]
     (is (= nil (wait-for-message (poll {:ch ch} 0) 0)))))
 
+;; synchronous methods
+
 (deftest test-wait-for-message
   (let [num 1e3]
     (let [ch (channel)]
@@ -147,16 +160,61 @@
 	(is (= i (wait-for-message ch)))))))
 
 (deftest test-channel-seq
+
+  (let [ch (apply sealed-channel (concat (range 10) [nil]))]
+    (is (= (range 10) (channel-seq ch))))
+
   (let [ch (channel)
-        in (take 100 (iterate inc 0))
-        out (do (future
-                 (doseq [i in]
-                   (enqueue ch i)
-                   (Thread/sleep 1)))
-                (loop [out []]
-                  (Thread/sleep 3)
-                  (let [n (channel-seq ch)]
-                    (if (seq n)
-                      (recur (concat out n))
-                      out))))]
+        in (range 100)
+        out (do
+	      (slow-enqueue ch in)
+	      (loop [out []]
+		(Thread/sleep 3)
+		(let [n (channel-seq ch)]
+		  (if (seq n)
+		    (recur (concat out n))
+		    out))))]
     (is (= in out))))
+
+;; seq-like methods
+
+(deftest test-map*
+  (let [s (range 10)
+	f #(* % 2)]
+
+    (let [ch (apply sealed-channel s)]
+      (= (map f s) (channel-seq (map* f ch))))
+
+    (let [ch (channel)]
+      (slow-enqueue ch s)
+      (= (map f s) (channel-seq (map* f ch))))))
+
+(deftest test-filter*
+  (let [s (range 10)]
+
+    (let [ch (apply sealed-channel s)]
+      (= (filter even? s) (channel-seq (filter* even? ch))))
+
+    (let [ch (channel)]
+      (slow-enqueue ch s)
+      (= (filter even? s) (channel-seq (filter* even? ch))))))
+
+(deftest test-reduce*
+  (let [s (range 10)]
+
+    (let [ch (apply sealed-channel s)]
+      (= (reduce + s) (wait-for-message (reduce* + ch))))
+
+    (let [ch (channel)]
+      (slow-enqueue ch s)
+      (= (reduce + s) (wait-for-message (reduce* + ch))))))
+
+(deftest test-reductions*
+  (let [s (range 10)]
+
+    (let [ch (apply sealed-channel s)]
+      (= (reductions + s) (channel-seq (reductions* + ch))))
+
+    (let [ch (channel)]
+      (slow-enqueue ch s)
+      (= (reductions + s) (channel-seq (reductions* + ch))))))
