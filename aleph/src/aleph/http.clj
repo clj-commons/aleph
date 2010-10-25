@@ -34,34 +34,21 @@
 (import-fn policy/start-policy-file-server)
 
 (defn wrap-ring-handler
-  "Wraps a synchronous Ring handler, such that it can be used in start-http-server."
+  "Wraps a synchronous Ring handler, such that it can be used in start-http-server.  If certain
+   routes within the application are asynchronous, wrap those handler functions in wrap-aleph-handler."
   [f]
   (fn [channel request]
-    (enqueue-and-close channel
-      (f request))))
+    (let [response (f (assoc request :channel channel))]
+      (when response
+	(enqueue-and-close channel response)))))
 
-(defn outer-middleware-wrapper
-  "Allows for asynchronous use of Ring middleware that only transforms the request, as opposed
-   to middleware that transforms both request and response, which requires a synchronous
-   request/response model.
-
-   Use in conjunction with inner-middleware-wrapper, like so:
-
-   -> f inner-middleware-wrapper ... other middleware ... outer-middleware-wrapper"
-  [f]
-  (fn [ch request]
-    (f (assoc request :channel ch))))
-
-(defn inner-middleware-wrapper
-  "Allows for asynchronous use of Ring middleware that only transforms the request, as opposed
-   to middleware that transforms both request and response, which requires a synchronous
-   request/response model.
-
-   Use in conjunction with outer-middleware-wrapper, like so:
-
-   -> f inner-middleware-wrapper ... other middleware ... outer-middleware-wrapper"
+(defn wrap-aleph-handler
+  "Allows for an asynchronous handler to be used within a largely synchronous application.  Assuming the
+   top-level handler has been wrapped in wrap-ring-handler, this function can be used to wrap handler
+   functions for asynchronous routes."
   [f]
   (fn [request]
-    (f (:channel request) (dissoc request :channel))))
+    (f (:channel request) (dissoc request :channel))
+    nil))
 
 
