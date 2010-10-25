@@ -702,8 +702,10 @@
   ([ch timeout]
      (doall
        (lazy-channel-seq ch
-	 (let [t0 (System/currentTimeMillis)]
-	   #(max 0 (- timeout (- (System/currentTimeMillis) t0))))))))
+	 (if (neg? timeout)
+	   (constantly timeout)
+	   (let [t0 (System/currentTimeMillis)]
+	     #(max 0 (- timeout (- (System/currentTimeMillis) t0)))))))))
 
 (defn wait-for-message
   "Synchronously onsumes a single message from a channel.  If no message is received within the timeout,
