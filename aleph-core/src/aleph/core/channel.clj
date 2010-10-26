@@ -186,7 +186,7 @@
 	   
 	sealed (ref false)
 
-	unique-callback (ref nil)
+	cached-receivers (ref nil)
 	   
 	listener-callbacks
 	(fn [messages]
@@ -235,15 +235,15 @@
 	      (ref-set transient-receivers #{})
 	      [[(first messages) callbacks]])))
 
-	update-unique-callback
+	update-cached-receivers
 	(fn []
-	  (ref-set unique-callback
+	  (ref-set cached-receivers
 	    (when (and
-		    (= 1 (count @receivers))
+		    (pos? (count @receivers))
 		    (empty? @transient-receivers)
 		    (empty? @conditional-receivers)
 		    (empty? @listeners))
-	      (first @receivers))))
+	      @receivers)))
 
 	on-zero-callbacks
 	(fn []
@@ -324,7 +324,7 @@
 	      ::invalid
 	      (do
 		(apply alter receivers conj fs)
-		(update-unique-callback)
+		(update-cached-receivers)
 		(callbacks))))))
       (receive- [this fs]
 	(assert-fns fs)
@@ -334,7 +334,7 @@
 	      ::invalid
 	      (do
 		(apply alter transient-receivers conj fs)
-		(update-unique-callback)
+		(update-cached-receivers)
 		(callbacks))))))
       (receive-while- [this callback-predicate-map]
 	(assert-fns (keys callback-predicate-map))
@@ -345,7 +345,7 @@
 	      ::invalid
 	      (do
 		(apply alter conditional-receivers merge callback-predicate-map)
-		(update-unique-callback)
+		(update-cached-receivers)
 		(callbacks))))))
       (listen- [this fs]
 	(assert-fns fs)
@@ -355,7 +355,7 @@
 	      ::invalid
 	      (do
 		(apply alter listeners conj fs)
-		(update-unique-callback)
+		(update-cached-receivers)
 		(callbacks))))))
       (cancel-callback- [_ fs]
 	(assert-fns fs)
@@ -373,12 +373,13 @@
 	  (apply alter empty-callbacks conj fs))
 	nil)
       (enqueue- [this msgs]
-	(if-let [f @unique-callback]
+	(if-let [fs @cached-receivers]
 	  (if-not (can-enqueue?)
 	    false
 	    (do
-	      (doseq [msg msgs]
-		(f msg))
+	      (doseq [f fs]
+		(doseq [msg msgs]
+		  (f msg)))
 	      true))
 	  (send-to-callbacks
 	    (dosync
