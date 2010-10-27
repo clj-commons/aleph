@@ -119,13 +119,13 @@
 (deftest single-requests
   (with-server (create-basic-handler)
     (doseq [[index [path result]] (indexed expected-results)]
-      (let [client (raw-http-client {:url "http://localhost:8080"})]
+      (let [client (http-client {:url "http://localhost:8080"})]
 	(is (= result (wait-for-request client path)))
 	(close-http-client client)))))
 
 (deftest multiple-requests
   (with-server (create-basic-handler)
-    (let [client (raw-http-client {:url "http://localhost:8080"})]
+    (let [client (http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-http-client client))))

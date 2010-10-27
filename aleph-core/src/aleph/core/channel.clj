@@ -714,11 +714,11 @@
   ([ch]
      (wait-for-message ch -1))
   ([ch timeout]
-     (let [msg (take 1 (lazy-channel-seq ch timeout))]
-       (if (empty? msg)
-	 (throw (TimeoutException. "Timed out waiting for message from channel."))
-	 (first msg)))))
-
+     (let [result (promise)]
+       (receive (poll {:ch ch} timeout) #(deliver result %))
+       (if-let [result @result]
+	 (second result)
+	 (throw (TimeoutException. "Timed out waiting for message from channel."))))))
 
 ;;;
 

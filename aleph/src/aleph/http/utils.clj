@@ -7,7 +7,9 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.http.utils
-  (:require [clj-http.client :as client]))
+  (:require
+    [clj-http.client :as client]
+    [clojure.string :as str]))
 
 (defn to-str [x]
   (if (keyword? x)
@@ -35,6 +37,11 @@
 	(apply str))
       cookie)))
 
+(defn lowercase-headers
+  [msg]
+  (update-in msg [:headers]
+    #(zipmap (map str/lower-case (keys %)) (vals %))))
+
 (defn- wrap-request-cookie [request]
   (if-let [cookie (:cookies request)]
     (assoc-in request [:headers "cookie"] cookie)
@@ -45,9 +52,19 @@
     (assoc-in response [:headers "set-cookie"] cookie)
     response))
 
+(defn- wrap-keep-alive [request]
+  (update-in request [:headers "connection"]
+    #(or %
+       (if (false? (:keep-alive? request))
+	 "close"
+	 "keep-alive"))))
+
 (defn wrap-request [request]
   (-> request
-    wrap-request-cookie))
+    lowercase-headers
+    wrap-request-cookie
+    wrap-keep-alive
+    ))
 
 (defn wrap-client-request [request]
   ((comp

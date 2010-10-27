@@ -69,13 +69,6 @@
     (fn [_]
       (restart))))
 
-(defn follow-redirect [request-fn response]
-  (run-pipeline response
-    (fn [response]
-      (if (= 301 (:status response))
-	(restart (request-fn response))
-	response))))
-
 ;;;
 
 (defn read-streaming-request [in out headers]
@@ -88,7 +81,7 @@
 	(enqueue out HttpChunk/LAST_CHUNK)
 	(restart)))))
 
-(defn read-requests [in out options]
+(defn read-requests [in out options close-fn]
   (run-pipeline in
     read-channel
     (fn [request]
@@ -102,8 +95,9 @@
 	(when (channel? (:body request))
 	  (read-streaming-request (:body request) out (:headers request)))))
     (fn [_]
-      (when-not (closed? in)
-	(restart)))))
+      (if-not (closed? in)
+	(restart)
+	(close-fn)))))
 
 ;;;
 
@@ -126,11 +120,7 @@
 
 ;;;
 
-(defprotocol HttpClient
-  (create-request-channel [c])
-  (close-http-client [c]))
-
-(defn raw-http-client
+(defn- raw-http-client
   "Create an HTTP client."
   [options]
   (let [options (-> options
@@ -146,36 +136,65 @@
 		 identity
 		 options)]
     (run-pipeline client
-      #(read-requests requests % options))
-    (reify HttpClient
-      (create-request-channel [_]
-	(run-pipeline client
-	  #(splice % requests)))
-      (close-http-client [_]
-	(enqueue-and-close requests nil)
-	(run-pipeline client
-	  #(enqueue-and-close % nil))))))
+      (fn [responses]
+	(read-requests
+	  requests responses options
+	  (fn []
+	    (enqueue-and-close requests nil)
+	    (enqueue-and-close responses nil)))
+	(splice responses requests)))))
+
+(defn http-client
+  [options]
+  (let [client (raw-http-client options)
+	response-channel (channel)
+	request-channel (channel)]
+    (run-pipeline client
+      (fn [client-channel]
+	(run-pipeline nil
+	  (constantly request-channel)
+	  read-channel
+	  read-channel
+	  #(if %
+	     (enqueue client-channel %)
+	     (enqueue-and-close client-channel nil))
+	  (constantly response-channel)
+	  read-channel
+	  (read-merge #(read-channel client-channel) #(enqueue %1 %2))
+	  (fn [_]
+	    (if-not (closed? client-channel)
+	      (restart)
+	      (enqueue-and-close client-channel nil))))
+	(fn []
+	  (let [request (constant-channel)
+		response (constant-channel)]
+	    (dosync
+	      (enqueue response-channel response)
+	      (enqueue request-channel request))
+	    (splice response request)))))))
+
+(defn close-http-client [client]
+  (run-pipeline client
+    #(enqueue-and-close (%) nil)))
 
 (defn http-request
   ([request]
-     (let [client (raw-http-client (assoc request :keep-alive? false))
-	   response (http-request client request)]
-       response))
+     (let [client (http-client (assoc request :keep-alive? false))]
+       (http-request client request)))
   ([client request]
+     ;;TODO: error out on excessive redirects
      (run-pipeline client
-       create-request-channel
-       (fn [ch]
-	 (enqueue ch request)
-	 (read-channel ch))
+       (fn [ch-fn]
+	 (let [ch (ch-fn)]
+	   (enqueue ch request)
+	   (read-channel ch)))
        (fn [response]
 	 (if (= 301 (:status response))
 	   (http-request
 	     (-> request
+	       (update-in [:redirect-count] #(if-not % 1 (inc %)))
 	       (assoc :url (get-in response [:headers "location"]))
 	       (dissoc :query-string :uri :server-port :server-name :scheme)))
 	   response)))))
 
-;;;
-
-(defn create-websocket-pipeline []
-  )
+;;TODO: websocket client, at least for testing purposes

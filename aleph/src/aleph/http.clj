@@ -19,14 +19,14 @@
     [aleph.http.policy-file :as policy]))
 
 (import-fn server/start-http-server)
-
-(import-fn client/raw-http-client)
+(import-fn client/http-client)
 (import-fn client/http-request)
-(import-fn #'client/close-http-client)
+(import-fn client/close-http-client)
 
 (defn sync-http-request
   ([request]
-     (sync-http-request (raw-http-client request) request))
+     (->> (http-request request)
+       wait-for-pipeline))
   ([client request]
      (->> (http-request client request)
        wait-for-pipeline)))

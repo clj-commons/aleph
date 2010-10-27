@@ -61,12 +61,12 @@
 
 (defn netty-headers
   "Get headers from Netty message."
-  [^HttpMessage req]
-  (let [headers (into {} (.getHeaders req))]
+  [^HttpMessage msg]
+  (let [headers (into {} (.getHeaders msg))]
     (into {}
       (map
-	(fn [[^String k v]] [(.toLowerCase k) v])
-	(into {} (.getHeaders req))))))
+	(fn [[k v]] [(str/lower-case k) v])
+	(into {} (.getHeaders msg))))))
 
 (defn transform-netty-body
   "Transform body from ChannelBuffer into something more appropriate."
