@@ -85,8 +85,7 @@
       (update-in response [:headers]
 	#(assoc %
 	   "upgrade" "WebSocket"
-	   "connection" "Upgrade"))
-      nil)))
+	   "connection" "Upgrade")))))
 
 (defn- respond-to-handshake [ctx ^HttpRequest request]
   (let [channel (.getChannel ctx)
