@@ -66,10 +66,12 @@
        (constant-channel)
        (constant-channel)))
   ([success-channel error-channel]
-     ^{:tag ::pipeline-channel
-       :type ::pipeline-channel}
-     {:success success-channel
-      :error error-channel}))
+     (with-meta
+       (sorted-map
+	 :success success-channel
+	 :error error-channel)
+       {:tag ::pipeline-channel
+	:type ::pipeline-channel})))
 
 ;;;
 
