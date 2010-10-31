@@ -361,10 +361,11 @@
 	(assert-fns fs)
 	(when (dosync
 		(let [cnt (callback-count)]
-		  (apply alter listeners disj fs)
-		  (apply alter receivers disj fs)
-		  (apply alter transient-receivers disj fs)
+		  (alter listeners #(set (apply disj % fs)))
+		  (alter receivers #(set (apply disj % fs)))
+		  (alter transient-receivers #(set (apply disj % fs)))
 		  (apply alter conditional-receivers dissoc fs)
+		  (update-cached-receivers)
 		  (and (pos? cnt) (zero? (callback-count)))))
 	  (on-zero-callbacks)))
       (on-zero-callbacks- [_ fs]
