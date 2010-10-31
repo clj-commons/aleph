@@ -25,7 +25,7 @@
  
   function send(message) {
     if (!window.WebSocket) { return; }
-    if (socket.readyState == WebSocket.OPEN) {
+    if (socket.readyState == (WebSocket.OPEN || 1)) {
         socket.send(message);
     } else {
         alert('The WebSocket is not open!');
