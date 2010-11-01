@@ -9,17 +9,22 @@
 (ns aleph.http.client
   (:use
     [aleph netty formats]
-    [aleph.http core utils]
+    [aleph.http core utils websocket]
     [aleph.core channel pipeline]
     [clojure.contrib.json])
   (:require
     [clj-http.client :as client])
   (:import
+    [org.jboss.netty.handler.codec.http.websocket
+     WebSocketFrameEncoder
+     WebSocketFrameDecoder]
     [org.jboss.netty.handler.codec.http
      HttpRequest
      HttpResponse
      HttpResponseStatus
      HttpClientCodec
+     HttpResponseDecoder
+     HttpRequestEncoder
      HttpChunk
      DefaultHttpChunk
      HttpContentDecompressor
@@ -31,6 +36,8 @@
     [org.jboss.netty.channel
      Channel
      ExceptionEvent]
+    [java.nio
+     ByteBuffer]
     [java.net
      URI]))
 
@@ -101,22 +108,23 @@
 
 ;;;
 
-(defn create-pipeline [client close? options]
+(defn create-pipeline [client options]
   (let [responses (channel)
-	init? (atom false)]
-    (create-netty-pipeline
-      :codec (HttpClientCodec.)
-      :inflater (HttpContentDecompressor.)
-      ;;:upstream-decoder (upstream-stage (fn [x] (println "client request\n" x) x))
-      ;;:downstream-decoder (downstream-stage (fn [x] (println "client response\n" x) x))
-      :upstream-error (upstream-stage error-stage-handler)
-      :response (message-stage
-		  (fn [netty-channel rsp]
-		    (when (compare-and-set! init? false true)
-		      (read-responses netty-channel responses client))
-		    (enqueue responses rsp)
-		    nil))
-      :downstream-error (downstream-stage error-stage-handler))))
+	init? (atom false)
+	pipeline (create-netty-pipeline
+		   :codec (HttpClientCodec.)
+		   :inflater (HttpContentDecompressor.)
+		   ;;:upstream-decoder (upstream-stage (fn [x] (println "client request\n" x) x))
+		   ;;:downstream-decoder (downstream-stage (fn [x] (println "client response\n" x) x))
+		   :upstream-error (downstream-stage error-stage-handler)
+		   :response (message-stage
+			       (fn [netty-channel rsp]
+				 (when (compare-and-set! init? false true)
+				   (read-responses netty-channel responses client))
+				 (enqueue responses rsp)
+				 nil))
+		   :downstream-error (upstream-stage error-stage-handler))]
+    pipeline))
 
 ;;;
 
@@ -129,10 +137,7 @@
 		  (update-in [:keep-alive?] #(or % true)))
 	requests (channel)
 	client (create-client
-		 #(create-pipeline
-		    %
-		    (or (:close? options) (constantly false))
-		    options)
+		 #(create-pipeline % options)
 		 identity
 		 options)]
     (run-pipeline client
@@ -197,4 +202,57 @@
 	       (dissoc :query-string :uri :server-port :server-name :scheme)))
 	   response)))))
 
-;;TODO: websocket client, at least for testing purposes
+(defn websocket-handshake [protocol]
+  {:method :get
+   :headers {"Sec-WebSocket-Key1" "18x 6]8vM;54 *(5:  {   U1]8  z [  8" ;;TODO: actually randomly generate these
+	     "Sec-WebSocket-Key2" "1_ tx7X d  <  nw  334J702) 7]o}` 0"
+	     "Sec-WebSocket-Protocol" protocol
+	     "Upgrade" "WebSocket"
+	     "Connection" "Upgrade"}
+   :body (ByteBuffer/wrap (.getBytes "Tm[K T2u" "utf-8"))})
+
+(def expected-response (ByteBuffer/wrap (.getBytes "fQJ,fN/4F4!~K~MH" "utf-8")))
+
+(defn websocket-pipeline [ch success error]
+  (create-netty-pipeline
+    :decoder (HttpResponseDecoder.)
+    :encoder (HttpRequestEncoder.)
+    ;;:upstream-decoder (upstream-stage (fn [x] (println "client response\n" x) x))
+    ;;:downstream-decoder (downstream-stage (fn [x] (println "client request\n" x) x))
+    :upstream-error (upstream-stage error-stage-handler)
+    :response (message-stage
+		(fn [netty-channel rsp]
+		  (if (not= 101 (-> rsp .getStatus .getCode))
+		    (enqueue error [rsp (Exception. "Proper handshake not received.")])
+		    (let [pipeline (.getPipeline netty-channel)]
+		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
+		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
+		      (.replace pipeline "response" "response"
+			(message-stage
+			  (fn [netty-channel rsp]
+			    (enqueue ch (from-websocket-frame rsp))
+			    nil)))
+		      (enqueue success ch)))
+		  nil))
+    :downstream-error (downstream-stage error-stage-handler)))
+
+(defn websocket-client [options]
+  (let [options (split-url options)
+	result (pipeline-channel)
+	client (create-client
+		 #(websocket-pipeline % (:success result) (:error result))
+		 identity
+		 options)]
+    (run-pipeline client
+      (fn [ch]
+	(enqueue ch
+	  (transform-aleph-request
+	    (:scheme options)
+	    (:server-name options)
+	    (:server-port options)
+	    (websocket-handshake (or (:protocol options) "aleph"))))
+	(run-pipeline result
+	  (fn [_]
+	    (let [in (channel)]
+	      (siphon (map* to-websocket-frame in) ch)
+	      (splice ch in))))))))

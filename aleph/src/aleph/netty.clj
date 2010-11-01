@@ -15,7 +15,8 @@
     [aleph.core.pipeline :only (pipeline-channel)]
     [aleph formats])
   (:require
-    [clj-http.client :as client])
+    [clj-http.client :as client]
+    [clojure.contrib.logging :as log])
   (:import
     [org.jboss.netty.channel
      Channel
@@ -120,7 +121,7 @@
 
 (defn error-stage-handler [evt]
   (when (instance? ExceptionEvent evt)
-    (.printStackTrace ^Throwable (.getCause ^ExceptionEvent evt)))
+    (log/error (.getCause ^ExceptionEvent evt)))
   evt)
 
 (defmacro create-netty-pipeline

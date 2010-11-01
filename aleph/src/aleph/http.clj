@@ -22,6 +22,7 @@
 (import-fn client/http-client)
 (import-fn client/http-request)
 (import-fn client/close-http-client)
+(import-fn client/websocket-client)
 
 (defn sync-http-request
   ([request]
