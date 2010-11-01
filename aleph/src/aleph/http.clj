@@ -40,7 +40,7 @@
   (fn [channel request]
     (let [response (f (assoc request :channel channel))]
       (when response
-	(enqueue-and-close channel response)))))
+	(enqueue channel response)))))
 
 (defn wrap-aleph-handler
   "Allows for an asynchronous handler to be used within a largely synchronous application.  Assuming the
