@@ -7,7 +7,9 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.example.twitter
-  (:use [aleph http core formats] :reload-all))
+  (:use
+    [lamina]
+    [aleph http formats]))
 
 ;; NOTE: Twitter's moved over to OAuth for most streams.  This example still works,
 ;; but it won't work universally. 

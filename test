@@ -1,9 +1,0 @@
-#!/bin/sh
-
-cd aleph-core
-lein test
-lein jar
-./local-push
-cd ../aleph
-lein test
-cd ..

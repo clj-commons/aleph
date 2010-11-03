@@ -7,7 +7,10 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.object
-  (:use [aleph core object] [clojure.test]))
+  (:use
+    [aleph object]
+    [clojure.test]
+    [lamina]))
 
 (def server-messages (atom []))
 

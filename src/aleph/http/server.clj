@@ -12,7 +12,7 @@
   (:use
     [aleph netty formats]
     [aleph.http utils core websocket]
-    [aleph.core]
+    [lamina]
     [clojure.pprint])
   (:import
     [org.jboss.netty.handler.codec.http

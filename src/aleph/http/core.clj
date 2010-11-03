@@ -8,8 +8,9 @@
 
 (ns aleph.http.core
   (:use
-    [aleph netty formats core]
-    [aleph.http utils])
+    [aleph netty formats]
+    [aleph.http utils]
+	[lamina])
   (:require
     [clojure.string :as str])
   (:import

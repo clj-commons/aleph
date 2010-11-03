@@ -9,7 +9,7 @@
 (ns aleph.tcp
   (:use
     [aleph netty formats]
-    [aleph.core])
+    [lamina])
   (:import
     [org.jboss.netty.channel
      Channel

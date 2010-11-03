@@ -11,8 +11,7 @@
   aleph.netty
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
-    [aleph.core]
-    [aleph.core.pipeline :only (pipeline-channel)]
+    [lamina]
     [aleph formats])
   (:require
     [clj-http.client :as client]

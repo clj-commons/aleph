@@ -10,7 +10,7 @@
   ^{:skip-wiki true}
   aleph.http
   (:use
-    [aleph core]
+    [lamina]
     [potemkin])
   (:require
     [aleph.http.server :as server]

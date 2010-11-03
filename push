@@ -1,8 +1,3 @@
 #!/bin/sh
 
-cd aleph-core
-./push
-cd ../aleph
-./push
-cd ..
-git push
+lein jar && lein pom && scp pom.xml aleph-0.1.2-SNAPSHOT.jar clojars@clojars.org:

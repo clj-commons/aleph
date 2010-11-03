@@ -10,7 +10,7 @@
   (:use
     [aleph netty formats]
     [aleph.http core utils websocket]
-    [aleph.core channel pipeline]
+    [lamina]
     [clojure.contrib.json])
   (:require
     [clj-http.client :as client])

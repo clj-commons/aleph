@@ -7,7 +7,9 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.ring
-  (:use [aleph core http])
+  (:use
+    [lamina]
+    [aleph http])
   (:use [clojure test pprint])
   (:import [java.io StringReader PushbackReader]))
 

@@ -7,7 +7,10 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.test.tcp
-  (:use [aleph core tcp formats] [clojure.test]))
+  (:use
+    [lamina]
+    [aleph tcp formats]
+    [clojure.test]))
 
 (def server-messages (ref []))
 

@@ -7,7 +7,9 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.object
-  (:use [aleph core netty])
+  (:use 
+	[aleph netty]
+	[lamina])
   (:require [aleph.tcp :as tcp])
   (:import
     [org.jboss.netty.channel
