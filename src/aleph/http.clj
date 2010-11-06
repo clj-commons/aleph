@@ -40,7 +40,10 @@
   [f]
   (fn [channel request]
     (let [response (f (assoc request :channel channel))]
-      (when response
+      (when (and
+	      response
+	      (not (:websocket request))
+	      (not (::ignore response)))
 	(enqueue channel response)))))
 
 (defn wrap-aleph-handler
@@ -50,6 +53,7 @@
   [f]
   (fn [request]
     (f (:channel request) (dissoc request :channel))
-    nil))
+    {:status 200
+     ::ignore true}))
 
 
