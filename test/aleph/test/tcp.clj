@@ -8,7 +8,7 @@
 
 (ns aleph.test.tcp
   (:use
-    [lamina]
+    [lamina.core]
     [aleph tcp formats]
     [clojure.test]))
 

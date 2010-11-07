@@ -8,7 +8,7 @@
 
 (ns aleph.example.twitter
   (:use
-    [lamina]
+    [lamina.core]
     [aleph http formats]))
 
 ;; NOTE: Twitter's moved over to OAuth for most streams.  This example still works,

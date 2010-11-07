@@ -8,7 +8,7 @@
 
 (ns aleph.test.ring
   (:use
-    [lamina]
+    [lamina.core]
     [aleph http])
   (:use [clojure test pprint])
   (:import [java.io StringReader PushbackReader]))

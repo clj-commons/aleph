@@ -8,7 +8,7 @@
 
 (ns aleph.http.websocket
   (:use
-    [lamina]
+    [lamina.core]
     [aleph.http core]
     [aleph formats netty])
   (:import

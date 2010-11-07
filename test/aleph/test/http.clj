@@ -9,7 +9,7 @@
 (ns aleph.test.http
   (:use [aleph http])
   (:use
-    [lamina]
+    [lamina.core]
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])

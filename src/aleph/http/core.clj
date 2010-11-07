@@ -10,7 +10,7 @@
   (:use
     [aleph netty formats]
     [aleph.http utils]
-	[lamina])
+	[lamina.core])
   (:require
     [clojure.string :as str])
   (:import

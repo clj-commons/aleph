@@ -10,7 +10,7 @@
   (:use
     [aleph object]
     [clojure.test]
-    [lamina]))
+    [lamina.core]))
 
 (def server-messages (atom []))
 
