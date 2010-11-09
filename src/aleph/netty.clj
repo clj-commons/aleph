@@ -32,6 +32,7 @@
      ChannelFuture
      ChannelFutureListener]
     [org.jboss.netty.channel.group
+     ChannelGroup
      DefaultChannelGroup
      ChannelGroupFuture
      ChannelGroupFutureListener]
@@ -105,7 +106,7 @@
 (defn channel-open-stage [f]
   (let [latch (atom false)]
     (fn [evt]
-      (when-let [ch (channel-event evt)]
+      (when-let [ch ^Channel (channel-event evt)]
 	(when (and (.isConnected ch) (compare-and-set! latch false true))
 	  (f ch)))
       nil)))
@@ -113,7 +114,7 @@
 (defn channel-close-stage [f]
   (let [latch (atom false)]
     (fn [evt]
-      (when-let [ch (channel-event evt)]
+      (when-let [ch ^Channel (channel-event evt)]
 	(when (and (not (.isConnected ch)) (compare-and-set! latch false true))
 	  (f ch)))
       nil)))
@@ -195,10 +196,10 @@
    "readWriteFair" true,
    "child.tcpNoDelay" true})
 
-(defn create-pipeline-factory [channel-group pipeline-fn & args]
+(defn create-pipeline-factory [^ChannelGroup channel-group pipeline-fn & args]
   (reify ChannelPipelineFactory
     (getPipeline [_]
-      (let [pipeline (apply pipeline-fn args)]
+      (let [pipeline ^ChannelPipeline (apply pipeline-fn args)]
 	(.addFirst pipeline
 	  "channel-listener"
 	  (upstream-stage
@@ -246,7 +247,7 @@
 (defn create-client
   [pipeline-fn send-fn options]
   (let [options (split-url options)
-	host (or (:host options) (:server-name options))
+	host ^String (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
 	channel-group (DefaultChannelGroup.)

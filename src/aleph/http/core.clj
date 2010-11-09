@@ -77,7 +77,7 @@
     (when-not (zero? (.readableBytes body))
       (cond
 
-       (.startsWith content-type "text")
+       (.startsWith ^String content-type "text")
        (channel-buffer->string body charset)
 
        (= content-type "application/json")
@@ -126,7 +126,7 @@
   "Transforms a Netty request into a Ring request."
   [^HttpRequest req]
   (let [headers (netty-headers req)
-	parts (.split (headers "host") "[:]")
+	parts (.split ^String (headers "host") "[:]")
 	host (first parts)
 	port (when-let [port (second parts)]
 	       (Integer/parseInt port))]
@@ -187,7 +187,11 @@
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))]
-    (transform-aleph-message rsp response)))
+    (transform-aleph-message rsp
+      (assoc-in response [:headers "connection"]
+	(if (:keep-alive? response)
+	  "keep-alive"
+	  "close")))))
 
 ;;;
 

@@ -21,9 +21,9 @@
     (apply hash-map
       (apply concat
 	(map
-	  #(let [pair (.split % inner-separator)]
+	  #(let [pair (str/split % inner-separator)]
 	     (list (first pair) (or (second pair) "")))
-	  (.split s outer-separator))))))
+	  (str/split s outer-separator))))))
 
 (defn- cookie->hash [cookie]
   (string->hash cookie "[;]" "[=]"))

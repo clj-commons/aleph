@@ -49,6 +49,9 @@
      File
      RandomAccessFile]
     [java.net
+     SocketAddress
+     InetAddress]
+    [java.net
      URLConnection]))
 
 ;;;
@@ -149,7 +152,7 @@
   (let [chunked? (.isChunked netty-request)
 	request (assoc (transform-netty-request netty-request)
 		  :scheme :http
-		  :remote-addr (->> netty-channel .getRemoteAddress .getAddress .getHostAddress))
+		  :remote-addr (.getHostAddress ^InetAddress (.getAddress ^SocketAddress (.getRemoteAddress netty-channel))))
 	close-channel (channel)
 	close-callback (fn [_] (enqueue-and-close out nil))
 	cancel-close-callback (fn [_] (cancel-callback close-channel close-callback))]
@@ -178,7 +181,10 @@
 	  (handle-request request netty-channel handler in out)
 	  (fn [_] out)
 	  read-channel
-	  (fn [response] (respond netty-channel response))
+	  (fn [response]
+	    (respond netty-channel
+	      (assoc response
+		:keep-alive? (HttpHeaders/isKeepAlive request))))
 	  (fn [_] request))))
     (fn [^HttpRequest request]
       (if (HttpHeaders/isKeepAlive request)
@@ -189,10 +195,18 @@
   (let [init? (atom false)
 	ch (channel)]
     (message-stage
-      (fn [netty-channel request]
-	(when (compare-and-set! init? false true)
-	  (non-pipelined-loop netty-channel ch handler))
-	(enqueue ch request)
+      (fn [netty-channel ^HttpRequest request]
+	(if (or @init? (HttpHeaders/isKeepAlive request) (.isChunked request))
+	  (do
+	    (when (compare-and-set! init? false true)
+	      (non-pipelined-loop netty-channel ch handler))
+	    (enqueue ch request))
+	  (let [response-channel (constant-channel)]
+	    (handler response-channel (transform-netty-request request))
+	    (receive response-channel
+	      (pipeline
+		#(respond netty-channel (assoc % :keep-alive? false))
+		(fn [_] (.close netty-channel))))))
 	nil))))
 
 (defn create-pipeline
@@ -202,8 +216,8 @@
 	(create-netty-pipeline
 	  :decoder (HttpRequestDecoder.)
 	  ;;:upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
-	  ;;:downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
 	  :encoder (HttpResponseEncoder.)
+	  ;;:downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
 	  :deflater (HttpContentCompressor.)
 	  :upstream-error (upstream-stage error-stage-handler)
 	  :http-request (http-session-handler handler options)

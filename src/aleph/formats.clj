@@ -39,9 +39,9 @@
 (defn channel-buffer->string
   ([buf]
      (channel-buffer->string buf "UTF-8"))
-  ([^ChannelBuffer buf charset]
+  ([buf charset]
      (when buf
-       (.toString buf charset))))
+       (.toString ^ChannelBuffer buf ^String charset))))
 
 ;;;
 
@@ -52,14 +52,14 @@
      (when buf
        (let [ary (byte-array (.remaining buf))]
 	 (.get buf ary)
-	 (String. ary charset)))))
+	 (String. ary ^String charset)))))
 
 (defn string->byte-buffer
   ([s]
      (string->byte-buffer s "UTF-8"))
-  ([^String s charset]
+  ([s charset]
      (when s
-       (ByteBuffer/wrap (.getBytes s charset)))))
+       (ByteBuffer/wrap (.getBytes ^String s ^String charset)))))
 
 ;;;
 
