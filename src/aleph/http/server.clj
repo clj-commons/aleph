@@ -100,10 +100,7 @@
 	response (-> response
 		   (assoc-in [:headers "charset"] charset))
 	initial-response ^HttpResponse (transform-aleph-response response)
-	ch (:body response)
-	close-channel (channel)
-	close-callback (fn [_] (enqueue-and-close close-channel ch))]
-    (receive close-channel close-callback)
+	ch (:body response)]
     (run-pipeline (write-to-channel netty-channel initial-response false)
       (fn [_]
 	(receive-in-order ch
@@ -113,7 +110,6 @@
 		    chunk (DefaultHttpChunk. msg)]
 		(write-to-channel netty-channel chunk false)))
 	    (when (closed? ch)
-	      (cancel-callback close-channel close-callback)
 	      (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))))
 
 (defn respond [^Channel netty-channel response]
@@ -152,23 +148,18 @@
   (let [chunked? (.isChunked netty-request)
 	request (assoc (transform-netty-request netty-request)
 		  :scheme :http
-		  :remote-addr (.getHostAddress ^InetAddress (.getAddress ^SocketAddress (.getRemoteAddress netty-channel))))
-	close-channel (channel)
-	close-callback (fn [_] (enqueue-and-close out nil))
-	cancel-close-callback (fn [_] (cancel-callback close-channel close-callback))]
-    (receive close-channel close-callback)
-    (receive out cancel-close-callback)
+		  :remote-addr (.getHostAddress
+				 ^InetAddress (.getAddress
+						^SocketAddress (.getRemoteAddress
+								 ^Channel netty-channel))))]
     (if-not chunked?
       (do
 	(handler out request)
 	nil)
       (let [headers (:headers request)
-	    stream (channel)
-	    streaming-close-callback (fn [_] (enqueue-and-close stream nil))]
-	(receive close-channel streaming-close-callback)
+	    stream (channel)]
 	(handler out (assoc request :body stream))
-	(run-pipeline (read-streaming-request headers in stream)
-	  (fn [_] (cancel-callback close-channel streaming-close-callback)))))))
+	(read-streaming-request headers in stream)))))
 
 (defn non-pipelined-loop
   "Wait for the response for each request before processing the next one."
@@ -179,13 +170,13 @@
       (let [out (constant-channel)]
 	(run-pipeline
 	  (handle-request request netty-channel handler in out)
-	  (fn [_] out)
+	  (constantly out)
 	  read-channel
 	  (fn [response]
 	    (respond netty-channel
 	      (assoc response
 		:keep-alive? (HttpHeaders/isKeepAlive request))))
-	  (fn [_] request))))
+	  (constantly request))))
     (fn [^HttpRequest request]
       (if (HttpHeaders/isKeepAlive request)
 	(restart)
@@ -202,7 +193,7 @@
 	      (non-pipelined-loop netty-channel ch handler))
 	    (enqueue ch request))
 	  (let [response-channel (constant-channel)]
-	    (handler response-channel (transform-netty-request request))
+	    (handle-request request netty-channel nil response-channel)
 	    (receive response-channel
 	      (pipeline
 		#(respond netty-channel (assoc % :keep-alive? false))
