@@ -193,7 +193,7 @@
 	      (non-pipelined-loop netty-channel ch handler))
 	    (enqueue ch request))
 	  (let [response-channel (constant-channel)]
-	    (handle-request request netty-channel nil response-channel)
+	    (handle-request request netty-channel handler nil response-channel)
 	    (receive response-channel
 	      (pipeline
 		#(respond netty-channel (assoc % :keep-alive? false))
