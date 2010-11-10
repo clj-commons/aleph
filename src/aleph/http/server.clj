@@ -49,9 +49,6 @@
      File
      RandomAccessFile]
     [java.net
-     SocketAddress
-     InetAddress]
-    [java.net
      URLConnection]))
 
 ;;;
@@ -148,10 +145,7 @@
   (let [chunked? (.isChunked netty-request)
 	request (assoc (transform-netty-request netty-request)
 		  :scheme :http
-		  :remote-addr (.getHostAddress
-				 ^InetAddress (.getAddress
-						^SocketAddress (.getRemoteAddress
-								 ^Channel netty-channel))))]
+		  :remote-addr (channel-origin netty-channel))]
     (if-not chunked?
       (do
 	(handler out request)
@@ -182,22 +176,27 @@
 	(restart)
 	(.close netty-channel)))))
 
+(defn simple-request-handler
+  [^Channel netty-channel in handler]
+  (let [out (constant-channel)]
+    (run-pipeline in
+      read-channel
+      #(handle-request % netty-channel handler nil out))
+    (run-pipeline out
+      read-channel
+      #(respond netty-channel (assoc % :keep-alive false))
+      (fn [_] (.close netty-channel)))))
+
 (defn http-session-handler [handler options]
   (let [init? (atom false)
 	ch (channel)]
     (message-stage
       (fn [netty-channel ^HttpRequest request]
-	(if (or @init? (HttpHeaders/isKeepAlive request) (.isChunked request))
-	  (do
-	    (when (compare-and-set! init? false true)
-	      (non-pipelined-loop netty-channel ch handler))
-	    (enqueue ch request))
-	  (let [response-channel (constant-channel)]
-	    (handle-request request netty-channel handler nil response-channel)
-	    (receive response-channel
-	      (pipeline
-		#(respond netty-channel (assoc % :keep-alive? false))
-		(fn [_] (.close netty-channel))))))
+	(when (compare-and-set! init? false true)
+	  (if (or (.isChunked request) (HttpHeaders/isKeepAlive request))
+	    (non-pipelined-loop netty-channel ch handler)
+	    (simple-request-handler netty-channel ch handler)))
+	(enqueue ch request)
 	nil))))
 
 (defn create-pipeline

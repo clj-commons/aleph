@@ -46,13 +46,19 @@
      Executors]
     [java.net
      URI
-     InetSocketAddress]
+     InetSocketAddress
+     InetAddress]
     [java.io
      InputStream]
     [java.nio
      ByteBuffer]))
 
 ;;;
+
+(defn channel-origin [netty-channel]
+  (let [socket-address (.getRemoteAddress ^Channel netty-channel)
+	inet-address (.getAddress ^InetSocketAddress socket-address)]
+    (.getHostAddress ^InetAddress inet-address)))
 
 (defn message-event
   "Returns contents of message event, or nil if it's a different type of message."
@@ -247,7 +253,7 @@
 (defn create-client
   [pipeline-fn send-fn options]
   (let [options (split-url options)
-	host ^String (or (:host options) (:server-name options))
+	host (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
 	channel-group (DefaultChannelGroup.)
@@ -259,7 +265,7 @@
       (.setOption client k v))
     (.setPipelineFactory client
       (create-pipeline-factory channel-group pipeline-fn outer))
-    (run-pipeline (.connect client (InetSocketAddress. host port))
+    (run-pipeline (.connect client (InetSocketAddress. ^String host (int port)))
       wrap-netty-channel-future
       (fn [^Channel netty-channel]
 	(run-pipeline (.getCloseFuture netty-channel)
