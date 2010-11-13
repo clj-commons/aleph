@@ -177,26 +177,25 @@
 	(.close netty-channel)))))
 
 (defn simple-request-handler
-  [^Channel netty-channel in handler]
+  [netty-channel request handler]
   (let [out (constant-channel)]
-    (run-pipeline in
-      read-channel
-      #(handle-request % netty-channel handler nil out))
-    (run-pipeline out
-      read-channel
-      #(respond netty-channel (assoc % :keep-alive false))
-      (fn [_] (.close netty-channel)))))
+    (handle-request request netty-channel handler nil out)
+    (receive out
+      #(run-pipeline (respond netty-channel (assoc % :keep-alive false))
+	 (fn [_] (.close ^Channel netty-channel))))))
 
 (defn http-session-handler [handler options]
   (let [init? (atom false)
 	ch (channel)]
     (message-stage
       (fn [netty-channel ^HttpRequest request]
-	(when (compare-and-set! init? false true)
-	  (if (or (.isChunked request) (HttpHeaders/isKeepAlive request))
-	    (non-pipelined-loop netty-channel ch handler)
-	    (simple-request-handler netty-channel ch handler)))
-	(enqueue ch request)
+	(let [simple? (not (or @init? (.isChunked request) (HttpHeaders/isKeepAlive request)))]
+	  (if simple?
+	    (simple-request-handler netty-channel request handler)
+	    (do
+	      (when (compare-and-set! init? false true)
+		(non-pipelined-loop netty-channel ch handler))
+	      (enqueue ch request))))
 	nil))))
 
 (defn create-pipeline
