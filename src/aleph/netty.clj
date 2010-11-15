@@ -175,21 +175,28 @@
 	  nil)))
     ch))
 
+(defn close-channel
+  [^Channel netty-channel close-callback]
+  (run-pipeline (.close netty-channel)
+    wrap-netty-channel-future
+    (fn [_]
+      (when close-callback
+	(close-callback))
+      nil)))
+
 (defn write-to-channel
   [^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write}]
-  (when (and msg (.isOpen netty-channel))
-    (run-pipeline (io! (.write netty-channel msg))
-      wrap-netty-channel-future
-      (fn [_]
-	(when write-callback
-	  (write-callback))
-	(when close?
-	  (run-pipeline (.close netty-channel)
-	    wrap-netty-channel-future
-	    (fn [_]
-	      (when close-callback
-		(close-callback)
-		nil))))))))
+  (when (.isOpen netty-channel)
+    (if msg
+      (run-pipeline (io! (.write netty-channel msg))
+	wrap-netty-channel-future
+	(fn [_]
+	  (when write-callback
+	    (write-callback))
+	  (when close?
+	    (close-channel netty-channel close-callback))))
+      (when close?
+	(close-channel netty-channel close-callback)))))
 
 ;;;
 
@@ -250,6 +257,8 @@
     ((client/wrap-url identity) options)
     options))
 
+(def client-thread-pool (Executors/newCachedThreadPool))
+
 (defn create-client
   [pipeline-fn send-fn options]
   (let [options (split-url options)
@@ -259,8 +268,8 @@
 	channel-group (DefaultChannelGroup.)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
-		   (Executors/newSingleThreadExecutor)
-		   (Executors/newSingleThreadExecutor)))]
+		   client-thread-pool
+		   client-thread-pool))]
     (doseq [[k v] (merge default-client-options (:netty options))]
       (.setOption client k v))
     (.setPipelineFactory client
@@ -280,7 +289,8 @@
 	      netty-channel
 	      (send-fn msg)
 	      (closed? outer)
-	      :on-close #(.releaseExternalResources client))))
+	      ;;:on-close #(.releaseExternalResources client)
+	      )))
 	inner))))
 
 ;;;

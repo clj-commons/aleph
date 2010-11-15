@@ -189,13 +189,12 @@
 	ch (channel)]
     (message-stage
       (fn [netty-channel ^HttpRequest request]
-	(let [simple? (not (or @init? (.isChunked request) (HttpHeaders/isKeepAlive request)))]
-	  (if simple?
-	    (simple-request-handler netty-channel request handler)
-	    (do
-	      (when (compare-and-set! init? false true)
-		(non-pipelined-loop netty-channel ch handler))
-	      (enqueue ch request))))
+	(if (not (or @init? (.isChunked request) (HttpHeaders/isKeepAlive request)))
+	  (simple-request-handler netty-channel request handler)
+	  (do
+	    (when (compare-and-set! init? false true)
+	      (non-pipelined-loop netty-channel ch handler))
+	    (enqueue ch request)))
 	nil))))
 
 (defn create-pipeline
