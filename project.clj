@@ -1,5 +1,5 @@
 (defproject aleph "0.1.4-SNAPSHOT"
-  :description "an asynchronous web server"
+  :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"}
   :license {:name "Eclipse Public License - v 1.0"
             :url "http://www.eclipse.org/legal/epl-v10.html"
