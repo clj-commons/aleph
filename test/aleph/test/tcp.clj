@@ -9,13 +9,14 @@
 (ns aleph.test.tcp
   (:use
     [lamina.core]
+    [gloss.core]
     [aleph tcp formats]
     [clojure.test]))
 
 (def server-messages (ref []))
 
 (defn append-to-server [msg]
-  (dosync (alter server-messages conj (byte-buffer->string msg))))
+  (dosync (alter server-messages conj (when msg (str msg)))))
 
 (defn join-and-split [s]
   (seq (.split (apply str s) "\0")))
@@ -30,14 +31,15 @@
 		       (when x
 			 (enqueue ch x)
 			 (append-to-server x)))))
-		 {:port 8888})]
+		 {:frame (string :utf-8)
+		  :port 8888})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
+      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)}))]
 	(dotimes [i 1000]
 	  (enqueue ch (str i "\0")))
 	(let [s (doall (lazy-channel-seq ch 100))]
 	  (is (=
-	       (join-and-split (map byte-buffer->string s))
+	       (join-and-split (apply str s))
 	       (join-and-split @server-messages)))))
       (finally
 	(server)))))
@@ -51,9 +53,10 @@
 		     (fn [x]
 		       (append-to-server x))))
 		 {:port 8888
+		  :frame (string :utf-8)
 		  :delimiters ["x"]})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
+      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)}))]
 	(enqueue ch "ax")
 	(enqueue ch "bx")
 	(enqueue-and-close ch "cx")
@@ -66,10 +69,11 @@
   (let [server (start-tcp-server
 		 (fn [ch _]
 		   (enqueue-and-close ch "a"))
-		 {:port 8888})]
+		 {:frame (string :utf-8)
+		  :port 8888})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888}))]
-	(is (= ["a"] (map #(when % (byte-buffer->string %)) (channel-seq ch -1))))
+      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)}))]
+	(is (= ["a"] (map str (channel-seq ch -1))))
 	(is (closed? ch)))
       (finally
 	(server)))))

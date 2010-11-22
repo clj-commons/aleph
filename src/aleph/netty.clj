@@ -260,7 +260,7 @@
 (def client-thread-pool (Executors/newCachedThreadPool))
 
 (defn create-client
-  [pipeline-fn send-fn options]
+  [pipeline-fn send-encoder options]
   (let [options (split-url options)
 	host (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
@@ -287,7 +287,7 @@
 	  (fn [msg]
 	    (write-to-channel
 	      netty-channel
-	      (send-fn msg)
+	      (send-encoder msg)
 	      (closed? outer)
 	      ;;:on-close #(.releaseExternalResources client)
 	      )))
