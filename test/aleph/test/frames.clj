@@ -32,5 +32,5 @@
     [:int32 :int32]
     (partition 2 (range 10)))
   (test-roundtrip
-    (enum :a 1 :b 2)
+    (enum :a :b)
     [:a :b]))
