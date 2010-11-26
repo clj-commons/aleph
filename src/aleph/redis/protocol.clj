@@ -43,7 +43,6 @@
     (header leading-byte codecs first)))
 
 (defn process-response [rsp]
-  (println "response" rsp)
   (if (= :error (first rsp))
     (str "ERROR: " (second rsp)) ;;(enqueue (:error ch) (second rsp))
     (condp = (first rsp)
