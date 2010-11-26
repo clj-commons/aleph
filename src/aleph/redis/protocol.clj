@@ -13,8 +13,8 @@
 
 (defn string-prefix [count-offset]
   (prefix (string-integer :ascii :delimiters ["\r\n"])
-    #(if (neg? %) 0 (- % count-offset))
-    #(if-not % -1 (+ % count-offset))))
+    #(if (neg? %) 0 (+ % count-offset))
+    #(if-not % -1 (- % count-offset))))
 
 (def format-byte
   (enum :byte
@@ -26,12 +26,17 @@
 
 (defn codec-map [charset]
   (let [str-codec (string charset :delimiters ["\r\n"])
-	bulk (compile-frame [:bulk (finite-frame (string-prefix -2) str-codec)])
+	bulk (compile-frame [:bulk (finite-frame (string-prefix 2) str-codec)])
 	m {:error str-codec
 	   :single-line str-codec
 	   :integer (string-integer :ascii :delimiters ["\r\n"])
-	   :multi-bulk (repeated (header format-byte (constantly bulk) first) :prefix (string-prefix 0))}
-	m (into {} (map (fn [[k v]] [k (compile-frame [k v])]) m))]
+	   :multi-bulk (repeated
+			 (header format-byte (constantly bulk) first)
+			 :prefix (string-prefix 0))}
+	m (into {}
+	    (map
+	      (fn [[k v]] [k (compile-frame [k v])])
+	      m))]
     (assoc m :bulk bulk)))
 
 (defn redis-codec [charset]
