@@ -16,7 +16,7 @@
     #(if (neg? %) 0 (- % count-offset))
     #(if-not % -1 (+ % count-offset))))
 
-(def leading-byte
+(def format-byte
   (enum :byte
     {:error \-
      :single-line \+
@@ -25,31 +25,25 @@
      :multi-bulk \*}))
 
 (defn codec-map [charset]
-  (let [bulk (compile-frame
-	       [:bulk
-		(finite-frame
-		  (string-prefix -2)
-		  (string charset :delimiters ["\r\n"]))])
-	bulk* (header leading-byte (constantly bulk) first)
-	m {:error [:error (string charset :delimiters ["\r\n"])]
-	   :single-line [:single-line (string charset :delimiters ["\r\n"])]
-	   :integer [:integer (string-integer :ascii :delimiters ["\r\n"])]
-	   :bulk bulk
-	   :multi-bulk [:multi-bulk (repeated bulk* :prefix (string-prefix 0))]}]
-    (zipmap (keys m) (map compile-frame (vals m)))))
+  (let [str-codec (string charset :delimiters ["\r\n"])
+	bulk (compile-frame [:bulk (finite-frame (string-prefix -2) str-codec)])
+	m {:error str-codec
+	   :single-line str-codec
+	   :integer (string-integer :ascii :delimiters ["\r\n"])
+	   :multi-bulk (repeated (header format-byte (constantly bulk) first) :prefix (string-prefix 0))}
+	m (into {} (map (fn [[k v]] [k (compile-frame [k v])]) m))]
+    (assoc m :bulk bulk)))
 
 (defn redis-codec [charset]
   (let [codecs (codec-map charset)]
-    (header leading-byte codecs first)))
+    (header format-byte codecs first)))
 
 (defn process-response [rsp]
-  (if (= :error (first rsp))
-    (str "ERROR: " (second rsp)) ;;(enqueue (:error ch) (second rsp))
-    (condp = (first rsp)
-      :single-line (second rsp)
-      :integer (second rsp)
-      :bulk (second rsp)
-      :multi-bulk (map second (second rsp)))))
+  (println "process-response" rsp)
+  (case (first rsp)
+    :error (str "ERROR: " (second rsp))
+    :multi-bulk (map second (second rsp))
+    (second rsp)))
 
 (defn process-request [req]
   [:multi-bulk (map #(list :bulk %) req)])

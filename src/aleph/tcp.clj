@@ -112,7 +112,7 @@
       ;; :downstream-decoder (downstream-stage
       ;; 			    (fn [x]
       ;; 			      (when-let [msg (message-event x)]
-      ;; 				(println "client request:" (.toString msg "utf-8")))
+      ;; 				(prn "client request:" (.toString msg "utf-8")))
       ;; 			      x))
       :upstream-error (upstream-stage error-stage-handler)
       :receive (message-stage
