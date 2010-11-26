@@ -44,11 +44,15 @@
 (defn basic-server-pipeline
   [handler send-encoder receive-encoder options]
   (let [[inner outer] (channel-pair)
-	frame (create-frame
-		(:frame options)
-		(:delimiters options)
-		(:strip-delimiters? options))
-	send-encoder (if-not frame
+	decoder (create-frame
+		  (or (:decoder options) (:frame options))
+		  (:delimiters options)
+		  (:strip-delimiters? options))
+	encoder (create-frame
+		  (or (:encoder options) (:frame options))
+		  (:delimiters options)
+		  (:strip-delimiters? options))
+	send-encoder (if-not encoder
 		       send-encoder
 		       (comp
 			 send-encoder
@@ -56,13 +60,13 @@
 			  (let [msg (if (instance? ChannelBuffer msg)
 				      (seq (.toByteBuffers ^ChannelBuffer msg))
 				      msg)]
-			    (encode frame msg)))))
-	inner (if-not frame
+			    (encode encoder msg)))))
+	inner (if-not decoder
 		inner
-		(splice (decoder-channel frame inner) inner))]
+		(splice (decoder-channel decoder inner) inner))]
     (create-netty-pipeline
-      ;;:upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
-      ;;:downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
+      ;; :upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
+      ;; :downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
       :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
 		      (channel-open-stage
@@ -83,21 +87,33 @@
 
 (defn basic-client-pipeline
   [ch receive-encoder options]
-  (let [frame (create-frame
-		(:frame options)
-		(:delimiters options)
-		(:strip-delimiters? options))
-	ch (if frame
+  (let [decoder (create-frame
+		  (or (:decoder options) (:frame options))
+		  (:delimiters options)
+		  (:strip-delimiters? options))
+	ch (if decoder
 	     (let [src (channel)
-		   decoder (decoder-channel frame src)]
-	       (receive-all decoder
+		   ch* (decoder-channel decoder src)]
+	       (receive-all ch*
 		 (fn [msg]
-		   (if (closed? decoder)
+		   (if (closed? ch*)
 		     (enqueue-and-close ch msg)
 		     (enqueue ch msg))))
 	       src)
 	     ch)]
     (create-netty-pipeline
+      ;; :upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
+      ;; :downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
+      ;; :upstream-decoder (upstream-stage
+      ;; 			  (fn [x]
+      ;; 			    (when-let [msg (message-event x)]
+      ;; 			      (println "client response:" (.toString msg "utf-8")))
+      ;; 			    x))
+      ;; :downstream-decoder (downstream-stage
+      ;; 			    (fn [x]
+      ;; 			      (when-let [msg (message-event x)]
+      ;; 				(println "client request:" (.toString msg "utf-8")))
+      ;; 			      x))
       :upstream-error (upstream-stage error-stage-handler)
       :receive (message-stage
 		 (fn [netty-channel msg]
@@ -116,12 +132,15 @@
     options))
 
 (defn tcp-client [options]
-  (let [frame (create-frame (:frame options) (:delimiters options) (:strip-delimiters? options))]
+  (let [encoder (create-frame
+		  (or (:encoder options) (:frame options))
+		  (:delimiters options)
+		  (:strip-delimiters? options))]
     (create-client
       (fn [ch] (basic-client-pipeline ch #(seq (.toByteBuffers ^ChannelBuffer %)) options))
       (fn [msg]
-	(let [msg (if frame
-		    (encode frame msg)
+	(let [msg (if encoder
+		    (encode encoder msg)
 		    (to-buf-seq msg))]
 	  (ChannelBuffers/wrappedBuffer (into-array ByteBuffer msg))))
       options)))
