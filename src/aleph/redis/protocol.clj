@@ -39,7 +39,6 @@
     (header format-byte codecs first)))
 
 (defn process-response [rsp]
-  (println "process-response" rsp)
   (case (first rsp)
     :error (str "ERROR: " (second rsp))
     :multi-bulk (map second (second rsp))
