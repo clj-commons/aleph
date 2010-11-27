@@ -8,7 +8,7 @@
 
 (ns aleph.http.client
   (:use
-    [aleph netty formats]
+    [aleph netty formats utils]
     [aleph.http core utils websocket]
     [lamina.core]
     [clojure.contrib.json])
@@ -151,32 +151,15 @@
 
 (defn http-client
   [options]
-  (let [client (raw-http-client options)
-	response-channel (channel)
-	request-channel (channel)]
+  (let [client (raw-http-client options)]
     (run-pipeline client
-      (fn [client-channel]
-	(run-pipeline nil
-	  (constantly request-channel)
-	  read-channel
-	  read-channel
-	  #(if %
-	     (enqueue client-channel %)
-	     (enqueue-and-close client-channel nil))
-	  (constantly response-channel)
-	  read-channel
-	  (read-merge #(read-channel client-channel) #(enqueue %1 %2))
-	  (fn [_]
-	    (if-not (closed? client-channel)
-	      (restart)
-	      (enqueue-and-close client-channel nil))))
-	(fn []
-	  (let [request (constant-channel)
-		response (constant-channel)]
-	    (dosync
-	      (enqueue response-channel response)
-	      (enqueue request-channel request))
-	    (splice response request)))))))
+      #(request-handler %))))
+
+(defn pipelined-http-client
+  [options]
+  (let [client (raw-http-client options)]
+    (run-pipeline client
+      #(pipelined-request-handler %))))
 
 (defn close-http-client [client]
   (run-pipeline client

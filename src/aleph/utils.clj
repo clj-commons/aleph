@@ -9,18 +9,44 @@
 (ns aleph.utils
   (:use [lamina core]))
 
-(defn request-generator [ch]
+(defn request-handler [ch]
   (let [requests (channel)]
     (run-pipeline requests
       read-channel
-      (fn [[request response-listener]]
+      (fn [[request handler]]
 	(enqueue ch request)
 	(run-pipeline ch
+	  :error-handler (fn [_ _]
+			   (enqueue handler nil)
+			   (complete nil))
 	  read-channel
-	  #(enqueue response-listener %))))
+	  #(enqueue handler %)))
+      (fn [_] (restart)))
     (fn []
       (let [request-channel (constant-channel)
 	    response-channel (constant-channel)]
 	(receive request-channel #(enqueue requests [% response-channel]))
 	(splice response-channel request-channel)))))
+
+(defn pipelined-request-handler [ch]
+  (let [response-handlers (channel)]
+    (run-pipeline response-handlers
+      read-channel
+      (fn [handler]
+	(run-pipeline ch
+	  :error-handler (fn [_ _]
+			   (enqueue handler nil)
+			   (complete nil))
+	  read-channel
+	  #(enqueue handler %)))
+      (fn [_] (restart)))
+    (fn []
+      (let [request-channel (constant-channel)
+	    response-channel (constant-channel)]
+	(dosync
+	  (siphon request-channel ch)
+	  (enqueue response-handlers response-channel))
+	(splice response-channel request-channel)))))
+
+
 

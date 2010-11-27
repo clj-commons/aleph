@@ -31,7 +31,7 @@
 	   :single-line str-codec
 	   :integer (string-integer :ascii :delimiters ["\r\n"])
 	   :multi-bulk (repeated
-			 (header format-byte (constantly bulk) first)
+			 (header format-byte (constantly bulk) (constantly :bulk))
 			 :prefix (string-prefix 0))}
 	m (into {}
 	    (map
@@ -51,8 +51,3 @@
 
 (defn process-request [req]
   [:multi-bulk (map #(list :bulk %) req)])
-
-
-
-
-
