@@ -8,5 +8,5 @@
                  [org.jboss.netty/netty "3.2.2.Final"]
                  [clj-http "0.1.0-SNAPSHOT"]
                  [lamina "0.3.1-SNAPSHOT"]
-                 [gloss "0.1.0-SNAPSHOT"]
+                 [gloss "0.1.1-SNAPSHOT"]
                  [potemkin "0.1.0"]])

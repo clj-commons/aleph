@@ -185,6 +185,8 @@
 	       (dissoc :query-string :uri :server-port :server-name :scheme)))
 	   response)))))
 
+;;;
+
 (defn websocket-handshake [protocol]
   {:method :get
    :headers {"Sec-WebSocket-Key1" "18x 6]8vM;54 *(5:  {   U1]8  z [  8" ;;TODO: actually randomly generate these
