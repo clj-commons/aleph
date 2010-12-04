@@ -30,7 +30,7 @@ This snippet prints out a never-ending sequence of tweets:
     (println tweet)))
 </code></pre>
 
-A more in-depth exploration of this example can be found "here":http://github.com/ztellman/aleph/wiki/Consuming-a-Twitter-Stream.
+A more in-depth exploration of this example can be found "here":http://github.com/ztellman/aleph/wiki/Consuming-and-Broadcasting-a-Twitter-Stream.
 
 h4. WebSocket
 

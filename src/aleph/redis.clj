@@ -18,11 +18,7 @@
   ([charset host]
      (redis-client charset host 6379))
   ([charset host port]
-     (run-pipeline (tcp-client {:host host :port port :frame (redis-codec charset)})
-       (fn [ch]
-	 (let [request-channel (channel)]
-	   (siphon (map* process-request request-channel) ch)
-	   (splice (map* process-response ch) request-channel))))))
+     (tcp-client {:host host :port port :frame (redis-codec charset)})))
 
 
 

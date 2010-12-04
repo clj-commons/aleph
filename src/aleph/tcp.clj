@@ -114,7 +114,7 @@
       ;; 			      (when-let [msg (message-event x)]
       ;; 				(prn "client request:" (.toString msg "utf-8")))
       ;; 			      x))
-      :upstream-error (upstream-stage error-stage-handler)
+      ;; :upstream-error (upstream-stage error-stage-handler)
       :receive (message-stage
 		 (fn [netty-channel msg]
 		   (enqueue ch (receive-encoder msg))

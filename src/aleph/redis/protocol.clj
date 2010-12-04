@@ -39,15 +39,17 @@
 	      m))]
     (assoc m :bulk bulk)))
 
-(defn redis-codec [charset]
-  (let [codecs (codec-map charset)]
-    (header format-byte codecs first)))
-
 (defn process-response [rsp]
   (case (first rsp)
-    :error (str "ERROR: " (second rsp))
+    :error (Exception. (str (second rsp)))
     :multi-bulk (map second (second rsp))
     (second rsp)))
 
 (defn process-request [req]
   [:multi-bulk (map #(list :bulk %) req)])
+
+(defn redis-codec [charset]
+  (let [codecs (codec-map charset)]
+    (compile-frame (header format-byte codecs first)
+      process-request
+      process-response)))
