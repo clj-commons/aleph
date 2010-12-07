@@ -59,7 +59,11 @@
   (let [headers (:headers request)]
     {:status 101
      :headers {"Sec-WebSocket-Origin" (headers "origin")
-	       "Sec-WebSocket-Location" (str "ws://" (headers "host") (:uri request))
+	       "Sec-WebSocket-Location" (str "ws://"
+					  (headers "host")
+					  (:uri request)
+					  (when (:query-string request)
+					    (str "?" (:query-string request))))
 	       "Sec-WebSocket-Protocol" (headers "sec-websocket-protocol")}
      :body (md5-hash
 	     (doto (ByteBuffer/allocate 16)
@@ -71,7 +75,11 @@
   (let [headers (:headers request)]
     {:status 101
      :headers {"WebSocket-Origin" (headers "origin")
-	       "WebSocket-Location" (str "ws://" (headers "host") (:uri request))
+	       "WebSocket-Location" (str "ws://"
+				      (headers "host")
+				      (:uri request)
+				      (when (:query-string request)
+					(str "?" (:query-string request))))
 	       "WebSocket-Protocol" (headers "websocket-protocol")}}))
 
 (defn websocket-response [^HttpRequest request]
