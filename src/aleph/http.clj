@@ -27,10 +27,10 @@
 (defn sync-http-request
   ([request]
      (->> (http-request request)
-       wait-for-pipeline))
+       wait-for-result))
   ([client request]
      (->> (http-request client request)
-       wait-for-pipeline)))
+       wait-for-result)))
 
 (import-fn policy/start-policy-file-server)
 

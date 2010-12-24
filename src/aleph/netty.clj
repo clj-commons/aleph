@@ -81,6 +81,12 @@
      (when (compare-and-set! latch# false true)
        ~@body)))
 
+(defn create-write-channel [^Channel netty-channel close-callback]
+  (let [ch (channel)]
+    (receive (:success (receive-in-order ch (fn [_])))
+      (fn [_] (close-callback)))
+    ch))
+
 ;;;
 
 (defn upstream-stage
@@ -151,7 +157,7 @@
   "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
    a Netty Channel."
   [^ChannelFuture netty-future]
-  (let [ch (pipeline-channel)]
+  (let [ch (result-channel)]
     (.addListener netty-future
       (reify ChannelFutureListener
 	(operationComplete [_ netty-future]
@@ -165,7 +171,7 @@
   "Creates a pipeline stage that takes a Netty ChannelFuture, and returns
    a Netty Channel."
   [^ChannelGroupFuture netty-future]
-  (let [ch (pipeline-channel)]
+  (let [ch (result-channel)]
     (.addListener netty-future
       (reify ChannelGroupFutureListener
 	(operationComplete [_ netty-future]
@@ -277,21 +283,23 @@
     (run-pipeline (.connect client (InetSocketAddress. ^String host (int port)))
       wrap-netty-channel-future
       (fn [^Channel netty-channel]
-	(run-pipeline (.getCloseFuture netty-channel)
-	  wrap-netty-channel-future
-	  (fn [_]
-	    (enqueue-and-close inner nil)
-	    (enqueue-and-close outer nil)))
-	(.add channel-group netty-channel)
-	(receive-in-order outer
-	  (fn [msg]
-	    (write-to-channel
-	      netty-channel
-	      (send-encoder msg)
-	      (closed? outer)
-	      ;;:on-close #(.releaseExternalResources client)
-	      )))
-	inner))))
+	(let [write-channel (create-write-channel
+			      netty-channel
+			      #(write-to-channel netty-channel nil true))]
+	  (run-pipeline (.getCloseFuture netty-channel)
+	    wrap-netty-channel-future
+	    (fn [_]
+	      (close inner)
+	      (close outer)))
+	  (.add channel-group netty-channel)
+	  (receive-in-order outer
+	    (fn [msg]
+	      (when-not (and (nil? msg) (closed? outer))
+		(enqueue write-channel
+		  (write-to-channel netty-channel (send-encoder msg) false)))
+	      (when (closed? outer)
+		(close write-channel))))
+	  inner)))))
 
 ;;;
 

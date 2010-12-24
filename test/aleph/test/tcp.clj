@@ -11,15 +11,13 @@
     [lamina.core]
     [gloss.core]
     [aleph tcp formats]
-    [clojure.test]))
+    [clojure.test]
+    [clojure.set :only (difference)]))
 
 (def server-messages (ref []))
 
 (defn append-to-server [msg]
   (dosync (alter server-messages conj (when msg (str msg)))))
-
-(defn join-and-split [s]
-  (seq (.split (apply str s) "\0")))
 
 (deftest echo-server
   (dosync
@@ -29,18 +27,20 @@
 		   (receive-all ch
 		     (fn [x]
 		       (when x
-			 (enqueue ch x)
-			 (append-to-server x)))))
-		 {:frame (string :utf-8)
+			 (append-to-server x)
+			 (enqueue ch x)))))
+		 {:frame (string :utf-8 :delimiters ["\0"])
 		  :port 8888})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)}))]
+      (let [ch (wait-for-result
+		 (tcp-client {:host "localhost"
+			      :port 8888
+			      :frame (string :utf-8 :delimiters ["\0"])})
+		 1000)]
 	(dotimes [i 1000]
-	  (enqueue ch (str i "\0")))
-	(let [s (doall (lazy-channel-seq ch 100))]
-	  (is (=
-	       (join-and-split (apply str s))
-	       (join-and-split @server-messages)))))
+	  (enqueue ch (str i)))
+	(let [s (doall (map str (take 1000 (lazy-channel-seq ch 1000))))]
+	  (is (= s (map str @server-messages)))))
       (finally
 	(server)))))
 
@@ -56,11 +56,16 @@
 		  :frame (string :utf-8)
 		  :delimiters ["x"]})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)}))]
-	(enqueue ch "ax")
-	(enqueue ch "bx")
-	(enqueue-and-close ch "cx")
-	(Thread/sleep 100)
+      (let [ch (wait-for-result
+		 (tcp-client {:host "localhost"
+			      :port 8888
+			      :frame (string :utf-8)
+			      :delimiters ["x"]})
+		 1000)]
+	(enqueue ch "a")
+	(enqueue ch "b")
+	(enqueue-and-close ch "c")
+	(Thread/sleep 500)
 	(is (= ["a" "b" "c" nil] @server-messages)))
       (finally
 	(server)))))
@@ -72,8 +77,10 @@
 		 {:frame (string :utf-8)
 		  :port 8888})]
     (try
-      (let [ch (wait-for-pipeline (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)}))]
-	(is (= ["a"] (map str (channel-seq ch -1))))
+      (let [ch (wait-for-result
+		 (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)})
+		 1000)]
+	(is (= ["a"] (doall (map str (channel-seq ch 1000)))))
 	(is (closed? ch)))
       (finally
 	(server)))))

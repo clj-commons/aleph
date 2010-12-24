@@ -21,6 +21,8 @@
      DelimiterBasedFrameDecoder]
     [java.nio
      ByteBuffer]
+    [org.jboss.netty.handler.logging
+     LoggingHandler]
     [org.jboss.netty.buffer
      ChannelBuffer
      ChannelBuffers]
@@ -65,20 +67,27 @@
 		inner
 		(splice (decode-channel decoder inner) inner))]
     (create-netty-pipeline
-      ;; :upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
-      ;; :downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
       :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
 		      (channel-open-stage
 			(fn [^Channel netty-channel]
-			  (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
-			  (receive-in-order outer
-			    #(write-to-channel netty-channel (send-encoder %) (closed? outer))))))
+			  (let [write-channel (create-write-channel
+						netty-channel
+						#(write-to-channel netty-channel nil true))]
+			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
+			    (receive-in-order outer
+			      (fn [msg]
+				(when-not (and (nil? msg) (closed? outer))
+				  (enqueue write-channel
+				    (write-to-channel netty-channel (send-encoder msg) false)))
+				(when (closed? outer)
+				  (close write-channel))
+				nil))))))
       :channel-close (upstream-stage
 		       (channel-close-stage
 			 (fn [_]
-			   (enqueue-and-close inner nil)
-			   (enqueue-and-close outer nil))))
+			   (close inner)
+			   (close outer))))
       :receive (message-stage
 		 (fn [netty-channel msg]
 		   (enqueue outer (receive-encoder msg))
@@ -102,19 +111,7 @@
 	       src)
 	     ch)]
     (create-netty-pipeline
-      ;; :upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
-      ;; :downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
-      ;; :upstream-decoder (upstream-stage
-      ;; 			  (fn [x]
-      ;; 			    (when-let [msg (message-event x)]
-      ;; 			      (println "client response:" (.toString msg "utf-8")))
-      ;; 			    x))
-      ;; :downstream-decoder (downstream-stage
-      ;; 			    (fn [x]
-      ;; 			      (when-let [msg (message-event x)]
-      ;; 				(prn "client request:" (.toString msg "utf-8")))
-      ;; 			      x))
-      ;; :upstream-error (upstream-stage error-stage-handler)
+      :upstream-error (upstream-stage error-stage-handler)
       :receive (message-stage
 		 (fn [netty-channel msg]
 		   (enqueue ch (receive-encoder msg))

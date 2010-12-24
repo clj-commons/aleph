@@ -134,7 +134,7 @@
       (let [last? (.isLast request)
 	    body (transform-netty-body (.getContent request) headers)]
 	(if last?
-	  (enqueue-and-close out body)
+	  (close out)
 	  (enqueue out body))
 	(when-not last?
 	  (restart))))))

@@ -49,7 +49,7 @@
     (fn [^HttpChunk response]
       (let [body (transform-netty-body (.getContent response) headers)]
 	(if (.isLast response)
-	  (enqueue-and-close out body)
+	  (close out)
 	  (do
 	    (enqueue out body)
 	    (restart)))))))
@@ -145,8 +145,8 @@
 	(read-requests
 	  requests responses options
 	  (fn []
-	    (enqueue-and-close requests nil)
-	    (enqueue-and-close responses nil)))
+	    (close requests)
+	    (close responses)))
 	(splice responses requests)))))
 
 (defn http-client
@@ -163,7 +163,7 @@
 
 (defn close-http-client [client]
   (run-pipeline client
-    #(enqueue-and-close (%) nil)))
+    #(enqueue (%) nil)))
 
 (defn http-request
   ([request]
@@ -223,7 +223,7 @@
 
 (defn websocket-client [options]
   (let [options (split-url options)
-	result (pipeline-channel)
+	result (result-channel)
 	client (create-client
 		 #(websocket-pipeline % (:success result) (:error result))
 		 identity

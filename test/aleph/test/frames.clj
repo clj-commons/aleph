@@ -16,15 +16,15 @@
 (defn test-roundtrip
   [frame values]
   (let [server (start-tcp-server (fn [ch _] (siphon ch ch)) {:port 10000 :frame frame})]
-    (let [client (wait-for-pipeline (tcp-client {:host "localhost" :port 10000 :frame frame}))]
+    (let [client (wait-for-result (tcp-client {:host "localhost" :port 10000 :frame frame}))]
       (try
 	(apply enqueue client values)
 	(is (= values (take (count values) (lazy-channel-seq client))))
 	(finally
-	  (enqueue-and-close client nil)
+	  (close client)
 	  (server))))))
 
-(deftest test-frames
+'(deftest test-frames
   (test-roundtrip
     :int32
     (range 10))
