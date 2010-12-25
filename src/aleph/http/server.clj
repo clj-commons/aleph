@@ -112,7 +112,7 @@
 (defn respond [^Channel netty-channel response]
   (let [response (update-in response [:headers]
 		   #(merge
-		      {"server" "aleph (0.1.2)"}
+		      {"server" "aleph (0.1.5)"}
 		      %))
 	body (:body response)]
     (cond
@@ -203,9 +203,7 @@
   (let [pipeline ^ChannelPipeline
 	(create-netty-pipeline
 	  :decoder (HttpRequestDecoder.)
-	  ;;:upstream-decoder (upstream-stage (fn [x] (println "server request\n" x) x))
 	  :encoder (HttpResponseEncoder.)
-	  ;;:downstream-decoder (downstream-stage (fn [x] (println "server response\n" x) x))
 	  :deflater (HttpContentCompressor.)
 	  :upstream-error (upstream-stage error-stage-handler)
 	  :http-request (http-session-handler handler options)

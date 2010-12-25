@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.http.policy-file
+(ns ^{:skip-wiki true}
+  aleph.http.policy-file
   (:use
     [aleph netty]
     [clojure.contrib.prxml])

@@ -6,12 +6,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.http.client
+(ns ^{:skip-wiki true}
+  aleph.http.client
   (:use
-    [aleph netty formats utils]
+    [aleph netty formats]
     [aleph.http core utils websocket]
-    [lamina.core]
-    [clojure.contrib.json])
+    [lamina core connections])
   (:require
     [clj-http.client :as client])
   (:import
@@ -114,8 +114,6 @@
 	pipeline (create-netty-pipeline
 		   :codec (HttpClientCodec.)
 		   :inflater (HttpContentDecompressor.)
-		   ;;:upstream-decoder (upstream-stage (fn [x] (println "client request\n" x) x))
-		   ;;:downstream-decoder (downstream-stage (fn [x] (println "client response\n" x) x))
 		   :upstream-error (downstream-stage error-stage-handler)
 		   :response (message-stage
 			       (fn [netty-channel rsp]
@@ -128,8 +126,7 @@
 
 ;;;
 
-(defn- raw-http-client
-  "Create an HTTP client."
+(defn- http-connection
   [options]
   (let [options (-> options
 		  split-url
@@ -149,41 +146,57 @@
 	    (close responses)))
 	(splice responses requests)))))
 
+(defn- http-client- [client-fn options]
+  (let [client (client-fn #(http-connection options))
+	f (fn [request timeout]
+	    (if (map? request)
+	      (client (assoc (merge options request)
+			:keep-alive? true))
+	      (client request)))]
+    (fn this
+      ([request]
+	 (this request -1))
+      ([request timeout]
+	 (f request timeout)))))
+
 (defn http-client
   [options]
-  (let [client (raw-http-client options)]
-    (run-pipeline client
-      #(request-handler %))))
+  (http-client- client options))
 
 (defn pipelined-http-client
   [options]
-  (let [client (raw-http-client options)]
-    (run-pipeline client
-      #(pipelined-request-handler %))))
-
-(defn close-http-client [client]
-  (run-pipeline client
-    #(enqueue (%) nil)))
+  (http-client- pipelined-client options))
 
 (defn http-request
   ([request]
-     (let [client (http-client (assoc request :keep-alive? false))]
-       (http-request client request)))
-  ([client request]
-     ;;TODO: error out on excessive redirects
-     (run-pipeline client
-       (fn [ch-fn]
-	 (let [ch (ch-fn)]
+     (http-request request -1))
+  ([request timeout]
+     (let [connection (http-connection request)
+	   latch (atom false)]
+
+       ;; timeout
+       '(when (pos? timeout)
+	 (run-pipeline (timed-channel timeout)
+	   read-channel
+	   (fn [_]
+	     (when (compare-and-set! latch false true)
+	       (close connection)))))
+
+       ;; request
+       (run-pipeline connection
+	 (fn [ch]
 	   (enqueue ch request)
-	   (read-channel ch)))
-       (fn [response]
-	 (if (= 301 (:status response))
-	   (http-request
-	     (-> request
-	       (update-in [:redirect-count] #(if-not % 1 (inc %)))
-	       (assoc :url (get-in response [:headers "location"]))
-	       (dissoc :query-string :uri :server-port :server-name :scheme)))
-	   response)))))
+	   (read-channel ch))
+	 (fn [response]
+	   (reset! latch true)
+	   (if (= 301 (:status response))
+	     (http-request
+	       (-> request
+		 (update-in [:redirect-count] #(if-not % 1 (inc %)))
+		 (assoc :url (get-in response [:headers "location"]))
+		 (dissoc :query-string :uri :server-port :server-name :scheme))
+	       timeout)
+	     response))))))
 
 ;;;
 
@@ -202,8 +215,6 @@
   (create-netty-pipeline
     :decoder (HttpResponseDecoder.)
     :encoder (HttpRequestEncoder.)
-    ;;:upstream-decoder (upstream-stage (fn [x] (println "client response\n" x) x))
-    ;;:downstream-decoder (downstream-stage (fn [x] (println "client request\n" x) x))
     :upstream-error (upstream-stage error-stage-handler)
     :response (message-stage
 		(fn [netty-channel rsp]

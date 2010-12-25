@@ -6,8 +6,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns
-  ^{:skip-wiki true}
+(ns ^{:author "Zachary Tellman"}
   aleph.http
   (:use
     [lamina.core]
@@ -15,16 +14,15 @@
   (:require
     [aleph.http.server :as server]
     [aleph.http.client :as client]
-    [aleph.http.utils :as utils]
     [aleph.http.policy-file :as policy]))
 
 (import-fn server/start-http-server)
 (import-fn client/http-client)
 (import-fn client/http-request)
-(import-fn client/close-http-client)
 (import-fn client/websocket-client)
 
 (defn sync-http-request
+  "A synchronous version of http-request."
   ([request]
      (->> (http-request request)
        wait-for-result))

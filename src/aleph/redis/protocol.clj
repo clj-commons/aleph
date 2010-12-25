@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.redis.protocol
+(ns ^{:skip-wiki true}
+  aleph.redis.protocol
   (:use
     [lamina core]
     [gloss core]))

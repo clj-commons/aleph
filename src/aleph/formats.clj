@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.formats
+(ns ^{:skip-wiki true}
+  aleph.formats
   (:use
     [clojure.contrib.json])
   (:import

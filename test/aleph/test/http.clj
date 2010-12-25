@@ -9,7 +9,7 @@
 (ns aleph.test.http
   (:use [aleph http])
   (:use
-    [lamina.core]
+    [lamina core connections]
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
@@ -46,7 +46,6 @@
    :header {"content-type" "text/html"}
    :body (ByteArrayInputStream. (.getBytes stream-response))})
 
-(def server (atom nil))
 (def latch (promise))
 
 (def route-map
@@ -96,11 +95,8 @@
 
 ;;;
 
-(defn request [client path]
-  (http-request client {:request-method :get, :url (str "http://localhost:8080/" path)}))
-
 (defn wait-for-request [client path]
-  (-> (request client path)
+  (-> (client {:method :get, :url (str "http://localhost:8080/" path)})
     (wait-for-result 1000)
     :body))
 
@@ -113,22 +109,21 @@
 
 '(deftest browser-http-response
    (println "waiting for browser test")
-   (let [server (reset! server (start-http-server (create-basic-handler) {:port 8080}))]
-     (is @latch)))
+   (start-http-server (create-basic-handler) {:port 8080})
+   (is @latch))
 
-(deftest single-requests
+'(deftest single-requests
   (with-server (create-basic-handler)
     (doseq [[index [path result]] (indexed expected-results)]
       (let [client (http-client {:url "http://localhost:8080"})]
 	(is (= result (wait-for-request client path)))
-	(close-http-client client)))))
+	(close-client client)))))
 
 (deftest multiple-requests
   (with-server (create-basic-handler)
     (let [client (http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
-	(is (= result (wait-for-request client path))))
-      (close-http-client client))))
+	(is (= result (wait-for-request client path)))))))
 
 (deftest streaming-response
   (with-server (create-streaming-response-handler)

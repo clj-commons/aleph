@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.tcp
+(ns ^{:author "Zachary Tellman"}
+  aleph.tcp
   (:use
     [aleph netty formats]
     [lamina.core]
@@ -29,14 +30,7 @@
     [java.io
      InputStream]))
 
-(defn- add-delimiter-stage [pipeline delimiters strip-delimiters]
-  (.addFirst ^ChannelPipeline pipeline "delimiter"
-    (DelimiterBasedFrameDecoder.
-      1048576
-      strip-delimiters
-      (into-array (map to-channel-buffer delimiters)))))
-
-(defn create-frame [frame delimiters strip-delimiters?]
+(defn- create-frame [frame delimiters strip-delimiters?]
   (cond
     (and frame delimiters) (delimited-frame delimiters frame)
     (and frame (not delimiters)) (compile-frame frame)

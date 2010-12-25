@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.http.core
+(ns ^{:skip-wiki true}
+  aleph.http.core
   (:use
     [aleph netty formats]
     [aleph.http utils]

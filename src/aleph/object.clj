@@ -6,7 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.object
+(ns ^{:skip-wiki true}
+  aleph.object
   (:use 
 	[aleph netty]
 	[lamina.core])
