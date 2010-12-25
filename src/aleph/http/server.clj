@@ -213,7 +213,18 @@
     pipeline))
 
 (defn start-http-server
-  "Starts an HTTP server."
+  "Starts an HTTP server on the specified :port.  To support WebSockets, set :websocket to
+   true.
+
+   'handler' should be a function that takes two parameters, a channel and a request hash.
+   The request is a hash that conforms to the Ring standard, with :websocket set to true
+   if it is a WebSocket handshake.  If the request is chunked, the :body will also be a
+   channel.
+
+   If the request is a standard HTTP request, the channel will accept a single message, which
+   is the response.  For a chunked response, the response :body should be a channel.  If the
+   request is a WebSocket handshake, the channel represents a full duplex socket, which
+   communicates via complete (i.e. non-streaming) strings."
   [handler options]
   (start-server
     #(create-pipeline handler options)

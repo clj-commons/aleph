@@ -160,14 +160,40 @@
 	 (f request timeout)))))
 
 (defn http-client
+  "Returns a function which represents a persistent connection to the server specified by
+   :url.  The function will take an HTTP request per the Ring spec and optionally a timeout,
+   and returns a result-channel that will emit the HTTP response.  Redirects will not be
+   followed.
+
+   The connection can be closed using lamina.connections/close-client.
+
+   Requests will only be sent to the server once the response to the previous request has
+   been received.  To make concurrent requests, open multiple clients."
   [options]
   (http-client- client options))
 
 (defn pipelined-http-client
+  "Returns a function which represents a persistent connection to the server specified by
+   :url.  The function will take an HTTP request per the Ring spec and optionally a timeout,
+   and returns a result-channel that will emit the HTTP response.  Redirects will not be
+   followed.
+
+   The connection can be closed using lamina.connections/close-client.
+
+   Requests will be sent to the server as soon as they are made, under the assumption that
+   responses will be sent in the same order.  This is not always a safe assumption (see
+   http://en.wikipedia.org/wiki/HTTP_pipelining ), use only where you're sure the underlying
+   assumptions holds."
   [options]
   (http-client- pipelined-client options))
 
 (defn http-request
+  "Takes an HTTP request structured per the Ring spec, and returns a result-channel
+   that will emit an HTTP response.  If a timeout is specified and elapses before a
+   response is received, the result will emit an error.
+
+   Redirects will automatically be followed.  If a timeout is specified, each redirect
+   will be allowed the full timeout."
   ([request]
      (http-request request -1))
   ([request timeout]

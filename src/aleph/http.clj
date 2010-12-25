@@ -18,23 +18,25 @@
 
 (import-fn server/start-http-server)
 (import-fn client/http-client)
+(import-fn client/pipelined-http-client)
 (import-fn client/http-request)
 (import-fn client/websocket-client)
 
 (defn sync-http-request
-  "A synchronous version of http-request."
+  "A synchronous version of http-request.  Halts the thread until the response has returned,
+   and throws an exception if the timeout elapsed or another error occurred."
   ([request]
-     (->> (http-request request)
-       wait-for-result))
-  ([client request]
-     (->> (http-request client request)
+     (sync-http-request -1))
+  ([request timeout]
+     (->> (http-request request timeout)
        wait-for-result)))
 
 (import-fn policy/start-policy-file-server)
 
 (defn wrap-ring-handler
   "Wraps a synchronous Ring handler, such that it can be used in start-http-server.  If certain
-   routes within the application are asynchronous, wrap those handler functions in wrap-aleph-handler."
+   routes within the application are asynchronous, wrap those handler functions in
+   wrap-aleph-handler."
   [f]
   (fn [channel request]
     (let [response (f (assoc request :channel channel))]
@@ -45,9 +47,9 @@
 	(enqueue channel response)))))
 
 (defn wrap-aleph-handler
-  "Allows for an asynchronous handler to be used within a largely synchronous application.  Assuming the
-   top-level handler has been wrapped in wrap-ring-handler, this function can be used to wrap handler
-   functions for asynchronous routes."
+  "Allows for an asynchronous handler to be used within a largely synchronous application.
+   Assuming the top-level handler has been wrapped in wrap-ring-handler, this function can be
+   used to wrap handler functions for asynchronous routes."
   [f]
   (fn [request]
     (f (:channel request) (dissoc request :channel))

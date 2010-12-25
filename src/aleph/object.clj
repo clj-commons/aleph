@@ -6,11 +6,10 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns ^{:skip-wiki true}
-  aleph.object
+(ns aleph.object
   (:use 
-	[aleph netty]
-	[lamina.core])
+    [aleph netty]
+    [lamina.core])
   (:require [aleph.tcp :as tcp])
   (:import
     [org.jboss.netty.channel
@@ -31,14 +30,20 @@
     (.addFirst pipeline "decoder" (ObjectDecoder.))
     pipeline))
 
-(defn start-object-server [handler options]
+(defn start-object-server
+  "Identical to start-tcp-server, except that the channel accepts any serializable Java
+   object, including the standard Clojure data structures."
+  [handler options]
   (start-server
     #(server-pipeline
        handler
        options)
     options))
 
-(defn object-client [options]
+(defn object-client
+  "Identical to tcp-client, except that the channel accepts any serializable Java object,
+   including the standard Clojure data structures."
+  [options]
   (create-client
     #(client-pipeline % options)
     identity
