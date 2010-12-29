@@ -291,13 +291,13 @@
 	      (close inner)
 	      (close outer)))
 	  (.add channel-group netty-channel)
-	  (receive-in-order outer
-	    (fn [msg]
-	      (when-not (and (nil? msg) (closed? outer))
+	  (run-pipeline
+	    (receive-in-order outer
+	      (fn [msg]
 		(enqueue write-channel
-		  (write-to-channel netty-channel (send-encoder msg) false)))
-	      (when (closed? outer)
-		(close write-channel))))
+		  (write-to-channel netty-channel (send-encoder msg) false))))
+	    (fn [_]
+	      (close write-channel)))
 	  inner)))))
 
 ;;;

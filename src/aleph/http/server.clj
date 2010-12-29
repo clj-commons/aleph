@@ -100,14 +100,14 @@
 	ch (:body response)]
     (run-pipeline (write-to-channel netty-channel initial-response false)
       (fn [_]
-	(receive-in-order ch
-	  (fn [msg]
-	    (when msg
+	(run-pipeline
+	  (receive-in-order ch
+	    (fn [msg]
 	      (let [msg (transform-aleph-body msg (:headers response))
 		    chunk (DefaultHttpChunk. msg)]
-		(write-to-channel netty-channel chunk false)))
-	    (when (closed? ch)
-	      (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))))
+		(write-to-channel netty-channel chunk false))))
+	  (fn [_]
+	    (write-to-channel netty-channel HttpChunk/LAST_CHUNK false)))))))
 
 (defn respond [^Channel netty-channel response]
   (let [response (update-in response [:headers]

@@ -26,7 +26,7 @@
   "A synchronous version of http-request.  Halts the thread until the response has returned,
    and throws an exception if the timeout elapsed or another error occurred."
   ([request]
-     (sync-http-request -1))
+     (sync-http-request request -1))
   ([request timeout]
      (->> (http-request request timeout)
        wait-for-result)))

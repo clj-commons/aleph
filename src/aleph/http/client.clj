@@ -126,12 +126,15 @@
 
 ;;;
 
+(defn- process-options [options]
+  (-> options
+    split-url
+    (update-in [:server-port] #(or % 80))
+    (update-in [:keep-alive?] #(or % true))))
+
 (defn- http-connection
   [options]
-  (let [options (-> options
-		  split-url
-		  (update-in [:server-port] #(or % 80))
-		  (update-in [:keep-alive?] #(or % true)))
+  (let [options (process-options options)
 	requests (channel)
 	client (create-client
 		 #(create-pipeline % options)
@@ -147,7 +150,10 @@
 	(splice responses requests)))))
 
 (defn- http-client- [client-fn options]
-  (let [client (client-fn #(http-connection options))
+  (let [options (process-options options)
+	client (client-fn
+		 #(http-connection options)
+		 (str (:scheme options) "://" (:server-name options) ":" (:server-port options)))
 	f (fn [request timeout]
 	    (if (map? request)
 	      (client (assoc (merge options request)
@@ -201,7 +207,7 @@
 	   latch (atom false)]
 
        ;; timeout
-       '(when (pos? timeout)
+       (when (pos? timeout)
 	 (run-pipeline (timed-channel timeout)
 	   read-channel
 	   (fn [_]

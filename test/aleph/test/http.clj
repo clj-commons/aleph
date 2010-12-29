@@ -123,7 +123,8 @@
   (with-server (create-basic-handler)
     (let [client (http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
-	(is (= result (wait-for-request client path)))))))
+	(is (= result (wait-for-request client path))))
+      (close-connection client))))
 
 (deftest streaming-response
   (with-server (create-streaming-response-handler)

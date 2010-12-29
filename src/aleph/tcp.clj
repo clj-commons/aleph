@@ -69,14 +69,14 @@
 						netty-channel
 						#(write-to-channel netty-channel nil true))]
 			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
-			    (receive-in-order outer
-			      (fn [msg]
-				(when-not (and (nil? msg) (closed? outer))
+			    (run-pipeline
+			      (receive-in-order outer
+				(fn [msg]
 				  (enqueue write-channel
-				    (write-to-channel netty-channel (send-encoder msg) false)))
-				(when (closed? outer)
-				  (close write-channel))
-				nil))))))
+				    (write-to-channel netty-channel (send-encoder msg) false))
+				  nil))
+			      (fn [_]
+				(close write-channel)))))))
       :channel-close (upstream-stage
 		       (channel-close-stage
 			 (fn [_]
