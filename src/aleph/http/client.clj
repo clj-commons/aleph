@@ -165,7 +165,7 @@
    and returns a result-channel that will emit the HTTP response.  Redirects will not be
    followed.
 
-   The connection can be closed using lamina.connections/close-client.
+   The connection can be closed using lamina.connections/close-connection.
 
    Requests will only be sent to the server once the response to the previous request has
    been received.  To make concurrent requests, open multiple clients."
@@ -178,7 +178,7 @@
    and returns a result-channel that will emit the HTTP response.  Redirects will not be
    followed.
 
-   The connection can be closed using lamina.connections/close-client.
+   The connection can be closed using lamina.connections/close-connection.
 
    Requests will be sent to the server as soon as they are made, under the assumption that
    responses will be sent in the same order.  This is not always a safe assumption (see

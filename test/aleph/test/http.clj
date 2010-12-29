@@ -112,12 +112,12 @@
    (start-http-server (create-basic-handler) {:port 8080})
    (is @latch))
 
-'(deftest single-requests
+(deftest single-requests
   (with-server (create-basic-handler)
     (doseq [[index [path result]] (indexed expected-results)]
       (let [client (http-client {:url "http://localhost:8080"})]
 	(is (= result (wait-for-request client path)))
-	(close-client client)))))
+	(close-connection client)))))
 
 (deftest multiple-requests
   (with-server (create-basic-handler)
