@@ -132,7 +132,7 @@
 
 (defn error-stage-handler [evt]
   (when (instance? ExceptionEvent evt)
-    (log/error (.getCause ^ExceptionEvent evt)))
+    (log/warn "aleph.netty" (.getCause ^ExceptionEvent evt)))
   evt)
 
 (defmacro create-netty-pipeline

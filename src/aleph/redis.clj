@@ -20,13 +20,15 @@
    (f [\"set\" \"foo\" \"bar\"] timeout?)
 
    The function will return a result-channel representing the response.  To close the
-   connection, use lamina.connections/close-client."
+   connection, use lamina.connections/close-connection."
   ([host]
      (redis-client :utf-8 host))
   ([charset host]
      (redis-client charset host 6379))
   ([charset host port]
-     (pipelined-client #(tcp-client {:host host :port port :frame (redis-codec charset)}))))
+     (client
+       #(tcp-client {:host host :port port :frame (redis-codec charset)})
+       (str "redis @ " host ":" port))))
 
 
 
