@@ -73,8 +73,10 @@
 
 (defn- respond-with-stream
   [^Channel netty-channel response]
-  (let [response (transform-aleph-response (update-in response [:body] #(input-stream->channel-buffer %)))]
-    (write-to-channel netty-channel response false)))
+  (let [stream ^InputStream (:body response)
+	response (transform-aleph-response (update-in response [:body] #(input-stream->channel-buffer %)))]
+    (run-pipeline (write-to-channel netty-channel response false)
+      (fn [_] (.close stream)))))
 
 (defn- respond-with-file
   [netty-channel response]
