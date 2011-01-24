@@ -37,6 +37,11 @@
   (when buf
     (.toByteBuffer buf)))
 
+(defn channel-buffer->byte-buffers
+  [^ChannelBuffer buf]
+  (when buf
+    (.toByteBuffers buf)))
+
 (defn channel-buffer->string
   ([buf]
      (channel-buffer->string buf "UTF-8"))

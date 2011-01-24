@@ -43,24 +43,24 @@
 
 ;;;
 
-(defn read-streaming-response [headers in out]
+(defn read-streaming-response [headers options in out]
   (run-pipeline in
     read-channel
     (fn [^HttpChunk response]
-      (let [body (transform-netty-body (.getContent response) headers)]
+      (let [body (transform-netty-body (.getContent response) headers options)]
 	(if (.isLast response)
 	  (close out)
 	  (do
 	    (enqueue out body)
 	    (restart)))))))
 
-(defn read-responses [netty-channel in out]
+(defn read-responses [netty-channel options in out]
   (run-pipeline in
     read-channel
     (fn [^HttpResponse response]
       (let [chunked? (.isChunked response)
 	    headers (netty-headers response)
-	    response (transform-netty-response response headers)]
+	    response (transform-netty-response response headers options)]
 	(if-not chunked?
 	  (enqueue out response)
 	  (let [body (:body response)
@@ -72,18 +72,18 @@
 	    (when body
 	      (enqueue stream body))
 	    (enqueue out response)
-	    (read-streaming-response headers in stream)))))
+	    (read-streaming-response headers options in stream)))))
     (fn [_]
       (restart))))
 
 ;;;
 
-(defn read-streaming-request [in out headers]
+(defn read-streaming-request [headers options in out]
   (run-pipeline in
     read-channel
     (fn [chunk]
       (when chunk
-	(enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers))))
+	(enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers options))))
       (if (closed? in)
 	(enqueue out HttpChunk/LAST_CHUNK)
 	(restart)))))
@@ -98,9 +98,10 @@
 	    (:scheme options)
 	    (:server-name options)
 	    (:server-port options)
-	    request))
+	    (pre-process-aleph-message request options)
+	    options))
 	(when (channel? (:body request))
-	  (read-streaming-request (:body request) out (:headers request)))))
+	  (read-streaming-request (:headers request) options (:body request) out))))
     (fn [_]
       (if-not (closed? in)
 	(restart)
@@ -118,7 +119,7 @@
 		   :response (message-stage
 			       (fn [netty-channel rsp]
 				 (when (compare-and-set! init? false true)
-				   (read-responses netty-channel responses client))
+				   (read-responses netty-channel options responses client))
 				 (enqueue responses rsp)
 				 nil))
 		   :downstream-error (upstream-stage error-stage-handler))]
@@ -278,7 +279,8 @@
 	    (:scheme options)
 	    (:server-name options)
 	    (:server-port options)
-	    (websocket-handshake (or (:protocol options) "aleph"))))
+	    (websocket-handshake (or (:protocol options) "aleph"))
+	    options))
 	(run-pipeline result
 	  (fn [_]
 	    (let [in (channel)]

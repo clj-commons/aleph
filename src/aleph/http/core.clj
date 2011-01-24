@@ -72,38 +72,40 @@
 
 (defn transform-netty-body
   "Transform body from ChannelBuffer into something more appropriate."
-  [^ChannelBuffer body headers]
-  (let [content-type (or (headers "content-type") "text/plain")
-	charset (or (get headers "charset") "UTF-8")]
+  [^ChannelBuffer body headers options]
+  (let [content-type (or (headers "content-type") (headers "Content-Type") "text/plain")
+	charset (or (get headers "charset") "UTF-8")
+	auto-transform? (or true (get options :auto-transform false))]
     (when-not (zero? (.readableBytes body))
       (cond
 
-       (.startsWith ^String content-type "text")
-       (channel-buffer->string body charset)
-
-       (= content-type "application/json")
-       (-> body channel-buffer->input-stream InputStreamReader. from-json)
-
-       :else
-       (channel-buffer->byte-buffer body)))))
+	(and auto-transform? (.startsWith ^String content-type "text"))
+	(channel-buffer->string body charset)
+	
+	(and auto-transform? (= content-type "application/json"))
+	(-> body channel-buffer->input-stream InputStreamReader. from-json)
+	
+	:else
+	(channel-buffer->byte-buffers body)))))
 
 (defn transform-aleph-body
-  [body headers]
-  (let [content-type (or (get headers "content-type") "text/plain")
-	charset (or (get headers "charset") "utf-8")]
+  [body headers options]
+  (let [content-type (or (get headers "content-type") (get headers "Content-Type") "text/plain")
+	charset (or (get headers "charset") "utf-8")
+	auto-transform? (or true (get options :auto-transform false))]
     (cond
-
+      
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
 	(ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc))))
 
-      (= content-type "application/json")
+      (and auto-transform? (= content-type "application/json"))
       (to-channel-buffer (to-json body))
 
       (to-channel-buffer? body)
       (to-channel-buffer body)
 
-      (sequential? body)
+      (and auto-transform? (sequential? body))
       (to-channel-buffer (to-json body))
 	
       :else
@@ -125,7 +127,7 @@
 
 (defn transform-netty-request
   "Transforms a Netty request into a Ring request."
-  [^HttpRequest req]
+  [^HttpRequest req options]
   (let [headers (netty-headers req)
 	parts (.split ^String (headers "host") "[:]")
 	host (first parts)
@@ -134,7 +136,7 @@
     (merge
       (netty-request-method req)
       {:headers headers}
-      {:body (let [body (transform-netty-body (.getContent req) headers)]
+      {:body (let [body (transform-netty-body (.getContent req) headers options)]
 	       (if (final-netty-message? req)
 		 body
 		 (let [ch (channel)]
@@ -145,25 +147,31 @@
        :server-port port}
       (netty-request-uri req))))
 
-(defn transform-aleph-message [^HttpMessage netty-msg msg]
+(defn pre-process-aleph-message [msg options]
+  (update-in msg [:headers]
+    (fn [headers]
+      (zipmap
+	(map #(->> (str/split (to-str %) #"-") (map str/capitalize) (str/join "-")) (keys headers))
+	(vals headers)))))
+
+(defn transform-aleph-message [^HttpMessage netty-msg msg options]
   (let [body (:body msg)]
     (doseq [[k v-or-vals] (:headers msg)]
       (when-not (nil? v-or-vals)
-	(let [k (->> (str/split k #"-") (map str/capitalize) (str/join "-"))]
-	  (if (string? v-or-vals)
-	    (.addHeader netty-msg (to-str k) v-or-vals)
-	    (doseq [val v-or-vals]
-	      (.addHeader netty-msg (to-str k) val))))))
+	(if (string? v-or-vals)
+	  (.addHeader netty-msg (to-str k) v-or-vals)
+	  (doseq [val v-or-vals]
+	    (.addHeader netty-msg (to-str k) val)))))
     (if body
       (if (channel? body)
 	(.setHeader netty-msg "Transfer-Encoding" "chunked")
 	(do
-	  (.setContent netty-msg (transform-aleph-body body (:headers msg)))
+	  (.setContent netty-msg (transform-aleph-body body (:headers msg) options))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
       (HttpHeaders/setContentLength netty-msg 0))
     netty-msg))
 
-(defn transform-aleph-request [scheme ^String host ^Integer port request]
+(defn transform-aleph-request [scheme ^String host ^Integer port request options]
   (let [request (wrap-client-request request)
 	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
@@ -179,24 +187,25 @@
 	body (:body request)]
     (.setHeader req "Host" (str host ":" port))
     (.setHeader req "Accept-Encoding" "gzip")
-    (transform-aleph-message req request)))
+    (transform-aleph-message req request options)))
 
 (defn transform-aleph-response
   "Turns a Ring response into something Netty can understand."
-  [response]
+  [response options]
   (let [response (wrap-response response)
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))]
     (transform-aleph-message rsp
-      (assoc-in response [:headers "connection"]
+      (assoc-in response [:headers "Connection"]
 	(if (:keep-alive? response)
 	  "keep-alive"
-	  "close")))))
+	  "close"))
+      options)))
 
 ;;;
 
-(defn transform-netty-response [^HttpResponse response headers]
+(defn transform-netty-response [^HttpResponse response headers options]
   {:status (-> response .getStatus .getCode)
    :headers headers
-   :body (transform-netty-body (.getContent response) headers)})
+   :body (transform-netty-body (.getContent response) headers options)})

@@ -101,11 +101,15 @@
     :body))
 
 (defmacro with-server [handler & body]
-  `(let [kill-fn# (start-http-server ~handler {:port 8080})]
-     (try
-       ~@body
-       (finally
-	 (kill-fn#)))))
+  `(do
+     (println "starting server")
+     (let [kill-fn# (start-http-server ~handler {:port 8080, :auto-transform true})]
+       (println "server started")
+      (try
+	~@body
+	(finally
+	  (println "server killed")
+	  (kill-fn#))))))
 
 '(deftest browser-http-response
    (println "waiting for browser test")
@@ -119,21 +123,21 @@
 	(is (= result (wait-for-request client path)))
 	(close-connection client)))))
 
-(deftest multiple-requests
+'(deftest multiple-requests
   (with-server (create-basic-handler)
     (let [client (http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
-(deftest streaming-response
+'(deftest streaming-response
   (with-server (create-streaming-response-handler)
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get})]
       (is
 	(= (map str "abcdefghi")
 	   (channel-seq (:body result) -1))))))
 
-(deftest streaming-request
+'(deftest streaming-request
   (with-server (create-streaming-request-handler)
     (let [ch (apply sealed-channel (range 10))]
       (let [result (sync-http-request
