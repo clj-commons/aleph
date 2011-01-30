@@ -72,7 +72,9 @@
 
 (defn transform-netty-body
   "Transform body from ChannelBuffer into something more appropriate."
-  [^ChannelBuffer body headers options]
+  ([^ChannelBuffer body headers]
+     (transform-netty-body body headers {}))
+  ([^ChannelBuffer body headers options]
   (let [content-type (or (headers "content-type") (headers "Content-Type") "text/plain")
 	charset (or (get headers "charset") "UTF-8")
 	auto-transform? (or true (get options :auto-transform false))]
@@ -86,10 +88,12 @@
 	(-> body channel-buffer->input-stream InputStreamReader. from-json)
 	
 	:else
-	(channel-buffer->byte-buffers body)))))
+	(channel-buffer->byte-buffers body))))))
 
 (defn transform-aleph-body
-  [body headers options]
+  ([body headers]
+     (transform-aleph-body body headers {}))
+  ([body headers options]
   (let [content-type (or (get headers "content-type") (get headers "Content-Type") "text/plain")
 	charset (or (get headers "charset") "utf-8")
 	auto-transform? (or true (get options :auto-transform false))]
@@ -109,7 +113,7 @@
       (to-channel-buffer (to-json body))
 	
       :else
-      (throw (Exception. (str "Can't convert body: " body))))))
+      (throw (Exception. (str "Can't convert body: " body)))))))
 
 ;;;
 
@@ -127,7 +131,9 @@
 
 (defn transform-netty-request
   "Transforms a Netty request into a Ring request."
-  [^HttpRequest req options]
+  ([^HttpRequest req]
+     (transform-netty-request req {}))
+  ([^HttpRequest req options]
   (let [headers (netty-headers req)
 	parts (.split ^String (headers "host") "[:]")
 	host (first parts)
@@ -145,16 +151,22 @@
 		   ch)))}
       {:server-name host
        :server-port port}
-      (netty-request-uri req))))
+      (netty-request-uri req)))))
 
-(defn pre-process-aleph-message [msg options]
+(defn pre-process-aleph-message
+  ([msg]
+     (pre-process-aleph-message msg {}))
+  ([msg options]
   (update-in msg [:headers]
     (fn [headers]
       (zipmap
 	(map #(->> (str/split (to-str %) #"-") (map str/capitalize) (str/join "-")) (keys headers))
-	(vals headers)))))
+	(vals headers))))))
 
-(defn transform-aleph-message [^HttpMessage netty-msg msg options]
+(defn transform-aleph-message
+  ([^HttpMessage netty-msg msg]
+     (transform-aleph-message netty-msg msg {}))
+  ([^HttpMessage netty-msg msg options]
   (let [body (:body msg)]
     (doseq [[k v-or-vals] (:headers msg)]
       (when-not (nil? v-or-vals)
@@ -169,9 +181,12 @@
 	  (.setContent netty-msg (transform-aleph-body body (:headers msg) options))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
       (HttpHeaders/setContentLength netty-msg 0))
-    netty-msg))
+    netty-msg)))
 
-(defn transform-aleph-request [scheme ^String host ^Integer port request options]
+(defn transform-aleph-request
+  ([scheme ^String host ^Integer port request]
+     (transform-aleph-request scheme host port request {}))
+  ([scheme ^String host ^Integer port request options]
   (let [request (wrap-client-request request)
 	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
@@ -187,11 +202,13 @@
 	body (:body request)]
     (.setHeader req "Host" (str host ":" port))
     (.setHeader req "Accept-Encoding" "gzip")
-    (transform-aleph-message req request options)))
+    (transform-aleph-message req request options))))
 
 (defn transform-aleph-response
   "Turns a Ring response into something Netty can understand."
-  [response options]
+  ([response]
+     (transform-aleph-response response {}))
+  ([response options]
   (let [response (wrap-response response)
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
@@ -201,11 +218,14 @@
 	(if (:keep-alive? response)
 	  "keep-alive"
 	  "close"))
-      options)))
+      options))))
 
 ;;;
 
-(defn transform-netty-response [^HttpResponse response headers options]
+(defn transform-netty-response
+  ([^HttpResponse response headers]
+     (transform-netty-response response headers {}))
+  ([^HttpResponse response headers options]
   {:status (-> response .getStatus .getCode)
    :headers headers
-   :body (transform-netty-body (.getContent response) headers options)})
+   :body (transform-netty-body (.getContent response) headers options)}))
