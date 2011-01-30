@@ -102,13 +102,10 @@
 
 (defmacro with-server [handler & body]
   `(do
-     (println "starting server")
      (let [kill-fn# (start-http-server ~handler {:port 8080, :auto-transform true})]
-       (println "server started")
       (try
 	~@body
 	(finally
-	  (println "server killed")
 	  (kill-fn#))))))
 
 '(deftest browser-http-response
@@ -123,21 +120,21 @@
 	(is (= result (wait-for-request client path)))
 	(close-connection client)))))
 
-'(deftest multiple-requests
+(deftest multiple-requests
   (with-server (create-basic-handler)
     (let [client (http-client {:url "http://localhost:8080"})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
-'(deftest streaming-response
+(deftest streaming-response
   (with-server (create-streaming-response-handler)
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get})]
       (is
 	(= (map str "abcdefghi")
 	   (channel-seq (:body result) -1))))))
 
-'(deftest streaming-request
+(deftest streaming-request
   (with-server (create-streaming-request-handler)
     (let [ch (apply sealed-channel (range 10))]
       (let [result (sync-http-request
@@ -149,4 +146,10 @@
 	  (= (range 10)
 	     (channel-seq (:body result) -1)))))))
 
-
+(deftest websocket-server
+  (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8081, :websocket true})
+    (let [result (run-pipeline (websocket-client {:url "http://localhost:8081"})
+		   (fn [ch]
+		     (enqueue ch "abc")
+		     (read-channel ch 1000)))]
+      (is (= "abc" (wait-for-result result))))))

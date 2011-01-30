@@ -11,7 +11,8 @@
   (:use
     [lamina.core]
     [aleph.http core]
-    [aleph formats netty])
+    [aleph formats netty]
+    [gloss.io])
   (:import
     [org.jboss.netty.handler.codec.http.websocket
      DefaultWebSocketFrame
@@ -70,7 +71,7 @@
 	     (doto (ByteBuffer/allocate 16)
 	       (.putInt (transform-key (headers "sec-websocket-key1")))
 	       (.putInt (transform-key (headers "sec-websocket-key2")))
-	       (.putLong (-> request :body .getLong))))}))
+	       (.putLong (-> request :body contiguous .getLong))))}))
 
 (defn standard-websocket-response [request]
   (let [headers (:headers request)]
@@ -83,9 +84,9 @@
 					(str "?" (:query-string request))))
 	       "WebSocket-Protocol" (headers "websocket-protocol")}}))
 
-(defn websocket-response [^HttpRequest request]
+(defn websocket-response [^HttpRequest request options]
   (.setHeader request "content-type" "application/octet-stream")
-  (let [request (transform-netty-request request)
+  (let [request (transform-netty-request request options)
 	headers (:headers request)
 	response (if (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
 		   (secure-websocket-response request)
@@ -94,13 +95,14 @@
       (update-in response [:headers]
 	#(assoc %
 	   "upgrade" "WebSocket"
-	   "connection" "Upgrade")))))
+	   "connection" "Upgrade"))
+      options)))
 
-(defn- respond-to-handshake [ctx ^HttpRequest request]
+(defn- respond-to-handshake [ctx ^HttpRequest request options]
   (let [channel (.getChannel ctx)
 	pipeline (.getPipeline channel)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (write-to-channel channel (websocket-response request) false)
+    (write-to-channel channel (websocket-response request options) false)
     (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
 
 ;;TODO: uncomment out closing handshake, and add in timeout so that we're not waiting forever
@@ -134,8 +136,8 @@
 		      (when (closed? outer)
 			'(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
 			(.close ch))))
-		  (respond-to-handshake ctx msg)
-		  (handler inner (assoc (transform-netty-request msg) :websocket true)))
+		  (respond-to-handshake ctx msg options)
+		  (handler inner (assoc (transform-netty-request msg options) :websocket true)))
 		(.sendUpstream ctx evt))))
 	  
 	  (if-let [ch (channel-event evt)]
