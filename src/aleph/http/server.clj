@@ -101,7 +101,7 @@
 
 (defn- respond-with-channel
   [netty-channel options response]
-  (let [charset (or (get-in response [:headers "Charset"]) "UTF-8")
+  (let [charset (get-in response [:headers "Charset"] "utf-8")
 	response (-> response
 		   (assoc-in [:headers "Charset"] charset))
 	initial-response ^HttpResponse (transform-aleph-response response options)
@@ -117,6 +117,14 @@
       (fn [_]
 	(write-to-channel netty-channel HttpChunk/LAST_CHUNK false)))))
 
+(defn respond-with-channel-buffer
+  [netty-channel options response]
+  (let [response (update-in response [:headers "Content-Type"]
+		   #(or % "application/octet-stream"))]
+    (write-to-channel netty-channel
+      (transform-aleph-response response options)
+      false)))
+
 (defn respond [^Channel netty-channel options response]
   (let [response (update-in response [:headers]
 		   #(merge
@@ -126,10 +134,12 @@
     (cond
       (nil? body) (respond-with-string netty-channel options (assoc response :body ""))
       (string? body) (respond-with-string netty-channel options response)
+      ;;(to-channel-buffer? body) (respond-with-channel-buffer netty-channel options (update-in response [:body] to-channel-buffer))
       (sequential? body) (respond-with-sequence netty-channel options response)
       (channel? body) (respond-with-channel netty-channel options response)
       (instance? InputStream body) (respond-with-stream netty-channel options response)
-      (instance? File body) (respond-with-file netty-channel options response))))
+      (instance? File body) (respond-with-file netty-channel options response)
+      :else (throw (Exception. (str "Don't know how to respond with body of type " (class body)))))))
 
 ;;;
 

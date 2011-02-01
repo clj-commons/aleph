@@ -59,7 +59,7 @@
 			    (encode encoder msg)))))
 	inner (if-not decoder
 		inner
-		(splice (decode-channel decoder inner) inner))]
+		(splice (decode-channel inner decoder) inner))]
     (create-netty-pipeline
       :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
@@ -96,7 +96,7 @@
 		  (:strip-delimiters? options))
 	ch (if decoder
 	     (let [src (channel)
-		   ch* (decode-channel decoder src)]
+		   ch* (decode-channel src decoder)]
 	       (receive-all ch*
 		 (fn [msg]
 		   (if (closed? ch*)

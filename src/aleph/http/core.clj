@@ -91,23 +91,16 @@
 (defn transform-aleph-body
   [body headers options]
   (let [content-type (or (get headers "content-type") (get headers "Content-Type") "text/plain")
-	charset (or (get headers "charset") "utf-8")
-	auto-transform? (or true (get options :auto-transform false))]
+	charset (get headers "charset" "utf-8")]
     (cond
       
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
 	(ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc))))
 
-      (and auto-transform? (= content-type "application/json"))
-      (to-channel-buffer (to-json body))
-
       (to-channel-buffer? body)
       (to-channel-buffer body)
 
-      (and auto-transform? (sequential? body))
-      (to-channel-buffer (to-json body))
-	
       :else
       (throw (Exception. (str "Can't convert body: " body))))))
 
