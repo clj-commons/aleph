@@ -81,7 +81,7 @@
 		 (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)})
 		 1000)]
 	(is (= ["a"] (doall (map str (channel-seq ch 1000)))))
-	(is (closed? ch)))
+	(is (drained? ch)))
       (finally
 	(server)))))
 

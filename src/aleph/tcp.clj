@@ -99,7 +99,7 @@
 		   ch* (decode-channel src decoder)]
 	       (receive-all ch*
 		 (fn [msg]
-		   (if (closed? ch*)
+		   (if (drained? ch*)
 		     (enqueue-and-close ch msg)
 		     (enqueue ch msg))))
 	       src)

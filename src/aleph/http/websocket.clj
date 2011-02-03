@@ -133,7 +133,7 @@
 		    (fn [msg]
 		      (when msg
 			(write-to-channel ch (to-websocket-frame msg) false))
-		      (when (closed? outer)
+		      (when (drained? outer)
 			'(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
 			(.close ch))))
 		  (respond-to-handshake ctx msg options)

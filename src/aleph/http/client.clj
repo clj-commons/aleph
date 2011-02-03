@@ -84,7 +84,7 @@
     (fn [chunk]
       (when chunk
 	(enqueue out (DefaultHttpChunk. (transform-aleph-body chunk headers options))))
-      (if (closed? in)
+      (if (drained? in)
 	(enqueue out HttpChunk/LAST_CHUNK)
 	(restart)))))
 
@@ -103,7 +103,7 @@
 	(when (channel? (:body request))
 	  (read-streaming-request (:headers request) options (:body request) out))))
     (fn [_]
-      (if-not (closed? in)
+      (if-not (drained? in)
 	(restart)
 	(close-fn)))))
 

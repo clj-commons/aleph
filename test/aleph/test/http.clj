@@ -80,7 +80,7 @@
 
 (defn create-streaming-response-handler []
   (fn [ch request]
-    (let [body (apply sealed-channel (map str "abcdefghi"))]
+    (let [body (apply closed-channel (map str "abcdefghi"))]
       (enqueue ch
 	{:status 200
 	 :headers {"content-type" "text/plain"}
@@ -136,7 +136,7 @@
 
 '(deftest streaming-request
   (with-server (create-streaming-request-handler)
-    (let [ch (apply sealed-channel (range 10))]
+    (let [ch (apply closed-channel (range 10))]
       (let [result (sync-http-request
 		     {:url "http://localhost:8080"
 		      :method :post
