@@ -269,7 +269,7 @@
   (let [options (split-url options)
 	result (result-channel)
 	client (create-client
-		 #(websocket-pipeline % (:success result) (:error result))
+		 #(websocket-pipeline % (.success result) (.error result))
 		 identity
 		 options)]
     (run-pipeline client

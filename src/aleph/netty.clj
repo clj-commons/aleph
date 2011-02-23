@@ -11,6 +11,7 @@
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
     [lamina.core]
+    [lamina.core.pipeline :only (success! error!)]
     [aleph formats])
   (:require
     [clj-http.client :as client]
@@ -82,7 +83,7 @@
 
 (defn create-write-channel [^Channel netty-channel close-callback]
   (let [ch (channel)]
-    (receive (:success (receive-in-order ch (fn [_])))
+    (on-success (receive-in-order ch (fn [_]))
       (fn [_] (close-callback)))
     ch))
 
@@ -161,8 +162,8 @@
       (reify ChannelFutureListener
 	(operationComplete [_ netty-future]
 	  (if (.isSuccess netty-future)
-	    (enqueue (:success ch) (.getChannel netty-future))
-	    (enqueue (:error ch) [nil (.getCause netty-future)]))
+	    (success! ch (.getChannel netty-future))
+	    (error! ch [nil (.getCause netty-future)]))
 	  nil)))
     ch))
 
@@ -175,8 +176,8 @@
       (reify ChannelGroupFutureListener
 	(operationComplete [_ netty-future]
 	  (if (.isCompleteSuccess netty-future)
-	    (enqueue (:success ch) (.getGroup netty-future))
-	    (enqueue (:error ch) [nil (Exception. "Channel-group operation was not completely successful")]))
+	    (success! ch (.getGroup netty-future))
+	    (error! ch (Exception. "Channel-group operation was not completely successful")))
 	  nil)))
     ch))
 
