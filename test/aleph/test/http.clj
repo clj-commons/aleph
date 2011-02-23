@@ -129,7 +129,7 @@
 
 (deftest streaming-response
   (with-server (create-streaming-response-handler)
-    (let [result (sync-http-request {:url "http://localhost:8080", :method :get})]
+    (let [result (sync-http-request {:url "http://localhost:8080", :method :get} 1000)]
       (is
 	(= (map str "abcdefghi")
 	   (channel-seq (:body result) -1))))))
@@ -141,7 +141,8 @@
 		     {:url "http://localhost:8080"
 		      :method :post
 		      :headers {"content-type" "application/json"}
-		      :body ch})]
+		      :body ch}
+		     1000)]
 	(is
 	  (= (range 10)
 	     (channel-seq (:body result) -1)))))))
@@ -152,4 +153,4 @@
 		   (fn [ch]
 		     (enqueue ch "abc")
 		     (read-channel ch 1000)))]
-      (is (= "abc" (wait-for-result result))))))
+      (is (= "abc" (wait-for-result result 1000))))))

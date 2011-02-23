@@ -213,7 +213,9 @@
 	   read-channel
 	   (fn [_]
 	     (when (compare-and-set! latch false true)
-	       (close connection)))))
+	       (run-pipeline connection
+		 :error-handler (fn [_])
+		 #(close %))))))
 
        ;; request
        (run-pipeline connection

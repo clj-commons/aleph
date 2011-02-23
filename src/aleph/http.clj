@@ -28,8 +28,8 @@
   ([request]
      (sync-http-request request -1))
   ([request timeout]
-     (->> (http-request request timeout)
-       wait-for-result)))
+     (-> (http-request request timeout)
+       (wait-for-result timeout))))
 
 (import-fn policy/start-policy-file-server)
 
