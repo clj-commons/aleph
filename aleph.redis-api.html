@@ -47,7 +47,9 @@ namespace.
   <h1 class="nopad">Table of Contents</h1>
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
-    
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/redis-client">redis-client</a>
+    </div>
     <br />
   </div>
 </div>
@@ -63,7 +65,25 @@ by <span id="author">Unknown</span><br />
 <pre id="namespace-docstr"></pre>
 <br />
 <h2>Public Variables and Functions</h2>
+<div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/redis-client">redis-client</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (redis-client host)
+       (redis-client charset host)
+       (redis-client charset host port)
+</pre>
+  <pre id="var-docstr">Returns a function which represents a persistent connection to the Redis server
+located at 'host'.  The function expects a vector of strings and an optional timeout,
+in the form
 
+(f ["set" "foo" "bar"] timeout?)
+
+The function will return a result-channel representing the response.  To close the
+connection, use lamina.connections/close-connection.</pre>
+  
+</div>
 
 
 </div>
