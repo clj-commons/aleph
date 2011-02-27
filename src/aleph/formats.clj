@@ -10,6 +10,8 @@
   aleph.formats
   (:use
     [clojure.contrib.json])
+  (:require
+    [clj-http.util :as http-util])
   (:import
     [java.io
      InputStream
@@ -87,19 +89,25 @@
   ([s charset]
      (-> s (string->byte-buffer charset) byte-buffer->channel-buffer)))
 
+(defn byte-array? [data]
+  (and (.isArray (class data))
+       (= (.getComponentType (class data)) Byte/TYPE)))
+
 (defn to-channel-buffer [data]
   (cond
     (instance? ChannelBuffer data) data
     (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
     (instance? InputStream data) (input-stream->channel-buffer data)
-    (instance? String data) (string->channel-buffer data)))
+    (instance? String data) (string->channel-buffer data)
+    (byte-array? data) (string->channel-buffer (http-util/utf8-string data))))
 
 (defn to-channel-buffer? [data]
   (or
     (instance? ChannelBuffer data)
     (instance? ByteBuffer data)
     (instance? InputStream data)
-    (instance? String data)))
+    (instance? String data)
+    (byte-array? data)))
 
 ;;;
 
