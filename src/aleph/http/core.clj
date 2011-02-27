@@ -79,7 +79,9 @@
     (when-not (zero? (.readableBytes body))
       (cond
 
-	(and auto-transform? (.startsWith ^String content-type "text"))
+       (and auto-transform?
+            (or (.startsWith ^String content-type "text")
+                (= content-type "application/x-www-form-urlencoded")))
 	(channel-buffer->string body charset)
 	
 	(and auto-transform? (= content-type "application/json"))
