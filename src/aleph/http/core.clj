@@ -81,10 +81,10 @@
 
 	(and auto-transform? (.startsWith ^String content-type "text"))
 	(channel-buffer->string body charset)
-	
+
 	(and auto-transform? (= content-type "application/json"))
 	(-> body channel-buffer->input-stream InputStreamReader. from-json)
-	
+
 	:else
 	(channel-buffer->byte-buffers body)))))
 
@@ -93,7 +93,7 @@
   (let [content-type (or (get headers "content-type") (get headers "Content-Type") "text/plain")
 	charset (get headers "charset" "utf-8")]
     (cond
-      
+
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
 	(ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc))))
@@ -184,18 +184,20 @@
 
 (defn transform-aleph-response
   "Turns a Ring response into something Netty can understand."
-  [response options]
+  [response options & [websocket]]
   (let [response (wrap-response response)
 	rsp (DefaultHttpResponse.
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))]
     (transform-aleph-message rsp
-      (assoc-in response [:headers "Connection"]
-	(if (:keep-alive? response)
-	  "keep-alive"
-	  "close"))
-      options)))
+                             (if websocket
+                               response
+                               (assoc-in response [:headers "Connection"]
+                                       (if (:keep-alive? response)
+                                         "keep-alive"
+                                         "close")))
 
+                             options)))
 ;;;
 
 (defn transform-netty-response [^HttpResponse response headers options]
