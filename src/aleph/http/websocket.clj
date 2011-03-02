@@ -94,8 +94,8 @@
     (transform-aleph-response
       (update-in response [:headers]
 	#(assoc %
-	   "upgrade" "WebSocket"
-	   "connection" "Upgrade"))
+	   "Upgrade" "WebSocket"
+	   "Connection" "Upgrade"))
       options)))
 
 (defn- respond-to-handshake [ctx ^HttpRequest request options]

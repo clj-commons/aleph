@@ -190,10 +190,11 @@
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))]
     (transform-aleph-message rsp
-      (assoc-in response [:headers "Connection"]
-	(if (:keep-alive? response)
-	  "keep-alive"
-	  "close"))
+      (update-in response [:headers "Connection"]
+	#(or %
+	   (if (:keep-alive? response)
+	     "keep-alive"
+	     "close")))
       options)))
 
 ;;;
