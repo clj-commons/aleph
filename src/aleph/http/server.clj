@@ -163,7 +163,7 @@
     read-channel
     (fn [^HttpChunk request]
       (let [last? (.isLast request)
-	    body (decode-aleph-msg {:headers headers :body (.getContent request)} (:auto-transform options))]
+	    body (:body (decode-aleph-msg {:headers headers :body (.getContent request)} (:auto-transform options)))]
 	(if last?
 	  (close out)
 	  (enqueue out body))

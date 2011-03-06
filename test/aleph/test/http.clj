@@ -134,7 +134,7 @@
 	(= (map str "abcdefghi")
 	   (channel-seq (:body result) -1))))))
 
-'(deftest streaming-request
+(deftest streaming-request
   (with-server (create-streaming-request-handler)
     (let [ch (apply closed-channel (range 10))]
       (let [result (sync-http-request

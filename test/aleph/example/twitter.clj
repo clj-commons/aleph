@@ -21,7 +21,8 @@
   (let [req (sync-http-request
 	      {:method :get
 	       :basic-auth [username password]
-	       :url "http://stream.twitter.com/1/statuses/sample.json"})]
+	       :url "http://stream.twitter.com/1/statuses/sample.json"
+	       :auto-transform true})]
     (Thread/sleep 500)
     (enqueue (:body req) nil)
     req))
