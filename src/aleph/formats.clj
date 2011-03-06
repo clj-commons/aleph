@@ -31,6 +31,11 @@
 
 ;;;
 
+(defn byte-array? [data]
+  (and
+    (.isArray (class data))
+    (= (.getComponentType (class data)) Byte/TYPE)))
+
 (defn channel-buffer? [buf]
   (instance? ChannelBuffer buf))
 
@@ -105,14 +110,16 @@
        (instance? ChannelBuffer data) data
        (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
        (instance? InputStream data) (input-stream->channel-buffer data)
-       (instance? String data) (string->channel-buffer data charset))))
+       (instance? String data) (string->channel-buffer data charset)
+       (byte-array? data) (-> data ByteBuffer/wrap (byte-buffer->string charset)))))
 
 (defn to-channel-buffer? [data]
   (or
     (instance? ChannelBuffer data)
     (instance? ByteBuffer data)
     (instance? InputStream data)
-    (instance? String data)))
+    (instance? String data)
+    (byte-array? data)))
 
 ;;;
 

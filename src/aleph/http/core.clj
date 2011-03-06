@@ -95,7 +95,10 @@
       (and auto-transform? (= content-type "application/xml"))
       (update-in aleph-msg [:body] #(channel-buffer->xml->data % charset))
 
-      (and auto-transform? (.startsWith ^String content-type "text"))
+      (and auto-transform?
+	(or
+	  (.startsWith ^String content-type "text")
+	  (= content-type "application/x-www-form-urlencoded")))
       (update-in aleph-msg [:body] #(channel-buffer->string % charset))
 
       :else
