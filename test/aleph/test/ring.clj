@@ -27,7 +27,7 @@
   ([url]
      (request url :get))
   ([url method]
-     (->> (sync-http-request {:request-method method :url url})
+     (->> (sync-http-request {:request-method method, :url url, :auto-transform true})
        :body
        StringReader.
        PushbackReader.

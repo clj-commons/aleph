@@ -11,7 +11,7 @@
   (:use
     [aleph netty formats]
     [aleph.http utils]
-	[lamina.core])
+    [lamina.core])
   (:require
     [clojure.string :as str])
   (:import
@@ -56,6 +56,51 @@
 
 ;;;
 
+(defn encode-aleph-msg [aleph-msg auto-transform?]
+  (let [headers (:headers aleph-msg)
+	body (:body aleph-msg)
+	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
+	charset (or (headers "charset") (headers "Charset") "utf-8")]
+    (cond
+
+      (and auto-transform? (= content-type "application/json"))
+      (update-in aleph-msg [:body] data->json->channel-buffer)
+
+      (and auto-transform? (= content-type "application/xml"))
+      (update-in aleph-msg [:body] (data->xml->channel-buffer charset))
+
+      (instance? FileChannel body)
+      (let [fc ^FileChannel body]
+	(assoc-in aleph-msg [:body]
+	  (ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc)))))
+      
+      (to-channel-buffer? body)
+      (update-in aleph-msg [:body] #(to-channel-buffer % charset))
+
+      :else
+      aleph-msg)))
+
+(defn decode-aleph-msg [aleph-msg auto-transform?]
+  (let [headers (:headers aleph-msg)
+	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
+	charset (or (headers "charset") (headers "Charset") "utf-8")]
+    (cond
+
+      (zero? (.readableBytes ^ChannelBuffer (:body aleph-msg)))
+      (assoc-in aleph-msg [:body] nil)
+
+      (and auto-transform? (= content-type "application/json"))
+      (update-in aleph-msg [:body] channel-buffer->json->data)
+
+      (and auto-transform? (= content-type "application/xml"))
+      (update-in aleph-msg [:body] #(channel-buffer->xml->data % charset))
+
+      (and auto-transform? (.startsWith ^String content-type "text"))
+      (update-in aleph-msg [:body] #(channel-buffer->string % charset))
+
+      :else
+      (update-in aleph-msg [:body] channel-buffer->byte-buffers))))
+
 (defn final-netty-message? [response]
   (or
     (and (instance? HttpChunk response) (.isLast ^HttpChunk response))
@@ -69,40 +114,6 @@
       (map
 	(fn [[k v]] [(str/lower-case k) v])
 	(into {} (.getHeaders msg))))))
-
-(defn transform-netty-body
-  "Transform body from ChannelBuffer into something more appropriate."
-  [^ChannelBuffer body headers options]
-  (let [content-type (or (headers "content-type") (headers "Content-Type") "text/plain")
-	charset (or (get headers "charset") "UTF-8")
-	auto-transform? (or true (get options :auto-transform false))]
-    (when-not (zero? (.readableBytes body))
-      (cond
-
-	(and auto-transform? (.startsWith ^String content-type "text"))
-	(channel-buffer->string body charset)
-	
-	(and auto-transform? (= content-type "application/json"))
-	(-> body channel-buffer->input-stream InputStreamReader. from-json)
-	
-	:else
-	(channel-buffer->byte-buffers body)))))
-
-(defn transform-aleph-body
-  [body headers options]
-  (let [content-type (or (get headers "content-type") (get headers "Content-Type") "text/plain")
-	charset (get headers "charset" "utf-8")]
-    (cond
-      
-      (instance? FileChannel body)
-      (let [fc ^FileChannel body]
-	(ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc))))
-
-      (to-channel-buffer? body)
-      (to-channel-buffer body)
-
-      :else
-      (throw (Exception. (str "Can't convert body: " body))))))
 
 ;;;
 
@@ -128,8 +139,11 @@
 	       (Integer/parseInt port))]
     (merge
       (netty-request-method req)
-      {:headers headers}
-      {:body (let [body (transform-netty-body (.getContent req) headers options)]
+      {:headers headers
+       :body (let [body (:body
+			  (decode-aleph-msg
+			    {:headers headers :body (.getContent req)}
+			    (:auto-transform options)))]
 	       (if (final-netty-message? req)
 		 body
 		 (let [ch (channel)]
@@ -159,7 +173,7 @@
       (if (channel? body)
 	(.setHeader netty-msg "Transfer-Encoding" "chunked")
 	(do
-	  (.setContent netty-msg (transform-aleph-body body (:headers msg) options))
+	  (.setContent netty-msg (:body (encode-aleph-msg msg (:auto-transform options))))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
       (HttpHeaders/setContentLength netty-msg 0))
     netty-msg))
@@ -202,4 +216,4 @@
 (defn transform-netty-response [^HttpResponse response headers options]
   {:status (-> response .getStatus .getCode)
    :headers headers
-   :body (transform-netty-body (.getContent response) headers options)})
+   :body (:body (decode-aleph-msg {:headers headers, :body (.getContent response)} (:auto-transform options)))})

@@ -105,13 +105,17 @@
 	response (-> response
 		   (assoc-in [:headers "Charset"] charset))
 	initial-response ^HttpResponse (transform-aleph-response response options)
-	ch (:body response)]
+	ch (:body response)
+	headers (:headers response)]
     (run-pipeline (write-to-channel netty-channel initial-response false)
       (fn [_]
 	(receive-in-order ch
 	  (fn [msg]
 	    (when msg
-	      (let [msg (transform-aleph-body msg (:headers response) options)
+	      (let [msg (:body
+			  (encode-aleph-msg
+			    {:headers headers :body msg}
+			    (:auto-transform options)))
 		    chunk (DefaultHttpChunk. msg)]
 		(write-to-channel netty-channel chunk false))))))
       (fn [_]
@@ -134,12 +138,21 @@
     (cond
       (nil? body) (respond-with-string netty-channel options (assoc response :body ""))
       (string? body) (respond-with-string netty-channel options response)
-      ;;(to-channel-buffer? body) (respond-with-channel-buffer netty-channel options (update-in response [:body] to-channel-buffer))
-      (sequential? body) (respond-with-sequence netty-channel options response)
       (channel? body) (respond-with-channel netty-channel options response)
       (instance? InputStream body) (respond-with-stream netty-channel options response)
       (instance? File body) (respond-with-file netty-channel options response)
-      :else (throw (Exception. (str "Don't know how to respond with body of type " (class body)))))))
+      :else (let [response (encode-aleph-msg response (:auto-transform options))
+		  original-body body
+		  body (:body response)]
+	      (cond
+		(sequential? body)
+		(respond-with-sequence netty-channel options response)
+
+		(channel-buffer? body)
+		(respond-with-channel-buffer netty-channel options response)
+
+		:else
+		(throw (Exception. (str "Don't know how to respond with body of type " (prn-str original-body) (class body)))))))))
 
 ;;;
 
@@ -150,7 +163,7 @@
     read-channel
     (fn [^HttpChunk request]
       (let [last? (.isLast request)
-	    body (transform-netty-body (.getContent request) headers options)]
+	    body (decode-aleph-msg {:headers headers :body (.getContent request)} (:auto-transform options))]
 	(if last?
 	  (close out)
 	  (enqueue out body))

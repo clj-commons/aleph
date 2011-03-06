@@ -96,7 +96,7 @@
 ;;;
 
 (defn wait-for-request [client path]
-  (-> (client {:method :get, :url (str "http://localhost:8080/" path)})
+  (-> (client {:method :get, :url (str "http://localhost:8080/" path), :auto-transform true})
     (wait-for-result 1000)
     :body))
 
@@ -116,20 +116,20 @@
 (deftest single-requests
   (with-server (create-basic-handler)
     (doseq [[index [path result]] (indexed expected-results)]
-      (let [client (http-client {:url "http://localhost:8080"})]
+      (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
 	(is (= result (wait-for-request client path)))
 	(close-connection client)))))
 
 (deftest multiple-requests
   (with-server (create-basic-handler)
-    (let [client (http-client {:url "http://localhost:8080"})]
+    (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
 (deftest streaming-response
   (with-server (create-streaming-response-handler)
-    (let [result (sync-http-request {:url "http://localhost:8080", :method :get} 1000)]
+    (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
       (is
 	(= (map str "abcdefghi")
 	   (channel-seq (:body result) -1))))))
@@ -141,7 +141,8 @@
 		     {:url "http://localhost:8080"
 		      :method :post
 		      :headers {"content-type" "application/json"}
-		      :body ch}
+		      :body ch,
+		      :auto-transform true}
 		     1000)]
 	(is
 	  (= (range 10)

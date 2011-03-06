@@ -6,13 +6,16 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns ^{:skip-wiki true}
+(ns 
   aleph.formats
-  (:use
-    [clojure.contrib.json])
+  (:require
+    [clojure.contrib.json :as json]
+    [clojure.xml :as xml]
+    [clojure.contrib.prxml :as prxml])
   (:import
     [java.io
      InputStream
+     InputStreamReader
      PrintWriter
      ByteArrayOutputStream]
     [java.nio
@@ -22,10 +25,14 @@
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
+     CompositeChannelBuffer 
      ChannelBufferInputStream
      ByteBufferBackedChannelBuffer]))
 
 ;;;
+
+(defn channel-buffer? [buf]
+  (instance? ChannelBuffer buf))
 
 (defn channel-buffer->input-stream
   [^ChannelBuffer buf]
@@ -48,6 +55,9 @@
   ([buf charset]
      (when buf
        (.toString ^ChannelBuffer buf ^String charset))))
+
+(defn concat-channel-buffers [& bufs]
+  (ChannelBuffers/wrappedBuffer (into-array ChannelBuffer bufs)))
 
 ;;;
 
@@ -87,12 +97,15 @@
   ([s charset]
      (-> s (string->byte-buffer charset) byte-buffer->channel-buffer)))
 
-(defn to-channel-buffer [data]
-  (cond
-    (instance? ChannelBuffer data) data
-    (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
-    (instance? InputStream data) (input-stream->channel-buffer data)
-    (instance? String data) (string->channel-buffer data)))
+(defn to-channel-buffer
+  ([data]
+     (to-channel-buffer data "utf-8"))
+  ([data charset]
+     (cond
+       (instance? ChannelBuffer data) data
+       (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
+       (instance? InputStream data) (input-stream->channel-buffer data)
+       (instance? String data) (string->channel-buffer data charset))))
 
 (defn to-channel-buffer? [data]
   (or
@@ -117,12 +130,47 @@
 
 ;;;
 
-(defn from-json [data]
-  (read-json-from data true false nil))
-
-(defn to-json [x]
+(defn data->json->channel-buffer [data]
   (let [output (ByteArrayOutputStream.)
 	writer (PrintWriter. output)]
-    (write-json x writer)
+    (json/write-json data writer)
     (.flush writer)
-    (-> output .toByteArray ByteBuffer/wrap)))
+    (-> output .toByteArray ByteBuffer/wrap byte-buffer->channel-buffer)))
+
+(defn data->json->string [data]
+  (-> data data->json->channel-buffer channel-buffer->string))
+
+(defn channel-buffer->json->data [buf]
+  (-> buf channel-buffer->input-stream InputStreamReader. (json/read-json-from true false nil)))
+
+(defn string->json->data [s]
+  (-> s string->channel-buffer channel-buffer->json->data))
+
+;;;
+
+(defn channel-buffer->xml->data [buf]
+  (-> buf channel-buffer->input-stream xml/parse))
+
+(defn string->xml->data
+  ([s]
+     (string->xml->data s "utf-8"))
+  ([s charset]
+     (-> s (string->channel-buffer charset) channel-buffer->input-stream xml/parse)))
+
+(defn data->xml->string
+  ([x]
+     (data->xml->string x "utf-8"))
+  ([x charset]
+     (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}] x))))
+
+(defn data->xml->channel-buffer
+  ([x]
+     (data->xml->string x "utf-8"))
+  ([x charset]
+     (concat-channel-buffers
+       (string->channel-buffer
+	 (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}]))
+	 "ascii")
+       (string->channel-buffer
+	 (with-out-str (prxml/prxml x))
+	 charset))))
