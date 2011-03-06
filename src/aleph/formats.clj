@@ -111,7 +111,7 @@
        (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
        (instance? InputStream data) (input-stream->channel-buffer data)
        (instance? String data) (string->channel-buffer data charset)
-       (byte-array? data) (-> data ByteBuffer/wrap (byte-buffer->string charset)))))
+       (byte-array? data) (-> data ByteBuffer/wrap byte-buffer->channel-buffer))))
 
 (defn to-channel-buffer? [data]
   (or
