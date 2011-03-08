@@ -67,7 +67,7 @@
       (update-in aleph-msg [:body] data->json->channel-buffer)
 
       (and auto-transform? (= content-type "application/xml"))
-      (update-in aleph-msg [:body] (data->xml->channel-buffer charset))
+      (update-in aleph-msg [:body] #(data->xml->channel-buffer % charset))
 
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
@@ -93,7 +93,7 @@
       (update-in aleph-msg [:body] channel-buffer->json->data)
 
       (and auto-transform? (= content-type "application/xml"))
-      (update-in aleph-msg [:body] #(channel-buffer->xml->data % charset))
+      (update-in aleph-msg [:body] channel-buffer->xml->data)
 
       (and auto-transform?
 	(or

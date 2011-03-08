@@ -13,6 +13,8 @@
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
+  (:require
+    [clojure.string :as str])
   (:import
     [java.io
      File
@@ -90,7 +92,7 @@
   (fn [ch request]
     (enqueue ch
       {:status 200
-       :headers {"content-type" "application/json"}
+       :headers {"content-type" (get-in request [:headers "content-type"])}
        :body (:body request)})))
 
 ;;;
@@ -135,18 +137,18 @@
 	   (channel-seq (:body result) -1))))))
 
 (deftest streaming-request
-  (with-server (create-streaming-request-handler)
-    (let [ch (apply closed-channel (range 10))]
-      (let [result (sync-http-request
-		     {:url "http://localhost:8080"
-		      :method :post
-		      :headers {"content-type" "application/json"}
-		      :body ch,
-		      :auto-transform true}
-		     1000)]
-	(is
-	  (= (range 10)
-	     (channel-seq (:body result) -1)))))))
+  (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
+    (doseq [content-type ["application/xml"]]
+      (with-server (create-streaming-request-handler)
+	(let [ch (apply closed-channel s)]
+	  (let [result (sync-http-request
+			 {:url "http://localhost:8080"
+			  :method :post
+			  :headers {"content-type" content-type}
+			  :body ch,
+			  :auto-transform true}
+			 1000)]
+	    (is (= s (map #(update-in % [:content 0] str/trim) (channel-seq (:body result) -1))))))))))
 
 (deftest websocket-server
   (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8081, :websocket true})

@@ -62,7 +62,7 @@
        (.toString ^ChannelBuffer buf ^String charset))))
 
 (defn concat-channel-buffers [& bufs]
-  (ChannelBuffers/wrappedBuffer (into-array ChannelBuffer bufs)))
+  (ChannelBuffers/wrappedBuffer (into-array ChannelBuffer (remove nil? bufs))))
 
 ;;;
 
@@ -168,16 +168,23 @@
   ([x]
      (data->xml->string x "utf-8"))
   ([x charset]
-     (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}] x))))
+     (with-out-str
+       (prxml/prxml [:decl! {:version "1.0" :encoding charset}])
+       (cond
+	 (vector? x) (prxml/prxml x)
+	 (map? x) (xml/emit-element x)))))
 
 (defn data->xml->channel-buffer
   ([x]
-     (data->xml->string x "utf-8"))
+     (data->xml->channel-buffer x "utf-8"))
   ([x charset]
      (concat-channel-buffers
        (string->channel-buffer
 	 (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}]))
 	 "ascii")
        (string->channel-buffer
-	 (with-out-str (prxml/prxml x))
+	 (with-out-str
+	   (cond
+	     (vector? x) (prxml/prxml x)
+	     (map? x) (xml/emit-element x)))
 	 charset))))

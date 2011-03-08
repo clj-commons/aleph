@@ -1,0 +1,9 @@
+src/aleph/formats.clj:140:(defn data->json->channel-buffer [data]
+src/aleph/formats.clj:147:(defn data->json->string [data]
+src/aleph/formats.clj:148:  (-> data data->json->channel-buffer channel-buffer->string))
+src/aleph/formats.clj:167:(defn data->xml->string
+src/aleph/formats.clj:169:     (data->xml->string x "utf-8"))
+src/aleph/formats.clj:175:(defn data->xml->channel-buffer
+src/aleph/formats.clj:177:     (data->xml->string x "utf-8"))
+src/aleph/http/core.clj:67:      (update-in aleph-msg [:body] data->json->channel-buffer)
+src/aleph/http/core.clj:70:      (update-in aleph-msg [:body] (data->xml->channel-buffer charset))
