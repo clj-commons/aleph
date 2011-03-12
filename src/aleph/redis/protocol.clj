@@ -30,15 +30,18 @@
 	bulk (compile-frame [:bulk (finite-frame (string-prefix 2) str-codec)])
 	m {:error str-codec
 	   :single-line str-codec
-	   :integer (string-integer :ascii :delimiters ["\r\n"])
-	   :multi-bulk (repeated
-			 (header format-byte (constantly bulk) (constantly :bulk))
-			 :prefix (string-prefix 0))}
+	   :integer (string-integer :ascii :delimiters ["\r\n"])}
 	m (into {}
 	    (map
 	      (fn [[k v]] [k (compile-frame [k v])])
-	      m))]
-    (assoc m :bulk bulk)))
+	      m))
+	m (assoc m :bulk bulk)]
+    (assoc m
+      :multi-bulk (compile-frame
+		    [:multi-bulk
+		     (repeated
+		       (header format-byte m (constantly :bulk))
+		       :prefix (string-prefix 0))]))))
 
 (defn process-response [rsp]
   (case (first rsp)
