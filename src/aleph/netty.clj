@@ -191,18 +191,22 @@
       nil)))
 
 (defn write-to-channel
-  [^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write}]
+  [^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write
+                                        host :host port :port}]
   (when (.isOpen netty-channel)
     (if msg
-      (run-pipeline (io! (.write netty-channel msg))
-	wrap-netty-channel-future
-	(fn [_]
-	  (when write-callback
-	    (write-callback))
-	  (when close?
-	    (close-channel netty-channel close-callback))))
+      (run-pipeline (io!
+                      (if (and host port)
+                        (.write netty-channel msg (InetSocketAddress. host port))
+                        (.write netty-channel msg)))
+                    wrap-netty-channel-future
+                    (fn [_]
+                      (when write-callback
+                        (write-callback))
+                      (when close?
+                        (close-channel netty-channel close-callback))))
       (when close?
-	(close-channel netty-channel close-callback)))))
+        (close-channel netty-channel close-callback)))))
 
 ;;;
 
