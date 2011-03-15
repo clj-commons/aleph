@@ -23,10 +23,10 @@
    The function will return a result-channel representing the response.  To close the
    connection, use lamina.connections/close-connection."
   ([options]
-     (let [options (merge {:port 6379 :charset :utf-8})]
+     (let [options (merge options {:port 6379 :charset :utf-8})]
        (client
 	 #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-	 (str "redis @ " host ":" port)))))
+	 (str "redis @ " (:host options) ":" (:port options))))))
 
 (defn enqueue-task
   "Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure."
@@ -52,7 +52,7 @@
 
    Messages from the stream will be of the structure {:channel \"channel\", :message \"message\"}."
   ([options]
-     (let [options (merge {:port 6379 :charset :utf-8})
+     (let [options (merge options {:port 6379 :charset :utf-8})
 	   control-messages (channel)
 	   stream (channel)
 	   control-message-accumulator (atom [])]
@@ -60,7 +60,7 @@
 	 #(swap! control-message-accumulator conj %))
        (let [connection (persistent-connection
 			  #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-			  (str "redis stream @ " host ":" port)
+			  (str "redis stream @ " (:host options) ":" (:port options))
 			  (fn [ch]
 			    ;; NOTE: this is a bit of a race condition (subscription messages
 			    ;; may be sent twice), but subscription messages are idempotent.
