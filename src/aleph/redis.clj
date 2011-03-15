@@ -35,7 +35,9 @@
 
 (defn receive-task
   "Receives a task from one of the specified queues.  Returns a result-channel which will
-   emit a value with the structure {:queue \"queue-name\", :task 1}."
+   emit a value with the structure {:queue \"queue-name\", :task 1}.  It is assumed that the
+   value received from Redis will be a readable data structure, and :task will contain a
+   Clojure data structure."
   [redis-client & queue-names]
   (run-pipeline
     (redis-client (concat ["brpop"] queue-names [0]))
@@ -50,7 +52,8 @@
    (pattern-subscribe stream & channel-patterns). To unsubscribe, use (unsubscribe ...) and
    (pattern-unsubscribe ...).
 
-   Messages from the stream will be of the structure {:channel \"channel\", :message \"message\"}."
+   Messages from the stream will be of the structure {:channel \"channel-name\", :message \"message\"}.
+  :message will always be a string."
   ([options]
      (let [options (merge options {:port 6379 :charset :utf-8})
 	   control-messages (channel)
