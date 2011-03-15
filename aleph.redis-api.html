@@ -48,16 +48,30 @@ namespace.
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
     <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/close-stream">close-stream</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/enqueue-task">enqueue-task</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/pattern-subscribe">pattern-subscribe</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/pattern-unsubscribe">pattern-unsubscribe</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/receive-task">receive-task</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.redis/redis-client">redis-client</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.redis/redis-stream">redis-stream</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/subscribe">subscribe</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.redis/unsubscribe">unsubscribe</a>
     </div>
     <br />
   </div>
 </div>
 </div>
                 <div id="content-tag"><h1 id="overview">API for <span id="namespace-name">aleph.redis</span></h1>
-by <span id="author">Unknown</span><br />
+by <span id="author">Zachary Tellman</span><br />
 <br />Usage:
 <pre>
 (ns your-namespace
@@ -68,6 +82,54 @@ by <span id="author">Unknown</span><br />
 <br />
 <h2>Public Variables and Functions</h2>
 <div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/close-stream">close-stream</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (close-stream redis-stream)
+</pre>
+  <pre id="var-docstr">Closes a Redis stream.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/enqueue-task">enqueue-task</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (enqueue-task redis-client queue-name task)
+</pre>
+  <pre id="var-docstr">Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/pattern-subscribe">pattern-subscribe</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (pattern-subscribe redis-stream &amp; channel-patterns)
+</pre>
+  <pre id="var-docstr">Subscribes a stream to zero or more channels matching the patterns given.  Corresponds to
+the PSUBSCRIBE command.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/pattern-unsubscribe">pattern-unsubscribe</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (pattern-unsubscribe redis-stream &amp; channel-patterns)
+</pre>
+  <pre id="var-docstr">Unsubscribes a stream from zero or more channels matching the patterns given.  Corresponds
+to the PUNSUBSCRIBE command.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/receive-task">receive-task</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (receive-task redis-client &amp; queue-names)
+</pre>
+  <pre id="var-docstr">Receives a task from one of the specified queues.  Returns a result-channel which will
+emit a value with the structure {:queue "queue-name", :task 1}.</pre>
+  
+</div><div id="var-entry">
   <br />
   <hr />
   <h2 id="aleph.redis/redis-client">redis-client</h2>
@@ -94,7 +156,30 @@ connection, use lamina.connections/close-connection.</pre>
        (redis-stream charset host)
        (redis-stream charset host port)
 </pre>
-  <pre id="var-docstr">Returns a channel representing a subscription stream using Redis' pub-sub functionality.</pre>
+  <pre id="var-docstr">Returns a channel representing a stream from Redis.  Initially, the stream is not
+subscribed to any channels; to receive events, subscribe to channels using
+(subscribe stream &amp; channel-names) or (pattern-subscribe stream &amp; channel-patterns).
+To unsubscribe, use (unsubscribe ...) and (pattern-unsubscribe ...).
+
+Messages from the stream will be of the structure {:channel "channel", :message "message"}.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/subscribe">subscribe</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (subscribe redis-stream &amp; channel-names)
+</pre>
+  <pre id="var-docstr">Subscribes a stream to one or more channels.  Corresponds to the SUBSCRIBE command.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.redis/unsubscribe">unsubscribe</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (unsubscribe redis-stream &amp; channel-names)
+</pre>
+  <pre id="var-docstr">Unsubscribes a stream from one or more channels.  Corresponds to the UNSUBSCRIBE command.</pre>
   
 </div>
 
