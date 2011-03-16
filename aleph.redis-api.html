@@ -156,14 +156,14 @@ connection, use lamina.connections/close-connection.</pre>
   <pre id="var-usage">Usage: (redis-stream options)
 </pre>
   <pre id="var-docstr">Returns a channel representing a stream from the Redis server located at :host. 'options'
- may also specify the :port and :charset used for this stream.
+may also specify the :port and :charset used for this stream.
 
- Initially, the stream is not subscribed to any channels; to receive events, subscribe to
- channels using (subscribe stream &amp; channel-names) or
- (pattern-subscribe stream &amp; channel-patterns). To unsubscribe, use (unsubscribe ...) and
- (pattern-unsubscribe ...).
+Initially, the stream is not subscribed to any channels; to receive events, subscribe to
+channels using (subscribe stream &amp; channel-names) or
+(pattern-subscribe stream &amp; channel-patterns). To unsubscribe, use (unsubscribe ...) and
+(pattern-unsubscribe ...).
 
- Messages from the stream will be of the structure {:channel "channel-name", :message "message"}.
+Messages from the stream will be of the structure {:channel "channel-name", :message "message"}.
 :message will always be a string.</pre>
   
 </div><div id="var-entry">
