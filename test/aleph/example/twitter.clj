@@ -24,6 +24,8 @@
 	       :basic-auth [username password]
 	       :url "http://stream.twitter.com/1/statuses/sample.json"
 	       :auto-transform true})]
+    (Thread/sleep 500)
+    (close (:body req))
     req))
 
 (defn twitter-proxy-handler [ch request]
@@ -61,7 +63,7 @@
     "/proxy" (twitter-proxy-handler ch request)
     "/broadcast" (twitter-broadcast-handler ch request)))
 
-'(deftest twitter-test
+(deftest twitter-test
    (let [stop-server (start-http-server request-handler {:port 8080})]
      (try
        (Thread/sleep 10000)

@@ -102,8 +102,7 @@
 (defn- respond-with-channel
   [netty-channel options response]
   (let [charset (get-in response [:headers "Charset"] "utf-8")
-	response (-> response
-		   (assoc-in [:headers "Charset"] charset))
+	response (assoc-in response [:headers "Charset"] charset)
 	initial-response ^HttpResponse (transform-aleph-response response options)
 	ch (:body response)
 	headers (:headers response)]
@@ -112,10 +111,12 @@
 	(receive-in-order ch
 	  (fn [msg]
 	    (when msg
-	      (let [msg (:body
-			  (encode-aleph-msg
-			    {:headers headers :body msg}
-			    (:auto-transform options)))
+	      (let [msg (to-channel-buffer
+			  (:body
+			    (encode-aleph-msg
+			      {:headers headers :body msg}
+			      (:auto-transform options)))
+			  charset)
 		    chunk (DefaultHttpChunk. msg)]
 		(write-to-channel netty-channel chunk false))))))
       (fn [_]

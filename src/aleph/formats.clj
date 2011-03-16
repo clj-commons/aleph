@@ -52,7 +52,10 @@
 (defn channel-buffer->byte-buffers
   [^ChannelBuffer buf]
   (when buf
-    (.toByteBuffers buf)))
+    (seq (.toByteBuffers buf))))
+
+(defn byte-buffers->channel-buffer [bufs]
+  (ChannelBuffers/wrappedBuffer (into-array ByteBuffer (remove nil? bufs))))
 
 (defn channel-buffer->string
   ([buf]
@@ -130,6 +133,7 @@
        (instance? ByteBuffer data) (byte-buffer->channel-buffer data)
        (instance? InputStream data) (input-stream->channel-buffer data)
        (instance? String data) (string->channel-buffer data charset)
+       (and (sequential? data) (every? #(instance? ByteBuffer %) data)) (byte-buffers->channel-buffer data)
        (byte-array? data) (-> data ByteBuffer/wrap byte-buffer->channel-buffer))))
 
 (defn to-channel-buffer? [data]
@@ -138,6 +142,7 @@
     (instance? ByteBuffer data)
     (instance? InputStream data)
     (instance? String data)
+    (and (sequential? data) (every? #(instance? ByteBuffer %) data))
     (byte-array? data)))
 
 ;;;

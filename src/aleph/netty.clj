@@ -163,7 +163,7 @@
 	(operationComplete [_ netty-future]
 	  (if (.isSuccess netty-future)
 	    (success! ch (.getChannel netty-future))
-	    (error! ch [nil (.getCause netty-future)]))
+	    (error! ch (.getCause netty-future)))
 	  nil)))
     ch))
 
