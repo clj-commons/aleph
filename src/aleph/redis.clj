@@ -43,6 +43,19 @@
     (redis-client (concat ["brpop"] queue-names [0]))
     #(hash-map :queue (first %) :task (read-string (second %)))))
 
+(defn- filter-messages [ch]
+  (->> ch
+    (filter*
+      #(and
+	 (sequential? %)
+	 (let [type (str (first %))]
+	   (or (= "message" type) (= "pmessage" type)))))
+    (map*
+      #(let [cnt (count %)]
+	 (hash-map
+	   :channel (nth % (- cnt 2))
+	   :message (nth % (- cnt 1)))))))
+
 (defn redis-stream
   "Returns a channel representing a stream from the Redis server located at :host. 'options'
    may also specify the :port and :charset used for this stream.
@@ -53,7 +66,7 @@
    (pattern-unsubscribe ...).
 
    Messages from the stream will be of the structure {:channel \"channel-name\", :message \"message\"}.
-  :message will always be a string."
+   :message will always be a string."
   ([options]
      (let [options (merge options {:port 6379 :charset :utf-8})
 	   control-messages (channel)
@@ -72,11 +85,7 @@
 			      (doseq [msg @control-message-accumulator]
 				(enqueue ch msg))
 			      (siphon control-messages* ch))
-			    (siphon 
-			      (->> ch
-				(filter* #(and (sequential? %) (= "message" (-> % first str))))
-				(map* #(hash-map :channel (nth % 1) :message (nth % 2))))
-			      stream)))]
+			    (siphon (filter-messages ch) stream)))]
 	 (with-meta
 	   (splice stream control-messages)
 	   {::close-fn (fn []
@@ -87,28 +96,24 @@
 (defn subscribe
   "Subscribes a stream to one or more channels.  Corresponds to the SUBSCRIBE command."
   [redis-stream & channel-names]
-  (doseq [c channel-names]
-    (enqueue redis-stream ["subscribe" c])))
+  (enqueue redis-stream (list* "subscribe" channel-names)))
 
 (defn pattern-subscribe
   "Subscribes a stream to zero or more channels matching the patterns given.  Corresponds to
    the PSUBSCRIBE command."
   [redis-stream & channel-patterns]
-  (doseq [c channel-patterns]
-    (enqueue redis-stream ["psubscribe" c])))
+  (enqueue redis-stream (list* "psubscribe" channel-patterns)))
 
 (defn unsubscribe
   "Unsubscribes a stream from one or more channels.  Corresponds to the UNSUBSCRIBE command."
   [redis-stream & channel-names]
-  (doseq [c channel-names]
-    (enqueue redis-stream ["unsubscribe" c])))
+  (enqueue redis-stream (list* "unsubscribe" channel-names)))
 
 (defn pattern-unsubscribe
   "Unsubscribes a stream from zero or more channels matching the patterns given.  Corresponds
    to the PUNSUBSCRIBE command."
   [redis-stream & channel-patterns]
-  (doseq [c channel-patterns]
-    (enqueue redis-stream ["punsubscribe" c])))
+  (enqueue redis-stream (list* "punsubscribe" channel-patterns)))
 
 (defn close-stream
   "Closes a Redis stream."

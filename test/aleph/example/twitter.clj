@@ -8,7 +8,8 @@
 
 (ns aleph.example.twitter
   (:use
-    [lamina.core]
+    [lamina core]
+    [clojure test]
     [aleph http formats]))
 
 ;; NOTE: Twitter's moved over to OAuth for most streams.  This example still works,
@@ -23,7 +24,47 @@
 	       :basic-auth [username password]
 	       :url "http://stream.twitter.com/1/statuses/sample.json"
 	       :auto-transform true})]
-    (Thread/sleep 500)
-    (enqueue (:body req) nil)
     req))
 
+(defn twitter-proxy-handler [ch request]
+  ;; since we use the same format for our responses and the ones we receive from
+  ;; requests, we can simply pass Twitter's response along to our user
+  (async
+    (enqueue ch
+      (http-request 
+	{:method :get 
+	 :basic-auth ["aleph_example" "_password"]
+	 :url "http://stream.twitter.com/1/statuses/sample.json"}))))
+
+(defn init-stream-channel [ch]
+  ;; we need a sink for messages, since we always fork the original channel
+  (receive-all ch (fn [_] ))
+  ;; take the body of the response, and siphon it into the channel
+  (async
+    (let [response (http-request 
+		     {:method :get 
+		      :basic-auth ["aleph_example" "_password"]
+		      :url "http://stream.twitter.com/1/statuses/sample.json"})]
+      (siphon (:body response) ch))))
+
+(defn twitter-broadcast-handler [ch request]
+  ;; get the shared broadcast channel, and use a forked version of it as
+  ;; the body of our response
+  (let [twitter-stream (named-channel :twitter-stream init-stream-channel)]
+    (enqueue ch
+      {:status 200
+       :headers {"content-type" "application/json"}
+       :body (fork twitter-stream)})))
+
+(defn request-handler [ch request]
+  (condp = (:uri request)
+    "/proxy" (twitter-proxy-handler ch request)
+    "/broadcast" (twitter-broadcast-handler ch request)))
+
+'(deftest twitter-test
+   (let [stop-server (start-http-server request-handler {:port 8080})]
+     (try
+       (Thread/sleep 10000)
+       (finally
+	 (release-named-channel :twitter-stream)
+	 (stop-server)))))

@@ -64,6 +64,15 @@
 (defn concat-channel-buffers [& bufs]
   (ChannelBuffers/wrappedBuffer (into-array ChannelBuffer (remove nil? bufs))))
 
+(defn concat-byte-buffers [& bufs]
+  (if (= 1 (count bufs))
+    (first bufs)
+    (let [size (apply + (map #(.remaining ^ByteBuffer %) bufs))
+	  buf (ByteBuffer/allocate size)]
+      (doseq [b bufs]
+	(.put buf b))
+      (.rewind buf))))
+
 ;;;
 
 (defn byte-buffer->string
@@ -84,17 +93,27 @@
 
 ;;;
 
-(defn input-stream->channel-buffer
+(defn input-stream->byte-buffer
   [^InputStream stream]
   (when stream
-    (let [ary (make-array Byte/TYPE (.available stream))]
-      (.read stream ary)
-      (ChannelBuffers/wrappedBuffer ary))))
+    (let [available (.available stream)]
+      (loop [ary ^bytes (byte-array (if (pos? available) available 1024)), offset 0, bufs []]
+	(let [ary-len (count ary)]
+	  (if (= ary-len offset)
+	    (recur (byte-array 1024) 0 (conj bufs (ByteBuffer/wrap ary)))
+	    (let [byte-count (.read stream ary offset (- ary-len offset))]
+	      (if (neg? byte-count)
+		(apply concat-byte-buffers (conj bufs (ByteBuffer/wrap ary 0 offset)))
+		(recur ary (+ offset byte-count) bufs)))))))))
 
 (defn byte-buffer->channel-buffer
   [^ByteBuffer buf]
   (when buf
     (ByteBufferBackedChannelBuffer. buf)))
+
+(defn input-stream->channel-buffer
+  [stream]
+  (-> stream input-stream->byte-buffer byte-buffer->channel-buffer))
 
 (defn string->channel-buffer
   ([s]
@@ -188,3 +207,6 @@
 	     (vector? x) (prxml/prxml x)
 	     (map? x) (xml/emit-element x)))
 	 charset))))
+
+;;;
+
