@@ -47,13 +47,71 @@ namespace.
   <h1 class="nopad">Table of Contents</h1>
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
-    
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/base64-decode">base64-decode</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/base64-encode">base64-encode</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/byte-array?">byte-array?</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/byte-buffer-&gt;channel-buffer">byte-buffer-&gt;channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/byte-buffer-&gt;string">byte-buffer-&gt;string</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/byte-buffers-&gt;channel-buffer">byte-buffers-&gt;channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer-&gt;byte-buffer">channel-buffer-&gt;byte-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer-&gt;byte-buffers">channel-buffer-&gt;byte-buffers</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer-&gt;input-stream">channel-buffer-&gt;input-stream</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer-&gt;json-&gt;data">channel-buffer-&gt;json-&gt;data</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer-&gt;string">channel-buffer-&gt;string</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer-&gt;xml-&gt;data">channel-buffer-&gt;xml-&gt;data</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/channel-buffer?">channel-buffer?</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/concat-byte-buffers">concat-byte-buffers</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/concat-channel-buffers">concat-channel-buffers</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/data-&gt;json-&gt;channel-buffer">data-&gt;json-&gt;channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/data-&gt;json-&gt;string">data-&gt;json-&gt;string</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/data-&gt;xml-&gt;channel-buffer">data-&gt;xml-&gt;channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/data-&gt;xml-&gt;string">data-&gt;xml-&gt;string</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/input-stream-&gt;byte-buffer">input-stream-&gt;byte-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/input-stream-&gt;channel-buffer">input-stream-&gt;channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/string-&gt;byte-buffer">string-&gt;byte-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/string-&gt;channel-buffer">string-&gt;channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/string-&gt;json-&gt;data">string-&gt;json-&gt;data</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/string-&gt;xml-&gt;data">string-&gt;xml-&gt;data</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/to-channel-buffer">to-channel-buffer</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/to-channel-buffer?">to-channel-buffer?</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/url-decode">url-decode</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/url-encode">url-encode</a>
+    </div>
     <br />
   </div>
 </div>
 </div>
                 <div id="content-tag"><h1 id="overview">API for <span id="namespace-name">aleph.formats</span></h1>
-by <span id="author">Unknown</span><br />
+by <span id="author">Zachary Tellman</span><br />
 <br />Usage:
 <pre>
 (ns your-namespace
@@ -63,7 +121,296 @@ by <span id="author">Unknown</span><br />
 <pre id="namespace-docstr"></pre>
 <br />
 <h2>Public Variables and Functions</h2>
+<div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/base64-decode">base64-decode</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (base64-decode string)
+</pre>
+  <pre id="var-docstr">Decodes a base64 encoded string.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/base64-encode">base64-encode</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (base64-encode string)
+</pre>
+  <pre id="var-docstr">Encodes the string into a base64 representation.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/byte-array?">byte-array?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (byte-array? x)
+</pre>
+  <pre id="var-docstr">Returns true if 'x' is a byte array.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/byte-buffer-&gt;channel-buffer">byte-buffer-&gt;channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (byte-buffer-&gt;channel-buffer buf)
+</pre>
+  <pre id="var-docstr">Transforms a ByteBuffer into a Netty ChannelBuffer.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/byte-buffer-&gt;string">byte-buffer-&gt;string</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (byte-buffer-&gt;string buf)
+       (byte-buffer-&gt;string buf charset)
+</pre>
+  <pre id="var-docstr">Transforms a ByteBuffer into a string.  By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/byte-buffers-&gt;channel-buffer">byte-buffers-&gt;channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (byte-buffers-&gt;channel-buffer bufs)
+</pre>
+  <pre id="var-docstr">Transforms a sequence of ByteBuffers into a Netty ChannelBuffer.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer-&gt;byte-buffer">channel-buffer-&gt;byte-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer-&gt;byte-buffer buf)
+</pre>
+  <pre id="var-docstr">Transforms a Netty ChannelBuffer to a ByteBuffer.  This may involve concatenating several ByteBuffers together,
+to avoid this use channel-buffer-&gt;byte-buffers instead.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer-&gt;byte-buffers">channel-buffer-&gt;byte-buffers</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer-&gt;byte-buffers buf)
+</pre>
+  <pre id="var-docstr">Transforms a Netty ChannelBuffer into a sequence of one or more ByteBuffers.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer-&gt;input-stream">channel-buffer-&gt;input-stream</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer-&gt;input-stream buf)
+</pre>
+  <pre id="var-docstr">Transforms a Netty ChannelBuffer to an InputStream.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer-&gt;json-&gt;data">channel-buffer-&gt;json-&gt;data</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer-&gt;json-&gt;data buf)
+</pre>
+  <pre id="var-docstr">Takes a Netty ChannelBuffer containing JSON, and returns a Clojure data structure representation.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer-&gt;string">channel-buffer-&gt;string</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer-&gt;string buf)
+       (channel-buffer-&gt;string buf charset)
+</pre>
+  <pre id="var-docstr">Transforms a Netty ChannelBuffer into a string.  By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer-&gt;xml-&gt;data">channel-buffer-&gt;xml-&gt;data</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer-&gt;xml-&gt;data buf)
+</pre>
+  <pre id="var-docstr">Takes a Netty ChannelBuffer containing XML, and returns a Clojure hash representing the parsed data.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/channel-buffer?">channel-buffer?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (channel-buffer? x)
+</pre>
+  <pre id="var-docstr">Returns true if 'x' is a Netty ChannelBuffer.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/concat-byte-buffers">concat-byte-buffers</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (concat-byte-buffers &amp; bufs)
+</pre>
+  <pre id="var-docstr">Takes one or more ByteBuffers, and returns a ByteBuffer representing them as a contiguous sequence.  When more than one
+buffer is passed in, this requires copying all buffers onto a new buffer.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/concat-channel-buffers">concat-channel-buffers</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (concat-channel-buffers &amp; bufs)
+</pre>
+  <pre id="var-docstr">Takes one or more Netty ChannelBuffers, and returns a ChannelBuffer representing them as a contiguous byte sequence.
+This does not require any copies.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/data-&gt;json-&gt;channel-buffer">data-&gt;json-&gt;channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (data-&gt;json-&gt;channel-buffer data)
+</pre>
+  <pre id="var-docstr">Transforms a Clojure data structure to JSON, and returns a Netty ChannelBuffer representing the encoded data.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/data-&gt;json-&gt;string">data-&gt;json-&gt;string</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (data-&gt;json-&gt;string data)
+</pre>
+  <pre id="var-docstr">Transforms a Clojure data structure to JSON, and returns a string representation of the encoded data.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/data-&gt;xml-&gt;channel-buffer">data-&gt;xml-&gt;channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (data-&gt;xml-&gt;channel-buffer x)
+       (data-&gt;xml-&gt;channel-buffer x charset)
+</pre>
+  <pre id="var-docstr">Takes a Clojure data structure representing a parse tree or prxml structure, and returns a Netty ChannelBuffer.
+By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/data-&gt;xml-&gt;string">data-&gt;xml-&gt;string</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (data-&gt;xml-&gt;string x)
+       (data-&gt;xml-&gt;string x charset)
+</pre>
+  <pre id="var-docstr">Takes a Clojure data structure representing a parse tree or prxml structure, and returns an XML string.
+By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/input-stream-&gt;byte-buffer">input-stream-&gt;byte-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (input-stream-&gt;byte-buffer stream)
+</pre>
+  <pre id="var-docstr">Transforms an InputStream into a ByteBuffer.  If the stream isn't closed, this function will
+block until it has been closed.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/input-stream-&gt;channel-buffer">input-stream-&gt;channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (input-stream-&gt;channel-buffer stream)
+</pre>
+  <pre id="var-docstr">Transforms an InputStream into a Netty ChannelBuffer.  If the stream isn't closed, this function
+will block until it has been closed.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/string-&gt;byte-buffer">string-&gt;byte-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (string-&gt;byte-buffer s)
+       (string-&gt;byte-buffer s charset)
+</pre>
+  <pre id="var-docstr">Transforms a string into a ByteBuffer.  By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/string-&gt;channel-buffer">string-&gt;channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (string-&gt;channel-buffer s)
+       (string-&gt;channel-buffer s charset)
+</pre>
+  <pre id="var-docstr">Transforms a string into a Netty ChannelBuffer.  By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/string-&gt;json-&gt;data">string-&gt;json-&gt;data</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (string-&gt;json-&gt;data s)
+</pre>
+  <pre id="var-docstr">Takes a string representation of JSON, and returns it as a Clojure data structure.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/string-&gt;xml-&gt;data">string-&gt;xml-&gt;data</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (string-&gt;xml-&gt;data s)
+       (string-&gt;xml-&gt;data s charset)
+</pre>
+  <pre id="var-docstr">Takes an XML string, and returns a Clojure hash representing the parsed data.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/to-channel-buffer">to-channel-buffer</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (to-channel-buffer data)
+       (to-channel-buffer data charset)
+</pre>
+  <pre id="var-docstr">Transforms the data into a Netty ChannelBuffer. 'charset' is only used when the data is a string, and
+by default is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/to-channel-buffer?">to-channel-buffer?</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (to-channel-buffer? data)
+</pre>
+  <pre id="var-docstr">Returns true if the data can be transformed to a Netty ChannelBuffer.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/url-decode">url-decode</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (url-decode s)
+       (url-decode s charset)
+       (url-decode s charset options)
+</pre>
+  <pre id="var-docstr">Takes a URL-encoded string, and returns a standard representation of the string.  By default, 'charset' is UTF-8.
 
+'options' may contain a :url-decodings hash, which maps encoded strings onto how they should be decoded.  For instance,
+the Java decoder doesn't recognize %99 as a trademark symbol, even though it's sometimes encoded that way.  To allow
+for this encoding, you can simply use:
+
+(url-decode s "utf-8" {:url-decodings {"%99" "\u2122"}})</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/url-encode">url-encode</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (url-encode s)
+       (url-encode s charset)
+       (url-encode s charset options)
+</pre>
+  <pre id="var-docstr">URL-encodes a string.  By default 'charset' is UTF-8.
+
+'options' may contain a :url-encodings hash, which can specify custom encodings for certain characters or substrings.</pre>
+  
+</div>
 
 
 </div>
