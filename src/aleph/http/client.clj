@@ -47,7 +47,7 @@
   (run-pipeline in
     read-channel
     (fn [^HttpChunk response]
-      (let [body (:body (decode-aleph-msg {:headers headers :body (.getContent response)} (:auto-transform options)))]
+      (let [body (:body (decode-aleph-msg {:headers headers :body (.getContent response)} options))]
 	(if (.isLast response)
 	  (close out)
 	  (do
@@ -83,7 +83,7 @@
     read-channel
     (fn [chunk]
       (when chunk
-	(enqueue out (DefaultHttpChunk. (:body (encode-aleph-msg {:headers headers :body chunk} (:auto-transform options))))))
+	(enqueue out (DefaultHttpChunk. (:body (encode-aleph-msg {:headers headers :body chunk} options)))))
       (if (drained? in)
 	(enqueue out HttpChunk/LAST_CHUNK)
 	(restart)))))

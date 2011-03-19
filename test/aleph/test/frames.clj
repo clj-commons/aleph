@@ -6,6 +6,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
+(set! *warn-on-reflection* true)
+
 (ns aleph.test.frames
   (:use
     [aleph.tcp]

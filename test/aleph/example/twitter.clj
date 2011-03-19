@@ -9,7 +9,6 @@
 (ns aleph.example.twitter
   (:use
     [lamina core]
-    [clojure test]
     [aleph http formats]))
 
 ;; NOTE: Twitter's moved over to OAuth for most streams.  This example still works,
@@ -63,10 +62,13 @@
     "/proxy" (twitter-proxy-handler ch request)
     "/broadcast" (twitter-broadcast-handler ch request)))
 
-(deftest twitter-test
-   (let [stop-server (start-http-server request-handler {:port 8080})]
-     (try
-       (Thread/sleep 10000)
-       (finally
-	 (release-named-channel :twitter-stream)
-	 (stop-server)))))
+(defn start-twitter-test
+  ([]
+     (start-twitter-test 10))
+  ([run-duration-in-seconds]
+     (let [stop-server (start-http-server request-handler {:port 8080})]
+       (try
+	 (Thread/sleep (* 1000 run-duration-in-seconds))
+	 (finally
+	   (release-named-channel :twitter-stream)
+	   (stop-server))))))

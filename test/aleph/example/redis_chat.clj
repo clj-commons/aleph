@@ -2,19 +2,21 @@
   (:use
     [lamina core]
     [aleph redis tcp]
-    [gloss core]
-    [clojure test]))
+    [gloss core]))
+
+(def redis-address "localhost")
 
 (defn chatroom [room-name]
   ;; when creating a new chat channel, we create a no-op callback so messages don't persist
   (named-channel chatroom #(receive-all % (fn [_]))))
 
 (defn init []
-  ;; create client we'll use to publish messages
-  (def publisher (redis-client {:host "localhost"}))
+  
+  ;; create the client we'll use to publish messages
+  (def publisher (redis-client {:host redis-address}))
 
-  ;; create stream we'll use to consume messages, and subscribe to all chatrooms
-  (def consumer (redis-stream {:host "localhost"}))
+  ;; create the stream we'll use to consume messages, and subscribe to all chatrooms
+  (def consumer (redis-stream {:host redis-address}))
   (pattern-subscribe consumer "*")
 
   ;; consume all messages from the stream, and distribute them to the correct chat channel
@@ -25,7 +27,7 @@
 ;; we have this broken out into a separate function because none of it is async,
 ;; and we only want to pay the async performance tax where necessary
 (defn initialize-chat [ch user-name room-name]
-
+  
   ;; forward every message from the chat channel to the user
   (siphon (chatroom room-name) ch)
 
@@ -43,7 +45,9 @@
 	  room-name (read-channel ch)]
       (initialize-chat ch user-name room-name))))
 
-'(deftest redis-chat
+;; run this, then connect via telnet ('telnet localhost 10000' at the command line)
+;; you can even open multiple sessions, and chat with yourself
+(defn start-redis-example []
   (init)
   (def stop-server
     (start-tcp-server

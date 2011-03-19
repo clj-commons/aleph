@@ -57,9 +57,10 @@
 				      (seq (.toByteBuffers ^ChannelBuffer msg))
 				      msg)]
 			    (encode encoder msg)))))
-	inner (if-not decoder
-		inner
-		(splice (decode-channel inner decoder) inner))]
+	inner (write-result-proxy
+		(if-not decoder
+		  inner
+		  (splice (decode-channel inner decoder) inner)))]
     (create-netty-pipeline
       :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
@@ -71,9 +72,11 @@
 			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
 			    (run-pipeline
 			      (receive-in-order outer
-				(fn [msg]
+				(fn [[returned-result msg]]
 				  (enqueue write-channel
-				    (write-to-channel netty-channel (send-encoder msg) false))
+				    (let [result (write-to-channel netty-channel (send-encoder msg) false)]
+				      (siphon-result result returned-result)
+				      result))
 				  nil))
 			      (fn [_]
 				(close write-channel)))))))
