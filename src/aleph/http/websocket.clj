@@ -108,7 +108,7 @@
 ;;TODO: uncomment out closing handshake, and add in timeout so that we're not waiting forever
 (defn websocket-handshake-handler [handler options]
   (let [[inner outer] (channel-pair)
-	inner (write-result-proxy inner)
+	inner (wrap-write-channel inner)
 	close-atom (atom false)
 	close? #(not (compare-and-set! close-atom false true))]
     

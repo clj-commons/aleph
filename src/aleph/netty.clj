@@ -81,13 +81,13 @@
      (when (compare-and-set! latch# false true)
        ~@body)))
 
-(defn create-write-channel [^Channel netty-channel close-callback]
+(defn create-write-queue [^Channel netty-channel close-callback]
   (let [ch (channel)]
     (on-success (receive-in-order ch (fn [_]))
       (fn [_] (close-callback)))
     ch))
 
-(defn write-result-proxy [ch]
+(defn wrap-write-channel [ch]
   (proxy-channel
     (fn [msgs]
       (if (= 1 (count msgs))
@@ -285,7 +285,7 @@
 	host (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
-	inner (write-result-proxy inner)
+	inner (wrap-write-channel inner)
 	channel-group (DefaultChannelGroup.)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
@@ -298,9 +298,9 @@
     (run-pipeline (.connect client (InetSocketAddress. ^String host (int port)))
       wrap-netty-channel-future
       (fn [^Channel netty-channel]
-	(let [write-channel (create-write-channel
-			      netty-channel
-			      #(write-to-channel netty-channel nil true))]
+	(let [write-queue (create-write-queue
+			    netty-channel
+			    #(write-to-channel netty-channel nil true))]
 	  (run-pipeline (.getCloseFuture netty-channel)
 	    wrap-netty-channel-future
 	    (fn [_]
@@ -310,12 +310,12 @@
 	  (run-pipeline
 	    (receive-in-order outer
 	      (fn [[returned-result msg]]
-		(enqueue write-channel
+		(enqueue write-queue
 		  (let [result (write-to-channel netty-channel (send-encoder msg) false)]
 		    (siphon-result result returned-result)
 		    result))))
 	    (fn [_]
-	      (close write-channel)))
+	      (close write-queue)))
 	  inner)))))
 
 ;;;

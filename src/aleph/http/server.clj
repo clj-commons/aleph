@@ -164,7 +164,7 @@
 
 ;;;
 
-(defn http-response-proxy [ch]
+(defn wrap-response-channel [ch]
   (proxy-channel
     (fn [[rsp]]
       (if (channel? (:body rsp))
@@ -210,7 +210,7 @@
   (run-pipeline in
     read-channel
     (fn [^HttpRequest request]
-      (let [out (http-response-proxy (constant-channel))]
+      (let [out (wrap-response-channel (constant-channel))]
 	(run-pipeline
 	  (handle-request netty-channel options request handler in out)
 	  (fn [_] (read-channel out))
@@ -229,7 +229,7 @@
 
 (defn simple-request-handler
   [netty-channel options request handler]
-  (let [out (http-response-proxy (constant-channel))]
+  (let [out (wrap-response-channel (constant-channel))]
     (handle-request netty-channel options request handler nil out)
     (receive out
       (fn [[returned-result response]]
