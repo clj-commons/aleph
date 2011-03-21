@@ -205,7 +205,8 @@
      (http-request request -1))
   ([request timeout]
      (let [connection (http-connection request)
-	   latch (atom false)]
+	   latch (atom false)
+	   request (assoc request :keep-alive? false)]
 
        ;; timeout
        (when (pos? timeout)

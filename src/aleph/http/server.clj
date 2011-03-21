@@ -102,15 +102,14 @@
 
 (defn- respond-with-channel
   [netty-channel options returned-result response]
-  (let [result-channel @returned-result
-	charset (get-in response [:headers "Charset"] "utf-8")
+  (let [charset (get-in response [:headers "Charset"] "utf-8")
 	response (assoc-in response [:headers "Charset"] charset)
 	initial-response ^HttpResponse (transform-aleph-response response options)
 	ch (:body response)
 	headers (:headers response)
 	write-to-channel (fn [& args]
 			   (let [result (apply write-to-channel args)]
-			     (enqueue result-channel result)
+			     (enqueue returned-result result)
 			     result))]
     (run-pipeline (write-to-channel netty-channel initial-response false)
       (fn [_]
@@ -168,11 +167,15 @@
   (proxy-channel
     (fn [[rsp]]
       (if (channel? (:body rsp))
-	(let [result (success-result (channel))]
+	(let [result (channel)]
 	  [result [[result rsp]]])
 	(let [result (result-channel)]
 	  [result [[result rsp]]])))
     ch))
+
+(defn siphon-result* [src dst]
+  (when (result-channel? dst)
+    (siphon-result src dst)))
 
 (defn read-streaming-request
   "Read in all the chunks for a streamed request."
@@ -215,7 +218,7 @@
 	  (handle-request netty-channel options request handler in out)
 	  (fn [_] (read-channel out))
 	  (fn [[returned-result response]]
-	    (siphon-result
+	    (siphon-result*
 	      (respond netty-channel options returned-result
 		(pre-process-aleph-message
 		  (assoc response :keep-alive? (HttpHeaders/isKeepAlive request))
@@ -233,9 +236,9 @@
     (handle-request netty-channel options request handler nil out)
     (receive out
       (fn [[returned-result response]]
-	(siphon-result
+	(siphon-result*
 	  (run-pipeline
-	    (respond netty-channel options
+	    (respond netty-channel options returned-result
 	      (pre-process-aleph-message
 		(assoc response :keep-alive? false)
 		options))
