@@ -235,7 +235,7 @@
       (fn [[returned-result response]]
 	(siphon-result
 	  (run-pipeline
-	    (respond netty-channel options
+	    (respond netty-channel options returned-result
 	      (pre-process-aleph-message
 		(assoc response :keep-alive? false)
 		options))
