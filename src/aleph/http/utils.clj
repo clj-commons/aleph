@@ -8,6 +8,8 @@
 
 (ns ^{:skip-wiki true}
   aleph.http.utils
+  (:use
+    [aleph formats])
   (:require
     [clj-http.client :as client]
     [clojure.string :as str]))
@@ -16,6 +18,9 @@
   (if (keyword? x)
     (name x)
     (str x)))
+
+(defn lower-case [s]
+  (when s (str/lower-case s)))
 
 (defn- string->hash [s outer-separator inner-separator]
   (when s
@@ -53,6 +58,24 @@
     (assoc-in response [:headers "set-cookie"] cookie)
     response))
 
+(defn query-params
+  ([request]
+     (query-params request nil))
+  ([request options]
+     (when (:query-string request)
+       (->> (-> request :query-string (str/split #"[&;=]"))
+	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
+	 (apply hash-map))))) 
+
+(defn body-params
+  ([request]
+     (body-params request nil))
+  ([request options]
+     (when (= "application/x-www-form-urlencoded" (lower-case (get-in request [:headers "content-type"])))
+       (->> (-> request :body (channel-buffer->string "utf-8" (str/split #"[&=]")))
+	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
+	 (apply hash-map)))))
+
 (defn- wrap-keep-alive [request]
   (update-in request [:headers "connection"]
     #(or %
@@ -84,3 +107,4 @@
   (-> response
     wrap-response-cookie))
 
+ 
