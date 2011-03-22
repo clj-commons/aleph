@@ -72,7 +72,7 @@
      (body-params request nil))
   ([request options]
      (when (= "application/x-www-form-urlencoded" (lower-case (get-in request [:headers "content-type"])))
-       (->> (-> request :body (channel-buffer->string "utf-8" (str/split #"[&=]")))
+       (->> (-> request :body (channel-buffer->string "utf-8") (str/split #"[&=]"))
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (apply hash-map)))))
 
