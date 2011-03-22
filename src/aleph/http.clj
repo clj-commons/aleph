@@ -65,3 +65,11 @@
        (utils/body-params request options)
        (utils/query-params request options))))
 
+(defn request-cookie
+  [request]
+  (utils/cookie->hash (get-in request [:headers "cookie"])))
+
+(defn request-client-info
+  [request]
+  (utils/parse-user-agent (get-in request [:headers "user-agent"])))
+

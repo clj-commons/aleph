@@ -9,4 +9,5 @@
                  [clj-http "0.1.0-SNAPSHOT"]
                  [lamina "0.4.0-SNAPSHOT"]
                  [gloss "0.1.2-SNAPSHOT"]
+                 [user-agent-utils "1.2.3"]
                  [potemkin "0.1.0"]])

@@ -12,7 +12,10 @@
     [aleph formats])
   (:require
     [clj-http.client :as client]
-    [clojure.string :as str]))
+    [clojure.string :as str])
+  (:import
+    [nl.bitwalker.useragentutils
+     UserAgent]))
 
 (defn to-str [x]
   (if (keyword? x)
@@ -22,7 +25,7 @@
 (defn lower-case [s]
   (when s (str/lower-case s)))
 
-(defn- string->hash [s outer-separator inner-separator]
+(defn string->hash [s outer-separator inner-separator]
   (when s
     (apply hash-map
       (apply concat
@@ -31,10 +34,10 @@
 	     (list (first pair) (or (second pair) "")))
 	  (str/split s outer-separator))))))
 
-(defn- cookie->hash [cookie]
-  (string->hash cookie "[;]" "[=]"))
+(defn cookie->hash [cookie]
+  (string->hash cookie #"[;]" #"[=]"))
 
-(defn- hash->cookie [cookie]
+(defn hash->cookie [cookie]
   (when cookie
     (if (map? cookie)
       (->> cookie
@@ -48,12 +51,12 @@
   (update-in msg [:headers]
     #(zipmap (map str/lower-case (keys %)) (vals %))))
 
-(defn- wrap-request-cookie [request]
+(defn wrap-request-cookie [request]
   (if-let [cookie (:cookies request)]
     (assoc-in request [:headers "cookie"] cookie)
     request))
 
-(defn- wrap-response-cookie [response]
+(defn wrap-response-cookie [response]
   (if-let [cookie (:cookies response)]
     (assoc-in response [:headers "set-cookie"] cookie)
     response))
@@ -72,11 +75,11 @@
      (body-params request nil))
   ([request options]
      (when (= "application/x-www-form-urlencoded" (lower-case (get-in request [:headers "content-type"])))
-       (->> (-> request :body (channel-buffer->string "utf-8") (str/split #"[&=]"))
+       (->> (-> request :body byte-buffers->channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (apply hash-map)))))
 
-(defn- wrap-keep-alive [request]
+(defn wrap-keep-alive [request]
   (update-in request [:headers "connection"]
     #(or %
        (if (false? (:keep-alive? request))
@@ -107,4 +110,13 @@
   (-> response
     wrap-response-cookie))
 
- 
+ ;;;
+
+(defn parse-user-agent [s]
+  (when s
+    (let [user-agent (UserAgent/parseUserAgentString s)]
+      {:browser {:name (-> user-agent .getBrowser .getName)
+		 :rendering-engine (-> user-agent .getBrowser .getRenderingEngine .name)}
+       :os {:name (-> user-agent .getOperatingSystem .getName)}
+       :device {:mobile? (-> user-agent .getOperatingSystem .isMobileDevice)
+		:type (-> user-agent .getOperatingSystem .getDeviceType .getName)}})))
