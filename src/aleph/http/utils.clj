@@ -32,6 +32,7 @@
 	#(let [pair (str/split % inner-separator)]
 	   (list (first pair) (or (second pair) ""))))
       (partition 2)
+      (map #(apply hash-map %))
       (into {}))))
 
 (defn cookie->hash [cookie]
@@ -69,6 +70,7 @@
        (->> (-> request :query-string (str/split #"[&;=]"))
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (partition 2)
+	 (map #(apply hash-map %))
 	 (into {}))))) 
 
 (defn body-params
@@ -79,6 +81,7 @@
        (->> (-> request :body byte-buffers->channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (partition 2)
+	 (map #(apply hash-map %))
 	 (into {})))))
 
 (defn wrap-keep-alive [request]
