@@ -27,11 +27,12 @@
 
 (defn string->hash [s outer-separator inner-separator]
   (when s
-    (into {}
+    (->> (str/split s outer-separator)
       (map
 	#(let [pair (str/split % inner-separator)]
-	   (list (first pair) (or (second pair) "")))
-	(str/split s outer-separator)))))
+	   (list (first pair) (or (second pair) ""))))
+      (partition 2)
+      (into {}))))
 
 (defn cookie->hash [cookie]
   (string->hash cookie #"[;]" #"[=]"))
