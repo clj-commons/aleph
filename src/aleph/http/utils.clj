@@ -27,12 +27,11 @@
 
 (defn string->hash [s outer-separator inner-separator]
   (when s
-    (apply hash-map
-      (apply concat
-	(map
-	  #(let [pair (str/split % inner-separator)]
-	     (list (first pair) (or (second pair) "")))
-	  (str/split s outer-separator))))))
+    (into {}
+      (map
+	#(let [pair (str/split % inner-separator)]
+	   (list (first pair) (or (second pair) "")))
+	(str/split s outer-separator)))))
 
 (defn cookie->hash [cookie]
   (string->hash cookie #"[;]" #"[=]"))
@@ -68,7 +67,8 @@
      (when (:query-string request)
        (->> (-> request :query-string (str/split #"[&;=]"))
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
-	 (apply hash-map))))) 
+	 (partition 2)
+	 (into {}))))) 
 
 (defn body-params
   ([request]
@@ -77,7 +77,8 @@
      (when (= "application/x-www-form-urlencoded" (lower-case (get-in request [:headers "content-type"])))
        (->> (-> request :body byte-buffers->channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
-	 (apply hash-map)))))
+	 (partition 2)
+	 (into {})))))
 
 (defn wrap-keep-alive [request]
   (update-in request [:headers "connection"]
