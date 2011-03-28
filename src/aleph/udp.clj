@@ -44,8 +44,7 @@
 	  intermediate-stages
 	  [:receive (udp-message-stage
 		      (fn [msg addr]
-			(println "received" msg addr)
-			(let [msg (if frame (decode frame msg) msg)]
+			(let [msg (if frame (decode frame (channel-buffer->byte-buffers msg)) msg)]
 			  (enqueue ch (assoc addr :message msg)))))])))))
 
 (defn udp-socket

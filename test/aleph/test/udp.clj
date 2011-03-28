@@ -9,8 +9,8 @@
 (deftest send-recv-test
   (let [a (wait-for-result (udp-object-socket {:port 2222}))
         b (wait-for-result (udp-object-socket {}))
-        c (wait-for-result (udp-socket {:frame (string :utf-8) :port 2223}))
-        d (wait-for-result (udp-socket {:frame (string :utf-8)}))
+        c (wait-for-result (udp-socket {:frame (string :utf-8 :as-str true) :port 2223}))
+        d (wait-for-result (udp-socket {:frame (string :utf-8 :as-str true)}))
         msg [{:a 1} "asdf" 23.3]] 
     (try
       (enqueue b {:message msg :host "localhost" :port 2222})
