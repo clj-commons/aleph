@@ -34,7 +34,7 @@ namespace.
     <a class="wiki_link" href="api-index.html">API Index</a><br />
     <a class="wiki_link" href="#">Namespaces:</a>
     <ul id="left-sidebar-list">
-      <li><a href="aleph.formats-api.html" class="wiki_link">aleph.formats</a></li><li><a href="aleph.http-api.html" class="wiki_link">aleph.http</a></li><li><a href="aleph.object-api.html" class="wiki_link">aleph.object</a></li><li><a href="aleph.redis-api.html" class="wiki_link">aleph.redis</a></li><li><a href="aleph.tcp-api.html" class="wiki_link">aleph.tcp</a></li>
+      <li><a href="aleph.formats-api.html" class="wiki_link">aleph.formats</a></li><li><a href="aleph.http-api.html" class="wiki_link">aleph.http</a></li><li><a href="aleph.object-api.html" class="wiki_link">aleph.object</a></li><li><a href="aleph.redis-api.html" class="wiki_link">aleph.redis</a></li><li><a href="aleph.tcp-api.html" class="wiki_link">aleph.tcp</a></li><li><a href="aleph.udp-api.html" class="wiki_link">aleph.udp</a></li>
     </ul>
   </div>
 </div>
@@ -57,8 +57,6 @@ namespace.
       <a href="#aleph.formats/byte-buffer-&gt;channel-buffer">byte-buffer-&gt;channel-buffer</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/byte-buffer-&gt;string">byte-buffer-&gt;string</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/byte-buffers-&gt;channel-buffer">byte-buffers-&gt;channel-buffer</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/channel-buffer-&gt;byte-buffer">channel-buffer-&gt;byte-buffer</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
@@ -166,15 +164,6 @@ by <span id="author">Zachary Tellman</span><br />
        (byte-buffer-&gt;string buf charset)
 </pre>
   <pre id="var-docstr">Transforms a ByteBuffer into a string.  By default, 'charset' is UTF-8.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/byte-buffers-&gt;channel-buffer">byte-buffers-&gt;channel-buffer</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (byte-buffers-&gt;channel-buffer bufs)
-</pre>
-  <pre id="var-docstr">Transforms a sequence of ByteBuffers into a Netty ChannelBuffer.</pre>
   
 </div><div id="var-entry">
   <br />
