@@ -81,6 +81,9 @@ and if bound to a port you can listen by receiving equivalent messages on
 the channel returned.
 
 Optional parameters include:
+  :frame          ; a Gloss frame for encoding and decoding UDP packets
+  :decoder        ; a Gloss frame for decoding packets - overrides :frame
+  :encoder        ; a Gloss frame for encoding packets - overrides :frame
   :port &lt;int&gt;     ; to listen on a specific local port and 
   :broadcast true ; to broadcast from this socket
   :buf-size &lt;int&gt; ; to set the receive buffer size
