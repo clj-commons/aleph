@@ -57,12 +57,15 @@
   the channel returned.
 
   Optional parameters include:
+    :frame          ; a Gloss frame for encoding and decoding UDP packets
+    :decoder        ; a Gloss frame for decoding packets - overrides :frame
+    :encoder        ; a Gloss frame for encoding packets - overrides :frame
     :port <int>     ; to listen on a specific local port and 
     :broadcast true ; to broadcast from this socket
     :buf-size <int> ; to set the receive buffer size
   "
   [options]
-  (let [{:keys [port broadcast buf-size netty stages frame]}
+  (let [{:keys [port broadcast buf-size netty stages frame encoder decoder]}
 	(merge
 	  {:port 0 
 	   :broadcast false
@@ -79,7 +82,7 @@
 		     (assoc netty-opts "receiveBufferSize" buf-size)
 		     netty-opts)
 	inner (wrap-write-channel inner)]
-    (.setPipelineFactory client (apply udp-pipeline-factory outer frame stages))
+    (.setPipelineFactory client (apply udp-pipeline-factory outer (or decoder frame) stages))
 
     (doseq [[k v] netty-opts]
       (.setOption client k v))
@@ -92,8 +95,8 @@
 	    (receive-in-order outer
 	      (fn [[returned-result {:keys [host port message]}]]
 		(enqueue write-queue
-		  (let [message (if frame
-				  (byte-buffers->channel-buffer (encode frame message))
+		  (let [message (if-let [encoder (or encoder frame)]
+				  (byte-buffers->channel-buffer (encode encoder message))
 				  message)
 			result (write-to-channel netty-channel message false
 				 :host host
