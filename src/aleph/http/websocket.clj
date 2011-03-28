@@ -108,6 +108,7 @@
 ;;TODO: uncomment out closing handshake, and add in timeout so that we're not waiting forever
 (defn websocket-handshake-handler [handler options]
   (let [[inner outer] (channel-pair)
+	inner (wrap-write-channel inner)
 	close-atom (atom false)
 	close? #(not (compare-and-set! close-atom false true))]
     
@@ -129,13 +130,16 @@
 	      (instance? HttpRequest msg)
 	      (if (websocket-handshake? msg)
 		(do
-		  (receive-all outer
-		    (fn [msg]
-		      (when msg
-			(write-to-channel ch (to-websocket-frame msg) false))
-		      (when (drained? outer)
-			'(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
-			(.close ch))))
+		  (run-pipeline
+		    (receive-in-order outer
+		      (fn [[returned-result msg]]
+			(when msg
+			  (siphon-result
+			    (write-to-channel ch (to-websocket-frame msg) false)
+			    returned-result))))
+		    (fn [_]
+		      '(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
+		      (.close ch)))
 		  (respond-to-handshake ctx msg options)
 		  (handler inner (assoc (transform-netty-request msg options) :websocket true)))
 		(.sendUpstream ctx evt))))

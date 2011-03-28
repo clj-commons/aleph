@@ -12,7 +12,8 @@
   (:use
     [aleph netty formats]
     [aleph.http utils core websocket]
-    [lamina.core]
+    [lamina core]
+    [lamina.core.pipeline :only (success-result)]
     [clojure.pprint])
   (:require
     [clojure.contrib.logging :as log])
@@ -100,24 +101,30 @@
       :on-write #(.close fc))))
 
 (defn- respond-with-channel
-  [netty-channel options response]
+  [netty-channel options returned-result response]
   (let [charset (get-in response [:headers "Charset"] "utf-8")
-	response (-> response
-		   (assoc-in [:headers "Charset"] charset))
+	response (assoc-in response [:headers "Charset"] charset)
 	initial-response ^HttpResponse (transform-aleph-response response options)
 	ch (:body response)
-	headers (:headers response)]
+	headers (:headers response)
+	write-to-channel (fn [& args]
+			   (let [result (apply write-to-channel args)]
+			     (enqueue returned-result result)
+			     result))]
     (run-pipeline (write-to-channel netty-channel initial-response false)
       (fn [_]
 	(receive-in-order ch
 	  (fn [msg]
 	    (when msg
-	      (let [msg (:body
-			  (encode-aleph-msg
-			    {:headers headers :body msg}
-			    (:auto-transform options)))
+	      (let [msg (to-channel-buffer
+			  (:body
+			    (encode-aleph-msg
+			      {:headers headers :body msg}
+			      options))
+			  charset)
 		    chunk (DefaultHttpChunk. msg)]
-		(write-to-channel netty-channel chunk false))))))
+		(write-to-channel netty-channel chunk false)
+		nil)))))
       (fn [_]
 	(write-to-channel netty-channel HttpChunk/LAST_CHUNK false)))))
 
@@ -129,7 +136,7 @@
       (transform-aleph-response response options)
       false)))
 
-(defn respond [^Channel netty-channel options response]
+(defn respond [^Channel netty-channel options returned-result response]
   (let [response (update-in response [:headers]
 		   #(merge
 		      {"Server" "aleph (0.1.5)"}
@@ -138,23 +145,37 @@
     (cond
       (nil? body) (respond-with-string netty-channel options (assoc response :body ""))
       (string? body) (respond-with-string netty-channel options response)
-      (channel? body) (respond-with-channel netty-channel options response)
+      (channel? body) (respond-with-channel netty-channel options returned-result response)
       (instance? InputStream body) (respond-with-stream netty-channel options response)
       (instance? File body) (respond-with-file netty-channel options response)
-      :else (let [response (encode-aleph-msg response (:auto-transform options))
+      :else (let [response (encode-aleph-msg response options)
 		  original-body body
 		  body (:body response)]
 	      (cond
 		(sequential? body)
 		(respond-with-sequence netty-channel options response)
 
-		(channel-buffer? body)
-		(respond-with-channel-buffer netty-channel options response)
+		(to-channel-buffer? body)
+		(respond-with-channel-buffer netty-channel options (update-in response [:body] to-channel-buffer))
 
 		:else
 		(throw (Exception. (str "Don't know how to respond with body of type " (prn-str original-body) (class body)))))))))
 
 ;;;
+
+(defn wrap-response-channel [ch]
+  (proxy-channel
+    (fn [[rsp]]
+      (if (channel? (:body rsp))
+	(let [result (channel)]
+	  [result [[result rsp]]])
+	(let [result (result-channel)]
+	  [result [[result rsp]]])))
+    ch))
+
+(defn siphon-result* [src dst]
+  (when (result-channel? dst)
+    (siphon-result src dst)))
 
 (defn read-streaming-request
   "Read in all the chunks for a streamed request."
@@ -163,7 +184,7 @@
     read-channel
     (fn [^HttpChunk request]
       (let [last? (.isLast request)
-	    body (:body (decode-aleph-msg {:headers headers :body (.getContent request)} (:auto-transform options)))]
+	    body (:body (decode-aleph-msg {:headers headers :body (.getContent request)} options))]
 	(if last?
 	  (close out)
 	  (enqueue out body))
@@ -195,36 +216,42 @@
 		     (.close netty-channel))
     read-channel
     (fn [^HttpRequest request]
-      (let [out (constant-channel)]
+      (let [out (wrap-response-channel (constant-channel))]
 	(run-pipeline
 	  (handle-request netty-channel options request handler in out)
 	  (fn [_] (read-channel out))
-	  (fn [response]
-	    (respond netty-channel options
-	      (pre-process-aleph-message
-		(assoc response :keep-alive? (HttpHeaders/isKeepAlive request))
-		options)))
+	  (fn [[returned-result response]]
+	    (siphon-result*
+	      (respond netty-channel options returned-result
+		(pre-process-aleph-message
+		  (assoc response :keep-alive? (HttpHeaders/isKeepAlive request))
+		  options))
+	      returned-result))
 	  (constantly request))))
     (fn [^HttpRequest request]
       (if (HttpHeaders/isKeepAlive request)
 	(restart)
-	(.close netty-channel)))))
+	(close-channel netty-channel)))))
 
 (defn simple-request-handler
   [netty-channel options request handler]
-  (let [out (constant-channel)]
+  (let [out (wrap-response-channel (constant-channel))]
     (handle-request netty-channel options request handler nil out)
     (receive out
-      #(run-pipeline
-	 (respond netty-channel options
-	   (pre-process-aleph-message
-	     (assoc % :keep-alive? false)
-	     options))
-	 (fn [_] (.close ^Channel netty-channel))))))
+      (fn [[returned-result response]]
+	(siphon-result*
+	  (run-pipeline
+	    (respond netty-channel options returned-result
+	      (pre-process-aleph-message
+		(assoc response :keep-alive? false)
+		options))
+	    (fn [_]
+	      (close-channel netty-channel)))
+	  returned-result)))))
 
 (defn http-session-handler [handler options]
   (let [init? (atom false)
-	ch (channel)]
+ 	ch (channel)]
     (message-stage
       (fn [^Channel netty-channel ^HttpRequest request]
 	(try

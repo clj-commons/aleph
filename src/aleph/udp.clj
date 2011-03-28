@@ -78,7 +78,8 @@
                      netty)
         netty-opts (if buf-size
 		     (assoc netty-opts "receiveBufferSize" buf-size)
-		     netty-opts)]
+		     netty-opts)
+	inner (wrap-write-channel inner)]
     (.setPipelineFactory client (apply udp-pipeline-factory outer frame stages))
 
     (doseq [[k v] netty-opts]
@@ -86,24 +87,26 @@
 
     (run-pipeline (.bind client local-addr)
       (fn [netty-channel]
-	(let [write-channel (create-write-channel netty-channel
-			      #(write-to-channel netty-channel nil true))]
+	(let [write-queue (create-write-queue netty-channel
+			    #(write-to-channel netty-channel nil true))]
 	  (run-pipeline
 	    (receive-in-order outer
-	      (fn [{:keys [host port message]}]
-		(enqueue write-channel
+	      (fn [[returned-result {:keys [host port message]}]]
+		(enqueue write-queue
 		  (let [message (if frame
 				  (byte-buffers->channel-buffer (encode frame message))
-				  message)]
-		    (write-to-channel netty-channel message false
-		      :host host
-		      :port port)))
+				  message)
+			result (write-to-channel netty-channel message false
+				 :host host
+				 :port port)]
+		    (siphon-result result returned-result)
+		    result))
 		nil))
 	    :error-handler (fn [ex]
 			     (log/error "Error in handler, closing connection." ex)
-			     (close write-channel))
+			     (close write-queue))
 	    (fn [_]
-	      (close write-channel))))
+	      (close write-queue))))
         inner))))
 
 (defn udp-object-socket

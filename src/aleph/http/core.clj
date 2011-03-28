@@ -44,7 +44,7 @@
 
 ;;;
 
-(def request-methods
+(def keyword->request-method
   {:get HttpMethod/GET
    :put HttpMethod/PUT
    :delete HttpMethod/DELETE
@@ -54,10 +54,16 @@
    :options HttpMethod/OPTIONS
    :head HttpMethod/HEAD})
 
+(def request-method->keyword
+  (zipmap
+    (vals keyword->request-method)
+    (keys keyword->request-method)))
+
 ;;;
 
-(defn encode-aleph-msg [aleph-msg auto-transform?]
-  (let [headers (:headers aleph-msg)
+(defn encode-aleph-msg [aleph-msg options]
+  (let [auto-transform? (:auto-transform options)
+	headers (:headers aleph-msg)
 	body (:body aleph-msg)
 	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
 	charset (or (headers "charset") (headers "Charset") "utf-8")]
@@ -80,8 +86,9 @@
       :else
       aleph-msg)))
 
-(defn decode-aleph-msg [aleph-msg auto-transform?]
-  (let [headers (:headers aleph-msg)
+(defn decode-aleph-msg [aleph-msg options]
+  (let [auto-transform? (:auto-transform options)
+	headers (:headers aleph-msg)
 	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
 	charset (or (headers "charset") (headers "Charset") "utf-8")]
     (cond
@@ -123,7 +130,7 @@
 (defn- netty-request-method
   "Get HTTP method from Netty request."
   [^HttpRequest req]
-  {:request-method (->> req .getMethod .getName .toLowerCase keyword)})
+  {:request-method (->> req .getMethod request-method->keyword)})
 
 (defn- netty-request-uri
   "Get URI from Netty request."
@@ -146,7 +153,7 @@
        :body (let [body (:body
 			  (decode-aleph-msg
 			    {:headers headers :body (.getContent req)}
-			    (:auto-transform options)))]
+			    options))]
 	       (if (final-netty-message? req)
 		 body
 		 (let [ch (channel)]
@@ -176,7 +183,7 @@
       (if (channel? body)
 	(.setHeader netty-msg "Transfer-Encoding" "chunked")
 	(do
-	  (.setContent netty-msg (:body (encode-aleph-msg msg (:auto-transform options))))
+	  (.setContent netty-msg (:body (encode-aleph-msg msg options)))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
       (HttpHeaders/setContentLength netty-msg 0))
     netty-msg))
@@ -186,7 +193,7 @@
 	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
 	      HttpVersion/HTTP_1_1
-	      (request-methods (:request-method request))
+	      (keyword->request-method (:request-method request))
 	      (str
 		(when-not (= \/ (-> uri .getPath first))
 		  "/")
@@ -219,4 +226,4 @@
 (defn transform-netty-response [^HttpResponse response headers options]
   {:status (-> response .getStatus .getCode)
    :headers headers
-   :body (:body (decode-aleph-msg {:headers headers, :body (.getContent response)} (:auto-transform options)))})
+   :body (:body (decode-aleph-msg {:headers headers, :body (.getContent response)} options))})

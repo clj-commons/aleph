@@ -14,6 +14,7 @@
   (:require
     [aleph.http.server :as server]
     [aleph.http.client :as client]
+    [aleph.http.utils :as utils]
     [aleph.http.policy-file :as policy]))
 
 (import-fn server/start-http-server)
@@ -56,4 +57,19 @@
     {:status 200
      ::ignore true}))
 
+(defn request-params
+  ([request]
+     (request-params request nil))
+  ([request options]
+     (merge
+       (utils/body-params request options)
+       (utils/query-params request options))))
+
+(defn request-cookie
+  [request]
+  (utils/cookie->hash (get-in request [:headers "cookie"])))
+
+(defn request-client-info
+  [request]
+  (utils/parse-user-agent (get-in request [:headers "user-agent"])))
 

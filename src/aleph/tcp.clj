@@ -32,7 +32,7 @@
     [java.io
      InputStream]))
 
-(defn- create-frame [frame delimiters strip-delimiters?]
+(defn create-frame [frame delimiters strip-delimiters?]
   (cond
     (and frame delimiters) (delimited-frame delimiters frame)
     (and frame (not delimiters)) (compile-frame frame)
@@ -59,31 +59,34 @@
 				      (seq (.toByteBuffers ^ChannelBuffer msg))
 				      msg)]
 			    (encode encoder msg)))))
-	inner (if-not decoder
-		inner
-		(splice (decode-channel inner decoder) inner))]
+	inner (wrap-write-channel
+		(if-not decoder
+		  inner
+		  (splice (decode-channel inner decoder) inner)))]
     (create-netty-pipeline
       :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
 		      (channel-open-stage
 			(fn [^Channel netty-channel]
-			  (let [write-channel (create-write-channel
-						netty-channel
-						#(write-to-channel netty-channel nil true))]
+			  (let [write-queue (create-write-queue
+					      netty-channel
+					      #(write-to-channel netty-channel nil true))]
 			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
 			    (run-pipeline
 			      (receive-in-order outer
-				(fn [msg]
-				  (enqueue write-channel
-				    (write-to-channel netty-channel (send-encoder msg) false))
+				(fn [[returned-result msg]]
+				  (enqueue write-queue
+				    (let [result (write-to-channel netty-channel (send-encoder msg) false)]
+				      (siphon-result result returned-result)
+				      result))
 				  nil))
 			      :error-handler (fn [ex]
 					       (log/error
 						 "Error in handler, closing connection."
 						 ex)
-					       (close write-channel))
+					       (close write-queue))
 			      (fn [_]
-				(close write-channel)))))))
+				(close write-queue)))))))
       :channel-close (upstream-stage
 		       (channel-close-stage
 			 (fn [_]
