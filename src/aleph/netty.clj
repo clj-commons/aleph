@@ -83,7 +83,7 @@
 
 (defn create-write-channel [^Channel netty-channel close-callback]
   (let [ch (channel)]
-    (on-success (receive-in-order ch (fn [_]))
+    (run-pipeline (receive-in-order ch identity)
       (fn [_] (close-callback)))
     ch))
 
@@ -136,7 +136,7 @@
     (log/warn "aleph.netty" (.getCause ^ExceptionEvent evt)))
   evt)
 
-(defmacro create-netty-pipeline
+(defn create-netty-pipeline
   "Creates a pipeline.  Each stage must have a name.
 
    Example:
@@ -144,12 +144,10 @@
      :stage-a a
      :stage-b b)"
   [& stages]
-  (let [pipeline-var (gensym "pipeline")]
-    `(let [~pipeline-var (Channels/pipeline)]
-       ~@(map
-	   (fn [[id# stage#]] (list '.addLast pipeline-var (name id#) stage#))
-	   (partition 2 stages))
-       ~pipeline-var)))
+  (let [netty-pipeline (Channels/pipeline)]
+    (doseq [[id stage] (partition 2 stages)]
+      (.addLast netty-pipeline (name id) stage))
+    netty-pipeline))
 
 ;;;
 
@@ -191,20 +189,21 @@
       nil)))
 
 (defn write-to-channel
-  [^Channel netty-channel msg close? & {close-callback :on-close write-callback :on-write
-                                        host :host port :port}]
+  [^Channel netty-channel msg close?
+   & {close-callback :on-close write-callback :on-write host :host port :port}]
   (when (.isOpen netty-channel)
     (if msg
-      (run-pipeline (io!
-                      (if (and host port)
-                        (.write netty-channel msg (InetSocketAddress. host port))
-                        (.write netty-channel msg)))
-                    wrap-netty-channel-future
-                    (fn [_]
-                      (when write-callback
-                        (write-callback))
-                      (when close?
-                        (close-channel netty-channel close-callback))))
+      (run-pipeline
+	(io!
+	  (if (and host port)
+	    (.write netty-channel msg (InetSocketAddress. host port))
+	    (.write netty-channel msg)))
+	wrap-netty-channel-future
+	(fn [_]
+	  (when write-callback
+	    (write-callback))
+	  (when close?
+	    (close-channel netty-channel close-callback))))
       (when close?
         (close-channel netty-channel close-callback)))))
 

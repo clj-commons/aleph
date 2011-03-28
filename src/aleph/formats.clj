@@ -96,6 +96,10 @@
   (when buf
     (ByteBufferBackedChannelBuffer. buf)))
 
+(defn byte-buffers->channel-buffer
+  [bufs]
+  (ChannelBuffers/wrappedBuffer (into-array ByteBuffer bufs)))
+
 (defn string->channel-buffer
   ([s]
      (string->channel-buffer s "UTF-8"))

@@ -190,6 +190,9 @@
   "Wait for the response for each request before processing the next one."
   [^Channel netty-channel options in handler]
   (run-pipeline in
+    :error-handler (fn [ex]
+		     (log/error "Error in handler, closing connection." ex)
+		     (.close netty-channel))
     read-channel
     (fn [^HttpRequest request]
       (let [out (constant-channel)]
@@ -223,13 +226,17 @@
   (let [init? (atom false)
 	ch (channel)]
     (message-stage
-      (fn [netty-channel ^HttpRequest request]
-	(if (not (or @init? (.isChunked request) (HttpHeaders/isKeepAlive request)))
-	  (simple-request-handler netty-channel options request handler)
-	  (do
-	    (when (compare-and-set! init? false true)
-	      (non-pipelined-loop netty-channel options ch handler))
-	    (enqueue ch request)))
+      (fn [^Channel netty-channel ^HttpRequest request]
+	(try
+	  (if (not (or @init? (.isChunked request) (HttpHeaders/isKeepAlive request)))
+	    (simple-request-handler netty-channel options request handler)
+	    (do
+	      (when (compare-and-set! init? false true)
+		(non-pipelined-loop netty-channel options ch handler))
+	      (enqueue ch request)))
+	  (catch Exception ex
+	    (log/error "Error in handler, closing connection." ex)
+	    (.close netty-channel)))
 	nil))))
 
 (defn create-pipeline

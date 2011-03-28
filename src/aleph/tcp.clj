@@ -12,6 +12,8 @@
     [aleph netty formats]
     [lamina.core]
     [gloss core io])
+  (:require
+    [clojure.contrib.logging :as log])
   (:import
     [org.jboss.netty.channel
      Channel
@@ -75,6 +77,11 @@
 				  (enqueue write-channel
 				    (write-to-channel netty-channel (send-encoder msg) false))
 				  nil))
+			      :error-handler (fn [ex]
+					       (log/error
+						 "Error in handler, closing connection."
+						 ex)
+					       (close write-channel))
 			      (fn [_]
 				(close write-channel)))))))
       :channel-close (upstream-stage
