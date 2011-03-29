@@ -15,16 +15,17 @@
     [clojure.set :only (difference)]))
 
 (deftest send-recv-test
-  (let [a (wait-for-result (udp-object-socket {:port 2222}))
-        b (wait-for-result (udp-object-socket {}))
-        c (wait-for-result (udp-socket {:frame (string :utf-8 :as-str true) :port 2223}))
-        d (wait-for-result (udp-socket {:frame (string :utf-8 :as-str true)}))
-        msg [{:a 1} "asdf" 23.3]] 
+  (let [a @(udp-object-socket {:port 2222})
+        b @(udp-object-socket {})
+        c @(udp-socket {:frame (string :utf-8 :as-str true) :port 2223})
+        d @(udp-socket {:frame (string :utf-8 :as-str true)})
+        object-msg [{:a 1} "asdf" 23.3]
+	text-msg "testing 1,2,3"] 
     (try
-      (enqueue b {:message msg :host "localhost" :port 2222})
-      (is (= msg (:message (first (channel-seq a 200)))))
-      (enqueue d {:message "testing 1, 2, 3" :host "localhost" :port 2223})
-      (is (= "testing 1, 2, 3" (:message (first (channel-seq c 200)))))
+      (enqueue b {:message object-msg :host "localhost" :port 2222})
+      (is (= object-msg (:message (wait-for-message a 200))))
+      (enqueue d {:message text-msg :host "localhost" :port 2223})
+      (is (= text-msg (:message (wait-for-message c 200))))
       (finally
         (close a)
         (close b)

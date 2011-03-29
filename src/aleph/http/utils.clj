@@ -71,7 +71,7 @@
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (partition 2)
 	 (map #(apply hash-map %))
-	 (into {}))))) 
+	 (apply merge))))) 
 
 (defn body-params
   ([request]
@@ -82,7 +82,7 @@
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (partition 2)
 	 (map #(apply hash-map %))
-	 (into {})))))
+	 (apply merge)))))
 
 (defn wrap-keep-alive [request]
   (update-in request [:headers "connection"]

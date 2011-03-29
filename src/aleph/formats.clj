@@ -264,6 +264,11 @@
 
 ;;;
 
+(defn sort-replace-map [m]
+  (->> m
+    (sort-by #(-> % key count))
+    reverse))
+
 (defn url-decode
   "Takes a URL-encoded string, and returns a standard representation of the string.  By default, 'charset' is UTF-8.
 
@@ -277,7 +282,10 @@
   ([s charset]
      (url-decode s charset nil))
   ([s charset options]
-     (let [s (reduce (fn [s [from to]] (.replace ^String s (str from) to)) s (:url-decodings options))]
+     (let [s (reduce
+	       (fn [s [from to]] (.replace ^String s (str from) to))
+	       s
+	       (sort-replace-map (:url-decodings options)))]
        (URLDecoder/decode s charset))))
 
 (defn url-encode
@@ -289,5 +297,8 @@
   ([s charset]
      (url-encode s charset nil))
   ([s charset options]
-     (let [s (reduce (fn [s [from to]] (.replace ^String s (str from) to)) s (:url-encodings options))]
+     (let [s (reduce
+	       (fn [s [from to]] (.replace ^String s (str from) to))
+	       s
+	       (sort-replace-map (:url-encodings options)))]
        (URLEncoder/encode s charset))))
