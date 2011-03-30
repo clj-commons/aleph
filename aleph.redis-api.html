@@ -48,8 +48,6 @@ namespace.
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
     <div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.redis/close-stream">close-stream</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.redis/enqueue-task">enqueue-task</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.redis/pattern-subscribe">pattern-subscribe</a>
@@ -84,15 +82,6 @@ by <span id="author">Zachary Tellman</span><br />
 <div id="var-entry">
   <br />
   <hr />
-  <h2 id="aleph.redis/close-stream">close-stream</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (close-stream redis-stream)
-</pre>
-  <pre id="var-docstr">Closes a Redis stream.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
   <h2 id="aleph.redis/enqueue-task">enqueue-task</h2>
   <span id="var-type">function</span><br />
   <pre id="var-usage">Usage: (enqueue-task redis-client queue-name task)
@@ -104,9 +93,9 @@ by <span id="author">Zachary Tellman</span><br />
   <hr />
   <h2 id="aleph.redis/pattern-subscribe">pattern-subscribe</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (pattern-subscribe redis-stream &amp; channel-patterns)
+  <pre id="var-usage">Usage: (pattern-subscribe redis-stream &amp; stream-patterns)
 </pre>
-  <pre id="var-docstr">Subscribes a stream to zero or more channels matching the patterns given.  Corresponds to
+  <pre id="var-docstr">Subscribes a stream to zero or more streams matching the patterns given.  Corresponds to
 the PSUBSCRIBE command.</pre>
   
 </div><div id="var-entry">
@@ -114,7 +103,7 @@ the PSUBSCRIBE command.</pre>
   <hr />
   <h2 id="aleph.redis/pattern-unsubscribe">pattern-unsubscribe</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (pattern-unsubscribe redis-stream &amp; channel-patterns)
+  <pre id="var-usage">Usage: (pattern-unsubscribe redis-stream &amp; stream-patterns)
 </pre>
   <pre id="var-docstr">Unsubscribes a stream from zero or more channels matching the patterns given.  Corresponds
 to the PUNSUBSCRIBE command.</pre>
@@ -171,18 +160,18 @@ Messages from the stream will be of the structure {:channel "channel-name", :mes
   <hr />
   <h2 id="aleph.redis/subscribe">subscribe</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (subscribe redis-stream &amp; channel-names)
+  <pre id="var-usage">Usage: (subscribe redis-stream &amp; stream-names)
 </pre>
-  <pre id="var-docstr">Subscribes a stream to one or more channels.  Corresponds to the SUBSCRIBE command.</pre>
+  <pre id="var-docstr">Subscribes a stream to one or more streams.  Corresponds to the SUBSCRIBE command.</pre>
   
 </div><div id="var-entry">
   <br />
   <hr />
   <h2 id="aleph.redis/unsubscribe">unsubscribe</h2>
   <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (unsubscribe redis-stream &amp; channel-names)
+  <pre id="var-usage">Usage: (unsubscribe redis-stream &amp; stream-names)
 </pre>
-  <pre id="var-docstr">Unsubscribes a stream from one or more channels.  Corresponds to the UNSUBSCRIBE command.</pre>
+  <pre id="var-docstr">Unsubscribes a stream from one or more streams.  Corresponds to the UNSUBSCRIBE command.</pre>
   
 </div>
 
