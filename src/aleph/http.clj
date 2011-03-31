@@ -9,6 +9,7 @@
 (ns ^{:author "Zachary Tellman"}
   aleph.http
   (:use
+    [aleph formats]
     [lamina.core]
     [potemkin])
   (:require
@@ -58,18 +59,63 @@
      ::ignore true}))
 
 (defn request-params
+  "Returns a result-channel representing the merged query and body parameters in the request.
+
+   The result-channel will be immediately realized if the request is not chunked, but if the
+   request is chunked then synchronously waiting on the result inside the handler will cause
+   issues.  You may synchrously wait on the result in a different thread, but the recommended
+   approach is do something like:
+
+   (run-pipeline (request-params request)
+     (fn [params]
+       ... handle request here ...))
+
+   or to wrap your code in the (async ...) macro."
   ([request]
      (request-params request nil))
   ([request options]
-     (merge
-       (utils/body-params request options)
-       (utils/query-params request options))))
+     (run-pipeline (utils/body-params request options)
+       #(merge (utils/query-params request options) %))))
 
 (defn request-cookie
+  "Returns a hash of the values within the request's cookie."
   [request]
   (utils/cookie->hash (get-in request [:headers "cookie"])))
 
 (defn request-client-info
+  "Returns information about the client, based on the 'User-Agent' header in the request."
   [request]
   (utils/parse-user-agent (get-in request [:headers "user-agent"])))
+
+(defn request-body->input-stream
+  "Returns a result-channel which will emit the request with an InputStream or nil as the
+   body.
+
+  The result-channel will be immediately realized if the request is not chunked, but if
+  the request is chunked then synchronously waiting on the result inside the handler will
+  cause issues.  You may synchronously wait on the result in a different thread, but the
+  recommended approach is to structure your handler like:
+
+  (defn handler [ch request]
+    (run-pipeline (request-body->input-stream request)
+      (fn [request]
+        ... middleware and routing goes here ...)))
+
+  or to use the (async ...) macro."
+  [request]
+  (let [body (:body request)]
+    (cond
+      (and (sequential? body) (empty? body))
+      (run-pipeline request)
+      
+      (to-channel-buffer? body)
+      (run-pipeline
+	(assoc request :body (-> body to-channel-buffer channel-buffer->input-stream)))
+
+      (channel? body)
+      (run-pipeline (reduce* concat [] body)
+	#(assoc request :body (-> % byte-buffers->channel-buffer channel-buffer->input-stream)))
+
+      :else
+      (run-pipeline request))))
 

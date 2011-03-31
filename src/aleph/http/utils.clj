@@ -9,6 +9,7 @@
 (ns ^{:skip-wiki true}
   aleph.http.utils
   (:use
+    [lamina core]
     [aleph formats])
   (:require
     [clj-http.client :as client]
@@ -74,15 +75,23 @@
 	 (apply merge))))) 
 
 (defn body-params
+  "Returns a result-channel which will emit any parameters in the body of the request."
   ([request]
      (body-params request nil))
   ([request options]
-     (when (= "application/x-www-form-urlencoded" (lower-case (get-in request [:headers "content-type"])))
-       (->> (-> request :body byte-buffers->channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
-	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
-	 (partition 2)
-	 (map #(apply hash-map %))
-	 (apply merge)))))
+     (let [content-type (lower-case (get-in request [:headers "content-type"]))
+	   body (:body request)]
+       (if-not (= "application/x-www-form-urlencoded" content-type)
+	 (run-pipeline nil)
+	 (run-pipeline (if (channel? body)
+			 (reduce* concat [] body)
+			 body)
+	   (fn [body]
+	     (->> (-> body byte-buffers->channel-buffer (channel-buffer->string "utf-8"))
+	       (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
+	       (partition 2)
+	       (map #(apply hash-map %))
+	       (apply merge))))))))
 
 (defn wrap-keep-alive [request]
   (update-in request [:headers "connection"]

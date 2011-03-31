@@ -43,7 +43,8 @@
       (apply create-netty-pipeline
 	(concat
 	  intermediate-stages
-	  [:receive (udp-message-stage
+	  [:upstream-error (upstream-stage error-stage-handler)
+	   :receive (udp-message-stage
 		      (fn [msg addr]
 			(let [msg (cond
 				    frame
@@ -54,7 +55,8 @@
 
 				    :else
 				    msg)]
-			  (enqueue ch (assoc addr :message msg)))))])))))
+			  (enqueue ch (assoc addr :message msg)))))
+	   :downstream-error (downstream-stage error-stage-handler)])))))
 
 (defn udp-socket
   "Returns a result-channel that emits a channel if it successfully opens
