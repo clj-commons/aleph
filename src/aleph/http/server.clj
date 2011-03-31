@@ -16,7 +16,8 @@
     [lamina.core.pipeline :only (success-result)]
     [clojure.pprint])
   (:require
-    [clojure.contrib.logging :as log])
+    [clojure.contrib.logging :as log]
+    [clojure.string :as str])
   (:import
     [org.jboss.netty.handler.codec.http
      HttpRequest
@@ -249,11 +250,18 @@
 	      (close-channel netty-channel)))
 	  returned-result)))))
 
+(def continue-response
+  (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/CONTINUE))
+
 (defn http-session-handler [handler options]
   (let [init? (atom false)
  	ch (channel)]
     (message-stage
-      (fn [^Channel netty-channel ^HttpRequest request]
+      (fn [^Channel netty-channel request]
+	(when (and
+		(instance? HttpRequest request)
+		(= "100-continue" (.getHeader ^HttpRequest request "Expect")))
+	  (.write netty-channel continue-response))
 	(try
 	  (if (not (or @init? (.isChunked request) (HttpHeaders/isKeepAlive request)))
 	    (simple-request-handler netty-channel options request handler)

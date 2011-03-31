@@ -138,7 +138,7 @@
 
 (deftest streaming-request
   (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
-    (doseq [content-type ["application/xml"]]
+    (doseq [content-type ["application/json" "application/xml"]]
       (with-server (create-streaming-request-handler)
 	(let [ch (apply closed-channel s)]
 	  (let [result (sync-http-request
@@ -148,7 +148,8 @@
 			  :body ch,
 			  :auto-transform true}
 			 1000)]
-	    (is (= s (map #(update-in % [:content 0] str/trim) (channel-seq (:body result) -1))))))))))
+	    (let [transform-results (fn [x] (map #(-> % :content first str/trim) x))]
+	      (is (= (transform-results s) (transform-results (channel-seq (:body result) -1)))))))))))
 
 (deftest websocket-server
   (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8081, :websocket true})

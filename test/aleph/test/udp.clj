@@ -23,9 +23,9 @@
 	text-msg "testing 1,2,3"] 
     (try
       (enqueue b {:message object-msg :host "localhost" :port 2222})
-      (is (= object-msg (:message (wait-for-message a 200))))
+      (is (= object-msg (:message (wait-for-message a 2000))))
       (enqueue d {:message text-msg :host "localhost" :port 2223})
-      (is (= text-msg (:message (wait-for-message c 200))))
+      (is (= text-msg (:message (wait-for-message c 2000))))
       (finally
         (close a)
         (close b)

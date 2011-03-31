@@ -50,7 +50,7 @@
     (second rsp)))
 
 (defn process-request [req]
-  [:multi-bulk (map #(vector :bulk (str %)) req)])
+  [:multi-bulk (map #(vector :bulk (if (keyword? %) (name %) (str %))) req)])
 
 (defn redis-codec [charset]
   (let [codecs (codec-map charset)]

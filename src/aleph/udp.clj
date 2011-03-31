@@ -15,6 +15,7 @@
   (:require
     [clojure.contrib.logging :as log])
   (:import
+    [org.jboss.netty.buffer ChannelBuffer]
     [org.jboss.netty.bootstrap ConnectionlessBootstrap]
     [org.jboss.netty.channel.socket.nio NioDatagramChannelFactory]
     [org.jboss.netty.handler.codec.serialization ObjectEncoder ObjectDecoder]
@@ -44,7 +45,15 @@
 	  intermediate-stages
 	  [:receive (udp-message-stage
 		      (fn [msg addr]
-			(let [msg (if frame (decode frame (channel-buffer->byte-buffers msg)) msg)]
+			(let [msg (cond
+				    frame
+				    (decode frame (channel-buffer->byte-buffers msg))
+
+				    (instance? ChannelBuffer msg)
+				    (channel-buffer->byte-buffers msg)
+
+				    :else
+				    msg)]
 			  (enqueue ch (assoc addr :message msg)))))])))))
 
 (defn udp-socket

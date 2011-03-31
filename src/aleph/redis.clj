@@ -53,7 +53,7 @@
     (map*
       #(let [cnt (count %)]
 	 (hash-map
-	   :channel (nth % (- cnt 2))
+	   :stream (nth % (- cnt 2))
 	   :message (nth % (- cnt 1)))))))
 
 (defn redis-stream
@@ -88,37 +88,33 @@
 			    (siphon (filter-messages ch) stream)))]
 	 (with-meta
 	   (splice stream control-messages)
-	   {::close-fn (fn []
-			 (close-connection connection)
-			 (close stream)
-			 (close control-messages))})))))
+	   {:lamina.connections/close-fn
+	    (fn []
+	      (close-connection connection)
+	      (close stream)
+	      (close control-messages))})))))
 
 (defn subscribe
-  "Subscribes a stream to one or more channels.  Corresponds to the SUBSCRIBE command."
-  [redis-stream & channel-names]
-  (enqueue redis-stream (list* "subscribe" channel-names)))
+  "Subscribes a stream to one or more streams.  Corresponds to the SUBSCRIBE command."
+  [redis-stream & stream-names]
+  (enqueue redis-stream (list* "subscribe" stream-names)))
 
 (defn pattern-subscribe
-  "Subscribes a stream to zero or more channels matching the patterns given.  Corresponds to
+  "Subscribes a stream to zero or more streams matching the patterns given.  Corresponds to
    the PSUBSCRIBE command."
-  [redis-stream & channel-patterns]
-  (enqueue redis-stream (list* "psubscribe" channel-patterns)))
+  [redis-stream & stream-patterns]
+  (enqueue redis-stream (list* "psubscribe" stream-patterns)))
 
 (defn unsubscribe
-  "Unsubscribes a stream from one or more channels.  Corresponds to the UNSUBSCRIBE command."
-  [redis-stream & channel-names]
-  (enqueue redis-stream (list* "unsubscribe" channel-names)))
+  "Unsubscribes a stream from one or more streams.  Corresponds to the UNSUBSCRIBE command."
+  [redis-stream & stream-names]
+  (enqueue redis-stream (list* "unsubscribe" stream-names)))
 
 (defn pattern-unsubscribe
   "Unsubscribes a stream from zero or more channels matching the patterns given.  Corresponds
    to the PUNSUBSCRIBE command."
-  [redis-stream & channel-patterns]
-  (enqueue redis-stream (list* "punsubscribe" channel-patterns)))
-
-(defn close-stream
-  "Closes a Redis stream."
-  [redis-stream]
-  ((-> redis-stream meta ::close-fn)))
+  [redis-stream & stream-patterns]
+  (enqueue redis-stream (list* "punsubscribe" stream-patterns)))
 
 
 
