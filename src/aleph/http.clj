@@ -91,21 +91,21 @@
   "Returns a result-channel which will emit the request with an InputStream or nil as the
    body.
 
-  The result-channel will be immediately realized if the request is not chunked, but if
-  the request is chunked then synchronously waiting on the result inside the handler will
-  cause issues.  You may synchronously wait on the result in a different thread, but the
-  recommended approach is to structure your handler like:
+   The result-channel will be immediately realized if the request is not chunked, but if
+   the request is chunked then synchronously waiting on the result inside the handler will
+   cause issues.  You may synchronously wait on the result in a different thread, but the
+   recommended approach is to structure your handler like:
 
-  (defn handler [ch request]
-    (run-pipeline (request-body->input-stream request)
-      (fn [request]
-        ... middleware and routing goes here ...)))
+   (defn handler [ch request]
+     (run-pipeline (request-body->input-stream request)
+       (fn [request]
+         ... middleware and routing goes here ...)))
 
-  or to use the (async ...) macro."
+   or to use the (async ...) macro."
   [request]
   (let [body (:body request)]
     (cond
-      (and (sequential? body) (empty? body))
+      (or (nil? body) (and (sequential? body) (empty? body)))
       (run-pipeline request)
       
       (to-channel-buffer? body)

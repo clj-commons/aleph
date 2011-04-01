@@ -38,6 +38,7 @@
   "Returns true if 'x' is a byte array."
   [x]
   (and
+    x
     (.isArray (class x))
     (= (.getComponentType (class x)) Byte/TYPE)))
 
