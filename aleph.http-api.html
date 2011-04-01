@@ -144,7 +144,7 @@ assumptions holds.</pre>
   <pre id="var-usage">Usage: (request-body-&gt;input-stream request)
 </pre>
   <pre id="var-docstr">Returns a result-channel which will emit the request with an InputStream or nil as the
- body.
+body.
 
 The result-channel will be immediately realized if the request is not chunked, but if
 the request is chunked then synchronously waiting on the result inside the handler will
