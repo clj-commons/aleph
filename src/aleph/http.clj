@@ -16,7 +16,9 @@
     [aleph.http.server :as server]
     [aleph.http.client :as client]
     [aleph.http.utils :as utils]
-    [aleph.http.policy-file :as policy]))
+    [aleph.http.policy-file :as policy])
+  (:import
+    [java.io InputStream]))
 
 (import-fn server/start-http-server)
 (import-fn client/http-client)
@@ -34,19 +36,6 @@
        (wait-for-result timeout))))
 
 (import-fn policy/start-policy-file-server)
-
-(defn wrap-ring-handler
-  "Wraps a synchronous Ring handler, such that it can be used in start-http-server.  If certain
-   routes within the application are asynchronous, wrap those handler functions in
-   wrap-aleph-handler."
-  [f]
-  (fn [channel request]
-    (let [response (f (assoc request :channel channel))]
-      (when (and
-	      response
-	      (not (:websocket request))
-	      (not (::ignore response)))
-	(enqueue channel response)))))
 
 (defn wrap-aleph-handler
   "Allows for an asynchronous handler to be used within a largely synchronous application.
@@ -105,6 +94,9 @@
   [request]
   (let [body (:body request)]
     (cond
+      (instance? InputStream body)
+      (run-pipeline request)
+      
       (or (nil? body) (and (sequential? body) (empty? body)))
       (run-pipeline request)
       
@@ -118,4 +110,20 @@
 
       :else
       (run-pipeline request))))
+
+(defn wrap-ring-handler
+  "Wraps a synchronous Ring handler, such that it can be used in start-http-server.  If certain
+   routes within the application are asynchronous, wrap those handler functions in
+   wrap-aleph-handler."
+  [f]
+  (fn [channel request]
+    (run-pipeline (request-body->input-stream)
+      (fn [request]
+	(let [response (f (assoc request :channel channel))]
+	  (when (and
+		  response
+		  (not (:websocket request))
+		  (not (::ignore response))
+		  (not (result-channel? response)))
+	    (enqueue channel response)))))))
 

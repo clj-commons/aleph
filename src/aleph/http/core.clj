@@ -139,6 +139,18 @@
     {:uri (first paths)
      :query-string (second paths)}))
 
+(defn netty-content-length
+  [headers]
+  (when-let [content-length (get headers "content-length")]
+    {:content-length (Integer/parseInt content-length)}))
+
+(defn netty-content-info
+  [headers]
+  (when-let [content-type (get headers "content-type")]
+    (let [[content-type character-encoding] (map str/trim (str/split content-type #";"))]
+      {:content-type content-type
+       :character-encoding character-encoding})))
+
 (defn transform-netty-request
   "Transforms a Netty request into a Ring request."
   [^HttpRequest req options]
@@ -162,6 +174,8 @@
 		   ch)))}
       {:server-name host
        :server-port port}
+      (netty-content-length headers)
+      (netty-content-info headers)
       (netty-request-uri req))))
 
 (defn pre-process-aleph-message [msg options]
