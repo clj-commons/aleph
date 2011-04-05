@@ -34,7 +34,8 @@
         (let [src-addr (event-origin evt)
               host (.getHostAddress (.getAddress src-addr))
               port (.getPort src-addr)]
-          (handler msg {:host host :port port}))))))
+          (handler msg {:host host :port port})))
+      nil)))
 
 (defn udp-pipeline-factory
   [ch frame & intermediate-stages]
