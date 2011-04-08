@@ -40,8 +40,8 @@
     keys))
 
 (defn request-callback [keys]
-  (fn [ch request]
-    (enqueue-and-close ch
+  (wrap-ring-handler
+    (fn [request]
       {:status 200
        :headers {"content-type" "text/plan"}
        :body (with-out-str

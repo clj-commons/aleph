@@ -117,7 +117,7 @@
    wrap-aleph-handler."
   [f]
   (fn [channel request]
-    (run-pipeline (request-body->input-stream)
+    (run-pipeline (request-body->input-stream request)
       (fn [request]
 	(let [response (f (assoc request :channel channel))]
 	  (when (and
