@@ -65,27 +65,27 @@
 
   {:host :port :message}
 
-  and if bound to a port you can listen by receiving equivalent messages on 
+  and if bound to a port you can listen by receiving equivalent messages on
   the channel returned.
 
   Optional parameters include:
     :frame          ; a Gloss frame for encoding and decoding UDP packets
     :decoder        ; a Gloss frame for decoding packets - overrides :frame
     :encoder        ; a Gloss frame for encoding packets - overrides :frame
-    :port <int>     ; to listen on a specific local port and 
+    :port <int>     ; to listen on a specific local port and
     :broadcast true ; to broadcast from this socket
     :buf-size <int> ; to set the receive buffer size
   "
   [options]
   (let [{:keys [port broadcast buf-size netty stages frame encoder decoder]}
 	(merge
-	  {:port 0 
+	  {:port 0
 	   :broadcast false
 	   :buf-size nil}
 	  options)
         [inner outer] (channel-pair)
         client (ConnectionlessBootstrap.
-                 (NioDatagramChannelFactory. client-thread-pool))
+                 (NioDatagramChannelFactory. netty-thread-pool))
         local-addr (InetSocketAddress. port)
         netty-opts (if broadcast
                      (assoc netty "broadcast" true)
