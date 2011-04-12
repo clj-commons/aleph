@@ -139,6 +139,8 @@
    :frame specifies a Gloss frame (see http://github.com/ztellman/gloss) that is used to
    encode and decode data sent into the channel.  If used in conjunction with :delimiters,
    it is assumed that the specified tokens delimit full frames, or an error will be thrown.
+   An :encoder or :decoder frame may also be specified.  This will override the specified
+   :frame.
 
    If a frame is specified, only data structured per the frame will be accepted (i.e. raw
    bytes are no longer an acceptable input)."

@@ -15,6 +15,8 @@ Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/r
 (start-http-server hello-world {:port 8080})
 </code></pre>
 
+For more on HTTP functionality, read the "wiki":https://github.com/ztellman/aleph/wiki/HTTP.
+
 h4. HTTP Client
 
 This snippet prints out a never-ending sequence of tweets:
@@ -61,10 +63,12 @@ Here is a basic echo server:
 (start-tcp-server echo-handler {:port 1234})
 </code></pre>
 
+For more on TCP functionality, visit the "wiki":https://github.com/ztellman/aleph/wiki/TCP.
+
 --
 
 Other protocols are supported, and still more are forthcoming.
 
 Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
 
-A mailing list can be found "here":http://groups.google.com/group/aleph-lib, and API documentation "here":http://ztellman.github.com/aleph/aleph-api.html.
+For more information, visit the "wiki":https://github.com/ztellman/aleph/wiki or the "API documentation":http://ztellman.github.com/aleph/index.html.  If you have questions, please visit the "mailing list":http://groups.google.com/group/aleph-lib.

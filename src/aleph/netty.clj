@@ -43,7 +43,8 @@
      ServerBootstrap
      ClientBootstrap]
     [java.util.concurrent
-     Executors]
+     Executors
+     Executor]
     [java.net
      URI
      InetSocketAddress
@@ -52,6 +53,19 @@
      InputStream]
     [java.nio
      ByteBuffer]))
+
+;;;
+
+(def netty-thread-pool (Executors/newCachedThreadPool))
+
+(defn enqueue-task [f]
+  (let [result (result-channel)]
+    (.submit ^Executor netty-thread-pool
+      #(siphon-result
+	 (run-pipeline nil
+	   (fn [_] (f)))
+	 result))
+    result))
 
 ;;;
 
@@ -280,8 +294,6 @@
     ((client/wrap-url identity) options)
     options))
 
-(def client-thread-pool (Executors/newCachedThreadPool))
-
 (defn create-client
   [pipeline-fn send-encoder options]
   (let [options (split-url options)
@@ -292,8 +304,8 @@
 	channel-group (DefaultChannelGroup.)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
-		   client-thread-pool
-		   client-thread-pool))]
+		   netty-thread-pool
+		   netty-thread-pool))]
     (doseq [[k v] (merge default-client-options (:netty options))]
       (.setOption client k v))
     (.setPipelineFactory client
