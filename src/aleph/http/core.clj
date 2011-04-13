@@ -65,21 +65,22 @@
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
 	body (:body aleph-msg)
-	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
-	charset (or (headers "charset") (headers "Charset") "utf-8")]
+	^String content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
+    charset (or (headers "charset") (headers "Charset") "utf-8")]
+
     (cond
 
-      (and auto-transform? (= content-type "application/json"))
+      (and auto-transform? (.contains content-type "application/json"))
       (update-in aleph-msg [:body] data->json->channel-buffer)
 
-      (and auto-transform? (= content-type "application/xml"))
+      (and auto-transform? (.contains content-type "application/xml"))
       (update-in aleph-msg [:body] #(data->xml->channel-buffer % charset))
 
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
 	(assoc-in aleph-msg [:body]
 	  (ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc)))))
-      
+
       (to-channel-buffer? body)
       (update-in aleph-msg [:body] #(to-channel-buffer % charset))
 
@@ -89,23 +90,23 @@
 (defn decode-aleph-msg [aleph-msg options]
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
-	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
+	^String content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
 	charset (or (headers "charset") (headers "Charset") "utf-8")]
     (cond
 
       (zero? (.readableBytes ^ChannelBuffer (:body aleph-msg)))
       (assoc-in aleph-msg [:body] nil)
 
-      (and auto-transform? (= content-type "application/json"))
+      (and auto-transform? (.contains content-type "application/json"))
       (update-in aleph-msg [:body] channel-buffer->json->data)
 
-      (and auto-transform? (= content-type "application/xml"))
+      (and auto-transform? (.contains content-type "application/xml"))
       (update-in aleph-msg [:body] channel-buffer->xml->data)
 
       (and auto-transform?
 	(or
 	  (.startsWith ^String content-type "text")
-	  (= content-type "application/x-www-form-urlencoded")))
+	  (.contains content-type "application/x-www-form-urlencoded")))
       (update-in aleph-msg [:body] #(channel-buffer->string % charset))
 
       :else

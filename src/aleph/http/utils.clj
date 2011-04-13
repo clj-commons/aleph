@@ -72,7 +72,7 @@
 	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
 	 (partition 2)
 	 (map #(apply hash-map %))
-	 (apply merge))))) 
+	 (apply merge)))))
 
 (defn body-params
   "Returns a result-channel which will emit any parameters in the body of the request."
@@ -81,7 +81,7 @@
   ([request options]
      (let [content-type (lower-case (get-in request [:headers "content-type"]))
 	   body (:body request)]
-       (if-not (= "application/x-www-form-urlencoded" content-type)
+       (if-not (.contains ^String content-type "application/x-www-form-urlencoded" )
 	 (run-pipeline nil)
 	 (run-pipeline (if (channel? body)
 			 (reduce* concat [] body)
