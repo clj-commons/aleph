@@ -62,12 +62,10 @@
 	       (catch Exception e
 		 )))})
 
-(defn create-basic-handler []
-  (let [num (atom -1)]
-    (fn [ch request]
-      (when-let [handler (route-map (:uri request))]
-	(enqueue-and-close ch
-	  (handler request))))))
+(defn basic-handler [ch request]
+  (when-let [handler (route-map (:uri request))]
+    (enqueue-and-close ch
+      (handler request))))
 
 (def expected-results
   (->>
@@ -80,20 +78,24 @@
 
 ;;;
 
-(defn create-streaming-response-handler []
-  (fn [ch request]
-    (let [body (apply closed-channel (map str "abcdefghi"))]
-      (enqueue ch
-	{:status 200
-	 :headers {"content-type" "text/plain"}
-	 :body body}))))
-
-(defn create-streaming-request-handler []
-  (fn [ch request]
+(defn streaming-response-handler [ch request]
+  (let [body (apply closed-channel (map str "abcdefghi"))]
     (enqueue ch
       {:status 200
-       :headers {"content-type" (get-in request [:headers "content-type"])}
-       :body (:body request)})))
+       :headers {"content-type" "text/plain"}
+       :body body})))
+
+(defn streaming-request-handler [ch request]
+  (enqueue ch
+    {:status 200
+     :headers {"content-type" (get-in request [:headers "content-type"])}
+     :body (:body request)}))
+
+(defn json-response-handler [ch request]
+  (enqueue ch
+    {:status 200
+     :headers {"content-type" "application/json"}
+     :body {:foo 1 :bar 2}}))
 
 ;;;
 
@@ -112,25 +114,25 @@
 
 '(deftest browser-http-response
    (println "waiting for browser test")
-   (start-http-server (create-basic-handler) {:port 8080})
+   (start-http-server basic-handler {:port 8080})
    (is @latch))
 
 (deftest single-requests
-  (with-server (create-basic-handler)
+  (with-server basic-handler
     (doseq [[index [path result]] (indexed expected-results)]
       (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
 	(is (= result (wait-for-request client path)))
 	(close-connection client)))))
 
 (deftest multiple-requests
-  (with-server (create-basic-handler)
+  (with-server basic-handler
     (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
 (deftest streaming-response
-  (with-server (create-streaming-response-handler)
+  (with-server streaming-response-handler
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
       (is
 	(= (map str "abcdefghi")
@@ -139,7 +141,7 @@
 (deftest streaming-request
   (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
     (doseq [content-type ["application/json" "application/xml"]]
-      (with-server (create-streaming-request-handler)
+      (with-server streaming-request-handler
 	(let [ch (apply closed-channel s)]
 	  (let [result (sync-http-request
 			 {:url "http://localhost:8080"
@@ -150,6 +152,11 @@
 			 1000)]
 	    (let [transform-results (fn [x] (map #(-> % :content first str/trim) x))]
 	      (is (= (transform-results s) (transform-results (channel-seq (:body result) -1)))))))))))
+
+(deftest auto-transform-test
+  (with-server json-response-handler
+    (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
+      (is (= {:foo 1, :bar 2} (:body result))))))
 
 (deftest websocket-server
   (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8081, :websocket true})

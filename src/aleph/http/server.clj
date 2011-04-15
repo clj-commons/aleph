@@ -151,7 +151,8 @@
       (instance? File body) (respond-with-file netty-channel options response)
       :else (let [response (encode-aleph-msg response options)
 		  original-body body
-		  body (:body response)]
+		  body (:body response)
+		  options (assoc options :auto-transform false)]
 	      (cond
 		(sequential? body)
 		(respond-with-sequence netty-channel options response)
@@ -175,7 +176,7 @@
     ch))
 
 (defn siphon-result* [src dst]
-  (when (result-channel? dst)
+  (when (and (result-channel? src) (result-channel? dst))
     (siphon-result src dst)))
 
 (defn read-streaming-request
