@@ -65,8 +65,9 @@
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
 	body (:body aleph-msg)
-	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
-	charset (or (headers "charset") (headers "Charset") "utf-8")]
+	content-type (or (:content-type aleph-msg) "text/plain")
+	charset (or (:character-encoding aleph-msg) "utf-8")]
+
     (cond
 
       (and auto-transform? (= content-type "application/json"))
@@ -89,8 +90,9 @@
 (defn decode-aleph-msg [aleph-msg options]
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
-	content-type (str/lower-case (or (headers "content-type") (headers "Content-Type") "text/plain"))
-	charset (or (headers "charset") (headers "Charset") "utf-8")]
+	content-type (or (:content-type aleph-msg) "text/plain")
+	charset (or (:character-encoding aleph-msg) "utf-8")]
+
     (cond
 
       (zero? (.readableBytes ^ChannelBuffer (:body aleph-msg)))
@@ -139,17 +141,19 @@
     {:uri (first paths)
      :query-string (second paths)}))
 
-(defn netty-content-length
+(defn content-length
   [headers]
   (when-let [content-length (get headers "content-length")]
     {:content-length (Integer/parseInt content-length)}))
 
-(defn netty-content-info
+(defn content-info
   [headers]
-  (when-let [content-type (get headers "content-type")]
-    (let [[content-type character-encoding] (map str/trim (str/split content-type #";"))]
-      {:content-type content-type
-       :character-encoding character-encoding})))
+  (when-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
+    (let [[content-type charset] (map #(when % (str/trim %)) (str/split content-type #";"))
+	  character-encoding (when charset
+			       (->> charset (#(str/split % #"charset=")) (remove empty?) first))]
+      {:content-type (when content-type (str/lower-case content-type))
+       :character-encoding (when character-encoding (str/lower-case character-encoding))})))
 
 (defn transform-netty-request
   "Transforms a Netty request into a Ring request."
@@ -158,25 +162,26 @@
 	parts (.split ^String (headers "host") "[:]")
 	host (first parts)
 	port (when-let [port (second parts)]
-	       (Integer/parseInt port))]
-    (merge
-      (netty-request-method req)
-      {:headers headers
-       :body (let [body (:body
-			  (decode-aleph-msg
-			    {:headers headers :body (.getContent req)}
-			    options))]
-	       (if (final-netty-message? req)
-		 body
-		 (let [ch (channel)]
-		   (when body
-		     (enqueue ch body))
-		   ch)))}
-      {:server-name host
-       :server-port port}
-      (netty-content-length headers)
-      (netty-content-info headers)
-      (netty-request-uri req))))
+	       (Integer/parseInt port))
+	request (merge
+		  (netty-request-method req)
+		  {:headers headers}
+		  {:server-name host
+		   :server-port port}
+		  (content-length headers)
+		  (content-info headers)
+		  (netty-request-uri req))]
+    (assoc request
+      :body (let [body (:body
+			 (decode-aleph-msg
+			   (assoc request :body (.getContent req))
+			   options))]
+	      (if (final-netty-message? req)
+		body
+		(let [ch (channel)]
+		  (when body
+		    (enqueue ch body))
+		  ch))))))
 
 (defn pre-process-aleph-message [msg options]
   (update-in msg [:headers]
@@ -203,8 +208,7 @@
     netty-msg))
 
 (defn transform-aleph-request [scheme ^String host ^Integer port request options]
-  (let [request (wrap-client-request request)
-	uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
+  (let [uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
 	      HttpVersion/HTTP_1_1
 	      (keyword->request-method (:request-method request))
@@ -228,16 +232,26 @@
 	      HttpVersion/HTTP_1_1
 	      (HttpResponseStatus/valueOf (:status response)))]
     (transform-aleph-message rsp
-      (update-in response [:headers "Connection"]
-	#(or %
-	   (if (:keep-alive? response)
-	     "keep-alive"
-	     "close")))
+      (-> response
+	(update-in [:headers "Connection"]
+	  #(or %
+	     (if (:keep-alive? response)
+	       "keep-alive"
+	       "close")))
+	(update-in [:headers "Content-Type"]
+	  #(or %
+	     (str
+	       (:content-type response)
+	       (when-let [charset (:character-encoding response)]
+		 (str "; charset=" charset))))))
       options)))
 
 ;;;
 
-(defn transform-netty-response [^HttpResponse response headers options]
-  {:status (-> response .getStatus .getCode)
-   :headers headers
-   :body (:body (decode-aleph-msg {:headers headers, :body (.getContent response)} options))})
+(defn transform-netty-response [^HttpResponse netty-response headers options]
+  (let [response (merge
+		   (content-info headers)
+		   {:status (-> netty-response .getStatus .getCode)
+		    :headers headers})]
+    (assoc response
+      :body (:body (decode-aleph-msg (assoc response :body (.getContent netty-response)) options)))))

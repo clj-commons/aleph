@@ -43,12 +43,12 @@
 
 ;;;
 
-(defn read-streaming-response [headers options in out]
+(defn read-streaming-response [response options in out]
   (run-pipeline in
     read-channel
-    (fn [^HttpChunk response]
-      (let [body (:body (decode-aleph-msg {:headers headers :body (.getContent response)} options))]
-	(if (.isLast response)
+    (fn [^HttpChunk chunk]
+      (let [body (:body (decode-aleph-msg (assoc response :body (.getContent chunk)) options))]
+	(if (.isLast chunk)
 	  (close out)
 	  (do
 	    (enqueue out body)
@@ -72,18 +72,19 @@
 	    (when body
 	      (enqueue stream body))
 	    (enqueue out response)
-	    (read-streaming-response headers options in stream)))))
+	    (read-streaming-response response options in stream)))))
     (fn [_]
       (restart))))
 
 ;;;
 
-(defn read-streaming-request [headers options in out]
+(defn read-streaming-request [request options in out]
   (run-pipeline in
     read-channel
     (fn [chunk]
       (when chunk
-	(enqueue out (DefaultHttpChunk. (:body (encode-aleph-msg {:headers headers :body chunk} options)))))
+	(enqueue out
+	  (DefaultHttpChunk. (:body (encode-aleph-msg (assoc request :body chunk) options)))))
       (if (drained? in)
 	(enqueue out HttpChunk/LAST_CHUNK)
 	(restart)))))
@@ -92,16 +93,17 @@
   (run-pipeline in
     read-channel
     (fn [request]
-      (when request
-	(enqueue out
-	  (transform-aleph-request
-	    (:scheme options)
-	    (:server-name options)
-	    (:server-port options)
-	    (pre-process-aleph-message request options)
-	    options))
-	(when (channel? (:body request))
-	  (read-streaming-request (:headers request) options (:body request) out))))
+      (let [request (wrap-client-request request)]
+	(when request
+	  (enqueue out
+	    (transform-aleph-request
+	      (:scheme options)
+	      (:server-name options)
+	      (:server-port options)
+	      (pre-process-aleph-message request options)
+	      options))
+	  (when (channel? (:body request))
+	    (read-streaming-request request options (:body request) out)))))
     (fn [_]
       (if-not (drained? in)
 	(restart)
@@ -237,13 +239,14 @@
 ;;;
 
 (defn websocket-handshake [protocol]
-  {:method :get
-   :headers {"Sec-WebSocket-Key1" "18x 6]8vM;54 *(5:  {   U1]8  z [  8" ;;TODO: actually randomly generate these
-	     "Sec-WebSocket-Key2" "1_ tx7X d  <  nw  334J702) 7]o}` 0"
-	     "Sec-WebSocket-Protocol" protocol
-	     "Upgrade" "WebSocket"
-	     "Connection" "Upgrade"}
-   :body (ByteBuffer/wrap (.getBytes "Tm[K T2u" "utf-8"))})
+  (wrap-client-request
+    {:method :get
+     :headers {"Sec-WebSocket-Key1" "18x 6]8vM;54 *(5:  {   U1]8  z [  8" ;;TODO: actually randomly generate these
+	       "Sec-WebSocket-Key2" "1_ tx7X d  <  nw  334J702) 7]o}` 0"
+	       "Sec-WebSocket-Protocol" protocol
+	       "Upgrade" "WebSocket"
+	       "Connection" "Upgrade"}
+     :body (ByteBuffer/wrap (.getBytes "Tm[K T2u" "utf-8"))}))
 
 (def expected-response (ByteBuffer/wrap (.getBytes "fQJ,fN/4F4!~K~MH" "utf-8")))
 

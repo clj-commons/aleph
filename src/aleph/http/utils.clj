@@ -69,7 +69,7 @@
   ([request options]
      (when (:query-string request)
        (->> (-> request :query-string (str/split #"[&;=]"))
-	 (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
+	 (map #(url-decode % (or (:character-encoding request) "utf-8") options))
 	 (partition 2)
 	 (map #(apply hash-map %))
 	 (apply merge))))) 
@@ -79,16 +79,15 @@
   ([request]
      (body-params request nil))
   ([request options]
-     (let [content-type (lower-case (get-in request [:headers "content-type"]))
-	   body (:body request)]
-       (if-not (= "application/x-www-form-urlencoded" content-type)
+     (let [body (:body request)]
+       (if-not (.startsWith ^String (:content-type request) "application/x-www-form-urlencoded")
 	 (run-pipeline nil)
 	 (run-pipeline (if (channel? body)
 			 (reduce* concat [] body)
 			 body)
 	   (fn [body]
 	     (->> (-> body byte-buffers->channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
-	       (map #(url-decode % (or (get-in request [:headers "charset"]) "utf-8") options))
+	       (map #(url-decode % (or (:character-encoding request) "utf-8") options))
 	       (partition 2)
 	       (map #(apply hash-map %))
 	       (apply merge))))))))
@@ -100,12 +99,28 @@
 	 "close"
 	 "keep-alive"))))
 
+(defn wrap-content-info
+  [request]
+  (let [headers (:headers request)]
+    (if-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
+      (let [[content-type charset] (map #(when % (str/trim %)) (str/split content-type #";"))
+	    character-encoding (when charset
+				 (->> charset
+				   (#(str/split % #"charset="))
+				   (remove empty?)
+				   first))]
+	(merge 
+	  {:content-type (when content-type (str/lower-case content-type))
+	   :character-encoding (when character-encoding (str/lower-case character-encoding))}
+	  request))
+      request)))
+
 (defn wrap-request [request]
   (-> request
     lowercase-headers
     wrap-request-cookie
     wrap-keep-alive
-    ))
+    wrap-content-info))
 
 (defn wrap-client-request [request]
   ((comp

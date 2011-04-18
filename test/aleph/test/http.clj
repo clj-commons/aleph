@@ -31,12 +31,12 @@
 
 (defn string-handler [request]
   {:status 200
-   :header {"content-type" "text/html"}
+   :content-type "text/html"
    :body string-response})
 
 (defn seq-handler [request]
   {:status 200
-   :header {"content-type" "text/html"}
+   :content-type "text/html"
    :body seq-response})
 
 (defn file-handler [request]
@@ -45,7 +45,7 @@
 
 (defn stream-handler [request]
   {:status 200
-   :header {"content-type" "text/html"}
+   :content-type "text/html"
    :body (ByteArrayInputStream. (.getBytes stream-response))})
 
 (def latch (promise))
@@ -82,19 +82,19 @@
   (let [body (apply closed-channel (map str "abcdefghi"))]
     (enqueue ch
       {:status 200
-       :headers {"content-type" "text/plain"}
+       :content-type "text/plain"
        :body body})))
 
 (defn streaming-request-handler [ch request]
   (enqueue ch
     {:status 200
-     :headers {"content-type" (get-in request [:headers "content-type"])}
+     :content-type (:content-type request)
      :body (:body request)}))
 
 (defn json-response-handler [ch request]
   (enqueue ch
     {:status 200
-     :headers {"content-type" "application/json"}
+     :content-type "application/json"
      :body {:foo 1 :bar 2}}))
 
 ;;;
@@ -136,7 +136,7 @@
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
       (is
 	(= (map str "abcdefghi")
-	   (channel-seq (:body result) -1))))))
+	   (channel-seq (:body result) 1000))))))
 
 (deftest streaming-request
   (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
@@ -151,7 +151,7 @@
 			  :auto-transform true}
 			 1000)]
 	    (let [transform-results (fn [x] (map #(-> % :content first str/trim) x))]
-	      (is (= (transform-results s) (transform-results (channel-seq (:body result) -1)))))))))))
+	      (is (= (transform-results s) (transform-results (channel-seq (:body result) 1000)))))))))))
 
 (deftest auto-transform-test
   (with-server json-response-handler
