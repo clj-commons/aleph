@@ -12,7 +12,7 @@
   (:use
     [aleph netty formats]
     [aleph.http utils core websocket]
-    [lamina core]
+    [lamina core executors]
     [lamina.core.pipeline :only (success-result)]
     [clojure.pprint])
   (:require
@@ -192,27 +192,32 @@
   (let [chunked? (.isChunked netty-request)
 	request (assoc (transform-netty-request netty-request options)
 		  :scheme :http
-		  :remote-addr (channel-origin netty-channel))]
-    (if-not chunked?
-      (do
-	(handler out request)
-	nil)
-      (let [stream (channel)]
-	(handler out (assoc request :body stream))
-	(read-streaming-request request options in stream)))))
+		  :remote-addr (channel-origin netty-channel))
+	stream (when chunked? (channel))]
+    (run-pipeline nil
+      :error-handler (fn [ex]
+		       (log/error "Error in HTTP handler, closing." ex)
+		       (close-channel netty-channel))
+      (fn [_]
+	(with-thread-pool (:thread-pool options)
+	  {:timeout (:handler-timeout options)}
+	  (if chunked?
+	    (handler out (assoc request :body stream))
+	    (handler out request)))))
+    (when chunked?
+      (read-streaming-request request options in stream))))
 
 (defn non-pipelined-loop
   "Wait for the response for each request before processing the next one."
   [^Channel netty-channel options in handler]
   (run-pipeline in
     :error-handler (fn [ex]
-		     (log/error "Error in handler, closing connection." ex)
-		     (.close netty-channel))
+		     (log/error "Error in keep-alive HTTP connection, closing." ex)
+		     (close-channel netty-channel))
     read-channel
     (fn [^HttpRequest request]
       (let [out (wrap-response-channel (constant-channel))]
-	(run-pipeline
-	  (handle-request netty-channel options request handler in out)
+	(run-pipeline (handle-request netty-channel options request handler in out)
 	  (fn [_] (read-channel out))
 	  (fn [[returned-result response]]
 	    (siphon-result*
@@ -296,9 +301,21 @@
    request is a WebSocket handshake, the channel represents a full duplex socket, which
    communicates via complete (i.e. non-streaming) strings."
   [handler options]
-  (start-server
-    #(create-pipeline handler options)
-    options))
+  (let [options (merge
+		  {:handler-timeout -1}
+		  options
+		  {:thread-pool (thread-pool
+				  (merge
+				    {:name (str "HTTP server on port " (:port options))
+				     :stat-period (* 30 1000)}
+				    (:thread-pool options)))})
+	stop-fn (start-server
+		  #(create-pipeline handler options)
+		  options)]
+    (fn []
+      (stop-fn)
+      (.shutdown (:thread-pool options)))))
+
 
 
 
