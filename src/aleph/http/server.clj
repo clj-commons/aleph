@@ -313,8 +313,8 @@
 		  #(create-pipeline handler options)
 		  options)]
     (fn []
-      (stop-fn)
-      (.shutdown (:thread-pool options)))))
+      (run-pipeline (stop-fn)
+	(fn [_] (.shutdown (:thread-pool options)))))))
 
 
 
