@@ -79,8 +79,9 @@
   ([request]
      (body-params request nil))
   ([request options]
-     (let [body (:body request)]
-       (if-not (.startsWith ^String (:content-type request) "application/x-www-form-urlencoded")
+     (let [body (:body request)
+	   content-type (:content-type request)]
+       (if-not (and content-type (.startsWith ^String content-type "application/x-www-form-urlencoded"))
 	 (run-pipeline nil)
 	 (run-pipeline (if (channel? body)
 			 (reduce* concat [] body)
