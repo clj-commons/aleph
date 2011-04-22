@@ -65,15 +65,15 @@
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
 	body (:body aleph-msg)
-	content-type (or (:content-type aleph-msg) "text/plain")
+	content-type ^String (or (:content-type aleph-msg) "text/plain")
 	charset (or (:character-encoding aleph-msg) "utf-8")]
 
     (cond
 
-      (and auto-transform? (= content-type "application/json"))
+      (and auto-transform? (.startsWith content-type "application/json"))
       (update-in aleph-msg [:body] data->json->channel-buffer)
 
-      (and auto-transform? (= content-type "application/xml"))
+      (and auto-transform? (.startsWith content-type "application/xml"))
       (update-in aleph-msg [:body] #(data->xml->channel-buffer % charset))
 
       (instance? FileChannel body)
@@ -90,7 +90,7 @@
 (defn decode-aleph-msg [aleph-msg options]
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
-	content-type (or (:content-type aleph-msg) "text/plain")
+	content-type ^String (or (:content-type aleph-msg) "text/plain")
 	charset (or (:character-encoding aleph-msg) "utf-8")]
 
     (cond
@@ -98,16 +98,16 @@
       (zero? (.readableBytes ^ChannelBuffer (:body aleph-msg)))
       (assoc-in aleph-msg [:body] nil)
 
-      (and auto-transform? (= content-type "application/json"))
+      (and auto-transform? (.startsWith content-type "application/json"))
       (update-in aleph-msg [:body] channel-buffer->json->data)
 
-      (and auto-transform? (= content-type "application/xml"))
+      (and auto-transform? (.startsWith content-type "application/xml"))
       (update-in aleph-msg [:body] channel-buffer->xml->data)
 
       (and auto-transform?
 	(or
 	  (.startsWith ^String content-type "text")
-	  (= content-type "application/x-www-form-urlencoded")))
+	  (.startsWith content-type "application/x-www-form-urlencoded")))
       (update-in aleph-msg [:body] #(channel-buffer->string % charset))
 
       :else
@@ -143,17 +143,14 @@
 
 (defn content-length
   [headers]
-  (when-let [content-length (get headers "content-length")]
+  (when-let [content-length (or (get headers "content-length") (get headers "Content-Length"))]
     {:content-length (Integer/parseInt content-length)}))
 
 (defn content-info
   [headers]
   (when-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
-    (let [[content-type charset] (map #(when % (str/trim %)) (str/split content-type #";"))
-	  character-encoding (when charset
-			       (->> charset (#(str/split % #"charset=")) (remove empty?) first))]
-      {:content-type (when content-type (str/lower-case content-type))
-       :character-encoding (when character-encoding (str/lower-case character-encoding))})))
+    {:content-type content-type
+     :character-encoding (->> (str/split content-type #"[;=]") (map str/trim) (drop-while #(not= % "charset")) second)}))
 
 (defn transform-netty-request
   "Transforms a Netty request into a Ring request."

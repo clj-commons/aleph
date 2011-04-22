@@ -80,8 +80,8 @@
      (body-params request nil))
   ([request options]
      (let [body (:body request)
-	   content-type (:content-type request)]
-       (if-not (and content-type (.startsWith ^String content-type "application/x-www-form-urlencoded"))
+	   content-type ^String (:content-type request)]
+       (if-not (and content-type (.startsWith content-type "application/x-www-form-urlencoded"))
 	 (run-pipeline nil)
 	 (run-pipeline (if (channel? body)
 			 (reduce* concat [] body)
@@ -104,16 +104,10 @@
   [request]
   (let [headers (:headers request)]
     (if-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
-      (let [[content-type charset] (map #(when % (str/trim %)) (str/split content-type #";"))
-	    character-encoding (when charset
-				 (->> charset
-				   (#(str/split % #"charset="))
-				   (remove empty?)
-				   first))]
-	(merge 
-	  {:content-type (when content-type (str/lower-case content-type))
-	   :character-encoding (when character-encoding (str/lower-case character-encoding))}
-	  request))
+      (merge 
+	{:content-type content-type
+	 :character-encoding (->> (str/split content-type #"[;=]") (map str/trim) (drop-while #(not= % "charset")) second)}
+	request)
       request)))
 
 (defn wrap-request [request]
