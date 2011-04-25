@@ -306,8 +306,7 @@
 		  options
 		  {:thread-pool (thread-pool
 				  (merge
-				    {:name (str "HTTP server on port " (:port options))
-				     :stat-period (* 60 1000)}
+				    {:name (str "HTTP server on port " (:port options))}
 				    (:thread-pool options)))})
 	stop-fn (start-server
 		  #(create-pipeline handler options)
@@ -317,7 +316,7 @@
 	(try
 	  (stop-fn)
 	  (finally
-	    (.shutdown (:thread-pool options))))))))
+	    (shutdown-executor (:thread-pool options))))))))
 
 
 

@@ -87,7 +87,7 @@
 			 (reduce* concat [] body)
 			 body)
 	   (fn [body]
-	     (->> (-> body byte-buffers->channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
+	     (->> (-> body to-channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
 	       (map #(url-decode % (or (:character-encoding request) "utf-8") options))
 	       (partition 2)
 	       (map #(apply hash-map %))
