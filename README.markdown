@@ -1,8 +1,8 @@
-Aleph is a framework for asynchronous communication, built on top of "Netty":http://www.jboss.org/netty and "Lamina":http://github.com/ztellman/lamina.  It can do all kinds of things, including:
+Aleph is a framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina).  It can do all kinds of things, including:
 
 h4. HTTP Server
 
-Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/ring, with one small difference: the request and response are decoupled.
+Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/ring), with one small difference: the request and response are decoupled.
 
 ```clj
 (use 'lamina.core 'aleph.http)
@@ -16,7 +16,7 @@ Aleph conforms to the interface described by "Ring":http://github.com/mmcgrana/r
 (start-http-server hello-world {:port 8080})
 ```
 
-For more on HTTP functionality, read the "wiki":https://github.com/ztellman/aleph/wiki/HTTP.
+For more on HTTP functionality, read the [wiki](https://github.com/ztellman/aleph/wiki/HTTP).
 
 h4. HTTP Client
 
@@ -34,7 +34,7 @@ This snippet prints out a never-ending sequence of tweets:
     (println tweet)))
 ```
 
-A more in-depth exploration of this example can be found "here":http://github.com/ztellman/aleph/wiki/Consuming-and-Broadcasting-a-Twitter-Stream.
+A more in-depth exploration of this example can be found [here](http://github.com/ztellman/aleph/wiki/Consuming-and-Broadcasting-a-Twitter-Stream).
 
 h4. WebSocket
 
@@ -67,7 +67,7 @@ Here is a basic echo server:
 (start-tcp-server echo-handler {:port 1234})
 ```
 
-For more on TCP functionality, visit the "wiki":https://github.com/ztellman/aleph/wiki/TCP.
+For more on TCP functionality, visit the [wiki](https://github.com/ztellman/aleph/wiki/TCP).
 
 --
 
@@ -75,4 +75,4 @@ Other protocols are supported, and still more are forthcoming.
 
 Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
 
-For more information, visit the "wiki":https://github.com/ztellman/aleph/wiki or the "API documentation":http://ztellman.github.com/aleph/index.html.  If you have questions, please visit the "mailing list":http://groups.google.com/group/aleph-lib.
+For more information, visit the [wiki](https://github.com/ztellman/aleph/wiki) or the [API documentation](http://ztellman.github.com/aleph/index.html).  If you have questions, please visit the [mailing list](http://groups.google.com/group/aleph-lib).
