@@ -104,13 +104,16 @@
     (wait-for-result 1000)
     :body))
 
-(defmacro with-server [handler & body]
-  `(do
-     (let [kill-fn# (start-http-server ~handler {:port 8080, :auto-transform true})]
-      (try
-	~@body
-	(finally
-	  (kill-fn#))))))
+(defmacro with-server [server & body]
+  `(let [kill-fn# ~server]
+     (try
+       ~@body
+       (finally
+	 (kill-fn#)))))
+
+(defmacro with-handler [handler & body]
+  `(with-server (start-http-server ~handler {:port 8080, :auto-transform true})
+     ~@body))
 
 '(deftest browser-http-response
    (println "waiting for browser test")
@@ -118,21 +121,21 @@
    (is @latch))
 
 (deftest single-requests
-  (with-server basic-handler
+  (with-handler basic-handler
     (doseq [[index [path result]] (indexed expected-results)]
       (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
 	(is (= result (wait-for-request client path)))
 	(close-connection client)))))
 
 (deftest multiple-requests
-  (with-server basic-handler
+  (with-handler basic-handler
     (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
 (deftest streaming-response
-  (with-server streaming-response-handler
+  (with-handler streaming-response-handler
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
       (is
 	(= (map str "abcdefghi")
@@ -141,7 +144,7 @@
 (deftest streaming-request
   (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
     (doseq [content-type ["application/json" "application/xml"]]
-      (with-server streaming-request-handler
+      (with-handler streaming-request-handler
 	(let [ch (apply closed-channel s)]
 	  (let [result (sync-http-request
 			 {:url "http://localhost:8080"
@@ -154,14 +157,15 @@
 	      (is (= (transform-results s) (transform-results (channel-seq (:body result) 1000)))))))))))
 
 (deftest auto-transform-test
-  (with-server json-response-handler
+  (with-handler json-response-handler
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
       (is (= {:foo 1, :bar 2} (:body result))))))
 
 (deftest websocket-server
-  (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8081, :websocket true})
-    (let [result (run-pipeline (websocket-client {:url "http://localhost:8081"})
+  (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8080, :websocket true})
+    (let [result (run-pipeline (websocket-client {:url "http://localhost:8080"})
 		   (fn [ch]
-		     (enqueue ch "abc")
-		     (read-channel ch 1000)))]
-      (is (= "abc" (wait-for-result result 1000))))))
+		     (enqueue ch "a" "b" "c")
+		     ch))]
+      (is (= ["a" "b" "c"] (channel-seq @result 1000)))
+      (close @result))))

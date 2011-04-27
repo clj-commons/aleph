@@ -264,10 +264,10 @@
   "Starts a server.  Returns a function that stops the server."
   [pipeline-fn options]
   (let [port (:port options)
-	server (ServerBootstrap.
-		 (NioServerSocketChannelFactory.
-		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)))
+	channel-factory (NioServerSocketChannelFactory.
+			  (Executors/newCachedThreadPool)
+			  (Executors/newCachedThreadPool))
+	server (ServerBootstrap. channel-factory)
 	channel-group (DefaultChannelGroup.)]
     (doseq [[k v] (merge default-server-options (:netty options))]
       (.setOption server k v))
@@ -278,7 +278,9 @@
       (run-pipeline
 	(.close channel-group)
 	wrap-netty-channel-group-future
-	(fn [_] (.releaseExternalResources server))))))
+	(fn [_]
+	  (.releaseExternalResources channel-factory)
+	  (.releaseExternalResources server))))))
 
 ;;;
 
