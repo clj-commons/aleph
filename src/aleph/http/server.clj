@@ -12,7 +12,7 @@
   (:use
     [aleph netty formats]
     [aleph.http utils core websocket]
-    [lamina core executors]
+    [lamina core executors logging]
     [lamina.core.pipeline :only (success-result)]
     [clojure.pprint])
   (:require
@@ -305,8 +305,9 @@
 		  {:handler-timeout -1}
 		  options
 		  {:thread-pool (thread-pool
-				  (merge
-				    {:name (str "HTTP server on port " (:port options))}
+				  (merge-with #(if (map? %1) (merge %1 %2) %2)
+				    {:name (str "HTTP server on port " (:port options))
+				     :hooks {:state (siphon->> (sample-every 30000) log-info)}}
 				    (:thread-pool options)))})
 	stop-fn (start-server
 		  #(create-pipeline handler options)
