@@ -20,8 +20,8 @@
 
 (defn- object-coded-pipeline
   [pipeline]
-  (.addFirst p "encoder" (ObjectEncoder.))
-  (.addFirst p "decoder" (ObjectDecoder.))
+  (.addFirst pipeline "encoder" (ObjectEncoder.))
+  (.addFirst pipeline "decoder" (ObjectDecoder.))
   pipeline)
 
 (defn- server-pipeline [handler options]
@@ -30,7 +30,7 @@
 
 (defn- client-pipeline [ch options]
   (let [pipeline ^ChannelPipeline (tcp/basic-client-pipeline ch identity options)]
-    (object-coded-pipeline pipeline))
+    (object-coded-pipeline pipeline)))
 
 (defn start-object-server
   "Identical to start-tcp-server, except that the channel accepts any serializable Java
