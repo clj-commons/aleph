@@ -16,11 +16,11 @@
   (:import
     [org.jboss.netty.util
      DefaultObjectSizeEstimator]
-    [org.jboss.netty.buffer 
+    [org.jboss.netty.buffer
      ChannelBuffer]
     [java.nio
      ByteBuffer]
-    [java.util.concurrent 
+    [java.util.concurrent
      Executor]))
 
 ; TODO: Add message counters up and down too...
@@ -45,7 +45,7 @@
     (when @monitor?
       (future
         (Thread/sleep period)
-        (.submit ^Executor netty-thread-pool 
+        (.submit ^Executor netty-thread-pool
                  #(update-monitor-stats m))))))
 
 (def DEFAULT-ESTIMATOR (DefaultObjectSizeEstimator.))
@@ -53,8 +53,8 @@
 (defn- smart-estimator
   [obj]
   (cond
-    (instance? ChannelBuffer obj) (.readableBytes obj)
-    :else (.estimateSize DEFAULT-ESTIMATOR)))
+    (instance? ChannelBuffer obj) (.readableBytes ^ChannelBuffer obj)
+    :else (.estimateSize ^DefaultObjectSizeEstimator DEFAULT-ESTIMATOR obj)))
 
 (defn traffic-monitor
   ([] (traffic-monitor {}))
@@ -109,7 +109,7 @@
 (defn reset-traffic-monitor
   [m]
   (let [counters (select-keys m
-                              :messages-read 
+                              :messages-read
                               :messages-written
                               :bytes-read
                               :bytes-read-window
@@ -137,7 +137,7 @@
            read-throughput write-throughput
            update-period monitor?]}]
 
-  (format 
+  (format
 "
  ----------------------------------
 | %22s: %8b |
@@ -149,12 +149,12 @@
 | %22s: %8.2f |
 | %22s: %8.2f |
  ----------------------------------
-" 
-    "monitor?" @monitor? 
+"
+    "monitor?" @monitor?
     "update-period" @update-period
     "messages-read" @messages-read
     "messages-written" @messages-written
-    "total-bytes-read" @total-bytes-read 
+    "total-bytes-read" @total-bytes-read
     "total-bytes-written" @total-bytes-written
-    "read-throughput" @read-throughput 
+    "read-throughput" @read-throughput
     "write-throughput" @write-throughput))
