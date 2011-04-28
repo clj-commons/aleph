@@ -20,8 +20,12 @@
 
 (defn- object-coded-pipeline
   [pipeline]
-  (.addFirst pipeline "encoder" (ObjectEncoder.))
-  (.addFirst pipeline "decoder" (ObjectDecoder.))
+  (if (.get pipeline "read-traffic-monitor")
+    (.addAfter pipeline "read-traffic-monitor" "decoder" (ObjectDecoder.))
+    (.addFirst pipeline "decoder" (ObjectDecoder.)))
+  (if (.get pipeline "write-traffic-monitor")
+    (.addAfter pipeline "write-traffic-monitor" "encoder" (ObjectEncoder.))
+    (.addFirst pipeline "encoder" (ObjectEncoder.)))
   pipeline)
 
 (defn- server-pipeline [handler options]

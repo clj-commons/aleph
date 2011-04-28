@@ -10,7 +10,7 @@
   (:use
     [lamina.core]
     [gloss.core]
-    [aleph tcp formats traffic]
+    [aleph tcp object formats traffic]
     [clojure test stacktrace]))
 
 (def server-messages (ref []))
@@ -18,10 +18,7 @@
 (defn append-to-server [msg]
   (dosync (alter server-messages conj (when msg (str msg)))))
 
-(deftest monitor-test
-  [])
-
-(deftest traffic-test
+(deftest traffic-test-tcp
   (dosync
     (ref-set server-messages []))
   (let [server-monitor (traffic-monitor)
@@ -48,6 +45,38 @@
           (enqueue ch "foo"))
 	(let [s (doall (map str (take 1000 (lazy-channel-seq ch 1000))))]
 	  (is (= s (map str @server-messages))))
+        (is (= @(:total-bytes-read client-monitor)
+               @(:total-bytes-written client-monitor)
+               @(:total-bytes-read server-monitor)
+               @(:total-bytes-written server-monitor))))
+      (finally
+        (stop-traffic-monitor server-monitor)
+        (stop-traffic-monitor client-monitor)
+	(server)
+        (println "Server Monitor:" (traffic-report server-monitor))
+        (println "Client Monitor:" (traffic-report client-monitor))))))
+
+(deftest traffic-test-object
+  (dosync
+    (ref-set server-messages []))
+  (let [server-monitor (traffic-monitor)
+        client-monitor (traffic-monitor)
+        server (start-object-server
+		 (fn [ch _]
+		   (receive-all ch
+		     (fn [x]
+		       (when x
+			 (enqueue ch x)
+			 (dosync (alter server-messages conj x))))))
+                 {:port 8888
+                  :traffic-monitor server-monitor})]
+    (try
+      (let [ch (wait-for-result (object-client {:host "localhost" :port 8888
+                                                :traffic-monitor client-monitor}))]
+	(dotimes [i 1000]
+	  (enqueue ch [i]))
+	(let [s (doall (lazy-channel-seq ch 1000))]
+	  (is (= (first s) (first @server-messages))))
         (is (= @(:total-bytes-read client-monitor)
                @(:total-bytes-written client-monitor)
                @(:total-bytes-read server-monitor)
