@@ -49,6 +49,7 @@
    :body (ByteArrayInputStream. (.getBytes stream-response))})
 
 (def latch (promise))
+(def browser-server (atom nil))
 
 (def route-map
   {"/stream" stream-handler
@@ -58,7 +59,7 @@
    "/stop" (fn [_]
 	     (try
 	       (deliver latch true) ;;this can be triggered more than once, sometimes
-	       (@server)
+	       (@browser-server)
 	       (catch Exception e
 		 )))})
 
@@ -115,10 +116,10 @@
   `(with-server (start-http-server ~handler {:port 8080, :auto-transform true})
      ~@body))
 
-'(deftest browser-http-response
-   (println "waiting for browser test")
-   (start-http-server basic-handler {:port 8080})
-   (is @latch))
+#_(deftest browser-http-response
+    (println "waiting for browser test")
+    (reset! browser-server (start-http-server basic-handler {:port 8080}))
+    (is @latch))
 
 (deftest single-requests
   (with-handler basic-handler
