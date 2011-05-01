@@ -95,7 +95,8 @@
       (update-in response [:headers]
 	#(assoc %
 	   "Upgrade" "WebSocket"
-	   "Connection" "Upgrade"))
+	   "Connection" "Upgrade"
+           "Content-Type" "utf-8"))
       options)))
 
 (defn- respond-to-handshake [ctx ^HttpRequest request options]
@@ -111,7 +112,7 @@
 	inner (wrap-write-channel inner)
 	close-atom (atom false)
 	close? #(not (compare-and-set! close-atom false true))]
-    
+
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
 
@@ -126,7 +127,7 @@
 		  '(when (close?)
 		    (.close ch)))
 		(enqueue outer (from-websocket-frame msg)))
-	      
+
 	      (instance? HttpRequest msg)
 	      (if (websocket-handshake? msg)
 		(do
@@ -143,7 +144,7 @@
 		  (respond-to-handshake ctx msg options)
 		  (handler inner (assoc (transform-netty-request msg options) :websocket true)))
 		(.sendUpstream ctx evt))))
-	  
+
 	  (if-let [ch (channel-event evt)]
 	    (when-not (.isConnected ch)
 	      (enqueue-and-close inner nil)
