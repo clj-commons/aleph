@@ -317,7 +317,7 @@
 	(try
 	  (stop-fn)
 	  (finally
-	    (shutdown-executor (:thread-pool options))))))))
+	    (shutdown-thread-pool (:thread-pool options))))))))
 
 
 
