@@ -162,7 +162,9 @@
 		 (assoc :url (get-in response [:headers "location"]))
 		 (dissoc :query-string :uri :server-port :server-name :scheme))
 	       timeout)
-	     response))))))
+	     (do
+	       (run-pipeline connection close)
+	       response)))))))
 
 ;;;
 
