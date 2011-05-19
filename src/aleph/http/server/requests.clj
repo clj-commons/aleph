@@ -15,6 +15,7 @@
     [aleph.http core])
   (:import
     [org.jboss.netty.handler.codec.http
+     HttpHeaders
      HttpRequest
      HttpChunk]))
 
@@ -80,8 +81,11 @@
     (run-pipeline in
       read-channel
       (fn [req]
-	(let [req (transform-netty-request req netty-channel options)]
-	  (enqueue a req)
+	(let [keep-alive? (HttpHeaders/isKeepAlive req)
+	      req (transform-netty-request req netty-channel options)]
+	  (do
+	    (enqueue a req)
+	    keep-alive?)
 	  (when (-> req :body channel?)
 	    (let [chunks (->> in
 			   (take-while* #(instance? HttpChunk %))
@@ -92,7 +96,8 @@
 				      :body)))
 			   (filter* (complement nil?)))]
 	      (siphon chunks (:body req))
-	      (closed-result chunks)))))
+	      (run-pipeline (closed-result chunks)
+		(fn [_] keep-alive?))))))
       (fn [_]
 	(restart)))
     (server b handler

@@ -54,7 +54,8 @@
 			     (log/error "Error in handler, closing connection" ex)
 			     (.close netty-channel))
 	    read-channel
-	    #(respond netty-channel options (first %) (second %)))
+	    #(respond netty-channel options (first %) (second %))
+	    (fn [_] (.close netty-channel)))
 	  (do
 	    (when (compare-and-set! init? false true)
 	      (receive-in-order (consume-request-stream netty-channel ch handler options)
@@ -94,11 +95,7 @@
   (let [options (merge
 		  {:timeout (constantly -1)}
 		  options
-		  {:thread-pool (when-not (and (contains? options :thread-pool) (nil? (:thread-pool options)))
-				  (thread-pool
-				    (merge-with #(if (map? %1) (merge %1 %2) %2)
-				      {:name (str "HTTP server on port " (:port options))}
-				      (:thread-pool options))))})
+		  )
 	stop-fn (start-server
 		  #(create-pipeline handler options)
 		  options)]
