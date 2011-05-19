@@ -34,7 +34,7 @@ namespace.
     <a class="wiki_link" href="api-index.html">API Index</a><br />
     <a class="wiki_link" href="#">Namespaces:</a>
     <ul id="left-sidebar-list">
-      <li><a href="aleph.data-api.html" class="wiki_link">aleph.data</a></li><li><a href="aleph.formats-api.html" class="wiki_link">aleph.formats</a></li><li><a href="aleph.http-api.html" class="wiki_link">aleph.http</a></li><li><a href="aleph.object-api.html" class="wiki_link">aleph.object</a></li><li><a href="aleph.redis-api.html" class="wiki_link">aleph.redis</a></li><li><a href="aleph.tcp-api.html" class="wiki_link">aleph.tcp</a></li><li><a href="aleph.udp-api.html" class="wiki_link">aleph.udp</a></li>
+      <li><a href="aleph.core-api.html" class="wiki_link">aleph.core</a></li><li><a href="aleph.formats-api.html" class="wiki_link">aleph.formats</a></li><li><a href="aleph.http-api.html" class="wiki_link">aleph.http</a></li><li><a href="aleph.object-api.html" class="wiki_link">aleph.object</a></li><li><a href="aleph.redis-api.html" class="wiki_link">aleph.redis</a></li><li><a href="aleph.tcp-api.html" class="wiki_link">aleph.tcp</a></li><li><a href="aleph.udp-api.html" class="wiki_link">aleph.udp</a></li>
     </ul>
   </div>
 </div>
@@ -69,6 +69,18 @@ namespace.
       <a href="#aleph.http/wrap-aleph-handler">wrap-aleph-handler</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.http/wrap-ring-handler">wrap-ring-handler</a>
+    </div>
+    <br />
+  </div><div style="margin-left: 1em;" class="toc-section">
+    <a href="#aleph.http.server.requests">aleph.http.server.requests</a>
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.http.server.requests/transform-netty-request">transform-netty-request</a>
+    </div>
+    <br />
+  </div><div style="margin-left: 1em;" class="toc-section">
+    <a href="#aleph.http.server.responses">aleph.http.server.responses</a>
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.http.server.responses/transform-aleph-response">transform-aleph-response</a>
     </div>
     <br />
   </div>
@@ -249,6 +261,30 @@ used to wrap handler functions for asynchronous routes.</pre>
   <pre id="var-docstr">Wraps a synchronous Ring handler, such that it can be used in start-http-server.  If certain
 routes within the application are asynchronous, wrap those handler functions in
 wrap-aleph-handler.</pre>
+  
+</div>
+<h2 id="namespace-name">aleph.http.server.requests</h2>
+<pre id="namespace-docstr"></pre>
+<br />
+<div id="var-entry">
+  <hr />
+  <h2 id="aleph.http.server.requests/transform-netty-request">transform-netty-request</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (transform-netty-request req netty-channel options)
+</pre>
+  <pre id="var-docstr">Transforms a Netty request into a Ring request.</pre>
+  
+</div>
+<h2 id="namespace-name">aleph.http.server.responses</h2>
+<pre id="namespace-docstr"></pre>
+<br />
+<div id="var-entry">
+  <hr />
+  <h2 id="aleph.http.server.responses/transform-aleph-response">transform-aleph-response</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (transform-aleph-response response options)
+</pre>
+  <pre id="var-docstr">Turns a Ring response into something Netty can understand.</pre>
   
 </div>
 
