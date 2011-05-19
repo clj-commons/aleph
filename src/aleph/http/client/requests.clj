@@ -57,5 +57,6 @@
 				   DefaultHttpChunk.))))
 		(fn [_]
 		  (enqueue out HttpChunk/LAST_CHUNK))))))))
+    (on-drained in #(close out))
     out))
 

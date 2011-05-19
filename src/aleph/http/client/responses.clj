@@ -54,5 +54,6 @@
 		(fn [_] (close in)))
 	      (enqueue out (assoc response :body chunks))
 	      (closed-result chunks))))))
+    (on-drained in #(close out))
     out))
 
