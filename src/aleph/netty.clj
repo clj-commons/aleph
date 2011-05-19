@@ -58,19 +58,6 @@
 
 ;;;
 
-(def netty-thread-pool (Executors/newCachedThreadPool))
-
-(defn enqueue-task [f]
-  (let [result (result-channel)]
-    (.submit ^Executor netty-thread-pool
-      #(siphon-result
-	 (run-pipeline nil
-	   (fn [_] (f)))
-	 result))
-    result))
-
-;;;
-
 (defn channel-origin [netty-channel]
   (let [socket-address (.getRemoteAddress ^Channel netty-channel)
 	inet-address (.getAddress ^InetSocketAddress socket-address)]
@@ -304,7 +291,6 @@
 	(.close channel-group)
 	wrap-netty-channel-group-future
 	(fn [_]
-	  (.releaseExternalResources channel-factory)
 	  (.releaseExternalResources server))))))
 
 ;;;
@@ -330,8 +316,8 @@
 	channel-group (DefaultChannelGroup.)
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
-		   netty-thread-pool
-		   netty-thread-pool))]
+		   (Executors/newCachedThreadPool)
+		   (Executors/newCachedThreadPool)))]
     (doseq [[k v] (merge default-client-options (:netty options))]
       (.setOption client k v))
     (.setPipelineFactory client
@@ -346,7 +332,11 @@
 	    wrap-netty-channel-future
 	    (fn [_]
 	      (close inner)
-	      (close outer)))
+	      (close outer)
+	      (run-pipeline
+		(.close channel-group)
+		wrap-netty-channel-group-future
+		(fn [_] (.releaseExternalResources client)))))
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer

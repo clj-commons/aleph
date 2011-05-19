@@ -11,6 +11,7 @@
   (:use
     [lamina.core]
     [aleph.http core]
+    [aleph.http.server requests responses]
     [aleph formats netty]
     [gloss.io])
   (:import
@@ -84,9 +85,9 @@
 					(str "?" (:query-string request))))
 	       "WebSocket-Protocol" (headers "websocket-protocol")}}))
 
-(defn websocket-response [^HttpRequest request options]
+(defn websocket-response [^HttpRequest request netty-channel options]
   (.setHeader request "content-type" "application/octet-stream")
-  (let [request (transform-netty-request request options)
+  (let [request (transform-netty-request request netty-channel options)
 	headers (:headers request)
 	response (if (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
 		   (secure-websocket-response request)
@@ -95,15 +96,14 @@
       (update-in response [:headers]
 	#(assoc %
 	   "Upgrade" "WebSocket"
-	   "Connection" "Upgrade"
-           "Content-Type" "utf-8"))
+	   "Connection" "Upgrade"))
       options)))
 
 (defn- respond-to-handshake [ctx ^HttpRequest request options]
   (let [channel (.getChannel ctx)
 	pipeline (.getPipeline channel)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (write-to-channel channel (websocket-response request options) false)
+    (write-to-channel channel (websocket-response request channel options) false)
     (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
 
 ;;TODO: uncomment out closing handshake, and add in timeout so that we're not waiting forever
@@ -142,7 +142,7 @@
 		      '(write-to-channel ch WebSocketFrame/CLOSING_HANDSHAKE (close?))
 		      (.close ch)))
 		  (respond-to-handshake ctx msg options)
-		  (handler inner (assoc (transform-netty-request msg options) :websocket true)))
+		  (handler inner (assoc (transform-netty-request msg ch options) :websocket true)))
 		(.sendUpstream ctx evt))))
 
 	  (if-let [ch (channel-event evt)]

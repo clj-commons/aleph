@@ -11,6 +11,7 @@
   (:use
     [aleph netty formats]
     [aleph.http core utils websocket]
+    [aleph.http.client requests responses]
     [lamina core connections])
   (:require
     [clj-http.client :as client])
@@ -43,74 +44,6 @@
 
 ;;;
 
-(defn read-streaming-response [response options in out]
-  (run-pipeline in
-    read-channel
-    (fn [^HttpChunk chunk]
-      (let [body (:body (decode-aleph-msg (assoc response :body (.getContent chunk)) options))]
-	(if (.isLast chunk)
-	  (close out)
-	  (do
-	    (enqueue out body)
-	    (restart)))))))
-
-(defn read-responses [netty-channel options in out]
-  (run-pipeline in
-    read-channel
-    (fn [^HttpResponse response]
-      (let [chunked? (.isChunked response)
-	    headers (netty-headers response)
-	    response (transform-netty-response response headers options)]
-	(if-not chunked?
-	  (enqueue out response)
-	  (let [body (:body response)
-		stream (channel)
-		close (constant-channel)
-		response (assoc response :body (splice stream close))]
-	    (receive close
-	      (fn [_] (.close netty-channel)))
-	    (when body
-	      (enqueue stream body))
-	    (enqueue out response)
-	    (read-streaming-response response options in stream)))))
-    (fn [_]
-      (restart))))
-
-;;;
-
-(defn read-streaming-request [request options in out]
-  (run-pipeline in
-    read-channel
-    (fn [chunk]
-      (when chunk
-	(enqueue out
-	  (DefaultHttpChunk. (:body (encode-aleph-msg (assoc request :body chunk) options)))))
-      (if (drained? in)
-	(enqueue out HttpChunk/LAST_CHUNK)
-	(restart)))))
-
-(defn read-requests [in out options close-fn]
-  (run-pipeline in
-    read-channel
-    (fn [request]
-      (let [request (wrap-client-request request)]
-	(when request
-	  (enqueue out
-	    (transform-aleph-request
-	      (:scheme options)
-	      (:server-name options)
-	      (:server-port options)
-	      (pre-process-aleph-message request options)
-	      options))
-	  (when (channel? (:body request))
-	    (read-streaming-request request options (:body request) out)))))
-    (fn [_]
-      (if-not (drained? in)
-	(restart)
-	(close-fn)))))
-
-;;;
-
 (defn create-pipeline [client options]
   (let [responses (channel)
 	init? (atom false)
@@ -120,9 +53,7 @@
 		   :upstream-error (downstream-stage error-stage-handler)
 		   :response (message-stage
 			       (fn [netty-channel rsp]
-				 (when (compare-and-set! init? false true)
-				   (read-responses netty-channel options responses client))
-				 (enqueue responses rsp)
+				 (enqueue client rsp)
 				 nil))
 		   :downstream-error (upstream-stage error-stage-handler))]
     pipeline))
@@ -144,13 +75,10 @@
 		 identity
 		 options)]
     (run-pipeline client
-      (fn [responses]
-	(read-requests
-	  requests responses options
-	  (fn []
-	    (close requests)
-	    (close responses)))
-	(splice responses requests)))))
+      (fn [ch]
+	(splice
+	  (wrap-response-stream options ch)
+	  (siphon->> (wrap-request-stream options) ch))))))
 
 (defn- http-client- [client-fn options]
   (let [options (process-options options)
@@ -282,10 +210,10 @@
       (fn [ch]
 	(enqueue ch
 	  (transform-aleph-request
+	    (websocket-handshake (or (:protocol options) "aleph"))
 	    (:scheme options)
 	    (:server-name options)
 	    (:server-port options)
-	    (websocket-handshake (or (:protocol options) "aleph"))
 	    options))
 	(run-pipeline result
 	  (fn [_]

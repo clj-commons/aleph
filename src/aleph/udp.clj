@@ -6,7 +6,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns ^{:author "Jeff Rose"}
+(ns ^{:author "Jeff Rose, Zachary Tellman"}
   aleph.udp
   (:use
     [aleph netty formats]
@@ -15,6 +15,7 @@
   (:require
     [clojure.contrib.logging :as log])
   (:import
+    [java.util.concurrent Executors]
     [org.jboss.netty.buffer ChannelBuffer]
     [org.jboss.netty.bootstrap ConnectionlessBootstrap]
     [org.jboss.netty.channel.socket.nio NioDatagramChannelFactory]
@@ -85,7 +86,7 @@
 	  options)
         [inner outer] (channel-pair)
         client (ConnectionlessBootstrap.
-                 (NioDatagramChannelFactory. netty-thread-pool))
+                 (NioDatagramChannelFactory. (Executors/newCachedThreadPool)))
         local-addr (InetSocketAddress. port)
         netty-opts (if broadcast
                      (assoc netty "broadcast" true)

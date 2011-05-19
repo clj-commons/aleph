@@ -14,7 +14,8 @@
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
   (:require
-    [clojure.string :as str])
+    [clojure.string :as str]
+    [clojure.contrib.logging :as log])
   (:import
     [java.io
      File
@@ -63,10 +64,13 @@
 	       (catch Exception e
 		 )))})
 
+(defn print-vals [& args]
+  (apply prn args)
+  (last args))
+
 (defn basic-handler [ch request]
   (when-let [handler (route-map (:uri request))]
-    (enqueue-and-close ch
-      (handler request))))
+    (enqueue ch (handler request))))
 
 (def expected-results
   (->>
@@ -102,7 +106,7 @@
 
 (defn wait-for-request [client path]
   (-> (client {:method :get, :url (str "http://localhost:8080/" path), :auto-transform true})
-    (wait-for-result 1000)
+    (wait-for-result 500)
     :body))
 
 (defmacro with-server [server & body]
@@ -151,7 +155,7 @@
 			 {:url "http://localhost:8080"
 			  :method :post
 			  :headers {"content-type" content-type}
-			  :body ch,
+			  :body ch
 			  :auto-transform true}
 			 1000)]
 	    (let [transform-results (fn [x] (map #(-> % :content first str/trim) x))]
