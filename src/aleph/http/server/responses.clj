@@ -114,7 +114,7 @@
 ;;;
 
 (defn- respond-with-channel
-  [netty-channel options returned-result response]
+  [^Channel netty-channel options returned-result response]
   (let [response (update-in response [:character-encoding] #(or % "utf-8"))
 	initial-response ^HttpResponse (transform-aleph-response response options)
 	ch (:body response)
@@ -122,6 +122,10 @@
 			   (let [result (apply write-to-channel args)]
 			     (enqueue returned-result result)
 			     result))]
+    (run-pipeline (.getCloseFuture netty-channel)
+      wrap-netty-channel-future
+      (fn [_]
+	(close ch)))
     (run-pipeline (let [result (write-to-channel netty-channel initial-response false)]
 		    (enqueue returned-result result)
 		    result)
