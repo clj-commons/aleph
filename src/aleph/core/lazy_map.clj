@@ -45,7 +45,15 @@
 	(getKey [_] k)
 	(getValue [_] v))))
   (assoc [this k v]
-    (LazyMap. (atom (assoc @m k v)))))
+    (LazyMap. (atom (assoc @m k v))))
+  clojure.lang.IPersistentMap
+  (assocEx [this k v]
+    (let [theMap @m]
+      (if (contains? theMap k)
+        (throw (Exception. "Key or value already present"))
+        (LazyMap. (atom (assoc theMap k v))))))
+  (without [this k]
+    (LazyMap. (atom (dissoc @m k)))))
 
 (defn lazy-get [^LazyMap m k]
   (let [m-val @(.m m)
