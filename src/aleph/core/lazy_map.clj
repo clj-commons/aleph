@@ -112,7 +112,10 @@
   (invoke [this a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20]
     (throw-lazy-arity 20))
   (applyTo [this args]
-    (apply @m args)))
+    (case (count args)
+      1 (.invoke this (first args))
+      2 (.invoke this (first args) (second args))
+      (throw-lazy-arity (count args)))))
 
 (defn lazy-get
   ([^LazyMap m k]
