@@ -30,7 +30,7 @@
       (= x (into {} this))))
   clojure.lang.Counted
   (count [this]
-    (count @m))
+    (count (seq this)))
   clojure.lang.Seqable
   (seq [this]
     (doseq [k (keys @m)]
