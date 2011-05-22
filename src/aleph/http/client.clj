@@ -66,7 +66,7 @@
     (update-in [:server-port] #(or % 80))
     (update-in [:keep-alive?] #(or % true))))
 
-(defn- http-connection
+(defn http-connection
   [options]
   (let [options (process-options options)
 	requests (channel)
@@ -84,7 +84,8 @@
   (let [options (process-options options)
 	client (client-fn
 		 #(http-connection options)
-		 (str (:scheme options) "://" (:server-name options) ":" (:server-port options)))
+		 {:description
+		  (str (:scheme options) "://" (:server-name options) ":" (:server-port options))})
 	f (fn [request timeout]
 	    (if (map? request)
 	      (client (assoc (merge options request)
@@ -127,10 +128,7 @@
 (defn http-request
   "Takes an HTTP request structured per the Ring spec, and returns a result-channel
    that will emit an HTTP response.  If a timeout is specified and elapses before a
-   response is received, the result will emit an error.
-
-   Redirects will automatically be followed.  If a timeout is specified, each redirect
-   will be allowed the full timeout."
+   response is received, the result will emit an error."
   ([request]
      (http-request request -1))
   ([request timeout]
@@ -155,16 +153,10 @@
 	   (read-channel ch))
 	 (fn [response]
 	   (reset! latch true)
-	   (if (= 301 (:status response))
-	     (http-request
-	       (-> request
-		 (update-in [:redirect-count] #(if-not % 1 (inc %)))
-		 (assoc :url (get-in response [:headers "location"]))
-		 (dissoc :query-string :uri :server-port :server-name :scheme))
-	       timeout)
-	     (do
-	       (run-pipeline connection close)
-	       response)))))))
+	   (if (channel? (:body response))
+	     (on-closed (:body response) #(run-pipeline connection close))
+	     (run-pipeline connection close))
+	   response)))))
 
 ;;;
 
