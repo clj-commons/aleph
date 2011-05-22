@@ -175,9 +175,10 @@
 (defn pre-process-aleph-message [msg options]
   (update-in msg [:headers]
     (fn [headers]
-      (zipmap
+      (if headers
+        (zipmap
 	(map #(->> (str/split (to-str %) #"-") (map str/capitalize) (str/join "-")) (keys headers))
-	(vals headers)))))
+	(vals headers))))))
 
 (defn process-chunks [req options]
   (if (:auto-transform options)
