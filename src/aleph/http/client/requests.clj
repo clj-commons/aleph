@@ -32,31 +32,34 @@
 
 (defn wrap-request-stream [options in]
   (let [out (channel)]
-    (receive-in-order in
-      (fn [request]
-	(when request
-	  (let [request (-> request
-			  wrap-client-request
-			  (pre-process-aleph-message options))
-		netty-request (transform-aleph-request
-				request
-				(:scheme options)
-				(:server-name options)
-				(:server-port options)
-				options)]
-	    (enqueue out netty-request)
-	    (when (channel? (:body request))
-	      (run-pipeline
-		(receive-in-order (:body request)
-		  (fn [chunk]
-		    (enqueue out (-> request
-				   (assoc :body chunk)
-				   (encode-aleph-message options)
-				   :body
-				   to-channel-buffer
-				   DefaultHttpChunk.))))
-		(fn [_]
-		  (enqueue out HttpChunk/LAST_CHUNK))))))))
-    (on-drained in #(close out))
+    (on-closed out #(close in))
+    (run-pipeline
+      (receive-in-order in
+	(fn [request]
+	  (when request
+	    (let [request (-> request
+			    wrap-client-request
+			    (pre-process-aleph-message options))
+		  netty-request (transform-aleph-request
+				  request
+				  (:scheme options)
+				  (:server-name options)
+				  (:server-port options)
+				  options)]
+	      (enqueue out netty-request)
+	      (when (channel? (:body request))
+		(run-pipeline
+		  (receive-in-order (:body request)
+		    (fn [chunk]
+		      (enqueue out (-> request
+				     (assoc :body chunk)
+				     (encode-aleph-message options)
+				     :body
+				     to-channel-buffer
+				     DefaultHttpChunk.))))
+		  (fn [_]
+		    (enqueue out HttpChunk/LAST_CHUNK))))))))
+      (fn [_]
+	(close out)))
     out))
 

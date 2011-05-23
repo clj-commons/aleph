@@ -317,7 +317,8 @@
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)))]
+		   (Executors/newCachedThreadPool)
+		   (.availableProcessors (Runtime/getRuntime))))]
     (doseq [[k v] (merge default-client-options (:netty options))]
       (.setOption client k v))
     (.setPipelineFactory client

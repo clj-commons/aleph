@@ -77,29 +77,38 @@
     ch))
 
 (defn consume-request-stream [netty-channel in handler options]
-  (let [[a b] (channel-pair)]
+  (let [[a b] (channel-pair)
+	handler (fn [ch req]
+		  (let [c (constant-channel)]
+		    (handler c (dissoc req :keep-alive?))
+		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))]
     (run-pipeline in
       read-channel
       (fn [req]
 	(let [keep-alive? (HttpHeaders/isKeepAlive req)
-	      req (transform-netty-request req netty-channel options)]
-	  (do
-	    (enqueue a req)
-	    keep-alive?)
-	  (when (-> req :body channel?)
+	      req (transform-netty-request req netty-channel options)
+	      req (assoc req :keep-alive? keep-alive?)]
+	  (if-not (-> req :body channel?)
+	    (do
+	      (enqueue a req)
+	      keep-alive?)
 	    (let [chunks (->> in
 			   (take-while* #(instance? HttpChunk %))
-			   (map* #(when-not (final-netty-message? %)
+			   (map* #(if (final-netty-message? %)
+				    ::last
 				    (-> req
 				      (assoc :body (.getContent ^HttpChunk %))
 				      (decode-aleph-message options)
 				      :body)))
-			   (filter* (complement nil?)))]
-	      (siphon chunks (:body req))
+			   (take-while* #(not= ::last %)))]
+	      (enqueue a (assoc req :body chunks))
 	      (run-pipeline (closed-result chunks)
-		(fn [_] keep-alive?))))))
-      (fn [_]
-	(restart)))
+		(fn [_]
+		  keep-alive?))))))
+      (fn [keep-alive?]
+	(if keep-alive?
+	  (restart)
+	  (close a))))
     (server b handler
       (assoc options
 	:response-channel #(wrap-response-channel (constant-channel))))

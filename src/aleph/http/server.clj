@@ -13,7 +13,7 @@
     [aleph netty formats]
     [aleph.http utils core websocket]
     [aleph.http.server requests responses]
-    [lamina core executors logging]
+    [lamina core executors trace]
     [lamina.core.pipeline :only (success-result)]
     [clojure.pprint])
   (:require
@@ -58,8 +58,10 @@
 	    (fn [_] (.close netty-channel)))
 	  (do
 	    (when (compare-and-set! init? false true)
-	      (receive-in-order (consume-request-stream netty-channel ch handler options)
-		#(respond netty-channel options (first %) (second %))))
+	      (run-pipeline
+		(receive-in-order (consume-request-stream netty-channel ch handler options)
+		  #(respond netty-channel options (first %) (second %)))
+		(fn [_] (.close netty-channel))))
 	    (enqueue ch request)))
 	nil))))
 
@@ -95,7 +97,13 @@
   (let [options (merge
 		  {:timeout (constantly -1)}
 		  options
-		  )
+		  {:thread-pool (when (and
+					(contains? options :thread-pool)
+					(not (nil? (:thread-pool options))))
+				  (thread-pool
+				    (merge-with #(if (map? %1) (merge %1 %2) %2)
+				      {:name (str "HTTP server on port " (:port options))}
+				      (:thread-pool options))))})
 	stop-fn (start-server
 		  #(create-pipeline handler options)
 		  options)]

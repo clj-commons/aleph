@@ -35,25 +35,27 @@
 
 (defn wrap-response-stream [options in]
   (let [out (channel)]
-    (receive-in-order in
-      (fn [^HttpResponse response]
-	(let [chunked? (.isChunked response)
-	      response (transform-netty-response response options)]
-	  (if-not chunked?
-	    (enqueue out response)
-	    (let [chunks (->> in
-			   (take-while* #(instance? HttpChunk %))
-			   (filter* #(not (final-netty-message? %)))
-			   (map* #(-> response
-				    (assoc :body (.getContent ^HttpChunk %))
-				    (decode-aleph-message options)
-				    :body)))
-		  close-channel (constant-channel)
-		  chunks (splice chunks close-channel)]
-	      (receive close-channel
-		(fn [_] (close in)))
-	      (enqueue out (assoc response :body chunks))
-	      (closed-result chunks))))))
-    (on-drained in #(close out))
+    (run-pipeline
+      (receive-in-order in
+	(fn [^HttpResponse response]
+	  (let [chunked? (.isChunked response)
+		response (transform-netty-response response options)]
+	    (if-not chunked?
+	      (enqueue out response)
+	      (let [chunks (->> in
+			     (take-while* #(instance? HttpChunk %))
+			     (filter* #(not (final-netty-message? %)))
+			     (map* #(-> response
+				      (assoc :body (.getContent ^HttpChunk %))
+				      (decode-aleph-message options)
+				      :body)))
+		    close-channel (constant-channel)
+		    chunks (splice chunks close-channel)]
+		(receive close-channel
+		  (fn [_] (close in)))
+		(enqueue out (assoc response :body chunks))
+		(closed-result chunks))))))
+      (fn [_]
+	(close out)))
     out))
 

@@ -132,7 +132,8 @@
       (fn [_]
 	(receive-in-order
 	  (map*
-	    #(-> (assoc response :body %)
+	    #(-> response
+	       (assoc :body %)
 	       (encode-aleph-message options)
 	       :body
 	       to-channel-buffer
