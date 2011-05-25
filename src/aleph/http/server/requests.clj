@@ -22,7 +22,7 @@
 (defn- request-destination [_]
   (fn [msg]
     (let [headers (:headers msg)]
-      (let [parts (.split ^String (headers "host") "[:]")]
+      (let [parts (.split ^String (or (headers "host") "") "[:]")]
 	{:server-name (first parts)
 	 :server-port (when-let [port (second parts)]
 			(Integer/parseInt port))}))))
