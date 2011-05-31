@@ -16,6 +16,8 @@
   (:require
     [clj-http.client :as client])
   (:import
+    [java.util.concurrent
+     TimeoutException]
     [org.jboss.netty.handler.codec.http.websocket
      WebSocketFrameEncoder
      WebSocketFrameDecoder]
@@ -137,7 +139,7 @@
 	   request (assoc request :keep-alive? false)]
 
        ;; timeout
-       (when (pos? timeout)
+       (when-not (neg? timeout)
 	 (run-pipeline (timed-channel timeout)
 	   read-channel
 	   (fn [_]
@@ -148,9 +150,10 @@
 
        ;; request
        (run-pipeline connection
+	 :error-handler (fn [_] )
 	 (fn [ch]
 	   (enqueue ch request)
-	   (read-channel ch))
+	   (read-channel ch timeout))
 	 (fn [response]
 	   (reset! latch true)
 	   (if (channel? (:body response))
