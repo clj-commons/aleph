@@ -83,11 +83,14 @@
 	  (siphon->> (wrap-request-stream options) ch))))))
 
 (defn- http-client- [client-fn options]
-  (let [options (process-options options)
+  (let [options (merge
+		  {:name
+		   (str "http-client." (:server-name options) "." (gensym ""))
+		   :description
+		   (str (:scheme options) "://" (:server-name options) ":" (:server-port options))}
+		  (process-options options))
 	client (client-fn
-		 #(http-connection options)
-		 {:description
-		  (str (:scheme options) "://" (:server-name options) ":" (:server-port options))})
+		 #(http-connection options))
 	f (fn [request timeout]
 	    (if (map? request)
 	      (client (assoc (merge options request)

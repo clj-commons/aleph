@@ -26,7 +26,8 @@
      (let [options (merge options {:port 6379 :charset :utf-8})]
        (client
 	 #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-	 {:description (str "redis @ " (:host options) ":" (:port options))}))))
+	 {:name (str "redis." (:host options) "." (gensym ""))
+	  :description (str "redis @ " (:host options) ":" (:port options))}))))
 
 (defn enqueue-task
   "Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure."

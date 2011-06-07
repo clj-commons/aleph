@@ -82,7 +82,8 @@
 	(merge
 	  {:port 0
 	   :broadcast false
-	   :buf-size nil}
+	   :buf-size nil
+	   :name (str "udp-socket." (or (:port options) (gensym "")))}
 	  options)
         [inner outer] (channel-pair)
         client (ConnectionlessBootstrap.

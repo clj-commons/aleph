@@ -162,7 +162,10 @@
    Optional parameters include :frame and :delimiters, which work identically to those in
    start-tcp-server."
   [options]
-  (let [encoder (create-frame
+  (let [options (merge
+		  {:name (str "tcp-server." (:port options))}
+		  options)
+	encoder (create-frame
 		  (or (:encoder options) (:frame options))
 		  (:delimiters options)
 		  (:strip-delimiters? options))]

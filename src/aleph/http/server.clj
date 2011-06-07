@@ -95,14 +95,15 @@
    communicates via complete (i.e. non-streaming) strings."
   [handler options]
   (let [options (merge
-		  {:timeout (constantly -1)}
+		  {:timeout (constantly -1)
+		   :name (str "http-server." (:port options))}
 		  options
 		  {:thread-pool (when (and
 					(contains? options :thread-pool)
 					(not (nil? (:thread-pool options))))
 				  (thread-pool
 				    (merge-with #(if (map? %1) (merge %1 %2) %2)
-				      {:name (str "HTTP server on port " (:port options))}
+				      {:name (str "http-server." (:port options) ".thread-pool")}
 				      (:thread-pool options))))})
 	stop-fn (start-server
 		  #(create-pipeline handler options)
