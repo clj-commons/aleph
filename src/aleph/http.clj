@@ -20,11 +20,11 @@
   (:import
     [java.io InputStream]))
 
-(import-fn server/start-http-server)
-(import-fn client/http-client)
-(import-fn client/pipelined-http-client)
-(import-fn client/http-request)
-(import-fn client/websocket-client)
+(import-fn #'server/start-http-server)
+(import-fn #'client/http-client)
+(import-fn #'client/pipelined-http-client)
+(import-fn #'client/http-request)
+(import-fn #'client/websocket-client)
 
 (defn sync-http-request
   "A synchronous version of http-request.  Halts the thread until the response has returned,
@@ -34,7 +34,7 @@
   ([request timeout]
      @(http-request request timeout)))
 
-(import-fn policy/start-policy-file-server)
+(import-fn #'policy/start-policy-file-server)
 
 (defn wrap-aleph-handler
   "Allows for an asynchronous handler to be used within a largely synchronous application.
