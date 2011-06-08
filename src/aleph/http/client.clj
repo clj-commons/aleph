@@ -12,7 +12,7 @@
     [aleph netty formats]
     [aleph.http core utils websocket]
     [aleph.http.client requests responses]
-    [lamina core connections])
+    [lamina core connections api])
   (:require
     [clj-http.client :as client])
   (:import
@@ -139,7 +139,8 @@
   ([request timeout]
      (let [connection (http-connection request)
 	   latch (atom false)
-	   request (assoc request :keep-alive? false)]
+	   request (assoc request :keep-alive? false)
+	   response (result-channel)]
 
        ;; timeout
        (when-not (neg? timeout)
@@ -147,22 +148,25 @@
 	   read-channel
 	   (fn [_]
 	     (when (compare-and-set! latch false true)
-	       (run-pipeline connection
-		 :error-handler (fn [_])
-		 #(close %))))))
+	       (error! response
+		 (TimeoutException.
+		   (str "HTTP request timed out after " timeout " milliseconds.")))
+	       (run-pipeline connection close)))))
 
        ;; request
-       (run-pipeline connection
-	 :error-handler (fn [_] )
-	 (fn [ch]
-	   (enqueue ch request)
-	   (read-channel ch timeout))
-	 (fn [response]
-	   (reset! latch true)
-	   (if (channel? (:body response))
-	     (on-closed (:body response) #(run-pipeline connection close))
-	     (run-pipeline connection close))
-	   response)))))
+       (siphon-result
+	 (run-pipeline connection
+	   :error-handler (fn [_] )
+	   (fn [ch]
+	     (enqueue ch request)
+	     (read-channel ch timeout))
+	   (fn [rsp]
+	     (reset! latch true)
+	     (if (channel? (:body rsp))
+	       (on-closed (:body rsp) #(run-pipeline connection close))
+	       (run-pipeline connection close))
+	     rsp))
+	 response))))
 
 ;;;
 
