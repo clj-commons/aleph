@@ -238,29 +238,6 @@
   (reify ChannelPipelineFactory
     (getPipeline [_]
       (let [pipeline ^ChannelPipeline (apply pipeline-fn args)]
-	(when-let [traffic-hook (-> options :hooks :traffic)]
-	  (.addFirst pipeline
-	    "incoming-traffic-listener"
-	    (upstream-stage
-	      (fn [event]
-		(when-let [msg ^ChannelBuffer (message-event event)]
-		  (enqueue traffic-hook
-		    {:received-messages 1
-		     :sent-messages 0
-		     :received-bytes (.readableBytes msg)
-		     :sent-bytes 0}))
-		nil)))
-	  (.addFirst pipeline
-	    "outgoing-traffic-listener"
-	    (downstream-stage
-	      (fn [event]
-		(when-let [msg ^ChannelBuffer (message-event event)]
-		  (enqueue traffic-hook
-		    {:received-messages 0
-		     :sent-messages 1
-		     :received-bytes 0
-		     :sent-bytes (.readableBytes msg)}))
-		nil))))
 	(.addFirst pipeline
 	  "channel-listener"
 	  (upstream-stage
