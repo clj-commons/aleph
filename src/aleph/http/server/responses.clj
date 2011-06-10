@@ -161,7 +161,7 @@
 
 (defn respond [^Channel netty-channel options returned-result response]
   (let [response (pre-process-aleph-message response options)
-	response (update-in response [:headers] (partial merge {"Server" "aleph (0.1.5)"}))
+	response (update-in response [:headers] (partial merge {"Server" "aleph (0.2.0)"}))
 	response (merge ((content-info nil) response) response)
 	body (:body response)]
     (cond

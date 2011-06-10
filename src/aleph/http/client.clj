@@ -137,36 +137,41 @@
   ([request]
      (http-request request -1))
   ([request timeout]
-     (let [connection (http-connection request)
+     (let [start (System/currentTimeMillis)
+	   elapsed #(- (System/currentTimeMillis) start)
 	   latch (atom false)
 	   request (assoc request :keep-alive? false)
 	   response (result-channel)]
 
        ;; timeout
        (when-not (neg? timeout)
-	 (run-pipeline (timed-channel timeout)
+	 (run-pipeline (timed-channel (- timeout (elapsed)))
 	   read-channel
 	   (fn [_]
 	     (when (compare-and-set! latch false true)
 	       (error! response
-		 (TimeoutException.
-		   (str "HTTP request timed out after " timeout " milliseconds.")))
-	       (run-pipeline connection close)))))
+		 (TimeoutException. (str "HTTP request timed out after " (elapsed) " milliseconds.")))))))
 
        ;; request
-       (siphon-result
+       (let [connection (http-connection request)]
 	 (run-pipeline connection
-	   :error-handler (fn [_] )
+	   :error-handler (fn [ex]
+			    (run-pipeline connection close)
+			    (when-not (instance? TimeoutException)
+			      (error! response ex)))
 	   (fn [ch]
 	     (enqueue ch request)
 	     (read-channel ch timeout))
 	   (fn [rsp]
-	     (reset! latch true)
-	     (if (channel? (:body rsp))
-	       (on-closed (:body rsp) #(run-pipeline connection close))
-	       (run-pipeline connection close))
-	     rsp))
-	 response))))
+	     (if (compare-and-set! latch false true)
+	       (do
+		 (if (channel? (:body rsp))
+		   (on-closed (:body rsp) #(run-pipeline connection close))
+		   (run-pipeline connection close))
+		 (success! response rsp))
+	       (run-pipeline connection close)))))
+
+       response)))
 
 ;;;
 
