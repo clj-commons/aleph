@@ -1,4 +1,20 @@
-Aleph is a framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina).  It can do all kinds of things, including:
+# What is Clojure Aleph #
+
+Aleph is a Clojure framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina). 
+
+
+## What is Aleph good for ##
+
+It can be used for building both servers and clients that use multiple protocols (HTTP, WebSockets, TCP). Thanks to Clojure and underlying Java libraries,
+servers and clients built with Aleph are highly scalable.
+
+
+## Adding Aleph to your project ##
+
+Up-to-date Leiningen and Maven dependencies are listed on [clojars.org](http://clojars.org/aleph).
+
+
+## Code examples ##
 
 HTTP Server
 ----
@@ -7,7 +23,7 @@ Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/r
 
 ```clj
 (use 'lamina.core 'aleph.http)
-	
+        
 (defn hello-world [channel request]
   (enqueue channel
     {:status 200
@@ -26,7 +42,7 @@ This snippet prints out a never-ending sequence of tweets:
 
 ```clj
 (use 'lamina.core 'aleph.http)
-	
+        
 (let [ch (:body
            (sync-http-request
              {:method :get
@@ -64,7 +80,7 @@ Here is a basic echo server:
 
 ```clj
 (use 'lamina.core 'aleph.tcp)
-	
+        
 (defn echo-handler [channel client-info]
   (siphon channel channel))
 
