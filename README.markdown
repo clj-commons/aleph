@@ -17,8 +17,8 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 
 ## Code examples ##
 
-HTTP Server
-----
+
+### HTTP Server ###
 
 Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/ring), with one small difference: the request and response are decoupled.
 
@@ -36,8 +36,8 @@ Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/r
 
 For more on HTTP functionality, read the [wiki](https://github.com/ztellman/aleph/wiki/HTTP).
 
-HTTP Client
-----
+
+### HTTP Client ###
 
 This snippet prints out a never-ending sequence of tweets:
 
@@ -55,8 +55,8 @@ This snippet prints out a never-ending sequence of tweets:
 
 A more in-depth exploration of this example can be found [here](http://github.com/ztellman/aleph/wiki/Consuming-and-Broadcasting-a-Twitter-Stream).
 
-WebSockets
-----
+
+### WebSockets ###
 
 Making a simple chat client is trivial.  In this, we assume that the first message sent by the client is the user's name:
 
@@ -74,8 +74,8 @@ Making a simple chat client is trivial.  In this, we assume that the first messa
 (start-http-server chat-handler {:port 8080 :websocket true})
 ```
 
-TCP Client/Server
-----
+
+### TCP Client/Server ###
 
 Here is a basic echo server:
 
