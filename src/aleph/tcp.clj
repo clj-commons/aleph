@@ -10,7 +10,7 @@
   aleph.tcp
   (:use
     [aleph netty formats]
-    [lamina.core]
+    [lamina core trace]
     [gloss core io])
   (:require
     [clojure.contrib.logging :as log])
@@ -72,19 +72,18 @@
 					      netty-channel
 					      #(write-to-channel netty-channel nil true))]
 			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
-			    (run-pipeline
-			      (receive-in-order outer
-				(fn [[returned-result msg]]
-				  (enqueue write-queue
-				    (let [result (write-to-channel netty-channel (send-encoder msg) false)]
-				      (siphon-result result returned-result)
-				      result))
-				  nil))
+			    (run-pipeline nil
 			      :error-handler (fn [ex]
-					       (log/error
-						 "Error in handler, closing connection."
-						 ex)
-					       (close write-queue))
+					       (trace [(:name options) :errors]
+						 {:exception ex, :channel inner}))
+			      (fn [_]
+				(receive-in-order outer
+				  (fn [[returned-result msg]]
+				    (enqueue write-queue
+				      (let [result (write-to-channel netty-channel (send-encoder msg) false)]
+					(siphon-result result returned-result)
+					result))
+				    nil)))
 			      (fn [_]
 				(close write-queue)))))))
       :channel-close (upstream-stage

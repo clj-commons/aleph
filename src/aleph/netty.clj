@@ -252,7 +252,10 @@
 (defn start-server
   "Starts a server.  Returns a function that stops the server."
   [pipeline-fn options]
-  (let [port (:port options)
+  (let [options (merge
+		  {:name (gensym "server.")}
+		  options)
+	port (:port options)
 	channel-factory (NioServerSocketChannelFactory.
 			  (Executors/newCachedThreadPool)
 			  (Executors/newCachedThreadPool))
