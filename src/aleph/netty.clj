@@ -10,7 +10,7 @@
   aleph.netty
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
-    [lamina.core]
+    [lamina core trace]
     [lamina.core.pipeline :only (success! error!)]
     [aleph formats])
   (:require
@@ -78,6 +78,12 @@
   [evt]
   (when (instance? MessageEvent evt)
     (.getRemoteAddress ^MessageEvent evt)))
+
+(defn exception-event
+  "Returns origin of message event, or nil if it's a different type of message."
+  [evt]
+  (when (instance? ExceptionEvent evt)
+    (.getCause ^ExceptionEvent evt)))
 
 (defmacro do-once [& body]
   `(let [latch# (atom false)]
@@ -157,10 +163,36 @@
    (create-netty-pipeline
      :stage-a a
      :stage-b b)"
-  [& stages]
+  [pipeline-name & stages]
   (let [netty-pipeline (Channels/pipeline)]
     (doseq [[id stage] (partition 2 stages)]
       (.addLast netty-pipeline (name id) stage))
+    (.addFirst netty-pipeline "incoming-traffic"
+      (upstream-stage
+	(fn [evt]
+	  (when-let [msg (message-event evt)]
+	    (trace [pipeline-name :traffic :in]
+	      {:address (-> evt channel-event channel-origin)
+	       :bytes (.readableBytes ^ChannelBuffer msg)})))))
+    (.addFirst netty-pipeline "outgoing-traffic"
+      (downstream-stage
+	(fn [evt]
+	  (when-let [msg (message-event evt)]
+	    (trace [pipeline-name :traffic :out]
+	      {:address (-> evt channel-event channel-origin)
+	       :bytes (.readableBytes ^ChannelBuffer msg)})))))
+    (.addLast netty-pipeline "outgoing-error"
+      (downstream-stage
+	(fn [evt]
+	  (when-let [ex (exception-event evt)]
+	    (trace [pipeline-name :error]
+	      ex)))))
+    (.addFirst netty-pipeline "incoming-error"
+      (upstream-stage
+	(fn [evt]
+	  (when-let [ex (exception-event evt)]
+	    (trace [pipeline-name :error]
+	      ex)))))
     netty-pipeline))
 
 ;;;

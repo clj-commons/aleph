@@ -69,7 +69,7 @@
   "Creates an HTTP pipeline."
   [handler options]
   (let [pipeline ^ChannelPipeline
-	(create-netty-pipeline
+	(create-netty-pipeline (:name options)
 	  :decoder (HttpRequestDecoder.)
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)

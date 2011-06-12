@@ -63,7 +63,7 @@
 		(if-not decoder
 		  inner
 		  (splice (decode-channel inner decoder) inner)))]
-    (create-netty-pipeline
+    (create-netty-pipeline (:name options)
       :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
 		      (channel-open-stage
@@ -113,7 +113,7 @@
 		     (enqueue ch msg))))
 	       src)
 	     ch)]
-    (create-netty-pipeline
+    (create-netty-pipeline (:name options)
       :upstream-error (upstream-stage error-stage-handler)
       :receive (message-stage
 		 (fn [netty-channel msg]

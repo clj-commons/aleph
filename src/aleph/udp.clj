@@ -39,10 +39,10 @@
       nil)))
 
 (defn udp-pipeline-factory
-  [ch frame & intermediate-stages]
+  [ch frame options & intermediate-stages]
   (reify ChannelPipelineFactory
     (getPipeline [_]
-      (apply create-netty-pipeline
+      (apply create-netty-pipeline (:name options)
 	(concat
 	  intermediate-stages
 	  [:upstream-error (upstream-stage error-stage-handler)
@@ -96,7 +96,11 @@
 		     (assoc netty-opts "receiveBufferSize" buf-size)
 		     netty-opts)
 	inner (wrap-write-channel inner)]
-    (.setPipelineFactory client (apply udp-pipeline-factory outer (or decoder frame) stages))
+    (.setPipelineFactory client (apply udp-pipeline-factory
+				  outer
+				  (or decoder frame)
+				  options
+				  stages))
 
     (doseq [[k v] netty-opts]
       (.setOption client k v))
