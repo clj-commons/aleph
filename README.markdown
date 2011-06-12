@@ -1,18 +1,19 @@
-# What is Clojure Aleph #
-
 Aleph is a Clojure framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina). 
 
 
-## What is Aleph good for ##
+### What is Aleph good for? ###
 
-It can be used for building both servers and clients that use multiple protocols (HTTP, WebSockets, TCP). Thanks to Clojure and underlying Java libraries,
-servers and clients built with Aleph are highly scalable.
+Aleph allows the creation of both clients and servers that can communicate using an array of protocols (HTTP, WebSockets, TCP, UDP, and others), and represents that communication via a single abstraction, [channels](https://github.com/ztellman/lamina/wiki/Channels).  Thanks to the underlying libraries and the event-driven approach to communication, these clients and servers can be highly scalable.
 
+### Using Aleph in your project ###
 
-## Adding Aleph to your project ##
+In the project.clj file at the top level of your project, add Aleph as a dependency:
 
-Up-to-date Leiningen and Maven dependencies are listed on [clojars.org](http://clojars.org/aleph).
-
+```clj
+(defproject my-project "1.0.0"
+  :dependencies [[org.clojure/clojure "1.2.1"]
+				 [aleph "0.2.0-alpha2"]])
+```
 
 ## Code examples ##
 
