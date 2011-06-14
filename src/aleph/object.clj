@@ -7,7 +7,7 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.object
-  (:use 
+  (:use
     [aleph netty]
     [lamina.core])
   (:require [aleph.tcp :as tcp])
@@ -18,17 +18,23 @@
      ObjectEncoder
      ObjectDecoder]))
 
+(defn- object-coded-pipeline
+  [pipeline]
+  (if (.get pipeline "read-traffic-monitor")
+    (.addAfter pipeline "read-traffic-monitor" "decoder" (ObjectDecoder.))
+    (.addFirst pipeline "decoder" (ObjectDecoder.)))
+  (if (.get pipeline "write-traffic-monitor")
+    (.addAfter pipeline "write-traffic-monitor" "encoder" (ObjectEncoder.))
+    (.addFirst pipeline "encoder" (ObjectEncoder.)))
+  pipeline)
+
 (defn- server-pipeline [handler options]
   (let [pipeline ^ChannelPipeline (tcp/basic-server-pipeline handler identity identity options)]
-    (.addFirst pipeline "encoder" (ObjectEncoder.))
-    (.addFirst pipeline "decoder" (ObjectDecoder.))
-    pipeline))
+    (object-coded-pipeline pipeline)))
 
 (defn- client-pipeline [ch options]
   (let [pipeline ^ChannelPipeline (tcp/basic-client-pipeline ch identity options)]
-    (.addFirst pipeline "encoder" (ObjectEncoder.))
-    (.addFirst pipeline "decoder" (ObjectDecoder.))
-    pipeline))
+    (object-coded-pipeline pipeline)))
 
 (defn start-object-server
   "Identical to start-tcp-server, except that the channel accepts any serializable Java

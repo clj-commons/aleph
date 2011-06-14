@@ -9,7 +9,7 @@
 (ns ^{:author "Zachary Tellman"}
   aleph.tcp
   (:use
-    [aleph netty formats]
+    [aleph netty formats traffic]
     [lamina.core]
     [gloss core io])
   (:require
@@ -62,41 +62,45 @@
 	inner (wrap-write-channel
 		(if-not decoder
 		  inner
-		  (splice (decode-channel inner decoder) inner)))]
-    (create-netty-pipeline
-      :upstream-error (upstream-stage error-stage-handler)
-      :channel-open (upstream-stage
-		      (channel-open-stage
-			(fn [^Channel netty-channel]
-			  (let [write-queue (create-write-queue
-					      netty-channel
-					      #(write-to-channel netty-channel nil true))]
-			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
-			    (run-pipeline
-			      (receive-in-order outer
-				(fn [[returned-result msg]]
-				  (enqueue write-queue
-				    (let [result (write-to-channel netty-channel (send-encoder msg) false)]
-				      (siphon-result result returned-result)
-				      result))
-				  nil))
-			      :error-handler (fn [ex]
-					       (log/error
-						 "Error in handler, closing connection."
-						 ex)
-					       (close write-queue))
-			      (fn [_]
-				(close write-queue)))))))
-      :channel-close (upstream-stage
-		       (channel-close-stage
-			 (fn [_]
-			   (close inner)
-			   (close outer))))
-      :receive (message-stage
-		 (fn [netty-channel msg]
-		   (enqueue outer (receive-encoder msg))
-		   nil))
-      :downstream-handler (downstream-stage error-stage-handler))))
+		  (splice (decode-channel inner decoder) inner)))
+        pipe 
+        (create-netty-pipeline
+          :upstream-error (upstream-stage error-stage-handler)
+          :channel-open (upstream-stage
+                          (channel-open-stage
+                            (fn [^Channel netty-channel]
+                              (let [write-queue (create-write-queue
+                                                  netty-channel
+                                                  #(write-to-channel netty-channel nil true))]
+                                (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
+                                (run-pipeline
+                                  (receive-in-order outer
+                                                    (fn [[returned-result msg]]
+                                                      (enqueue write-queue
+                                                               (let [result (write-to-channel netty-channel (send-encoder msg) false)]
+                                                                 (siphon-result result returned-result)
+                                                                 result))
+                                                      nil))
+                                  :error-handler (fn [ex]
+                                                   (log/error
+                                                     "Error in handler, closing connection."
+                                                     ex)
+                                                   (close write-queue))
+                                  (fn [_]
+                                    (close write-queue)))))))
+          :channel-close (upstream-stage
+                           (channel-close-stage
+                             (fn [_]
+                               (close inner)
+                               (close outer))))
+          :receive (message-stage
+                     (fn [netty-channel msg]
+                       (enqueue outer (receive-encoder msg))
+                       nil))
+          :downstream-handler (downstream-stage error-stage-handler))]
+    (if-let [monitor (:traffic-monitor options)]
+      (traffic-monitored-pipeline pipe monitor)
+      pipe)))
 
 (defn basic-client-pipeline
   [ch receive-encoder options]
@@ -113,14 +117,17 @@
 		     (enqueue-and-close ch msg)
 		     (enqueue ch msg))))
 	       src)
-	     ch)]
-    (create-netty-pipeline
-      :upstream-error (upstream-stage error-stage-handler)
-      :receive (message-stage
-		 (fn [netty-channel msg]
-		   (enqueue ch (receive-encoder msg))
-		   nil))
-      :downstream-error (downstream-stage error-stage-handler))))
+	     ch)
+        pipe (create-netty-pipeline
+               :upstream-error (upstream-stage error-stage-handler)
+               :receive (message-stage
+                          (fn [netty-channel msg]
+                            (enqueue ch (receive-encoder msg))
+                            nil))
+               :downstream-error (downstream-stage error-stage-handler))]
+    (if-let [monitor (:traffic-monitor options)]
+      (traffic-monitored-pipeline pipe monitor)
+      pipe)))
 
 (defn start-tcp-server
   "Starts a TCP server. The handler must be a function that takes two parameters,
