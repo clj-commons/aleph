@@ -109,22 +109,23 @@
       (fn [netty-channel]
 	(let [write-queue (create-write-queue netty-channel
 			    #(write-to-channel netty-channel nil true))]
-	  (run-pipeline
-	    (receive-in-order outer
-	      (fn [[returned-result {:keys [host port message]}]]
-		(enqueue write-queue
-		  (let [message (if-let [encoder (or encoder frame)]
-				  (byte-buffers->channel-buffer (encode encoder message))
-				  message)
-			result (write-to-channel netty-channel message false
-				 :host host
-				 :port port)]
-		    (siphon-result result returned-result)
-		    result))
-		nil))
+	  (run-pipeline nil
 	    :error-handler (fn [ex]
-			     (log/error "Error in handler, closing connection." ex)
+			     
 			     (close write-queue))
+	    (fn [_]
+	      (receive-in-order outer
+		(fn [[returned-result {:keys [host port message]}]]
+		  (enqueue write-queue
+		    (let [message (if-let [encoder (or encoder frame)]
+				    (byte-buffers->channel-buffer (encode encoder message))
+				    message)
+			  result (write-to-channel netty-channel message false
+				   :host host
+				   :port port)]
+		      (siphon-result result returned-result)
+		      result))
+		  nil)))
 	    (fn [_]
 	      (close write-queue))))
         inner))))
