@@ -23,11 +23,14 @@
    The function will return a result-channel representing the response.  To close the
    connection, use lamina.connections/close-connection."
   ([options]
-     (let [options (merge options {:port 6379 :charset :utf-8})]
+     (let [options (merge
+		     {:port 6379 :charset :utf-8}
+		     options
+		     {:name (str "redis." (:host options) "." (gensym ""))
+		      :description (str "redis @ " (:host options) ":" (:port options))})]
        (pipelined-client
 	 #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-	 {:name (str "redis." (:host options) "." (gensym ""))
-	  :description (str "redis @ " (:host options) ":" (:port options))}))))
+	 options))))
 
 (defn enqueue-task
   "Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure."

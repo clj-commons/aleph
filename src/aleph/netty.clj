@@ -151,11 +151,6 @@
 	  (f ch)))
       nil)))
 
-(defn error-stage-handler [evt]
-  (when (instance? ExceptionEvent evt)
-    (log/warn "aleph.netty" (.getCause ^ExceptionEvent evt)))
-  evt)
-
 (defn create-netty-pipeline
   "Creates a pipeline.  Each stage must have a name.
 
@@ -167,7 +162,7 @@
   (let [netty-pipeline (Channels/pipeline)
 	error-handler (fn [evt]
 			(when-let [ex (exception-event evt)]
-			  (when-not (trace [pipeline-name :error] ex)
+			  (when-not (trace [pipeline-name :errors] ex)
 			    (log/error ex))
 			  nil))
 	traffic-handler (fn [probe-suffix]

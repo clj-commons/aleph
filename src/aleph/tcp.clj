@@ -64,7 +64,6 @@
 		  inner
 		  (splice (decode-channel inner decoder) inner)))]
     (create-netty-pipeline (:name options)
-      :upstream-error (upstream-stage error-stage-handler)
       :channel-open (upstream-stage
 		      (channel-open-stage
 			(fn [^Channel netty-channel]
@@ -94,8 +93,7 @@
       :receive (message-stage
 		 (fn [netty-channel msg]
 		   (enqueue outer (receive-encoder msg))
-		   nil))
-      :downstream-handler (downstream-stage error-stage-handler))))
+		   nil)))))
 
 (defn basic-client-pipeline
   [ch receive-encoder options]
@@ -114,12 +112,10 @@
 	       src)
 	     ch)]
     (create-netty-pipeline (:name options)
-      :upstream-error (upstream-stage error-stage-handler)
       :receive (message-stage
 		 (fn [netty-channel msg]
 		   (enqueue ch (receive-encoder msg))
-		   nil))
-      :downstream-error (downstream-stage error-stage-handler))))
+		   nil)))))
 
 (defn start-tcp-server
   "Starts a TCP server. The handler must be a function that takes two parameters,
@@ -162,7 +158,7 @@
    start-tcp-server."
   [options]
   (let [options (merge
-		  {:name (str "tcp-server." (:port options))}
+		  {:name (str "tcp-client." (:port options))}
 		  options)
 	encoder (create-frame
 		  (or (:encoder options) (:frame options))

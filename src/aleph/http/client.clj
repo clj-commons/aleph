@@ -52,12 +52,10 @@
 	pipeline (create-netty-pipeline (:name options)
 		   :codec (HttpClientCodec.)
 		   :inflater (HttpContentDecompressor.)
-		   :upstream-error (downstream-stage error-stage-handler)
 		   :response (message-stage
 			       (fn [netty-channel rsp]
 				 (enqueue client rsp)
-				 nil))
-		   :downstream-error (upstream-stage error-stage-handler))]
+				 nil)))]
     pipeline))
 
 ;;;
@@ -191,7 +189,6 @@
   (create-netty-pipeline (:name options)
     :decoder (HttpResponseDecoder.)
     :encoder (HttpRequestEncoder.)
-    :upstream-error (upstream-stage error-stage-handler)
     :response (message-stage
 		(fn [netty-channel rsp]
 		  (if (not= 101 (-> rsp .getStatus .getCode))
@@ -205,8 +202,7 @@
 			    (enqueue ch (from-websocket-frame rsp))
 			    nil)))
 		      (enqueue success ch)))
-		  nil))
-    :downstream-error (downstream-stage error-stage-handler)))
+		  nil))))
 
 (defn websocket-client [options]
   (let [options (split-url options)

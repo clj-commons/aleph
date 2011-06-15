@@ -41,7 +41,8 @@
 
 (defn http-session-handler [handler options]
   (let [init? (atom false)
- 	ch (channel)]
+ 	ch (channel)
+	server-name (:name options)]
     (message-stage
       (fn [^Channel netty-channel request]
 	(when (and
@@ -51,7 +52,8 @@
 	(if-not (or @init? (.isChunked ^HttpRequest request) (HttpHeaders/isKeepAlive request))
 	  (run-pipeline (handle-request netty-channel request handler options)
 	    :error-handler (fn [ex]
-			     (log/error "Error in handler, closing connection" ex)
+			     (when-not (trace [server-name :errors] ex)
+			       (log/error "Error in handler, closing connection" ex))
 			     (.close netty-channel))
 	    read-channel
 	    #(respond netty-channel options (first %) (second %))
@@ -73,9 +75,7 @@
 	  :decoder (HttpRequestDecoder.)
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
-	  :upstream-error (upstream-stage error-stage-handler)
-	  :http-request (http-session-handler handler options)
-	  :downstream-error (downstream-stage error-stage-handler))]
+	  :http-request (http-session-handler handler options))]
     (when (:websocket options)
       (.addBefore pipeline "http-request" "websocket" (websocket-handshake-handler handler options)))
     pipeline))
