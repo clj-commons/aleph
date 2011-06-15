@@ -164,35 +164,29 @@
      :stage-a a
      :stage-b b)"
   [pipeline-name & stages]
-  (let [netty-pipeline (Channels/pipeline)]
+  (let [netty-pipeline (Channels/pipeline)
+	error-handler (fn [evt]
+			(when-let [ex (exception-event evt)]
+			  (when-not (trace [pipeline-name :error] ex)
+			    (log/error ex))
+			  nil))
+	traffic-handler (fn [probe-suffix]
+			  (fn [evt]
+			    (when-let [msg (message-event evt)]
+			      (trace [pipeline-name :traffic probe-suffix]
+				{:address (-> evt channel-event channel-origin)
+				 :bytes (.readableBytes ^ChannelBuffer msg)}))
+			    nil))]
     (doseq [[id stage] (partition 2 stages)]
       (.addLast netty-pipeline (name id) stage))
     (.addFirst netty-pipeline "incoming-traffic"
-      (upstream-stage
-	(fn [evt]
-	  (when-let [msg (message-event evt)]
-	    (trace [pipeline-name :traffic :in]
-	      {:address (-> evt channel-event channel-origin)
-	       :bytes (.readableBytes ^ChannelBuffer msg)})))))
+      (upstream-stage (traffic-handler :in)))
     (.addFirst netty-pipeline "outgoing-traffic"
-      (downstream-stage
-	(fn [evt]
-	  (when-let [msg (message-event evt)]
-	    (trace [pipeline-name :traffic :out]
-	      {:address (-> evt channel-event channel-origin)
-	       :bytes (.readableBytes ^ChannelBuffer msg)})))))
+      (downstream-stage (traffic-handler :out)))
     (.addLast netty-pipeline "outgoing-error"
-      (downstream-stage
-	(fn [evt]
-	  (when-let [ex (exception-event evt)]
-	    (trace [pipeline-name :error]
-	      ex)))))
+      (downstream-stage error-handler))
     (.addFirst netty-pipeline "incoming-error"
-      (upstream-stage
-	(fn [evt]
-	  (when-let [ex (exception-event evt)]
-	    (trace [pipeline-name :error]
-	      ex)))))
+      (upstream-stage error-handler))
     netty-pipeline))
 
 ;;;
