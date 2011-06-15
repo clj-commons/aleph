@@ -26,7 +26,7 @@
      :multi-bulk \*}))
 
 (defn codec-map [charset]
-  (let [str-codec (string charset :delimiters ["\r\n"] :as-str true)
+  (let [str-codec (string charset :suffix "\r\n" :as-str true)
 	bulk (compile-frame [:bulk (finite-frame (string-prefix 2) str-codec)])
 	m {:error str-codec
 	   :single-line str-codec

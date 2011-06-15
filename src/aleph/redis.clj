@@ -24,7 +24,7 @@
    connection, use lamina.connections/close-connection."
   ([options]
      (let [options (merge options {:port 6379 :charset :utf-8})]
-       (client
+       (pipelined-client
 	 #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
 	 {:name (str "redis." (:host options) "." (gensym ""))
 	  :description (str "redis @ " (:host options) ":" (:port options))}))))
