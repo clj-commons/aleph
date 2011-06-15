@@ -35,18 +35,20 @@
 	m (into {}
 	    (map
 	      (fn [[k v]] [k (compile-frame [k v])])
-	      m))]
-    (assoc m
+	      m))
+	m (atom m)]
+    (swap! m assoc
       :multi-bulk (compile-frame
 		    [:multi-bulk
 		     (repeated
-		       (header format-byte m first)
-		       :prefix (string-prefix 0))]))))
+		       (header format-byte #(@m %) first)
+		       :prefix (string-prefix 0))]))
+    @m))
 
 (defn process-response [rsp]
   (case (first rsp)
     :error (Exception. (str (second rsp)))
-    :multi-bulk (map second (second rsp))
+    :multi-bulk (map process-response (second rsp))
     (second rsp)))
 
 (defn process-request [req]
