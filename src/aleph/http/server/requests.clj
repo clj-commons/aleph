@@ -45,7 +45,8 @@
 		  :query-string uri
 		  :server-port destination
 		  :content-type content-info
-		  :content-encoding content-info
+		  :character-encoding content-info
+		  :content-length content-length
 		  :request-method request-method)]
     (assoc request
       :body (let [body (-> request

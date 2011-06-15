@@ -158,7 +158,10 @@
     (let [headers (:headers msg)]
       (when-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
 	{:content-type content-type
-	 :character-encoding (->> (str/split content-type #"[;=]") (map str/trim) (drop-while #(not= % "charset")) second)}))))
+	 :character-encoding (->> (str/split content-type #"[;=]")
+			       (map str/trim)
+			       (drop-while #(not= % "charset"))
+			       second)}))))
 
 (defn pre-process-aleph-message [msg options]
   (update-in msg [:headers]

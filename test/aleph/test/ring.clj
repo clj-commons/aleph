@@ -22,16 +22,22 @@
      (str scheme "://" host ":" port path)))
 
 (defn request
-  ([]
-     (request (create-url "/")))
-  ([url]
-     (request url :get))
-  ([url method]
-     (->> (sync-http-request {:request-method method, :url url, :auto-transform true})
-       :body
-       StringReader.
-       PushbackReader.
-       read)))
+  ([& {:as options}]
+     (let [options (merge
+		     {:url (create-url "/")
+		      :method :get}
+		     options)]
+       (->> (sync-http-request
+	      {:request-method (:method options)
+	       :url (:url options)
+	       :auto-transform true
+	       :headers (:headers options)
+	       :body (:body options)}
+	      500)
+	 :body
+	 StringReader.
+	 PushbackReader.
+	 read))))
 
 (defn get-request-value [request keys]
   (reduce
@@ -60,7 +66,7 @@
 (deftest test-request-method
   (with-server [:request-method]
     (doseq [method [:get :post :put :delete]]
-      (is (= method (request (create-url "/") method))))))
+      (is (= method (request :method method))))))
 
 (deftest test-scheme
   (with-server [:scheme]
@@ -69,7 +75,7 @@
 (deftest test-uri
   (with-server [:uri]
     (doseq [uri ["/a" "/a/b" "/a/b/c/"]]
-      (is (= uri (request (create-url uri)))))))
+      (is (= uri (request :url (create-url uri)))))))
 
 (deftest test-query-string
   (with-server [:query-string]
@@ -77,7 +83,7 @@
 		   "/a" nil
 		   "/a?a=b" "a=b"
 		   "/a?a=b&c=d" "a=b&c=d"}]
-      (is (= v (request (create-url k)))))))
+      (is (= v (request :url (create-url k)))))))
 
 (deftest test-server-name
   (with-server [:server-name]
@@ -91,5 +97,15 @@
   (with-server [:remote-addr]
     (is (= "127.0.0.1" (request)))))
 
+(deftest test-content-length
+  (with-server [:content-length]
+    (is (= 5 (request :body "hello")))))
 
+(deftest test-content-type
+  (with-server [:content-type]
+    (is (= "text/plain; charset=utf-8"
+	   (request :headers {"content-type" "text/plain; charset=utf-8"})))))
 
+(deftest test-character-encoding
+  (with-server [:character-encoding]
+    (is (= "utf-8" (request :headers {"content-type" "text/plain; charset=utf-8"})))))
