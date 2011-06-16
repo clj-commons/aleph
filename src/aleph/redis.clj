@@ -23,7 +23,7 @@
    The function will return a result-channel representing the response.  To close the
    connection, use lamina.connections/close-connection."
   ([options]
-     (let [options (merge options {:port 6379 :charset :utf-8})]
+     (let [options (merge {:port 6379 :charset :utf-8} options)]
        (client
 	 #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
 	 {:name (str "redis." (:host options) "." (gensym ""))
@@ -69,7 +69,7 @@
    Messages from the stream will be of the structure {:channel \"channel-name\", :message \"message\"}.
    :message will always be a string."
   ([options]
-     (let [options (merge options {:port 6379 :charset :utf-8})
+     (let [options (merge {:port 6379 :charset :utf-8} options)
 	   control-messages (channel)
 	   stream (channel)
 	   control-message-accumulator (atom [])]
