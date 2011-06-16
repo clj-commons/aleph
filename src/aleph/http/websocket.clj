@@ -49,9 +49,10 @@
   (DefaultWebSocketFrame. 0 (to-channel-buffer msg)))
 
 (defn websocket-handshake? [^HttpRequest request]
-  (and
-    (= "upgrade" (.toLowerCase (.getHeader request "connection")))
-    (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))
+  (let [connection-header (.getHeader request "connection") ]
+    (and connection-header
+         (= "upgrade" (.toLowerCase connection-header))
+         (= "websocket" (.toLowerCase (.getHeader request "upgrade"))))))
 
 (defn transform-key [k]
   (/
