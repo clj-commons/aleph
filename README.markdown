@@ -1,13 +1,30 @@
-Aleph is a framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina).  It can do all kinds of things, including:
+Aleph is a Clojure framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina). 
 
-HTTP Server
-----
+
+### What is Aleph good for? ###
+
+Aleph allows the creation of both clients and servers that can communicate using an array of protocols (HTTP, WebSockets, TCP, UDP, and others), and represents that communication via a single abstraction, [channels](https://github.com/ztellman/lamina/wiki/Channels).  Thanks to the underlying libraries and the event-driven approach to communication, these clients and servers can be highly scalable.
+
+### Using Aleph in your project ###
+
+In the project.clj file at the top level of your project, add Aleph as a dependency:
+
+```clj
+(defproject my-project "1.0.0"
+  :dependencies [[org.clojure/clojure "1.2.1"]
+				 [aleph "0.2.0-alpha2"]])
+```
+
+## Code examples ##
+
+
+### HTTP Server ###
 
 Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/ring), with one small difference: the request and response are decoupled.
 
 ```clj
 (use 'lamina.core 'aleph.http)
-	
+        
 (defn hello-world [channel request]
   (enqueue channel
     {:status 200
@@ -19,14 +36,14 @@ Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/r
 
 For more on HTTP functionality, read the [wiki](https://github.com/ztellman/aleph/wiki/HTTP).
 
-HTTP Client
-----
+
+### HTTP Client ###
 
 This snippet prints out a never-ending sequence of tweets:
 
 ```clj
 (use 'lamina.core 'aleph.http)
-	
+        
 (let [ch (:body
            (sync-http-request
              {:method :get
@@ -38,8 +55,8 @@ This snippet prints out a never-ending sequence of tweets:
 
 A more in-depth exploration of this example can be found [here](http://github.com/ztellman/aleph/wiki/Consuming-and-Broadcasting-a-Twitter-Stream).
 
-WebSockets
-----
+
+### WebSockets ###
 
 Making a simple chat client is trivial.  In this, we assume that the first message sent by the client is the user's name:
 
@@ -57,14 +74,14 @@ Making a simple chat client is trivial.  In this, we assume that the first messa
 (start-http-server chat-handler {:port 8080 :websocket true})
 ```
 
-TCP Client/Server
-----
+
+### TCP Client/Server ###
 
 Here is a basic echo server:
 
 ```clj
 (use 'lamina.core 'aleph.tcp)
-	
+        
 (defn echo-handler [channel client-info]
   (siphon channel channel))
 
