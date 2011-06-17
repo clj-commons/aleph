@@ -16,17 +16,20 @@
     (run-pipeline (redis-stream options)
       (fn [stream]
 	(subscribe stream (str "aleph::broadcast::" key))
-	(run-pipeline (client [:get (str "aleph::" key)])
+	(run-pipeline (client [:get (str "aleph::values::" (name key))])
 	  #(do
 	     (enqueue ch %)
-	     (siphon stream ch)))))
+	     (siphon (map* :message stream) ch)))))
     ch))
 
 (defn- set-value [client key val]
-  (client [:set (str "aleph::" key) val])
-  (run-pipeline (client [:publish (str "aleph::broadcast::" key) val])
+  (client [:set (str "aleph::values::" key) val])
+  (run-pipeline (client [:publish (str "aleph::broadcast::" (name key)) val])
     pos?))
 
-(defn forward-trace [options]
-  (run-pipeline (redis-client options)
+(defn forward
+  "Forwards "
+  [options]
+  (let [client (redis-client options)]
     ))
+     
