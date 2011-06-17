@@ -26,7 +26,7 @@
      (let [options (merge
 		     {:port 6379
 		      :charset :utf-8
-		      :name (str "redis." (gensym ""))
+		      :name "redis"
 		      :description (str "redis @ " (:host options) ":" (:port options))}
 		     options)]
        (pipelined-client
@@ -79,22 +79,23 @@
 	   control-message-accumulator (atom [])]
        (receive-all control-messages
 	 #(swap! control-message-accumulator conj %))
-       (let [connection (persistent-connection
+       (let [options (merge
+		       {:name "redis"
+			:description (str "redis stream @ " (:host options) ":" (:port options))}
+		       options
+		       {:connection-callback
+			(fn [ch]
+			  ;; NOTE: this is a bit of a race condition (subscription messages
+			  ;; may be sent twice), but subscription messages are idempotent.
+			  ;; Regardless, maybe clean this up.
+			  (let [control-messages* (fork control-messages)]
+			    (doseq [msg @control-message-accumulator]
+			      (enqueue ch msg))
+			    (siphon control-messages* ch))
+			  (siphon (filter-messages ch) stream))})
+	     connection (persistent-connection
 			  #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-			  (merge
-			    {:name (str )
-			     :description (str "redis stream @ " (:host options) ":" (:port options))}
-			    options
-			    {:connection-callback
-			     (fn [ch]
-			       ;; NOTE: this is a bit of a race condition (subscription messages
-			       ;; may be sent twice), but subscription messages are idempotent.
-			       ;; Regardless, maybe clean this up.
-			       (let [control-messages* (fork control-messages)]
-				 (doseq [msg @control-message-accumulator]
-				   (enqueue ch msg))
-				 (siphon control-messages* ch))
-			       (siphon (filter-messages ch) stream))}))]
+			  options)]
 	 (with-meta
 	   (splice stream control-messages)
 	   {:lamina.connections/close-fn

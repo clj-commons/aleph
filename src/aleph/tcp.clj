@@ -158,7 +158,7 @@
    start-tcp-server."
   [options]
   (let [options (merge
-		  {:name (str "tcp-client." (:port options))}
+		  {:name (str "tcp-client." (:host options) ":" (:port options) ".")}
 		  options)
 	encoder (create-frame
 		  (or (:encoder options) (:frame options))
