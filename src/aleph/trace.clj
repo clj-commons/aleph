@@ -10,35 +10,69 @@
   (:use
     [clojure set]
     [aleph redis]
-    [lamina core trace]))
+    [lamina core trace connections])
+  (:require
+    [clojure.string :as str]))
 
-(defn- watch-value [client command key initial-value options]
-  (let [ch (channel initial-value)
-	fetch #(client [command (str "aleph::values::" (name key))])]
+(def active-probe-suffix "aleph::probes::active::")
+(def active-probe-update-broadcast "aleph::updated::active-probes")
+
+(defn all-vals [client]
+  (let [keys @(client [:keys "*"])]
+    (zipmap keys (map #(deref (client [:get %])) keys))))
+
+(defn increment-probe [client probe]
+  (let [probe (str active-probe-suffix probe)]
+    (client [:incr probe])))
+
+(defn decrement-probe [options probe]
+  (let [probe (str active-probe-suffix probe)
+	client (redis-client options)]
+    (loop []
+      (client [:watch probe])
+      (let [val @(client [:get probe])]
+	(when val
+	  (let [val (read-string val)]
+	    (client [:multi])
+	    (if (<= val 1)
+	      (client [:del probe])
+	      (client [:decr probe]))
+	    (let [result @(client [:exec])]
+	      (if (empty? result)
+		(recur)
+		(when (<= val 1)
+		  @(client [:publish active-probe-update-broadcast "updated"]))))))))
+    (close-connection client)))
+
+(defn watch-active-probes [client options]
+  (let [ch (channel [])]
     (run-pipeline (redis-stream options)
       (fn [stream]
-	(subscribe stream (str "aleph::updated::" key))
-	(run-pipeline (fetch)
+	(subscribe stream active-probe-update-broadcast)
+	(run-pipeline (client [:keys (str active-probe-suffix "*")])
 	  (fn [current-value]
 	    ;; seed with current value
 	    (enqueue ch current-value)
-	    ;; set up fetching of value every time there's an update
-	    (receive-all stream (fn [x] (run-pipeline (fetch) #(enqueue ch %))))))))
-    ch))
-
-(defn- update-value [client command key val]
-  (run-pipeline (client [command (str "aleph::values::" key) val])
-    #(when-not (= 0 %)
-       (client [:publish (str "aleph::updated::" (name key)) "updated"]))))
+	    ;; fetch value when notified of update
+	    (receive-all stream
+	      (fn [_]
+		(run-pipeline
+		  (client [:keys (str active-probe-suffix "*")])
+		  #(enqueue ch %))))))))
+    (map*
+      (fn [vals]
+	(->> vals
+	  (map #(.substring ^String % (count active-probe-suffix) (count %)))
+	  set))
+      ch)))
 
 (defn forward-probes
   ""
   [options]
   (let [client (redis-client options)
-	probes (->> (watch-value client :smembers "probes" #{} options)
-		 (map* set)
-		 (partition* 2 1))
+	probes (partition* 2 1 (watch-active-probes client options))
 	probe-links (atom {})]
+    (receive-all (fork probes) println)
     (receive-in-order probes
       (fn [[prev curr]]
 	(let [added (difference curr prev)
@@ -59,10 +93,10 @@
 		    (run-pipeline (client [:publish (str "aleph::probes::" probe) (pr-str msg)])
 		      #(when-not (pos? %)
 			 ;; if no one's listening, take out the probe
-			 (update-value client :srem "probes" probe)))))))
+			 (decrement-probe options probe)))))))
 	    (swap! probe-links merge new-links)))))))
 
-(defn activate-probe [probe client stream]
+(defn consume-probe [probe client stream options]
   (let [ch (channel)
 	stream-name (str "aleph::probes::" probe)]
     (siphon
@@ -71,11 +105,13 @@
 	(map* #(read-string (:message %))))
       ch)
     (subscribe stream stream-name)
-    (update-value client :sadd "probes" probe)
+    (increment-probe client probe)
+    (on-closed ch #(decrement-probe options probe))
     ch))
 
 (defn setup-test []
-  (let [client (redis-client {:host "localhost"})
-	stream (redis-stream {:host "localhost"})]
-    (forward-probes {:host "localhost"})
-    (activate-probe "test" client stream)))
+  (let [options {:host "localhost"}
+	client (redis-client options)
+	stream (redis-stream options)]
+    (forward-probes options)
+    (consume-probe "test" client stream options)))
