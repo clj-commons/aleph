@@ -58,9 +58,9 @@
 ;;;
 
 (defn channel-origin [netty-channel]
-  (let [socket-address (.getRemoteAddress ^Channel netty-channel)
-	inet-address (.getAddress ^InetSocketAddress socket-address)]
-    (.getHostAddress ^InetAddress inet-address)))
+  (when-let [socket-address (.getRemoteAddress ^Channel netty-channel)]
+    (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
+      (.getHostAddress ^InetAddress inet-address))))
 
 (defn message-event
   "Returns contents of message event, or nil if it's a different type of message."
@@ -171,6 +171,7 @@
 	error-handler (fn [evt]
 			(when-let [ex (exception-event evt)]
 			  (when-not (trace* error-probe ex)
+			    (.printStackTrace ex)
 			    (log/error ex))
 			  nil))
 	traffic-handler (fn [probe-suffix]
@@ -281,17 +282,19 @@
 		  (when-let [ch ^Channel (channel-event evt)]
 		    (if (.isOpen ch)
 		      (when (.add channel-group ch)
-			(trace* canonical
-			  {:event :opened
-			   :connections (dec (count channel-group))
-			   :address (channel-origin ch)})
-			(run-pipeline (.getCloseFuture ch)
-			  wrap-netty-channel-future
-			  (fn [_]
-			    (trace* canonical
-			      {:event :closed
-			       :connections (dec (count channel-group))
-			       :address (channel-origin ch)}))))))
+			(let [origin (channel-origin ch)]
+			  (trace* canonical
+			    {:event :opened
+			     :connections (dec (count channel-group))
+			     :address origin})
+			  (run-pipeline (.getCloseFuture ch)
+			    :error-handler (fn [ex] (.printStackTrace ex))
+			    wrap-netty-channel-future
+			    (fn [_]
+			      (trace* canonical
+				{:event :closed
+				 :connections (dec (count channel-group))
+				 :address origin})))))))
 		  nil))))
 	  pipeline)))))
 
@@ -304,13 +307,13 @@
 			     read-channel
 			     (fn [_]
 			       (let [connections (num-connections)]
+				 (trace [(name server) :shutdown :pending]
+				   {:name (name server)
+				    :connections connections})
 				 (when (pos? connections)
-				   (log/info (str "Waiting to shut down " (name server) ", " connections " open connections remaining."))
 				   (restart))))))]
       (run-pipeline (-> ready-to-close (poll-result timeout) read-channel)
 	(fn [result]
-	  (when-not result
-	    (log/info (str "Gave up waiting for graceful shutdown on " (name server) " after " timeout " milliseconds.")))
 	  (stop-server-immediately server))))))
 
 (defn start-server
@@ -346,7 +349,8 @@
     ;; create server instance
     (reify AlephServer
       (stop-server-immediately [_]
-	(log/info (str "Shutting down " (:name options)))
+	(trace [(:name options) :shutdown]
+	  {:name options})
 	(run-pipeline
 	  (.close channel-group)
 	  wrap-netty-channel-group-future
