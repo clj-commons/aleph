@@ -140,14 +140,17 @@
    If a frame is specified, only data structured per the frame will be accepted (i.e. raw
    bytes are no longer an acceptable input)."
   [handler options]
-  (start-server
-    (fn []
-      (basic-server-pipeline
-	handler
-	#(ChannelBuffers/wrappedBuffer (into-array ByteBuffer (to-buf-seq %)))
-	#(seq (.toByteBuffers ^ChannelBuffer %))
-	options))
-    options))
+  (let [options (merge
+		  {:name (str "tcp-server." (:port options))}
+		  options)]
+    (start-server
+      (fn []
+	(basic-server-pipeline
+	  handler
+	  #(ChannelBuffers/wrappedBuffer (into-array ByteBuffer (to-buf-seq %)))
+	  #(seq (.toByteBuffers ^ChannelBuffer %))
+	  options))
+      options)))
 
 (defn tcp-client
   "Creates a TCP connection to a server.  Returns a result-channel that will emit a channel

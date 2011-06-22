@@ -34,11 +34,14 @@
   "Identical to start-tcp-server, except that the channel accepts any serializable Java
    object, including the standard Clojure data structures."
   [handler options]
-  (start-server
-    #(server-pipeline
-       handler
-       options)
-    options))
+  (let [options (merge
+		  {:name (str "object-server." (:port options))}
+		  options)]
+    (start-server
+      #(server-pipeline
+	 handler
+	 options)
+      options)))
 
 (defn object-client
   "Identical to tcp-client, except that the channel accepts any serializable Java object,
@@ -48,3 +51,5 @@
     #(client-pipeline % options)
     identity
     options))
+
+
