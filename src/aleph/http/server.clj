@@ -70,9 +70,13 @@
 (defn create-pipeline
   "Creates an HTTP pipeline."
   [handler options]
-  (let [pipeline ^ChannelPipeline
+  (let [netty-options (:netty options)
+	pipeline ^ChannelPipeline
 	(create-netty-pipeline (:name options)
-	  :decoder (HttpRequestDecoder.)
+	  :decoder (HttpRequestDecoder.
+		     (get netty-options "http.maxInitialLineLength" 8192)
+		     (get netty-options "http.maxHeaderSize" 16384)
+		     (get netty-options "http.maxChunkSize" 16384))
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
 	  :http-request (http-session-handler handler options))]

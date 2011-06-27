@@ -266,35 +266,39 @@
    "readWriteFair" true,
    "child.tcpNoDelay" true})
 
-(defn create-pipeline-factory [^ChannelGroup channel-group options pipeline-fn & args]
-  (let [canonical (::canonical-connections-probe options)]
-    (when canonical
-      (register-probe canonical))
+(defn create-pipeline-factory
+  [^ChannelGroup channel-group options
+   canonical-connections-probe refuse-connections?
+   pipeline-fn & args]
+  (when canonical-connections-probe
+    (register-probe canonical-connections-probe))
+  (let [connection-count (atom 0)]
     (reify ChannelPipelineFactory
       (getPipeline [_]
 	(let [pipeline ^ChannelPipeline (apply pipeline-fn args)]
 	  (.addFirst pipeline
 	    "channel-listener"
-	    (if @(::refuse-connections? options)
+	    (if (and refuse-connections? @refuse-connections?)
 	      (refuse-connection-stage)
 	      (upstream-stage
 		(fn [evt]
 		  (when-let [ch ^Channel (channel-event evt)]
 		    (if (.isOpen ch)
 		      (when (.add channel-group ch)
-			(let [origin (channel-origin ch)]
-			  (trace* canonical
+			(let [origin (channel-origin ch)
+			      connections (swap! connection-count inc)]
+			  (trace* canonical-connections-probe
 			    {:event :opened
-			     :connections (dec (count channel-group))
+			     :connections connections
 			     :address origin})
 			  (run-pipeline (.getCloseFuture ch)
-			    :error-handler (fn [ex] (.printStackTrace ex))
 			    wrap-netty-channel-future
 			    (fn [_]
-			      (trace* canonical
-				{:event :closed
-				 :connections (dec (count channel-group))
-				 :address origin})))))))
+			      (let [connections (swap! connection-count dec)]
+				(trace* canonical-connections-probe
+				  {:event :closed
+				   :connections connections
+				   :address origin}))))))))
 		  nil))))
 	  pipeline)))))
 
@@ -322,30 +326,32 @@
   (let [options (merge
 		  {:name (gensym "server.")}
 		  options)
-	options (merge
-		  options
-		  {::canonical-connections-probe (canonical-probe [(:name options) :connections])
-		   ::refuse-connections? (atom false)})
+	refuse-connections? (atom false)
 	port (:port options)
 	channel-factory (NioServerSocketChannelFactory.
 			  (Executors/newCachedThreadPool)
 			  (Executors/newCachedThreadPool))
 	server (ServerBootstrap. channel-factory)
 	channel-group (DefaultChannelGroup.)]
+    ;; connect server probes
     (siphon-probes (:name options) (:probes options))
-    ;; register connection probe
-    (register-probe (:canonical-connection-probe options))
+
     ;; set netty flags
     (doseq [[k v] (merge default-server-options (:netty options))]
       (.setOption server k v))
+
     ;; set pipeline factory
     (.setPipelineFactory server
       (create-pipeline-factory
 	channel-group
 	options
+	(canonical-probe [(:name options) :connections])
+	refuse-connections?
 	pipeline-fn))
+
     ;; add parent channel to channel-group
     (.add channel-group (.bind server (InetSocketAddress. port)))
+
     ;; create server instance
     (reify AlephServer
       (stop-server-immediately [_]
@@ -357,7 +363,7 @@
 	  (fn [_]
 	    (task (.releaseExternalResources server)))))
       (stop-server [this timeout]
-	(reset! (::refuse-connections? options) true)
+	(reset! refuse-connections? true)
 	(graceful-shutdown this timeout))
       (server-probe [_ probe-name]
 	(probe-channel [(:name options) probe-name]))
@@ -387,9 +393,7 @@
 
 (defn create-client
   [pipeline-fn send-encoder options]
-  (let [options (merge
-		  (split-url options)
-		  {::refuse-connections? (atom false)})
+  (let [options (split-url options)
 	host (or (:host options) (:server-name options))
 	port (or (:port options) (:server-port options))
 	[inner outer] (channel-pair)
@@ -400,14 +404,30 @@
 		   (Executors/newCachedThreadPool)
 		   (Executors/newCachedThreadPool)
 		   (.availableProcessors (Runtime/getRuntime))))]
+
+    ;; setup client probes
     (siphon-probes (:name options) (:probes options))
+
+    ;; set netty flags
     (doseq [[k v] (merge default-client-options (:netty options))]
       (.setOption client k v))
+
+    ;; set pipeline factory
     (.setPipelineFactory client
-      (create-pipeline-factory channel-group options pipeline-fn outer))
+      (create-pipeline-factory
+	channel-group
+	options
+	(canonical-probe [(:name options) :connections])
+	nil
+	pipeline-fn
+	outer))
+
+    ;; intialize client
     (run-pipeline (.connect client (InetSocketAddress. ^String host (int port)))
       wrap-netty-channel-future
       (fn [^Channel netty-channel]
+
+	;; write queue 
 	(let [write-queue (create-write-queue
 			    netty-channel
 			    #(write-to-channel netty-channel nil true))]
