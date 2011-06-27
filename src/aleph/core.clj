@@ -12,5 +12,4 @@
   (stop-server-immediately [_])
   (stop-server [_ timeout])
   (server-probe [_ probe-name])
-  (netty-channels [_])
-  (netty-pipeline [_]))
+  (netty-channels [_]))
