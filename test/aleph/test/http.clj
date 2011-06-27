@@ -84,14 +84,8 @@
 
 ;;;
 
-(defn streaming-response-handler [ch request]
-  (let [body (apply closed-channel (map str "abcdefghi"))]
-    (enqueue ch
-      {:status 200
-       :content-type "text/plain"
-       :body body})))
-
 (defn streaming-request-handler [ch request]
+  (prn "request" request)
   (enqueue ch
     {:status 200
      :content-type (:content-type request)
@@ -150,15 +144,21 @@
       (close-connection client))))
 
 (deftest test-streaming-response
-  (with-handler streaming-response-handler
-    (let [result (sync-http-request
-		   {:url "http://localhost:8080"
-		    :method :get
-		    :auto-transform true}
-		   1000)]
-      (is
-	(= (map str "abcdefghi")
-	   (channel-seq (:body result) 1000))))))
+  (with-handler streaming-request-handler
+    (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
+      (dotimes [_ 3]
+	(is
+	  (= (map str "abcdefghi")
+	     (channel-seq
+	       (:body (wait-for-result
+			(client {:url "http://localhost:8080"
+				 :method :post
+				 :auto-transform true
+				 :headers {"content-type" "text/plain"}
+				 :body (apply closed-channel (map str "abcdefghi"))})
+			1000))
+	       1000))))
+      (close-connection client))))
 
 (deftest test-streaming-request
   (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
