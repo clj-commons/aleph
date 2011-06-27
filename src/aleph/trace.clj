@@ -28,21 +28,24 @@
 (defn decrement-probe [options probe]
   (let [probe (str active-probe-suffix probe)
 	client (redis-client options)]
-    (loop []
-      (client [:watch probe])
-      (let [val @(client [:get probe])]
-	(when val
-	  (let [val (read-string val)]
-	    (client [:multi])
-	    (if (<= val 1)
-	      (client [:del probe])
-	      (client [:decr probe]))
-	    (let [result @(client [:exec])]
-	      (if (empty? result)
-		(recur)
-		(when (<= val 1)
-		  @(client [:publish active-probe-update-broadcast "updated"]))))))))
-    (close-connection client)))
+    (async
+      (do
+	(force
+	  (loop []
+	    (client [:watch probe])
+	    (let [val (client [:get probe])]
+	      (when val
+		(let [val (read-string val)]
+		  (client [:multi])
+		  (if (<= val 1)
+		    (client [:del probe])
+		    (client [:decr probe]))
+		  (let [result (client [:exec])]
+		    (if (empty? result)
+		      (recur)
+		      (when (<= val 1)
+			(client [:publish active-probe-update-broadcast "updated"])))))))))
+	(close-connection client)))))
 
 (defn watch-active-probes [client options]
   (let [ch (channel [])]
@@ -85,7 +88,7 @@
 	  (let [new-links (zipmap added (repeatedly channel))]
 	    (doseq [[probe ch] new-links]
 	      ;; forward all probe values 
-	      (siphon (probe-channel (canonical-probe probe)) ch)
+	      (siphon (probe-channel probe) ch)
 	      ;; publish all values
 	      (receive-all ch
 		(fn [msg]
