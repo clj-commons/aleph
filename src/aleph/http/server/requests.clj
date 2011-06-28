@@ -68,13 +68,14 @@
 
 (defn request-handler [handler options]
   (let [f (executor (:pool options)
-	    (fn [netty-channel req]
-	        (let [ch (wrap-response-channel (constant-channel))
-		      req (transform-netty-request req netty-channel options)]
-		  (handler ch req)
-		  (read-channel ch)))
+	    (fn [req]
+	      (let [ch (wrap-response-channel (constant-channel))]
+		(handler ch req)
+		(read-channel ch)))
 	    options)]
-    #(f [%1 %2])))
+    (fn [netty-channel req]
+      (let [req (transform-netty-request req netty-channel options)]
+	(f [req])))))
 
 (defn consume-request-stream [netty-channel in handler options]
   (let [[a b] (channel-pair)
