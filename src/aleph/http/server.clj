@@ -42,7 +42,8 @@
 (defn http-session-handler [handler options]
   (let [init? (atom false)
  	ch (channel)
-	server-name (:name options)]
+	server-name (:name options)
+	simple-handler (request-handler handler options)]
     (message-stage
       (fn [^Channel netty-channel request]
 	(when (and
@@ -50,12 +51,11 @@
 		(= "100-continue" (.getHeader ^HttpRequest request "Expect")))
 	  (.write netty-channel continue-response))
 	(if-not (or @init? (.isChunked ^HttpRequest request) (HttpHeaders/isKeepAlive request))
-	  (run-pipeline (handle-request netty-channel request handler options)
+	  (run-pipeline (simple-handler netty-channel request)
 	    :error-handler (fn [ex]
 			     (when-not (trace [server-name :errors] ex)
 			       (log/error "Error in handler, closing connection" ex))
 			     (.close netty-channel))
-	    read-channel
 	    #(respond netty-channel options (first %) (second %))
 	    (fn [_] (.close netty-channel)))
 	  (do
@@ -98,7 +98,8 @@
    request is a WebSocket handshake, the channel represents a full duplex socket, which
    communicates via complete (i.e. non-streaming) strings."
   [handler options]
-  (let [options (merge
+  (let [options (merge options {:result-transform second})
+	options (merge
 		  {:timeout (constantly -1)
 		   :name (str "http-server." (:port options))}
 		  options

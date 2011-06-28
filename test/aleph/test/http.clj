@@ -85,7 +85,6 @@
 ;;;
 
 (defn streaming-request-handler [ch request]
-  (prn "request" request)
   (enqueue ch
     {:status 200
      :content-type (:content-type request)
@@ -143,7 +142,7 @@
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
-(deftest test-streaming-response
+#_(deftest test-streaming-response
   (with-handler streaming-request-handler
     (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
       (dotimes [_ 3]

@@ -66,12 +66,15 @@
 	  [result [[result rsp]]])))
     ch))
 
-(defn handle-request [netty-channel req handler options]
-  (let [ch (wrap-response-channel (constant-channel))
-	req (transform-netty-request req netty-channel options)]
-    (with-thread-pool (:thread-pool options) {:timeout ((:timeout options) req)}
-      (handler ch req))
-    ch))
+(defn request-handler [handler options]
+  (let [f (executor (:pool options)
+	    (fn [netty-channel req]
+	        (let [ch (wrap-response-channel (constant-channel))
+		      req (transform-netty-request req netty-channel options)]
+		  (handler ch req)
+		  (read-channel ch)))
+	    options)]
+    #(f [%1 %2])))
 
 (defn consume-request-stream [netty-channel in handler options]
   (let [[a b] (channel-pair)

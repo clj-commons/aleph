@@ -284,7 +284,7 @@
      (url-decode s charset nil))
   ([s charset options]
      (let [s (reduce
-	       (fn [s [from to]] (.replace ^String s (str from) to))
+	       (fn [s [from to]] (.replace ^String s ^String (str from) ^String to))
 	       s
 	       (sort-replace-map (:url-decodings options)))]
        (URLDecoder/decode s charset))))
