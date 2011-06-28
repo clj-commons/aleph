@@ -67,7 +67,7 @@
     ch))
 
 (defn request-handler [handler options]
-  (let [f (executor (:pool options)
+  (let [f (executor (:thread-pool options)
 	    (fn [req]
 	      (let [ch (wrap-response-channel (constant-channel))]
 		(handler ch req)
