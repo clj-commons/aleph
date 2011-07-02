@@ -15,10 +15,10 @@
 (defn redis-client
   "Returns a function which represents a persistent connection to the Redis server
    located at :host.  The 'options' may also specify the :port and :charset used for this
-   client.  The function expects a vector of strings and an optional timeout,
+   client.  The function expects a vector of strings or keywords and an optional timeout,
    in the form
 
-   (f [\"set\" \"foo\" \"bar\"] timeout?)
+   (f [:set \"foo\" \"bar\"] timeout?)
 
    The function will return a result-channel representing the response.  To close the
    connection, use lamina.connections/close-connection."
@@ -28,10 +28,33 @@
 		      :charset :utf-8
 		      :name "redis"
 		      :description (str "redis @ " (:host options) ":" (:port options))}
-		     options)]
-       (pipelined-client
-	 #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-	 options))))
+		     options)
+	   database (atom nil)
+	   connection-callback (fn [ch]
+				 (run-pipeline nil
+				   (fn [_]
+				     (when-let [password (:password options)]
+				       (enqueue ch [:auth password])
+				       (read-channel ch)))
+				   (fn [_]
+				     (when-let [db @database]
+				       (enqueue ch [:select db])
+				       (read-channel ch)))
+				   (fn [_]
+				     (when-let [callback (:connection-callback options)]
+				       (callback ch)))))
+	   client-fn (pipelined-client
+		       #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
+		       (merge
+			 options
+			 {:connection-callback connection-callback}))]
+       (fn [& args]
+	 (let [result (apply client-fn args)]
+	   (when (= :select (ffirst args))
+	     (run-pipeline result
+	       :error-handler (fn [_] )
+	       (fn [_] (reset! database (-> args first second)))))
+	   result))))) 
 
 (defn enqueue-task
   "Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure."
