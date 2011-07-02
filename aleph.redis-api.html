@@ -129,10 +129,10 @@ Clojure data structure.</pre>
 </pre>
   <pre id="var-docstr">Returns a function which represents a persistent connection to the Redis server
 located at :host.  The 'options' may also specify the :port and :charset used for this
-client.  The function expects a vector of strings and an optional timeout,
+client.  The function expects a vector of strings or keywords and an optional timeout,
 in the form
 
-(f ["set" "foo" "bar"] timeout?)
+(f [:set "foo" "bar"] timeout?)
 
 The function will return a result-channel representing the response.  To close the
 connection, use lamina.connections/close-connection.</pre>
