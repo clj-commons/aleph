@@ -100,8 +100,7 @@
   [handler options]
   (let [options (merge options {:result-transform second})
 	options (merge
-		  {:timeout (constantly -1)
-		   :name (str "http-server." (:port options))}
+		  {:name (str "http-server." (:port options))}
 		  options
 		  {:thread-pool (when (and
 					(contains? options :thread-pool)
