@@ -42,10 +42,10 @@
   (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/CONTINUE))
 
 (def error-response
-  (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/INTERNAL_SERVER_ERROR))
+  (transform-aleph-response {:status 500} nil))
 
 (def timeout-response
-  (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/REQUEST_TIMEOUT))
+  (transform-aleph-response {:status 408} nil))
 
 (defn http-session-handler [handler options]
   (let [init? (atom false)
@@ -66,7 +66,7 @@
 						  (instance? TimeoutException ex))
 					      timeout-response
 					      error-response)]
-			       (write-to-channel channel response true)))
+			       (write-to-channel netty-channel response true)))
 	    #(respond netty-channel options (first %) (second %))
 	    (fn [_] (.close netty-channel)))
 	  (do
