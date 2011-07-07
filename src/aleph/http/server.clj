@@ -31,13 +31,21 @@
      HttpContentCompressor]
     [org.jboss.netty.channel
      Channel
-     ChannelPipeline]))
+     ChannelPipeline]
+    [java.util.concurrent
+     TimeoutException]))
 
 
 ;;;
 
 (def continue-response
   (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/CONTINUE))
+
+(def error-response
+  (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/INTERNAL_SERVER_ERROR))
+
+(def timeout-response
+  (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/REQUEST_TIMEOUT))
 
 (defn http-session-handler [handler options]
   (let [init? (atom false)
@@ -53,9 +61,12 @@
 	(if-not (or @init? (.isChunked ^HttpRequest request) (HttpHeaders/isKeepAlive request))
 	  (run-pipeline (simple-handler netty-channel request)
 	    :error-handler (fn [ex]
-			     (when-not (trace [server-name :errors] ex)
-			       (log/error "Error in handler, closing connection" ex))
-			     (.close netty-channel))
+			     (let [response (if (or
+						  (instance? InterruptedException ex)
+						  (instance? TimeoutException ex))
+					      timeout-response
+					      error-response)]
+			       (write-to-channel channel response true)))
 	    #(respond netty-channel options (first %) (second %))
 	    (fn [_] (.close netty-channel)))
 	  (do
