@@ -48,10 +48,13 @@
      Executor]
     [java.net
      URI
+     SocketAddress
      InetSocketAddress
      InetAddress]
     [java.io
      InputStream]
+    [java.nio.channels
+     ClosedChannelException]
     [java.nio
      ByteBuffer]))
 
@@ -72,7 +75,7 @@
   (when (instance? ChannelEvent evt)
     (.getChannel ^ChannelEvent evt)))
 
-(defn event-origin
+(defn ^InetSocketAddress event-origin
   "Returns origin of message event, or nil if it's a different type of message."
   [evt]
   (when (instance? MessageEvent evt)
@@ -169,10 +172,12 @@
 	error-probe (canonical-probe [pipeline-name :errors])
 	_ (register-probe error-probe)
 	error-handler (fn [evt]
-			(when-let [ex (exception-event evt)]
-			  (when-not (trace* error-probe ex)
-			    (.printStackTrace ex)
-			    (log/error ex))
+			(when-let [ex ^ExceptionEvent (exception-event evt)]
+			  (when-not (instance? ClosedChannelException ex)
+			    (when-not (trace* error-probe
+					{:exception ex
+					 :address (-> ex .getChannel channel-origin)})
+			      (log/error ex)))
 			  nil))
 	traffic-handler (fn [probe-suffix]
 			  (let [canonical (canonical-probe [pipeline-name :traffic probe-suffix])]
@@ -352,7 +357,7 @@
     ;; add parent channel to channel-group
     (.add channel-group (.bind server (InetSocketAddress. port)))
 
-    ;; create server instance
+     ;; create server instance
     (reify AlephServer
       (stop-server-immediately [_]
 	(trace [(:name options) :shutdown]
