@@ -10,7 +10,7 @@
   (:use
     [aleph http]
     [aleph.http.client :only (http-connection)]
-    [lamina core connections]
+    [lamina core connections trace]
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
@@ -111,14 +111,20 @@
 	 (kill-fn#)))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (start-http-server ~handler {:port 8080, :auto-transform true})
+  `(with-server (start-http-server ~handler
+		  {:port 8080,
+		   :probes {;;:calls log-info
+			    ;;:results log-info
+			    }
+		   :auto-transform true
+		   })
      ~@body))
 
 (defn is-closed? [handler & requests]
   (with-handler handler
     (let [connection @(http-connection {:url "http://localhost:8080"})]
       (apply enqueue connection requests)
-      (doall (lazy-channel-seq connection 500))
+      (doall (lazy-channel-seq connection 1000))
       (is (closed? connection)))))
 
 ;;;
@@ -142,7 +148,7 @@
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 
-#_(deftest test-streaming-response
+(deftest test-streaming-response
   (with-handler streaming-request-handler
     (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
       (dotimes [_ 3]

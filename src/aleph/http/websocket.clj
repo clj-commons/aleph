@@ -72,7 +72,7 @@
 	     (doto (ByteBuffer/allocate 16)
 	       (.putInt (transform-key (headers "sec-websocket-key1")))
 	       (.putInt (transform-key (headers "sec-websocket-key2")))
-	       (.putLong (-> request :body contiguous .getLong))))}))
+	       (.putLong (-> request :body .readLong))))}))
 
 (defn standard-websocket-response [request]
   (let [headers (:headers request)]

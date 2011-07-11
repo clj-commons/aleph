@@ -89,32 +89,39 @@
 
 (defn decode-aleph-message [aleph-msg options]
   (let [body (:body aleph-msg)]
-    (if (or
+    (cond
+
+      (channel? body)
+      aleph-msg
+      
+      (or
 	  (nil? body)
 	  (and (sequential? body) (empty? body))
 	  (zero? (.readableBytes ^ChannelBuffer body)))
-     (assoc aleph-msg :body nil)
-     (let [auto-transform? (:auto-transform options)
-	   headers (:headers aleph-msg)
-	   content-type ^String (or (:content-type aleph-msg) "text/plain")
-	   charset (or (:character-encoding aleph-msg) "utf-8")]
-      
-       (cond
+      (assoc aleph-msg :body nil)
+
+      :else
+      (let [auto-transform? (:auto-transform options)
+	    headers (:headers aleph-msg)
+	    content-type ^String (or (:content-type aleph-msg) "text/plain")
+	    charset (or (:character-encoding aleph-msg) "utf-8")]
 	
-	 (and auto-transform? (.startsWith content-type "application/json"))
-	 (update-in aleph-msg [:body] channel-buffer->json->data)
-	
-	 (and auto-transform? (.startsWith content-type "application/xml"))
-	 (update-in aleph-msg [:body] channel-buffer->xml->data)
-	
-	 (and auto-transform?
-	   (or
-	     (.startsWith ^String content-type "text")
-	     (.startsWith ^String content-type "application/x-www-form-urlencoded")))
-	 (update-in aleph-msg [:body] #(channel-buffer->string % charset))
-	
-	 :else
-	 (update-in aleph-msg [:body] channel-buffer->byte-buffers))))))
+	(cond
+	  
+	  (and auto-transform? (.startsWith content-type "application/json"))
+	  (update-in aleph-msg [:body] channel-buffer->json->data)
+	  
+	  (and auto-transform? (.startsWith content-type "application/xml"))
+	  (update-in aleph-msg [:body] channel-buffer->xml->data)
+	  
+	  (and auto-transform?
+	    (or
+	      (.startsWith ^String content-type "text")
+	      (.startsWith ^String content-type "application/x-www-form-urlencoded")))
+	  (update-in aleph-msg [:body] #(channel-buffer->string % charset))
+	  
+	  :else
+	  (update-in aleph-msg [:body] channel-buffer->byte-buffers))))))
 
 (defn final-netty-message? [msg]
   (or
@@ -169,6 +176,14 @@
       (zipmap
 	(map #(->> (str/split (to-str %) #"-") (map str/capitalize) (str/join "-")) (keys headers))
 	(vals headers)))))
+
+(defn process-chunks [req options]
+  (if (:auto-transform options)
+    (if (-> req :body channel?)
+      (run-pipeline (reduce* concat [] (:body req))
+	#(assoc req :body (byte-buffers->channel-buffer %)))
+      req)
+    req))
 
 (defn transform-aleph-message [^HttpMessage netty-msg msg options]
   (let [body (:body msg)]

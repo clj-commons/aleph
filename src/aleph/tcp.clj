@@ -32,13 +32,6 @@
     [java.io
      InputStream]))
 
-(defn create-frame [frame delimiters strip-delimiters?]
-  (cond
-    (and frame delimiters) (delimited-frame delimiters frame)
-    (and frame (not delimiters)) (compile-frame frame)
-    (and (not frame) delimiters) (delimited-block delimiters (or strip-delimiters? true))
-    :else nil))
-
 (defn basic-server-pipeline
   [handler send-encoder receive-encoder options]
   (let [[inner outer] (channel-pair)

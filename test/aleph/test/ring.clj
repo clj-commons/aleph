@@ -35,9 +35,7 @@
 	       :body (:body options)}
 	      500)
 	 :body
-	 StringReader.
-	 PushbackReader.
-	 read))))
+	 read-string))))
 
 (defn get-request-value [request keys]
   (reduce

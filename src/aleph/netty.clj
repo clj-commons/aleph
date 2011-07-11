@@ -11,7 +11,8 @@
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
     [lamina core trace api]
-    [aleph formats core])
+    [aleph formats core]
+    [gloss core])
   (:require
     [clj-http.client :as client]
     [clojure.contrib.logging :as log])
@@ -177,7 +178,7 @@
 			    (when-not (trace* error-probe
 					{:exception ex
 					 :address (-> ex .getChannel channel-origin)})
-			      (log/error ex)))
+			      (log/error nil ex)))
 			  nil))
 	traffic-handler (fn [probe-suffix]
 			  (let [canonical (canonical-probe [pipeline-name :traffic probe-suffix])]
@@ -199,6 +200,15 @@
     (.addFirst netty-pipeline "incoming-error"
       (upstream-stage error-handler))
     netty-pipeline))
+
+;;;
+
+(defn create-frame [frame delimiters strip-delimiters?]
+  (cond
+    (and frame delimiters) (delimited-frame delimiters frame)
+    (and frame (not delimiters)) (compile-frame frame)
+    (and (not frame) delimiters) (delimited-block delimiters (or strip-delimiters? true))
+    :else nil))
 
 ;;;
 
