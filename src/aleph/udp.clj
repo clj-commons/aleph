@@ -104,28 +104,19 @@
       (.setOption client k v))
 
     (run-pipeline (.bind client local-addr)
-      (fn [netty-channel]
-	(let [write-queue (create-write-queue netty-channel
-			    #(write-to-channel netty-channel nil true))]
-	  (run-pipeline nil
-	    :error-handler (fn [ex]
-			     
-			     (close write-queue))
-	    (fn [_]
-	      (receive-in-order outer
-		(fn [[returned-result {:keys [host port message]}]]
-		  (enqueue write-queue
-		    (let [message (if-let [encoder (or encoder frame)]
-				    (byte-buffers->channel-buffer (encode encoder message))
-				    message)
-			  result (write-to-channel netty-channel message false
-				   :host host
-				   :port port)]
-		      (siphon-result result returned-result)
-		      result))
-		  nil)))
-	    (fn [_]
-	      (close write-queue))))
+      (fn [^Channel netty-channel]
+	(receive-all outer
+	  (fn [[returned-result {:keys [host port message] :as msg}]]
+	    (when-not (and (nil? msg) (drained? outer))
+	      (let [message (if-let [encoder (or encoder frame)]
+			      (byte-buffers->channel-buffer (encode encoder message))
+			      message)
+		    result (write-to-channel netty-channel message false
+			     :host host
+			     :port port)]
+		(siphon-result result returned-result)
+		result))))
+	(on-drained outer #(.close netty-channel))
         inner))))
 
 (defn udp-object-socket
