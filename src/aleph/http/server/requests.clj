@@ -17,9 +17,7 @@
     [org.jboss.netty.handler.codec.http
      HttpHeaders
      HttpRequest
-     HttpChunk]
-    [java.util.concurrent
-     TimeoutException]))
+     HttpChunk]))
 
 (defn- request-destination [_]
   (fn [msg]
@@ -82,19 +80,9 @@
 (defn consume-request-stream [netty-channel in handler options]
   (let [[a b] (channel-pair)
 	handler (fn [ch req]
-		  (run-pipeline nil
-		    :error-handler (fn [ex]
-				     (enqueue ch
-				       (assoc {:keep-alive (:keep-alive? req)}
-					 :status (if (instance? TimeoutException ex)
-						   408
-						   500))))
-		    (fn [_]
-		      (let [c (constant-channel)]
-			(handler c (dissoc req :keep-alive?))
-			(read-channel c)))
-		    (fn [rsp]
-		      (enqueue ch (assoc rsp :keep-alive? (:keep-alive? req))))))]
+		  (let [c (constant-channel)]
+		    (handler c (dissoc req :keep-alive?))
+		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))]
     (run-pipeline in
       read-channel
       (fn [req]
@@ -120,8 +108,9 @@
 	(if keep-alive?
 	  (restart)
 	  (close a))))
-    (server b handler
+    (pipelined-server b handler
       (assoc options
+	:include-request true
 	:response-channel #(wrap-response-channel (constant-channel))))
     a))
 
