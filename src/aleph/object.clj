@@ -35,7 +35,7 @@
    object, including the standard Clojure data structures."
   [handler options]
   (let [options (merge
-		  {:name (str "object-server." (:port options))}
+		  {:name (str "object-server:" (:port options))}
 		  options)]
     (start-server
       #(server-pipeline
@@ -47,9 +47,12 @@
   "Identical to tcp-client, except that the channel accepts any serializable Java object,
    including the standard Clojure data structures."
   [options]
-  (create-client
-    #(client-pipeline % options)
-    identity
-    options))
+  (let [options (merge
+		  {:name (str "object-client:" (:host options) ":" (:port options) ":" (gensym ""))}
+		  options)]
+    (create-client
+      #(client-pipeline % options)
+      identity
+      options)))
 
 

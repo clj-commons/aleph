@@ -76,13 +76,13 @@
     :buf-size <int> ; to set the receive buffer size
   "
   [options]
-  (let [{:keys [port broadcast buf-size netty stages frame encoder decoder]}
-	(merge
-	  {:port 0
-	   :broadcast false
-	   :buf-size nil
-	   :name (str "udp-socket." (or (:port options) (gensym "")))}
-	  options)
+  (let [options (merge
+		  {:port 0
+		   :broadcast false
+		   :buf-size nil
+		   :name (str "udp-socket:" (or (:port options) (gensym "")))}
+		  options)
+	{:keys [port broadcast buf-size netty stages frame encoder decoder]} options
         [inner outer] (channel-pair)
         client (ConnectionlessBootstrap.
                  (NioDatagramChannelFactory. (Executors/newCachedThreadPool)))

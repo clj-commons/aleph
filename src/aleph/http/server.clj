@@ -117,16 +117,17 @@
    request is a WebSocket handshake, the channel represents a full duplex socket, which
    communicates via complete (i.e. non-streaming) strings."
   [handler options]
-  (let [options (merge options {:result-transform second})
+  (let [default-name (str "http-server:" (:port options))
+	options (merge options {:result-transform second})
 	options (merge
-		  {:name (str "http-server." (:port options))}
+		  {:name default-name}
 		  options
 		  {:thread-pool (when (and
 					(contains? options :thread-pool)
 					(not (nil? (:thread-pool options))))
 				  (thread-pool
 				    (merge-with #(if (map? %1) (merge %1 %2) %2)
-				      {:name (str "http-server." (:port options) ".thread-pool")}
+				      {:name (str default-name ":thread-pool")}
 				      (:thread-pool options))))})
 	stop-fn (start-server
 		  #(create-pipeline handler options)
