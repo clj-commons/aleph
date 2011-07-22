@@ -49,7 +49,9 @@
 		  :content-length content-length
 		  :request-method request-method)]
     (assoc request
-      :body (.getContent req))))
+      :body (if (.isChunked req)
+	      ::chunked
+	      (.getContent req)))))
 
 (defn wrap-response-channel [ch]
   (proxy-channel
@@ -104,7 +106,7 @@
 			   (map* #(if (final-netty-message? %)
 				    ::last
 				    (.getContent ^HttpChunk %)))
-			   (remove* #(= ::last %))
+			   (take-while* #(not= ::last %))
 			   (map* channel-buffer->byte-buffers))]
 	      (enqueue a (assoc req :body chunks))
 	      (run-pipeline (closed-result chunks)

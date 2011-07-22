@@ -88,7 +88,7 @@
   (enqueue ch
     {:status 200
      :content-type (:content-type request)
-     :body (:body request)}))
+     :body (->> request :body (map str) (apply closed-channel))}))
 
 (defn json-response-handler [ch request]
   (enqueue ch
@@ -138,8 +138,10 @@
   (with-handler basic-handler
     (doseq [[index [path result]] (indexed expected-results)]
       (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
-	(is (= result (wait-for-request client path)))
-	(close-connection client)))))
+	(try
+	  (is (= result (wait-for-request client path)))
+	  (finally
+	    (close-connection client)))))))
 
 (deftest test-multiple-requests
   (with-handler basic-handler
@@ -150,35 +152,22 @@
 
 (deftest test-streaming-response
   (with-handler streaming-request-handler
-    (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
-      (dotimes [_ 3]
-	(is
-	  (= (map str "abcdefghi")
-	     (channel-seq
-	       (:body (wait-for-result
-			(client {:url "http://localhost:8080"
-				 :method :post
-				 :auto-transform true
-				 :headers {"content-type" "text/plain"}
-				 :body (apply closed-channel (map str "abcdefghi"))})
-			1000))
-	       1000))))
-      (close-connection client))))
-
-(deftest test-streaming-request
-  (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
-    (doseq [content-type ["application/json" "application/xml"]]
-      (with-handler streaming-request-handler
-	(let [ch (apply closed-channel s)]
-	  (let [result (sync-http-request
-			 {:url "http://localhost:8080"
-			  :method :post
-			  :headers {"content-type" content-type}
-			  :body ch
-			  :auto-transform true}
-			 1000)]
-	    (let [transform-results (fn [x] (map #(-> % :content first str/trim) x))]
-	      (is (= (transform-results s) (transform-results (channel-seq (:body result) 1000)))))))))))
+    (let [content "abcdefghi"
+	  client (http-client {:url "http://localhost:8080", :auto-transform true})]
+      (try
+	(dotimes [_ 3]
+	  (is
+	    (= content
+	      (:body
+		(wait-for-result
+		  (client {:url "http://localhost:8080"
+			   :method :post
+			   :auto-transform true
+			   :headers {"content-type" "text/plain"}
+			   :body (apply closed-channel (map str content))})
+		  1000)))))
+	(finally
+	  (close-connection client))))))
 
 (deftest test-auto-transform
   (with-handler json-response-handler

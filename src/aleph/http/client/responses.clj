@@ -47,13 +47,13 @@
 	      (enqueue out (pre-process-response response options))
 	      (let [chunks (->> in
 			     (take-while* #(instance? HttpChunk %))
-			     (remove* #(final-netty-message? %))
+			     (take-while* #(not (final-netty-message? %)))
 			     (map* #(channel-buffer->byte-buffers (.getContent ^HttpChunk %))))
 		    close-channel (constant-channel)
-		    chunks (splice chunks close-channel)]
+		    stream (splice chunks close-channel)]
 		(receive close-channel
 		  (fn [_] (close in)))
-		(run-pipeline (assoc response :body chunks)
+		(run-pipeline (assoc response :body stream)
 		  #(pre-process-response % options)
 		  #(enqueue out %)
 		  (fn [_] (closed-result chunks))))))))
