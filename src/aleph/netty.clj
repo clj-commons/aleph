@@ -175,17 +175,16 @@
 	error-handler (fn [evt]
 			(when-let [ex ^ExceptionEvent (exception-event evt)]
 			  (when-not (instance? ClosedChannelException ex)
-			    (when-not (trace* error-probe
+			    (when-not (trace error-probe
 					{:exception ex
 					 :address (-> ex .getChannel channel-origin)})
 			      (log/error nil ex)))
 			  nil))
 	traffic-handler (fn [probe-suffix]
-			  (let [canonical (canonical-probe [pipeline-name :traffic probe-suffix])]
-			    (register-probe canonical)
+			  (let [traffic-probe (canonical-probe [pipeline-name :traffic probe-suffix])]
 			    (fn [evt]
 			      (when-let [msg (message-event evt)]
-				(trace* canonical
+				(trace traffic-probe
 				  {:address (-> evt channel-event channel-origin)
 				   :bytes (.readableBytes ^ChannelBuffer msg)}))
 			      nil)))]
@@ -283,10 +282,8 @@
 
 (defn create-pipeline-factory
   [^ChannelGroup channel-group options
-   canonical-connections-probe refuse-connections?
+   connections-probe refuse-connections?
    pipeline-fn & args]
-  (when canonical-connections-probe
-    (register-probe canonical-connections-probe))
   (let [connection-count (atom 0)]
     (reify ChannelPipelineFactory
       (getPipeline [_]
@@ -302,7 +299,7 @@
 		      (when (.add channel-group ch)
 			(let [origin (channel-origin ch)
 			      connections (swap! connection-count inc)]
-			  (trace* canonical-connections-probe
+			  (trace connections-probe
 			    {:event :opened
 			     :connections connections
 			     :address origin})
@@ -310,7 +307,7 @@
 			    wrap-netty-channel-future
 			    (fn [_]
 			      (let [connections (swap! connection-count dec)]
-				(trace* canonical-connections-probe
+				(trace connections-probe
 				  {:event :closed
 				   :connections connections
 				   :address origin}))))))))

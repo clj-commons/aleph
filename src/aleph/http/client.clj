@@ -69,6 +69,9 @@
 (defn http-connection
   [options]
   (let [options (process-options options)
+	options (merge
+		  {:name (str "http-connection:" (:server-name options) ":" (gensym ""))}
+		  options)
 	requests (channel)
 	client (create-client
 		 #(create-pipeline % options)
@@ -83,7 +86,7 @@
 (defn- http-client- [client-fn options]
   (let [options (merge
 		  {:name
-		   (str "http-client." (:server-name options) "." (gensym ""))
+		   (str "http-client:" (:server-name options) ":" (gensym ""))
 		   :description
 		   (str (:scheme options) "://" (:server-name options) ":" (:server-port options))}
 		  (process-options options))
@@ -206,6 +209,9 @@
 
 (defn websocket-client [options]
   (let [options (split-url options)
+	options (merge
+		  {:name (str "websocket-client:" (:host options) ":" (gensym ""))}
+		  options)
 	result (result-channel)
 	client (create-client
 		 #(websocket-pipeline % (.success result) (.error result) options)

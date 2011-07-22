@@ -134,7 +134,7 @@
    bytes are no longer an acceptable input)."
   [handler options]
   (let [options (merge
-		  {:name (str "tcp-server." (:port options))}
+		  {:name (str "tcp-server:" (:port options))}
 		  options)]
     (start-server
       (fn []
@@ -154,7 +154,7 @@
    start-tcp-server."
   [options]
   (let [options (merge
-		  {:name (str "tcp-client." (:host options) ":" (:port options) ".")}
+		  {:name (str "tcp-client:" (:host options) ":" (:port options))}
 		  options)
 	encoder (create-frame
 		  (or (:encoder options) (:frame options))
