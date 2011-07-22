@@ -47,14 +47,8 @@
 	  intermediate-stages
 	  [:receive (udp-message-stage
 		      (fn [msg addr]
-			(let [msg (cond
-				    frame
-				    (decode frame (channel-buffer->byte-buffers msg))
-
-				    (instance? ChannelBuffer msg)
-				    (channel-buffer->byte-buffers msg)
-
-				    :else
+			(let [msg (if frame
+				    (decode frame (bytes->byte-buffers msg))
 				    msg)]
 			  (enqueue ch (assoc addr :message msg)))))])))))
 
@@ -109,7 +103,7 @@
 	  (fn [[returned-result {:keys [host port message] :as msg}]]
 	    (when-not (and (nil? msg) (drained? outer))
 	      (let [message (if-let [encoder (or encoder frame)]
-			      (byte-buffers->channel-buffer (encode encoder message))
+			      (bytes->channel-buffer (encode encoder message))
 			      message)
 		    result (write-to-channel netty-channel message false
 			     :host host

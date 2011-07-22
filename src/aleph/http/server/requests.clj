@@ -106,8 +106,7 @@
 			   (map* #(if (final-netty-message? %)
 				    ::last
 				    (.getContent ^HttpChunk %)))
-			   (take-while* #(not= ::last %))
-			   (map* channel-buffer->byte-buffers))]
+			   (take-while* #(not= ::last %)))]
 	      (enqueue a (assoc req :body chunks))
 	      (run-pipeline (closed-result chunks)
 		(fn [_]

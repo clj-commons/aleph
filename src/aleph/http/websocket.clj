@@ -46,7 +46,7 @@
   (.getTextData frame))
 
 (defn to-websocket-frame [msg]
-  (DefaultWebSocketFrame. 0 (to-channel-buffer msg)))
+  (DefaultWebSocketFrame. 0 (bytes->channel-buffer msg)))
 
 (defn websocket-handshake? [^HttpRequest request]
   (and

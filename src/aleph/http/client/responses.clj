@@ -48,7 +48,7 @@
 	      (let [chunks (->> in
 			     (take-while* #(instance? HttpChunk %))
 			     (take-while* #(not (final-netty-message? %)))
-			     (map* #(channel-buffer->byte-buffers (.getContent ^HttpChunk %))))
+			     (map* #(.getContent ^HttpChunk %)))
 		    close-channel (constant-channel)
 		    stream (splice chunks close-channel)]
 		(receive close-channel

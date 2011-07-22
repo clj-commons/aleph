@@ -66,8 +66,7 @@
 		      #(or % "utf-8"))	   
 	   body (-> response
 		  :body
-		  (string->byte-buffer (:character-encoding response))
-		  byte-buffer->channel-buffer)
+		  (bytes->channel-buffer (:character-encoding response)))
 	   response (transform-aleph-response
 		      (assoc response :body body)
 		      options)]
@@ -86,7 +85,7 @@
   [^Channel netty-channel options returned-result response]
   (let [stream ^InputStream (:body response)
 	response (transform-aleph-response
-		   (update-in response [:body] #(input-stream->channel-buffer %))
+		   (update-in response [:body] #(bytes->channel-buffer %))
 		   options)]
     (siphon-result*
       (write-to-channel netty-channel response false
@@ -136,7 +135,7 @@
 	       (assoc :body %)
 	       (encode-aleph-message options)
 	       :body
-	       to-channel-buffer
+	       bytes->channel-buffer
 	       DefaultHttpChunk.)
 	    ch)
 	  (fn [msg]
@@ -189,8 +188,8 @@
 	  (sequential? body)
 	  (respond-with-sequence netty-channel options returned-result response)
 	  
-	  (to-channel-buffer? body)
-	  (respond-with-channel-buffer netty-channel options returned-result (update-in response [:body] to-channel-buffer))
+	  (bytes? body)
+	  (respond-with-channel-buffer netty-channel options returned-result (update-in response [:body] bytes->channel-buffer))
 	  
 	  :else
 	  (throw (Exception. (str "Don't know how to respond with body of type " (prn-str original-body) (class body)))))))))

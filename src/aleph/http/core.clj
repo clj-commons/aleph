@@ -71,18 +71,18 @@
     (cond
 
       (and auto-transform? (.startsWith content-type "application/json"))
-      (update-in aleph-msg [:body] data->json->channel-buffer)
+      (update-in aleph-msg [:body] encode-json->bytes)
 
       (and auto-transform? (.startsWith content-type "application/xml"))
-      (update-in aleph-msg [:body] #(data->xml->channel-buffer % charset))
+      (update-in aleph-msg [:body] #(encode-xml->bytes % charset))
 
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
 	(assoc-in aleph-msg [:body]
 	  (ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc)))))
       
-      (to-channel-buffer? body)
-      (update-in aleph-msg [:body] #(to-channel-buffer % charset))
+      (bytes? body)
+      (update-in aleph-msg [:body] #(bytes->channel-buffer % charset))
 
       :else
       aleph-msg)))
@@ -109,19 +109,19 @@
 	(cond
 	  
 	  (and auto-transform? (.startsWith content-type "application/json"))
-	  (update-in aleph-msg [:body] channel-buffer->json->data)
+	  (update-in aleph-msg [:body] decode-json)
 	  
 	  (and auto-transform? (.startsWith content-type "application/xml"))
-	  (update-in aleph-msg [:body] channel-buffer->xml->data)
+	  (update-in aleph-msg [:body] decode-xml)
 	  
-	  (and auto-transform?
-	    (or
-	      (.startsWith ^String content-type "text")
-	      (.startsWith ^String content-type "application/x-www-form-urlencoded")))
-	  (update-in aleph-msg [:body] #(channel-buffer->string % charset))
+	  (and auto-transform? (.startsWith ^String content-type "text"))
+	  (update-in aleph-msg [:body] #(bytes->string % charset))
+
+	  (and auto-transform? (.startsWith ^String content-type "application/x-www-form-urlencoded"))
+	  (update-in aleph-msg [:body] #(split-body-params % charset options))
 	  
 	  :else
-	  (update-in aleph-msg [:body] channel-buffer->byte-buffers))))))
+	  aleph-msg)))))
 
 (defn final-netty-message? [msg]
   (or
@@ -180,8 +180,8 @@
 (defn process-chunks [req options]
   (if (:auto-transform options)
     (if (-> req :body channel?)
-      (run-pipeline (reduce* concat [] (:body req))
-	#(assoc req :body (byte-buffers->channel-buffer %)))
+      (run-pipeline (reduce* conj [] (:body req))
+	#(assoc req :body (bytes->channel-buffer %)))
       req)
     req))
 

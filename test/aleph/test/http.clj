@@ -115,6 +115,7 @@
 		  {:port 8080,
 		   :probes {;;:calls log-info
 			    ;;:results log-info
+			    :errors (siphon->> (map* :exception) log-error)
 			    }
 		   :auto-transform true
 		   })
