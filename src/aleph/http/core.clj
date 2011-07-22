@@ -11,7 +11,8 @@
   (:use
     [aleph netty formats]
     [aleph.http utils]
-    [lamina.core])
+    [lamina.core]
+    [gloss io])
   (:require
     [clojure.string :as str])
   (:import
@@ -183,7 +184,16 @@
       (run-pipeline (reduce* conj [] (:body req))
 	#(assoc req :body (bytes->channel-buffer %)))
       req)
-    req))
+    (if (-> req :body channel?)
+      (let [stream (:body req)
+	    stream (if-let [frame (create-frame
+				    (:frame options)
+				    (:delimiters options)
+				    (:strip-delimiters? options))]
+		     (decode-channel (map* bytes->byte-buffers stream) frame)
+		     stream)]
+	(assoc req :body stream))
+      req)))
 
 (defn transform-aleph-message [^HttpMessage netty-msg msg options]
   (let [body (:body msg)]
