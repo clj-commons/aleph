@@ -51,7 +51,9 @@
     (assoc request
       :body (if (.isChunked req)
 	      ::chunked
-	      (.getContent req)))))
+	      (let [body (.getContent req)]
+		(when (pos? (.readableBytes body))
+		  body))))))
 
 (defn wrap-response-channel [ch]
   (proxy-channel

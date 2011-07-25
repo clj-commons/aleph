@@ -71,10 +71,10 @@
 
     (cond
 
-      (and auto-transform? (.startsWith content-type "application/json"))
+      (and (.startsWith content-type "application/json") (coll? body))
       (update-in aleph-msg [:body] encode-json->bytes)
 
-      (and auto-transform? (.startsWith content-type "application/xml"))
+      (and (.startsWith content-type "application/xml") (coll? body))
       (update-in aleph-msg [:body] #(encode-xml->bytes % charset))
 
       (instance? FileChannel body)

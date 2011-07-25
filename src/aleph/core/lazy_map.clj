@@ -56,10 +56,10 @@
     (LazyMap. (atom (assoc @m k v))))
   clojure.lang.IPersistentMap
   (assocEx [this k v]
-    (let [theMap @m]
-      (if (contains? theMap k)
+    (let [m @m]
+      (if (contains? m k)
         (throw (Exception. "Key or value already present"))
-        (LazyMap. (atom (assoc theMap k v))))))
+        (LazyMap. (atom (assoc m k v))))))
   (without [this k]
     (LazyMap. (atom (dissoc @m k))))
   java.util.concurrent.Callable

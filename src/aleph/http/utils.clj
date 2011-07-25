@@ -64,6 +64,7 @@
     response))
 
 (defn query-params
+  "Returns the parsed query parameters of the request."
   ([request]
      (query-params request nil))
   ([request options]
