@@ -50,7 +50,8 @@
     (let [response (http-request 
 		     {:method :get 
 		      :basic-auth ["aleph_example" "_password"]
-		      :url "http://stream.twitter.com/1/statuses/sample.json"})]
+		      :url "http://stream.twitter.com/1/statuses/sample.json"
+		      :delimiters ["\r"]})]
       (siphon (:body response) ch))))
 
 (defn twitter-broadcast-handler [ch request]
