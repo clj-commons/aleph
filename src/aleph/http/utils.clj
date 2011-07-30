@@ -64,6 +64,7 @@
     response))
 
 (defn query-params
+  "Returns the parsed query parameters of the request."
   ([request]
      (query-params request nil))
   ([request options]
@@ -72,7 +73,14 @@
 	 (map #(url-decode % (or (:character-encoding request) "utf-8") options))
 	 (partition 2)
 	 (map #(apply hash-map %))
-	 (apply merge))))) 
+	 (apply merge)))))
+
+(defn split-body-params [body character-encoding options]
+  (->> (-> body (bytes->string "utf-8") (str/split #"[&=]"))
+    (map #(url-decode % (or character-encoding "utf-8") options))
+    (partition 2)
+    (map #(apply hash-map %))
+    (apply merge)))
 
 (defn body-params
   "Returns a result-channel which will emit any parameters in the body of the request."
@@ -84,14 +92,9 @@
        (if-not (and content-type (.startsWith content-type "application/x-www-form-urlencoded"))
 	 (run-pipeline nil)
 	 (run-pipeline (if (channel? body)
-			 (reduce* concat [] body)
+			 (reduce* conj [] body)
 			 body)
-	   (fn [body]
-	     (->> (-> body to-channel-buffer (channel-buffer->string "utf-8") (str/split #"[&=]"))
-	       (map #(url-decode % (or (:character-encoding request) "utf-8") options))
-	       (partition 2)
-	       (map #(apply hash-map %))
-	       (apply merge))))))))
+	   #(split-body-params % (:character-encoding request) options))))))
 
 (defn wrap-keep-alive [request]
   (update-in request [:headers "connection"]

@@ -55,7 +55,7 @@
 				     (assoc :body chunk)
 				     (encode-aleph-message options)
 				     :body
-				     to-channel-buffer
+				     bytes->channel-buffer
 				     DefaultHttpChunk.))))
 		  (fn [_]
 		    (enqueue out HttpChunk/LAST_CHUNK))))))))

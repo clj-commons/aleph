@@ -26,27 +26,27 @@
      :multi-bulk \*}))
 
 (defn codec-map [charset]
-  (let [str-codec (string charset :delimiters ["\r\n"] :as-str true)
-	bulk (compile-frame [:bulk (finite-frame (string-prefix 2) str-codec)])
-	m {:error str-codec
-	   :single-line str-codec
+  (let [m {:error (string charset :delimiters ["\r\n"])
+	   :single-line (string charset :delimiters ["\r\n"])
 	   :integer (string-integer :ascii :delimiters ["\r\n"])
-	   :bulk (finite-frame (string-prefix 2) str-codec)}
+	   :bulk (finite-frame (string-prefix 2) (string charset :suffix "\r\n"))}
 	m (into {}
 	    (map
 	      (fn [[k v]] [k (compile-frame [k v])])
-	      m))]
-    (assoc m
+	      m))
+	m (atom m)]
+    (swap! m assoc
       :multi-bulk (compile-frame
 		    [:multi-bulk
 		     (repeated
-		       (header format-byte m first)
-		       :prefix (string-prefix 0))]))))
+		       (header format-byte #(@m %) first)
+		       :prefix (string-prefix 0))]))
+    @m))
 
 (defn process-response [rsp]
   (case (first rsp)
     :error (Exception. (str (second rsp)))
-    :multi-bulk (map second (second rsp))
+    :multi-bulk (map process-response (second rsp))
     (second rsp)))
 
 (defn process-request [req]

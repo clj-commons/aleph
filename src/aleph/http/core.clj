@@ -11,7 +11,8 @@
   (:use
     [aleph netty formats]
     [aleph.http utils]
-    [lamina.core])
+    [lamina.core]
+    [gloss io])
   (:require
     [clojure.string :as str])
   (:import
@@ -70,51 +71,58 @@
 
     (cond
 
-      (and auto-transform? (.startsWith content-type "application/json"))
-      (update-in aleph-msg [:body] data->json->channel-buffer)
+      (and (.startsWith content-type "application/json") (coll? body))
+      (update-in aleph-msg [:body] encode-json->bytes)
 
-      (and auto-transform? (.startsWith content-type "application/xml"))
-      (update-in aleph-msg [:body] #(data->xml->channel-buffer % charset))
+      (and (.startsWith content-type "application/xml") (coll? body))
+      (update-in aleph-msg [:body] #(encode-xml->bytes % charset))
 
       (instance? FileChannel body)
       (let [fc ^FileChannel body]
 	(assoc-in aleph-msg [:body]
 	  (ChannelBuffers/wrappedBuffer (.map fc FileChannel$MapMode/READ_ONLY 0 (.size fc)))))
       
-      (to-channel-buffer? body)
-      (update-in aleph-msg [:body] #(to-channel-buffer % charset))
+      (bytes? body)
+      (update-in aleph-msg [:body] #(bytes->channel-buffer % charset))
 
       :else
       aleph-msg)))
 
 (defn decode-aleph-message [aleph-msg options]
   (let [body (:body aleph-msg)]
-    (if (or
+    (cond
+
+      (channel? body)
+      aleph-msg
+      
+      (or
 	  (nil? body)
 	  (and (sequential? body) (empty? body))
 	  (zero? (.readableBytes ^ChannelBuffer body)))
-     (assoc aleph-msg :body nil)
-     (let [auto-transform? (:auto-transform options)
-	   headers (:headers aleph-msg)
-	   content-type ^String (or (:content-type aleph-msg) "text/plain")
-	   charset (or (:character-encoding aleph-msg) "utf-8")]
-      
-       (cond
+      (assoc aleph-msg :body nil)
+
+      :else
+      (let [auto-transform? (:auto-transform options)
+	    headers (:headers aleph-msg)
+	    content-type ^String (or (:content-type aleph-msg) "text/plain")
+	    charset (or (:character-encoding aleph-msg) "utf-8")]
 	
-	 (and auto-transform? (.startsWith content-type "application/json"))
-	 (update-in aleph-msg [:body] channel-buffer->json->data)
-	
-	 (and auto-transform? (.startsWith content-type "application/xml"))
-	 (update-in aleph-msg [:body] channel-buffer->xml->data)
-	
-	 (and auto-transform?
-	   (or
-	     (.startsWith ^String content-type "text")
-	     (.startsWith ^String content-type "application/x-www-form-urlencoded")))
-	 (update-in aleph-msg [:body] #(channel-buffer->string % charset))
-	
-	 :else
-	 (update-in aleph-msg [:body] channel-buffer->byte-buffers))))))
+	(cond
+	  
+	  (and auto-transform? (.startsWith content-type "application/json"))
+	  (update-in aleph-msg [:body] decode-json)
+	  
+	  (and auto-transform? (.startsWith content-type "application/xml"))
+	  (update-in aleph-msg [:body] decode-xml)
+	  
+	  (and auto-transform? (.startsWith ^String content-type "text"))
+	  (update-in aleph-msg [:body] #(bytes->string % charset))
+
+	  (and auto-transform? (.startsWith ^String content-type "application/x-www-form-urlencoded"))
+	  (update-in aleph-msg [:body] #(split-body-params % charset options))
+	  
+	  :else
+	  aleph-msg)))))
 
 (defn final-netty-message? [msg]
   (or
@@ -158,7 +166,10 @@
     (let [headers (:headers msg)]
       (when-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
 	{:content-type content-type
-	 :character-encoding (->> (str/split content-type #"[;=]") (map str/trim) (drop-while #(not= % "charset")) second)}))))
+	 :character-encoding (->> (str/split content-type #"[;=]")
+			       (map str/trim)
+			       (drop-while #(not= % "charset"))
+			       second)}))))
 
 (defn pre-process-aleph-message [msg options]
   (update-in msg [:headers]
@@ -166,6 +177,23 @@
       (zipmap
 	(map #(->> (str/split (to-str %) #"-") (map str/capitalize) (str/join "-")) (keys headers))
 	(vals headers)))))
+
+(defn process-chunks [req options]
+  (if (:auto-transform options)
+    (if (-> req :body channel?)
+      (run-pipeline (reduce* conj [] (:body req))
+	#(assoc req :body (bytes->channel-buffer %)))
+      req)
+    (if (-> req :body channel?)
+      (let [stream (:body req)
+	    stream (if-let [frame (create-frame
+				    (:frame options)
+				    (:delimiters options)
+				    (:strip-delimiters? options))]
+		     (decode-channel (map* bytes->byte-buffers stream) frame)
+		     stream)]
+	(assoc req :body stream))
+      req)))
 
 (defn transform-aleph-message [^HttpMessage netty-msg msg options]
   (let [body (:body msg)]

@@ -99,13 +99,13 @@
       (or (nil? body) (and (sequential? body) (empty? body)))
       (run-pipeline request)
       
-      (to-channel-buffer? body)
+      (bytes? body)
       (run-pipeline
-	(assoc request :body (-> body to-channel-buffer channel-buffer->input-stream)))
+	(assoc request :body (-> body bytes->input-stream)))
 
       (channel? body)
-      (run-pipeline (reduce* concat [] body)
-	#(assoc request :body (-> % byte-buffers->channel-buffer channel-buffer->input-stream)))
+      (run-pipeline (reduce* conj [] body)
+	#(assoc request :body (-> % bytes->input-stream)))
 
       :else
       (run-pipeline request))))

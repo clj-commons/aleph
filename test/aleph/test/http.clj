@@ -10,7 +10,7 @@
   (:use
     [aleph http]
     [aleph.http.client :only (http-connection)]
-    [lamina core connections]
+    [lamina core connections trace]
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
@@ -84,18 +84,11 @@
 
 ;;;
 
-(defn streaming-response-handler [ch request]
-  (let [body (apply closed-channel (map str "abcdefghi"))]
-    (enqueue ch
-      {:status 200
-       :content-type "text/plain"
-       :body body})))
-
 (defn streaming-request-handler [ch request]
   (enqueue ch
     {:status 200
      :content-type (:content-type request)
-     :body (:body request)}))
+     :body (->> request :body (map str) (apply closed-channel))}))
 
 (defn json-response-handler [ch request]
   (enqueue ch
@@ -118,14 +111,21 @@
 	 (kill-fn#)))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (start-http-server ~handler {:port 8080, :auto-transform true})
+  `(with-server (start-http-server ~handler
+		  {:port 8080,
+		   :probes {;;:calls log-info
+			    ;;:results log-info
+			    :errors (siphon->> (map* :exception) log-error)
+			    }
+		   :auto-transform true
+		   })
      ~@body))
 
 (defn is-closed? [handler & requests]
   (with-handler handler
     (let [connection @(http-connection {:url "http://localhost:8080"})]
       (apply enqueue connection requests)
-      (doall (lazy-channel-seq connection 500))
+      (doall (lazy-channel-seq connection 1000))
       (is (closed? connection)))))
 
 ;;;
@@ -139,8 +139,10 @@
   (with-handler basic-handler
     (doseq [[index [path result]] (indexed expected-results)]
       (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
-	(is (= result (wait-for-request client path)))
-	(close-connection client)))))
+	(try
+	  (is (= result (wait-for-request client path)))
+	  (finally
+	    (close-connection client)))))))
 
 (deftest test-multiple-requests
   (with-handler basic-handler
@@ -150,30 +152,23 @@
       (close-connection client))))
 
 (deftest test-streaming-response
-  (with-handler streaming-response-handler
-    (let [result (sync-http-request
-		   {:url "http://localhost:8080"
-		    :method :get
-		    :auto-transform true}
-		   1000)]
-      (is
-	(= (map str "abcdefghi")
-	   (channel-seq (:body result) 1000))))))
-
-(deftest test-streaming-request
-  (let [s (map (fn [n] {:tag :value, :attrs nil, :content [(str n)]}) (range 10))]
-    (doseq [content-type ["application/json" "application/xml"]]
-      (with-handler streaming-request-handler
-	(let [ch (apply closed-channel s)]
-	  (let [result (sync-http-request
-			 {:url "http://localhost:8080"
-			  :method :post
-			  :headers {"content-type" content-type}
-			  :body ch
-			  :auto-transform true}
-			 1000)]
-	    (let [transform-results (fn [x] (map #(-> % :content first str/trim) x))]
-	      (is (= (transform-results s) (transform-results (channel-seq (:body result) 1000)))))))))))
+  (with-handler streaming-request-handler
+    (let [content "abcdefghi"
+	  client (http-client {:url "http://localhost:8080", :auto-transform true})]
+      (try
+	(dotimes [_ 3]
+	  (is
+	    (= content
+	      (:body
+		(wait-for-result
+		  (client {:url "http://localhost:8080"
+			   :method :post
+			   :auto-transform true
+			   :headers {"content-type" "text/plain"}
+			   :body (apply closed-channel (map str content))})
+		  1000)))))
+	(finally
+	  (close-connection client))))))
 
 (deftest test-auto-transform
   (with-handler json-response-handler

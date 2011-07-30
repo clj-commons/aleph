@@ -49,15 +49,13 @@
 (defn create-pipeline [client options]
   (let [responses (channel)
 	init? (atom false)
-	pipeline (create-netty-pipeline
+	pipeline (create-netty-pipeline (:name options)
 		   :codec (HttpClientCodec.)
 		   :inflater (HttpContentDecompressor.)
-		   :upstream-error (downstream-stage error-stage-handler)
 		   :response (message-stage
 			       (fn [netty-channel rsp]
 				 (enqueue client rsp)
-				 nil))
-		   :downstream-error (upstream-stage error-stage-handler))]
+				 nil)))]
     pipeline))
 
 ;;;
@@ -71,6 +69,9 @@
 (defn http-connection
   [options]
   (let [options (process-options options)
+	options (merge
+		  {:name (str "http-connection:" (:server-name options) ":" (gensym ""))}
+		  options)
 	requests (channel)
 	client (create-client
 		 #(create-pipeline % options)
@@ -85,7 +86,7 @@
 (defn- http-client- [client-fn options]
   (let [options (merge
 		  {:name
-		   (str "http-client." (:server-name options) "." (gensym ""))
+		   (str "http-client:" (:server-name options) ":" (gensym ""))
 		   :description
 		   (str (:scheme options) "://" (:server-name options) ":" (:server-port options))}
 		  (process-options options))
@@ -137,36 +138,41 @@
   ([request]
      (http-request request -1))
   ([request timeout]
-     (let [connection (http-connection request)
+     (let [start (System/currentTimeMillis)
+	   elapsed #(- (System/currentTimeMillis) start)
 	   latch (atom false)
 	   request (assoc request :keep-alive? false)
 	   response (result-channel)]
 
        ;; timeout
        (when-not (neg? timeout)
-	 (run-pipeline (timed-channel timeout)
+	 (run-pipeline (timed-channel (- timeout (elapsed)))
 	   read-channel
 	   (fn [_]
 	     (when (compare-and-set! latch false true)
 	       (error! response
-		 (TimeoutException.
-		   (str "HTTP request timed out after " timeout " milliseconds.")))
-	       (run-pipeline connection close)))))
+		 (TimeoutException. (str "HTTP request timed out after " (elapsed) " milliseconds.")))))))
 
        ;; request
-       (siphon-result
+       (let [connection (http-connection request)]
 	 (run-pipeline connection
-	   :error-handler (fn [_] )
+	   :error-handler (fn [ex]
+			    (run-pipeline connection close)
+			    (when-not (instance? TimeoutException)
+			      (error! response ex)))
 	   (fn [ch]
 	     (enqueue ch request)
 	     (read-channel ch timeout))
 	   (fn [rsp]
-	     (reset! latch true)
-	     (if (channel? (:body rsp))
-	       (on-closed (:body rsp) #(run-pipeline connection close))
-	       (run-pipeline connection close))
-	     rsp))
-	 response))))
+	     (if (compare-and-set! latch false true)
+	       (do
+		 (if (channel? (:body rsp))
+		   (on-closed (:body rsp) #(run-pipeline connection close))
+		   (run-pipeline connection close))
+		 (success! response rsp))
+	       (run-pipeline connection close)))))
+
+       response)))
 
 ;;;
 
@@ -182,11 +188,10 @@
 
 (def expected-response (ByteBuffer/wrap (.getBytes "fQJ,fN/4F4!~K~MH" "utf-8")))
 
-(defn websocket-pipeline [ch success error]
-  (create-netty-pipeline
+(defn websocket-pipeline [ch success error options]
+  (create-netty-pipeline (:name options)
     :decoder (HttpResponseDecoder.)
     :encoder (HttpRequestEncoder.)
-    :upstream-error (upstream-stage error-stage-handler)
     :response (message-stage
 		(fn [netty-channel rsp]
 		  (if (not= 101 (-> rsp .getStatus .getCode))
@@ -200,14 +205,16 @@
 			    (enqueue ch (from-websocket-frame rsp))
 			    nil)))
 		      (enqueue success ch)))
-		  nil))
-    :downstream-error (downstream-stage error-stage-handler)))
+		  nil))))
 
 (defn websocket-client [options]
   (let [options (split-url options)
+	options (merge
+		  {:name (str "websocket-client:" (:host options) ":" (gensym ""))}
+		  options)
 	result (result-channel)
 	client (create-client
-		 #(websocket-pipeline % (.success result) (.error result))
+		 #(websocket-pipeline % (.success result) (.error result) options)
 		 identity
 		 options)]
     (run-pipeline client

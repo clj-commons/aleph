@@ -10,7 +10,7 @@
   (:use
     [lamina.core.pipeline :only (closed-result)]
     [lamina core connections executors]
-    [aleph netty]
+    [aleph netty formats]
     [aleph.core lazy-map]
     [aleph.http core])
   (:import
@@ -45,19 +45,15 @@
 		  :query-string uri
 		  :server-port destination
 		  :content-type content-info
-		  :content-encoding content-info
+		  :character-encoding content-info
+		  :content-length content-length
 		  :request-method request-method)]
     (assoc request
-      :body (let [body (-> request
-			 (assoc :body (.getContent req))
- 			 (decode-aleph-message options)
- 			 :body)]
-	      (if (final-netty-message? req)
-		body
-		(let [ch (channel)]
-		  (when body
-		    (enqueue ch body))
-		  ch))))))
+      :body (if (.isChunked req)
+	      ::chunked
+	      (let [body (.getContent req)]
+		(when (pos? (.readableBytes body))
+		  body))))))
 
 (defn wrap-response-channel [ch]
   (proxy-channel
@@ -69,26 +65,41 @@
 	  [result [[result rsp]]])))
     ch))
 
-(defn handle-request [netty-channel req handler options]
-  (let [ch (wrap-response-channel (constant-channel))
-	req (transform-netty-request req netty-channel options)]
-    (with-thread-pool (:thread-pool options) {:timeout ((:timeout options) req)}
-      (handler ch req))
-    ch))
+(defn pre-process-request [req options]
+  (run-pipeline req
+    #(process-chunks % options)
+    #(decode-aleph-message % options)))
+
+(defn request-handler [handler options]
+  (let [f (executor
+	    (:thread-pool options)
+	    (fn [req]
+	      (let [ch (wrap-response-channel (constant-channel))]
+		(run-pipeline req
+		  #(pre-process-request % options)
+		  #(do
+		     (handler ch %)
+		     (read-channel ch)))))
+	    options)]
+    (fn [netty-channel req]
+      (let [req (transform-netty-request req netty-channel options)]
+	(f [req])))))
 
 (defn consume-request-stream [netty-channel in handler options]
   (let [[a b] (channel-pair)
 	handler (fn [ch req]
 		  (let [c (constant-channel)]
-		    (handler c (dissoc req :keep-alive?))
-		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))]
+		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))
+		    (run-pipeline (dissoc req :keep-alive?)
+		      #(pre-process-request % options)
+		      #(handler c %))))]
     (run-pipeline in
       read-channel
       (fn [req]
 	(let [keep-alive? (HttpHeaders/isKeepAlive req)
 	      req (transform-netty-request req netty-channel options)
 	      req (assoc req :keep-alive? keep-alive?)]
-	  (if-not (-> req :body channel?)
+	  (if-not (= ::chunked (:body req))
 	    (do
 	      (enqueue a req)
 	      keep-alive?)
@@ -96,10 +107,7 @@
 			   (take-while* #(instance? HttpChunk %))
 			   (map* #(if (final-netty-message? %)
 				    ::last
-				    (-> req
-				      (assoc :body (.getContent ^HttpChunk %))
-				      (decode-aleph-message options)
-				      :body)))
+				    (.getContent ^HttpChunk %)))
 			   (take-while* #(not= ::last %)))]
 	      (enqueue a (assoc req :body chunks))
 	      (run-pipeline (closed-result chunks)
@@ -109,8 +117,9 @@
 	(if keep-alive?
 	  (restart)
 	  (close a))))
-    (server b handler
+    (pipelined-server b handler
       (assoc options
+	:include-request true
 	:response-channel #(wrap-response-channel (constant-channel))))
     a))
 

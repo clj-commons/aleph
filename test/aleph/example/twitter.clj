@@ -17,15 +17,20 @@
 (def username "aleph_example")
 (def password "_password")
 
-(defn sample-stream []
-  (let [req (sync-http-request
-	      {:method :get
-	       :basic-auth [username password]
-	       :url "http://stream.twitter.com/1/statuses/sample.json"
-	       :auto-transform true})]
-    (Thread/sleep 500)
-    (close (:body req))
-    req))
+(defn sample-stream
+  ([]
+     (sample-stream 500))
+  ([duration]
+     (let [stream (:body
+		    (sync-http-request
+		      {:method :get
+		       :basic-auth [username password]
+		       :url "http://stream.twitter.com/1/statuses/sample.json"
+		       :delimiters ["\r"]
+		       }))]
+       (Thread/sleep duration)
+       (close stream)
+       (map* decode-json stream))))
 
 (defn twitter-proxy-handler [ch request]
   ;; since we use the same format for our responses and the ones we receive from
@@ -45,7 +50,8 @@
     (let [response (http-request 
 		     {:method :get 
 		      :basic-auth ["aleph_example" "_password"]
-		      :url "http://stream.twitter.com/1/statuses/sample.json"})]
+		      :url "http://stream.twitter.com/1/statuses/sample.json"
+		      :delimiters ["\r"]})]
       (siphon (:body response) ch))))
 
 (defn twitter-broadcast-handler [ch request]
