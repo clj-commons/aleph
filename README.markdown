@@ -48,9 +48,10 @@ This snippet prints out a never-ending sequence of tweets:
            (sync-http-request
              {:method :get
               :basic-auth ["aleph_example" "_password"]
-              :url "http://stream.twitter.com/1/statuses/sample.json"}))]
-  (doseq [tweet (lazy-channel-seq ch)]
-    (println tweet)))
+              :url "http://stream.twitter.com/1/statuses/sample.json"
+              :delimiters ["\r"]}))]
+  (doseq [tweet (map decode-json (lazy-channel-seq ch))]
+    (prn tweet)))
 ```
 
 A more in-depth exploration of this example can be found [here](http://github.com/ztellman/aleph/wiki/Consuming-and-Broadcasting-a-Twitter-Stream).
