@@ -230,4 +230,5 @@
 	  (fn [_]
 	    (let [in (channel)]
 	      (siphon (map* to-websocket-frame in) ch)
+	      (on-closed in #(close ch))
 	      (splice ch in))))))))

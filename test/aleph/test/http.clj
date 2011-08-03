@@ -177,12 +177,10 @@
 
 (deftest test-websockets
   (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8080, :websocket true})
-    (let [result (run-pipeline (websocket-client {:url "http://localhost:8080"})
-		   (fn [ch]
-		     (enqueue ch "a" "b" "c")
-		     ch))]
-      (is (= ["a" "b" "c"] (channel-seq @result 1000)))
-      (close @result))))
+    (let [ch @(websocket-client {:url "http://localhost:8080"})]
+      (enqueue ch "a" "b" "c")
+      (is (= ["a" "b" "c"] (channel-seq ch 1000)))
+      (close ch))))
 
 (deftest test-single-response-close
   (is-closed? basic-handler
