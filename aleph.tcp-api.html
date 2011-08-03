@@ -47,11 +47,7 @@ namespace.
   <h1 class="nopad">Table of Contents</h1>
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
-    <div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.tcp/start-tcp-server">start-tcp-server</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.tcp/tcp-client">tcp-client</a>
-    </div>
+    
     <br />
   </div>
 </div>
@@ -67,50 +63,7 @@ by <span id="author">Zachary Tellman</span><br />
 <pre id="namespace-docstr"></pre>
 <br />
 <h2>Public Variables and Functions</h2>
-<div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.tcp/start-tcp-server">start-tcp-server</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (start-tcp-server handler options)
-</pre>
-  <pre id="var-docstr">Starts a TCP server. The handler must be a function that takes two parameters,
-'channel' and 'connection-info'.  The channel is for bidirectional communication
-with the client, and the connection-info contains information about the client.
 
-'options' must specify the :port that the server will listen on.  Optional parameters
-include :frame and :delimiters, which can be used to transform the byte stream into
-structured data.
-
-:delimiters must be a list of strings, characters, or numbers, which represent tokens
-that split the byte stream into frames.  These tokens will be removed when decoding
-the stream, and the first token will be automatically added to whatever bytes are sent
-to the client.
-
-:frame specifies a Gloss frame (see <a href="http://github.com/ztellman/gloss)">http://github.com/ztellman/gloss)</a> that is used to
-encode and decode data sent into the channel.  If used in conjunction with :delimiters,
-it is assumed that the specified tokens delimit full frames, or an error will be thrown.
-An :encoder or :decoder frame may also be specified.  This will override the specified
-:frame.
-
-If a frame is specified, only data structured per the frame will be accepted (i.e. raw
-bytes are no longer an acceptable input).</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.tcp/tcp-client">tcp-client</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (tcp-client options)
-</pre>
-  <pre id="var-docstr">Creates a TCP connection to a server.  Returns a result-channel that will emit a channel
-if it succeeds in connecting to the given :host and :port.  This channel can be used to
-communicate with the server.
-
-Optional parameters include :frame and :delimiters, which work identically to those in
-start-tcp-server.</pre>
-  
-</div>
 
 
 </div>

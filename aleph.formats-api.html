@@ -48,8 +48,6 @@ namespace.
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
     <div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/base64-decode">base64-decode</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/base64-encode">base64-encode</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/bytes-&gt;byte-buffer">bytes-&gt;byte-buffer</a>
@@ -63,22 +61,6 @@ namespace.
       <a href="#aleph.formats/bytes-&gt;string">bytes-&gt;string</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/bytes?">bytes?</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/decode-json">decode-json</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/decode-xml">decode-xml</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/encode-json-&gt;bytes">encode-json-&gt;bytes</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/encode-json-&gt;string">encode-json-&gt;string</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/encode-xml-&gt;bytes">encode-xml-&gt;bytes</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/encode-xml-&gt;string">encode-xml-&gt;string</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/url-decode">url-decode</a>
-    </div><div style="margin-left: 1em;" class="toc-entry">
-      <a href="#aleph.formats/url-encode">url-encode</a>
     </div>
     <br />
   </div>
@@ -96,15 +78,6 @@ by <span id="author">Zachary Tellman</span><br />
 <br />
 <h2>Public Variables and Functions</h2>
 <div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/base64-decode">base64-decode</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (base64-decode string)
-</pre>
-  <pre id="var-docstr">Decodes a base64 encoded string into bytes.</pre>
-  
-</div><div id="var-entry">
   <br />
   <hr />
   <h2 id="aleph.formats/base64-encode">base64-encode</h2>
@@ -182,96 +155,6 @@ Strings
 Byte arrays
 Sequences of ByteBuffers
 Sequences of ChannelBuffers</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/decode-json">decode-json</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (decode-json data)
-</pre>
-  <pre id="var-docstr">Takes bytes or a string that contain JSON, and returns a Clojure data structure representation.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/decode-xml">decode-xml</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (decode-xml data)
-</pre>
-  <pre id="var-docstr">Takes bytes or a string that contains XML, and returns a Clojure hash representing the parsed data.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/encode-json-&gt;bytes">encode-json-&gt;bytes</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (encode-json-&gt;bytes data)
-</pre>
-  <pre id="var-docstr">Transforms a Clojure data structure to JSON, and returns a byte representation of the encoded data.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/encode-json-&gt;string">encode-json-&gt;string</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (encode-json-&gt;string data)
-</pre>
-  <pre id="var-docstr">Transforms a Clojure data structure to JSON, and returns a string representation of the encoded data.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/encode-xml-&gt;bytes">encode-xml-&gt;bytes</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (encode-xml-&gt;bytes x)
-       (encode-xml-&gt;bytes x charset)
-</pre>
-  <pre id="var-docstr">Takes a Clojure data structure representing a parse tree or prxml structure, and an XML representation as bytes.
-
-By default, 'charset' is UTF-8.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/encode-xml-&gt;string">encode-xml-&gt;string</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (encode-xml-&gt;string x)
-       (encode-xml-&gt;string x charset)
-</pre>
-  <pre id="var-docstr">Takes a Clojure data structure representing a parse tree or prxml structure, and returns an XML string.
-
-By default, 'charset' is UTF-8.</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/url-decode">url-decode</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (url-decode s)
-       (url-decode s charset)
-       (url-decode s charset options)
-</pre>
-  <pre id="var-docstr">Takes a URL-encoded string, and returns a standard representation of the string.  By default, 'charset' is UTF-8.
-
-'options' may contain a :url-decodings hash, which maps encoded strings onto how they should be decoded.  For instance,
-the Java decoder doesn't recognize %99 as a trademark symbol, even though it's sometimes encoded that way.  To allow
-for this encoding, you can simply use:
-
-(url-decode s "utf-8" {:url-decodings {"%99" "\u2122"}})</pre>
-  
-</div><div id="var-entry">
-  <br />
-  <hr />
-  <h2 id="aleph.formats/url-encode">url-encode</h2>
-  <span id="var-type">function</span><br />
-  <pre id="var-usage">Usage: (url-encode s)
-       (url-encode s charset)
-       (url-encode s charset options)
-</pre>
-  <pre id="var-docstr">URL-encodes a string.  By default 'charset' is UTF-8.
-
-'options' may contain a :url-encodings hash, which can specify custom encodings for certain characters or substrings.</pre>
   
 </div>
 
