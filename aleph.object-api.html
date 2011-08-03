@@ -47,7 +47,11 @@ namespace.
   <h1 class="nopad">Table of Contents</h1>
   <div style="margin-left: 1em;" class="toc-section">
     <a href="#toc0">Overview</a>
-    
+    <div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.object/object-client">object-client</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.object/start-object-server">start-object-server</a>
+    </div>
     <br />
   </div>
 </div>
@@ -63,7 +67,27 @@ by <span id="author">Unknown</span><br />
 <pre id="namespace-docstr"></pre>
 <br />
 <h2>Public Variables and Functions</h2>
-
+<div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.object/object-client">object-client</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (object-client options)
+</pre>
+  <pre id="var-docstr">Identical to tcp-client, except that the channel accepts any serializable Java object,
+including the standard Clojure data structures.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.object/start-object-server">start-object-server</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (start-object-server handler options)
+</pre>
+  <pre id="var-docstr">Identical to start-tcp-server, except that the channel accepts any serializable Java
+object, including the standard Clojure data structures.</pre>
+  
+</div>
 
 
 </div>
