@@ -201,7 +201,7 @@
 	 data
 	 (-> data (to-channel-buffer charset) (channel-buffer->string charset))))))
 
-;;;
+;;
 
 (defn base64-encode
   "Encodes the data into a base64 string representation."
