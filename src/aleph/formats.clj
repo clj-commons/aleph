@@ -212,7 +212,7 @@
 (defn base64-decode
   "Decodes a base64 encoded string into bytes."
   [string]
-  (when data
+  (when string
     (-> string string->channel-buffer Base64/decode)))
 
 ;;;
