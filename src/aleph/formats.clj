@@ -11,7 +11,7 @@
   (:use
     [lamina core])
   (:require
-    [clojure.contrib.json :as json]
+    [clojure.data.json :as json]
     [clojure.xml :as xml]
     [clojure.contrib.prxml :as prxml])
   (:import
@@ -299,7 +299,7 @@
   (when data
     (let [output (ByteArrayOutputStream.)
 	  writer (PrintWriter. output)]
-      (json/write-json data writer)
+      (json/write-json data writer false)
       (.flush writer)
       (-> output .toByteArray to-channel-buffer))))
 
