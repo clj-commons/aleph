@@ -47,45 +47,45 @@
 
 ;;; ChannelBuffer to other formats
 
-(defn- channel-buffer? [x]
+(defn channel-buffer? [x]
   (instance? ChannelBuffer x))
 
-(defn- channel-buffer->input-stream [^ChannelBuffer buf]
+(defn channel-buffer->input-stream [^ChannelBuffer buf]
   (when buf
     (ChannelBufferInputStream. buf)))
 
-(defn- channel-buffer->byte-buffer [^ChannelBuffer buf]
+(defn channel-buffer->byte-buffer [^ChannelBuffer buf]
   (when buf
     (.toByteBuffer buf)))
 
-(defn- channel-buffer->byte-buffers [^ChannelBuffer buf]
+(defn channel-buffer->byte-buffers [^ChannelBuffer buf]
   (when buf
     (seq (.toByteBuffers buf))))
 
-(defn- channel-buffer->string
+(defn channel-buffer->string
   ([buf]
      (channel-buffer->string buf "UTF-8"))
   ([buf charset]
      (when buf
        (.toString ^ChannelBuffer buf ^String charset))))
 
-(defn- channel-buffers->channel-buffer [bufs]
+(defn channel-buffers->channel-buffer [bufs]
   (ChannelBuffers/wrappedBuffer
     ^{:tag "[Lorg.jboss.netty.buffer.ChannelBuffer;"}
     (into-array ChannelBuffer (remove nil? bufs))))
 
 ;;; Other formats into ChannelBuffer
 
-(defn- byte-buffer->channel-buffer [^ByteBuffer buf]
+(defn byte-buffer->channel-buffer [^ByteBuffer buf]
   (when buf
     (ByteBufferBackedChannelBuffer. buf)))
 
-(defn- byte-buffers->channel-buffer [bufs]
+(defn byte-buffers->channel-buffer [bufs]
   (ChannelBuffers/wrappedBuffer
     ^{:tag "[Ljava.nio.ByteBuffer;"}
     (into-array ByteBuffer bufs)))
 
-(defn- input-stream->channel-buffer [^InputStream stream]
+(defn input-stream->channel-buffer [^InputStream stream]
   (when stream
     (let [available (.available stream)]
       (loop [ary ^bytes (byte-array (if (pos? available) available 1024)), offset 0, bufs []]
