@@ -50,7 +50,7 @@
 			 {:connection-callback connection-callback}))]
        (fn [& args]
 	 (let [result (apply client-fn args)]
-	   (when (= :select (ffirst args))
+	   (when (and (coll? (first args)) (= :select (ffirst args)))
 	     (run-pipeline result
 	       :error-handler (fn [_] )
 	       (fn [_] (reset! database (-> args first second)))))
@@ -118,14 +118,15 @@
 			  (siphon (filter-messages ch) stream))})
 	     connection (persistent-connection
 			  #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-			  options)]
+			  options)
+	     close-fn (fn []
+			(close-connection connection)
+			(close stream)
+			(close control-messages))]
+	 (on-closed control-messages close-fn)
 	 (with-meta
 	   (splice stream control-messages)
-	   {:lamina.connections/close-fn
-	    (fn []
-	      (close-connection connection)
-	      (close stream)
-	      (close control-messages))})))))
+	   {:lamina.connections/close-fn close-fn})))))
 
 (defn subscribe
   "Subscribes a stream to one or more streams.  Corresponds to the SUBSCRIBE command."

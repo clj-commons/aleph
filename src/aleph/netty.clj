@@ -373,7 +373,7 @@
 	  (.close channel-group)
 	  wrap-netty-channel-group-future
 	  (fn [_]
-	    (future (.releaseExternalResources server)))))
+	    (.start (Thread. #(.releaseExternalResources server))))))
       (stop-server [this timeout]
 	(reset! refuse-connections? true)
 	(graceful-shutdown this timeout))
@@ -451,7 +451,7 @@
 	      (run-pipeline
 		(.close channel-group)
 		wrap-netty-channel-group-future
-		(fn [_] (future (.releaseExternalResources client))))))
+		(fn [_] (.start (Thread. #(.releaseExternalResources client)))))))
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer
