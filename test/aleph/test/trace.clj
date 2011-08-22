@@ -44,6 +44,14 @@
 	(close a)
 	(Thread/sleep interval)
 	(is (= false (trace :bar 3)))
+	(let [c (consume-probe :bar options)]
+	  (Thread/sleep interval)
+	  (is (= true (trace :bar 4)))
+	  (Thread/sleep interval)
+	  (close c)
+	  (Thread/sleep interval)
+	  (is (= false (trace :bar 5)))
+	  (is (= [4] (channel-seq c))))
 	(is (= [1] (channel-seq b)))
 	(is (= [1 2] (channel-seq a))))
 

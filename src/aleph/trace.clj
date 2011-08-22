@@ -142,7 +142,9 @@
      (let [client (redis-client options)
 	   stream (redis-stream options)]
        (on-closed stream #(close-connection client))
-       (consume-probe probe client stream options)))
+       (let [ch (consume-probe probe client stream options)]
+	 (on-closed ch #(close stream))
+	 ch)))
   ([probe client stream options]
      (let [probe (name probe)
 	   ch (channel)
@@ -154,10 +156,7 @@
 	 ch)
        (subscribe stream stream-name)
        (increment-probe client probe)
-       (on-closed ch
-	 (fn []
-	   (close stream)
-	   (decrement-probe options probe)))
+       (on-closed ch #(decrement-probe options probe))
        ch)))
 
 
