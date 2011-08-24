@@ -7,8 +7,8 @@
 
 #_(def stop-server
   (start-http-server
-    (fn [ch request]
-      (enqueue ch
+    (wrap-ring-handler
+      (fn [request]
 	{:status 200
 	 :content-type "text/plain"
 	 :body (str (swap! counter inc))}))

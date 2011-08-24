@@ -78,20 +78,23 @@
 		 identity
 		 options)]
     (run-pipeline client
+      :error-handler (fn [_])
       (fn [ch]
 	(splice
 	  (wrap-response-stream options ch)
 	  (siphon->> (wrap-request-stream options) ch))))))
 
 (defn- http-client- [client-fn options]
-  (let [options (merge
+  (let [options (process-options options)
+	options (merge
 		  {:name
 		   (str "http-client:" (:server-name options) ":" (gensym ""))
 		   :description
 		   (str (:scheme options) "://" (:server-name options) ":" (:server-port options))}
-		  (process-options options))
+		  options)
 	client (client-fn
-		 #(http-connection options))
+		 #(http-connection options)
+		 options)
 	f (fn [request timeout]
 	    (if (map? request)
 	      (client (assoc (merge options request)
