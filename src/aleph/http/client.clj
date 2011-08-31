@@ -97,9 +97,11 @@
 		 options)
 	f (fn [request timeout]
 	    (if (map? request)
-	      (client (assoc (merge options request)
-			:keep-alive? true))
-	      (client request)))]
+	      (client
+		(assoc (merge options request)
+		  :keep-alive? true)
+		timeout)
+	      (client request timeout)))]
     (fn this
       ([request]
 	 (this request -1))
