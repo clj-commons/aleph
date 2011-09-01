@@ -146,7 +146,7 @@
      (let [start (System/currentTimeMillis)
 	   elapsed #(- (System/currentTimeMillis) start)
 	   latch (atom false)
-	   request (assoc request :keep-alive? false)
+	   request (merge {:keep-alive? false} request)
 	   response (result-channel)]
 
        ;; timeout

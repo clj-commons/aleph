@@ -148,17 +148,18 @@
 	(catch Exception e))
       (is (closed? connection)))))
 
-(defn handler-response [handler]
+(defn test-handler-response [expected handler]
   (with-handler handler
-    (sync-http-request {:method :get, :url "http://localhost:8080"} 500)))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 500))))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 500))))))
 
 ;;;
 
 (deftest test-error-responses
-  (is (= 500 (:status (handler-response error-handler*))))
-  (is (= 500 (:status (handler-response async-error-handler))))
-  (is (= 408 (:status (handler-response timeout-handler))))
-  (is (= 408 (:status (handler-response async-timeout-handler)))))
+  (test-handler-response 500 error-handler*)
+  (test-handler-response 500 async-error-handler)
+  (test-handler-response 408 timeout-handler)
+  (test-handler-response 408 async-timeout-handler))
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")
