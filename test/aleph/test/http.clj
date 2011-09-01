@@ -18,6 +18,8 @@
     [clojure.string :as str]
     [clojure.contrib.logging :as log])
   (:import
+    [java.util.concurrent
+     TimeoutException]
     [java.io
      File
      ByteArrayInputStream
@@ -96,6 +98,22 @@
      :content-type "application/json"
      :body {:foo 1 :bar 2}}))
 
+(defn error-handler* [ch request]
+  (throw (Exception. "boom!")))
+
+(defn async-error-handler [ch request]
+  (run-pipeline nil
+    :error-handler (fn [_])
+    (fn [_] (throw (Exception. "async boom!")))))
+
+(defn timeout-handler [ch request]
+  (throw (TimeoutException.)))
+
+(defn async-timeout-handler [ch request]
+  (run-pipeline nil
+    :error-handler (fn [_])
+    (fn [_] (throw (TimeoutException.)))))
+
 ;;;
 
 (defn wait-for-request [client path]
@@ -125,10 +143,22 @@
   (with-handler handler
     (let [connection @(http-connection {:url "http://localhost:8080"})]
       (apply enqueue connection requests)
-      (doall (lazy-channel-seq connection 1000))
+      (try
+	(doall (lazy-channel-seq connection 1000))
+	(catch Exception e))
       (is (closed? connection)))))
 
+(defn handler-response [handler]
+  (with-handler handler
+    (sync-http-request {:method :get, :url "http://localhost:8080"} 500)))
+
 ;;;
+
+(deftest test-error-responses
+  (is (= 500 (:status (handler-response error-handler*))))
+  (is (= 500 (:status (handler-response async-error-handler))))
+  (is (= 408 (:status (handler-response timeout-handler))))
+  (is (= 408 (:status (handler-response async-timeout-handler)))))
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")

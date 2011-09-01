@@ -65,7 +65,8 @@
 						  (instance? TimeoutException ex))
 					      timeout-response
 					      error-response)]
-			       (write-to-channel netty-channel response true)))
+			       (write-to-channel netty-channel response true)
+			       (complete nil)))
 	    (pipeline
 	      :error-handler (fn [_]
 			       (.close netty-channel)

@@ -8,8 +8,7 @@
 
 (ns aleph.http.server.requests
   (:use
-    [lamina.core.pipeline :only (closed-result)]
-    [lamina core connections executors]
+    [lamina core connections executors api]
     [aleph netty formats]
     [aleph.core lazy-map]
     [aleph.http core])
@@ -76,10 +75,15 @@
 	    (fn [req]
 	      (let [ch (wrap-response-channel (constant-channel))]
 		(run-pipeline req
+		  :error-handler (fn [_])
 		  #(pre-process-request % options)
-		  #(do
-		     (handler ch %)
-		     (read-channel ch)))))
+		  (fn [request]
+		    (let [result (result-channel)]
+		      (run-pipeline (handler ch request)
+			:error-handler #(error! result %))
+		      (siphon-result
+			(read-channel ch)
+			result))))))
 	    options)]
     (fn [netty-channel req]
       (let [req (transform-netty-request req netty-channel options)]
