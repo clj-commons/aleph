@@ -170,7 +170,7 @@
 			      (when-not (instance? ClosedChannelException ex)
 				(when-not (trace error-probe
 					    {:exception ex
-					     :address (-> ex .getChannel channel-origin)})
+					     :address (-> evt .getChannel channel-origin)})
 				  (log/error nil ex)))
 			      nil))
 	    traffic-handler (fn [probe-suffix]
@@ -421,8 +421,7 @@
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)
-		   (.availableProcessors (Runtime/getRuntime))))]
+		   (Executors/newCachedThreadPool)))]
 
     ;; setup client probes
     (siphon-probes (:name options) (:probes options))
