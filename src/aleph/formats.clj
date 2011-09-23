@@ -8,6 +8,8 @@
 
 (ns ^{:author "Zachary Tellman"}
   aleph.formats
+  (:use
+    [lamina core])
   (:require
     [clojure.contrib.json :as json]
     [clojure.xml :as xml]
@@ -28,9 +30,12 @@
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
-     CompositeChannelBuffer 
      ChannelBufferInputStream
-     ByteBufferBackedChannelBuffer]))
+     ByteBufferBackedChannelBuffer]
+    [java.security
+     MessageDigest]))
+
+(set! *warn-on-reflection* true)
 
 ;;;
 
@@ -67,7 +72,9 @@
        (.toString ^ChannelBuffer buf ^String charset))))
 
 (defn- channel-buffers->channel-buffer [bufs]
-  (ChannelBuffers/wrappedBuffer (into-array ChannelBuffer (remove nil? bufs))))
+  (ChannelBuffers/wrappedBuffer
+    ^{:tag "[Lorg.jboss.netty.buffer.ChannelBuffer;"}
+    (into-array ChannelBuffer (remove nil? bufs))))
 
 ;;; Other formats into ChannelBuffer
 
@@ -76,7 +83,9 @@
     (ByteBufferBackedChannelBuffer. buf)))
 
 (defn- byte-buffers->channel-buffer [bufs]
-  (ChannelBuffers/wrappedBuffer (into-array ByteBuffer bufs)))
+  (ChannelBuffers/wrappedBuffer
+    ^{:tag "[Ljava.nio.ByteBuffer;"}
+    (into-array ByteBuffer bufs)))
 
 (defn- input-stream->channel-buffer [^InputStream stream]
   (when stream
@@ -90,11 +99,53 @@
 		(byte-buffers->channel-buffer (conj bufs (ByteBuffer/wrap ary 0 offset)))
 		(recur ary (+ offset byte-count) bufs)))))))))
 
+(defn- input-stream->channel-
+  [ch ^InputStream stream chunk-size]
+  (let [buffer? (and chunk-size (pos? chunk-size))
+	chunk-size (if buffer? chunk-size 1024)
+	create-array (if buffer?
+		       #(byte-array chunk-size)
+		       #(byte-array
+			  (if (pos? (.available stream))
+			    (.available stream)
+			    1024)))]
+    (loop [ary ^bytes (create-array), offset 0]
+      (let [ary-len (count ary)]
+	(if (= ary-len offset)
+	  (do
+	    (enqueue ch (ByteBuffer/wrap ary))
+	    (recur (create-array) 0))
+	  (let [byte-count (.read stream ary offset (- ary-len offset))]
+	    (if (neg? byte-count)
+	      (if (zero? offset)
+		(close ch)
+		(enqueue-and-close ch (ByteBuffer/wrap ary 0 offset)))
+	      (recur ary (+ offset byte-count)))))))))
+
+(defn input-stream->channel
+  "Converts an InputStream to a channel that emits bytes. Spawns a separate thread to read
+   from the stream.
+
+   If 'chunk-size' is specified, the channel will only emit byte sequences of the specified
+   length, unless the stream is closed before a full chunk can be accumulated.  If it is nil
+   or non-positive, bytes will be sent through the channel as soon as they enter the InputStream."
+  ([stream]
+     (input-stream->channel stream nil))
+  ([stream chunk-size]
+     (if-not stream
+       (closed-channel)
+       (let [ch (channel)]
+	 (doto
+	   (Thread. (fn [] (input-stream->channel- ch stream chunk-size)))
+	   (.setName "InputStream reader")
+	   .start)
+	 ch))))
+
 (defn- string->channel-buffer
   ([s]
      (string->channel-buffer s "UTF-8"))
-  ([^String s charset]
-     (-> s (.getBytes charset) ByteBuffer/wrap byte-buffer->channel-buffer)))
+  ([s charset]
+     (-> (.getBytes ^String s ^String charset) ByteBuffer/wrap byte-buffer->channel-buffer)))
 
 (defn- to-channel-buffer
   ([data]
@@ -153,14 +204,14 @@
   [x]
   (to-channel-buffer? x))
 
-(defn bytes->channel-buffer
+(defn ^ChannelBuffer bytes->channel-buffer
   "Converts bytes into a Netty ChannelBuffer. By default, 'charset' is UTF-8."
   ([data]
      (bytes->channel-buffer data "utf-8"))
   ([data charset]
      (to-channel-buffer data charset)))
 
-(defn bytes->input-stream
+(defn ^InputStream bytes->input-stream
   "Converts bytes into an InputStream. By default, 'charset' is UTF-8."
   ([data]
      (bytes->input-stream data "utf-8"))
@@ -170,7 +221,7 @@
 	 data
 	 (-> data (to-channel-buffer charset) channel-buffer->input-stream)))))
 
-(defn bytes->byte-buffer
+(defn ^ByteBuffer bytes->byte-buffer
   "Converts bytes into a ByteBuffer. By default, 'charset' is UTF-8.
 
    This may require copying multiple buffers into a single buffer. To avoid this,
@@ -183,6 +234,13 @@
 	 data
 	 (-> data (to-channel-buffer charset) channel-buffer->byte-buffer)))))
 
+(defn ^bytes bytes->byte-array
+  "Convertes bytes into a byte array. By default, 'charset' is UTF-8."
+  ([data]
+     (bytes->byte-array data "utf-8"))
+  ([data charset]
+     (-> data (bytes->byte-buffer charset) .array)))
+
 (defn bytes->byte-buffers
   "Converts bytes into a sequence of one or more ByteBuffers."
   ([data]
@@ -191,7 +249,7 @@
      (when data
        (-> data (to-channel-buffer charset) channel-buffer->byte-buffers))))
 
-(defn bytes->string
+(defn ^String bytes->string
   "Converts bytes to a string. By default, 'charset' is UTF-8."
   ([data]
      (bytes->string data "utf-8"))
@@ -202,6 +260,20 @@
 	 (-> data (to-channel-buffer charset) (channel-buffer->string charset))))))
 
 ;;
+
+(defn bytes->md5
+  "Returns an MD5 hash for the bytes."
+  [data]
+  (->> data
+    bytes->byte-array
+    (.digest (MessageDigest/getInstance "md5"))))
+
+(defn bytes->sha1
+  "Returns an SHA1 hash for the bytes."
+  [data]
+  (->> data
+    bytes->byte-array
+    (.digest (MessageDigest/getInstance "sha1"))))
 
 (defn base64-encode
   "Encodes the data into a base64 string representation."
@@ -322,7 +394,7 @@
      (url-encode s charset nil))
   ([s charset options]
      (let [s (reduce
-	       (fn [s [from to]] (.replace ^String s (str from) to))
+	       (fn [s [from to]] (.replace ^String s (str from) ^String to))
 	       s
 	       (sort-replace-map (:url-encodings options)))]
        (URLEncoder/encode s charset))))
