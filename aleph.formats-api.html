@@ -52,6 +52,8 @@ namespace.
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/base64-encode">base64-encode</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/bytes-&gt;byte-array">bytes-&gt;byte-array</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/bytes-&gt;byte-buffer">bytes-&gt;byte-buffer</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/bytes-&gt;byte-buffers">bytes-&gt;byte-buffers</a>
@@ -59,6 +61,10 @@ namespace.
       <a href="#aleph.formats/bytes-&gt;channel-buffer">bytes-&gt;channel-buffer</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/bytes-&gt;input-stream">bytes-&gt;input-stream</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/bytes-&gt;md5">bytes-&gt;md5</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/bytes-&gt;sha1">bytes-&gt;sha1</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/bytes-&gt;string">bytes-&gt;string</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
@@ -75,6 +81,8 @@ namespace.
       <a href="#aleph.formats/encode-xml-&gt;bytes">encode-xml-&gt;bytes</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/encode-xml-&gt;string">encode-xml-&gt;string</a>
+    </div><div style="margin-left: 1em;" class="toc-entry">
+      <a href="#aleph.formats/input-stream-&gt;channel">input-stream-&gt;channel</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
       <a href="#aleph.formats/url-decode">url-decode</a>
     </div><div style="margin-left: 1em;" class="toc-entry">
@@ -112,6 +120,16 @@ by <span id="author">Zachary Tellman</span><br />
   <pre id="var-usage">Usage: (base64-encode data)
 </pre>
   <pre id="var-docstr">Encodes the data into a base64 string representation.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/bytes-&gt;byte-array">bytes-&gt;byte-array</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (bytes-&gt;byte-array data)
+       (bytes-&gt;byte-array data charset)
+</pre>
+  <pre id="var-docstr">Convertes bytes into a byte array. By default, 'charset' is UTF-8.</pre>
   
 </div><div id="var-entry">
   <br />
@@ -155,6 +173,24 @@ use bytes-&gt;byte-buffers.</pre>
        (bytes-&gt;input-stream data charset)
 </pre>
   <pre id="var-docstr">Converts bytes into an InputStream. By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/bytes-&gt;md5">bytes-&gt;md5</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (bytes-&gt;md5 data)
+</pre>
+  <pre id="var-docstr">Returns an MD5 hash for the bytes.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/bytes-&gt;sha1">bytes-&gt;sha1</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (bytes-&gt;sha1 data)
+</pre>
+  <pre id="var-docstr">Returns an SHA1 hash for the bytes.</pre>
   
 </div><div id="var-entry">
   <br />
@@ -242,6 +278,21 @@ By default, 'charset' is UTF-8.</pre>
   <pre id="var-docstr">Takes a Clojure data structure representing a parse tree or prxml structure, and returns an XML string.
 
 By default, 'charset' is UTF-8.</pre>
+  
+</div><div id="var-entry">
+  <br />
+  <hr />
+  <h2 id="aleph.formats/input-stream-&gt;channel">input-stream-&gt;channel</h2>
+  <span id="var-type">function</span><br />
+  <pre id="var-usage">Usage: (input-stream-&gt;channel stream)
+       (input-stream-&gt;channel stream chunk-size)
+</pre>
+  <pre id="var-docstr">Converts an InputStream to a channel that emits bytes. Spawns a separate thread to read
+from the stream.
+
+If 'chunk-size' is specified, the channel will only emit byte sequences of the specified
+length, unless the stream is closed before a full chunk can be accumulated.  If it is nil
+or non-positive, bytes will be sent through the channel as soon as they enter the InputStream.</pre>
   
 </div><div id="var-entry">
   <br />
