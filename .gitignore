@@ -6,3 +6,4 @@ classes
 push
 autodoc
 .lein-failures
+dump.rdb
