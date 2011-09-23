@@ -11,4 +11,4 @@
                  [gloss "0.2.0-beta1"]
                  [user-agent-utils "1.2.3"]
                  [potemkin "0.1.0"]]
-  :jvm-opts ["-server"])
+  :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
