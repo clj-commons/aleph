@@ -1,7 +1,7 @@
 (ns aleph.benchmark.redis
   (:use aleph.redis))
 
-(def client (redis-client {:host "localhost"}))
+#_(def client (redis-client {:host "localhost"}))
 
 #_(future
   (loop []

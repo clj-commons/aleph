@@ -66,15 +66,16 @@
   (let [auto-transform? (:auto-transform options)
 	headers (:headers aleph-msg)
 	body (:body aleph-msg)
-	content-type ^String (or (:content-type aleph-msg) "text/plain")
-	charset (or (:character-encoding aleph-msg) "utf-8")]
+	content-type (or (:content-type aleph-msg) "text/plain")
+	charset (or (:character-encoding aleph-msg) "utf-8")
+	auto-transform? (or (:auto-transform aleph-msg) (:auto-transform options))]
 
     (cond
 
-      (and (.startsWith content-type "application/json") (coll? body))
+      (and auto-transform? (.startsWith ^String content-type "application/json") (coll? body))
       (update-in aleph-msg [:body] encode-json->bytes)
 
-      (and (.startsWith content-type "application/xml") (coll? body))
+      (and auto-transform? (.startsWith ^String content-type "application/xml") (coll? body))
       (update-in aleph-msg [:body] #(encode-xml->bytes % charset))
 
       (instance? FileChannel body)
@@ -104,15 +105,15 @@
       :else
       (let [auto-transform? (:auto-transform options)
 	    headers (:headers aleph-msg)
-	    content-type ^String (or (:content-type aleph-msg) "text/plain")
+	    content-type (or (:content-type aleph-msg) "text/plain")
 	    charset (or (:character-encoding aleph-msg) "utf-8")]
 	
 	(cond
 	  
-	  (and auto-transform? (.startsWith content-type "application/json"))
+	  (and auto-transform? (.startsWith ^String content-type "application/json"))
 	  (update-in aleph-msg [:body] decode-json)
 	  
-	  (and auto-transform? (.startsWith content-type "application/xml"))
+	  (and auto-transform? (.startsWith ^String content-type "application/xml"))
 	  (update-in aleph-msg [:body] decode-xml)
 	  
 	  (and auto-transform? (.startsWith ^String content-type "text"))

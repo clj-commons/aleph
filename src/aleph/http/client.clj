@@ -159,10 +159,13 @@
 		 (TimeoutException. (str "HTTP request timed out after " (elapsed) " milliseconds.")))))))
 
        ;; request
-       (let [connection (http-connection request)]
+       (let [connection (http-connection
+			  (update-in request [:probes :errors]
+			    #(or % nil-channel)))
+	     close-connection (pipeline :error-handler (fn [_]) close)]
 	 (run-pipeline connection
 	   :error-handler (fn [ex]
-			    (run-pipeline connection close)
+			    (close-connection connection)
 			    (when-not (instance? TimeoutException)
 			      (error! response ex)))
 	   (fn [ch]
@@ -172,11 +175,12 @@
 	     (if (compare-and-set! latch false true)
 	       (do
 		 (if (channel? (:body rsp))
-		   (on-closed (:body rsp) #(run-pipeline connection close))
-		   (run-pipeline connection close))
+		   (on-closed (:body rsp)
+		     #(close-connection connection))
+		   (close-connection connection))
 		 (success! response rsp))
-	       (run-pipeline connection close)))))
-
+	       (close-connection connection)))))
+       
        response)))
 
 ;;;
@@ -193,14 +197,14 @@
 
 (def expected-response (ByteBuffer/wrap (.getBytes "fQJ,fN/4F4!~K~MH" "utf-8")))
 
-(defn websocket-pipeline [ch success error options]
+(defn websocket-pipeline [ch result options]
   (create-netty-pipeline (:name options)
     :decoder (HttpResponseDecoder.)
     :encoder (HttpRequestEncoder.)
     :response (message-stage
-		(fn [netty-channel rsp]
+		(fn [^Channel netty-channel ^HttpResponse rsp]
 		  (if (not= 101 (-> rsp .getStatus .getCode))
-		    (enqueue error [rsp (Exception. "Proper handshake not received.")])
+		    (error! result (Exception. "Proper handshake not received."))
 		    (let [pipeline (.getPipeline netty-channel)]
 		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
 		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
@@ -209,7 +213,7 @@
 			  (fn [netty-channel rsp]
 			    (enqueue ch (from-websocket-frame rsp))
 			    nil)))
-		      (enqueue success ch)))
+		      (success! result ch)))
 		  nil))))
 
 (defn websocket-client [options]
@@ -219,7 +223,7 @@
 		  options)
 	result (result-channel)
 	client (create-client
-		 #(websocket-pipeline % (.success result) (.error result) options)
+		 #(websocket-pipeline % result options)
 		 identity
 		 options)]
     (run-pipeline client

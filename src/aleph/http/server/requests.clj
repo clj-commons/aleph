@@ -13,6 +13,8 @@
     [aleph.core lazy-map]
     [aleph.http core])
   (:import
+    [java.io
+     InputStream]
     [org.jboss.netty.handler.codec.http
      HttpHeaders
      HttpRequest
@@ -21,7 +23,7 @@
 (defn- request-destination [_]
   (fn [msg]
     (let [headers (:headers msg)]
-      (let [parts (.split ^String (or (headers "host") "") "[:]")]
+      (let [parts (.split (str (or (headers "host") "")) "[:]")]
 	{:server-name (first parts)
 	 :server-port (when-let [port (second parts)]
 			(Integer/parseInt port))}))))
@@ -57,11 +59,12 @@
 (defn wrap-response-channel [ch]
   (proxy-channel
     (fn [[rsp]]
-      (if (channel? (:body rsp))
-	(let [result (channel)]
-	  [result [[result rsp]]])
-	(let [result (result-channel)]
-	  [result [[result rsp]]])))
+      (let [body (:body rsp)]
+	(if (or (channel? body) (instance? InputStream body))
+	  (let [result (channel)]
+	    [result [[result rsp]]])
+	  (let [result (result-channel)]
+	    [result [[result rsp]]]))))
     ch))
 
 (defn pre-process-request [req options]
@@ -95,6 +98,7 @@
 		  (let [c (constant-channel)]
 		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))
 		    (run-pipeline (dissoc req :keep-alive?)
+		      :error-handler (fn [_])
 		      #(pre-process-request % options)
 		      #(handler c %))))]
     (run-pipeline in

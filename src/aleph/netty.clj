@@ -165,7 +165,7 @@
   (memoize
     (fn [pipeline-name]
       (let [error-probe (canonical-probe [pipeline-name :errors])
-	    error-handler (fn [evt]
+	    error-handler (fn [^ChannelEvent evt]
 			    (when-let [ex ^ExceptionEvent (exception-event evt)]
 			      (when-not (instance? ClosedChannelException ex)
 				(when-not (trace error-probe
@@ -264,7 +264,7 @@
     (run-pipeline
       (io!
 	(if (and host port)
-	  (.write netty-channel msg (InetSocketAddress. host port))
+	  (.write netty-channel msg (InetSocketAddress. ^String host (int port)))
 	  (.write netty-channel msg)))
       wrap-netty-channel-future
       (fn [_]
@@ -380,7 +380,7 @@
 	  (.close channel-group)
 	  wrap-netty-channel-group-future
 	  (fn [_]
-	    (.start (Thread. #(.releaseExternalResources server))))))
+	    (future (.releaseExternalResources server)))))
       (stop-server [this timeout]
 	(reset! refuse-connections? true)
 	(graceful-shutdown this timeout))
@@ -458,7 +458,7 @@
 	      (run-pipeline
 		(.close channel-group)
 		wrap-netty-channel-group-future
-		(fn [_] (.start (Thread. #(.releaseExternalResources client)))))))
+		(fn [_] (future (.releaseExternalResources client))))))
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer

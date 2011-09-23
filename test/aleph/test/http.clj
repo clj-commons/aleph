@@ -10,7 +10,7 @@
   (:use
     [aleph http]
     [aleph.http.client :only (http-connection)]
-    [lamina core connections trace]
+    [lamina core connections trace api]
     [clojure.test]
     [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
@@ -98,21 +98,35 @@
      :content-type "application/json"
      :body {:foo 1 :bar 2}}))
 
-(defn error-handler* [ch request]
+(defn error-aleph-handler [ch request]
   (throw (Exception. "boom!")))
 
-(defn async-error-handler [ch request]
-  (run-pipeline nil
-    :error-handler (fn [_])
-    (fn [_] (throw (Exception. "async boom!")))))
+(defn async-error-aleph-handler [ch request]
+  (error-result (Exception. "async boom!")))
 
-(defn timeout-handler [ch request]
+(defn timeout-aleph-handler [ch request]
   (throw (TimeoutException.)))
 
-(defn async-timeout-handler [ch request]
-  (run-pipeline nil
-    :error-handler (fn [_])
-    (fn [_] (throw (TimeoutException.)))))
+(defn async-timeout-aleph-handler [ch request]
+  (error-result (TimeoutException.)))
+
+(defn error-ring-handler [request]
+  (throw (Exception. "boom!")))
+
+(defn async-error-ring-handler [request]
+  (error-result (Exception. "async boom!")))
+
+(defn timeout-ring-handler [request]
+  (throw (TimeoutException.)))
+
+(defn async-timeout-ring-handler [request]
+  (error-result (TimeoutException.)))
+
+(defn default-http-client []
+  (http-client
+    {:url "http://localhost:8080"
+     :auto-transform true
+     :probes {:errors nil-channel}}))
 
 ;;;
 
@@ -130,36 +144,43 @@
 
 (defmacro with-handler [handler & body]
   `(with-server (start-http-server ~handler
-		  {:port 8080,
+		  {:port 8080
 		   :probes {;;:calls log-info
 			    ;;:results log-info
-			    :errors (siphon->> (map* :exception) log-error)
+			    :errors nil-channel
 			    }
 		   :auto-transform true
 		   })
      ~@body))
 
+(defmacro with-handlers [aleph-handler ring-handler & body]
+  `(do
+     (with-handler ~aleph-handler
+       ~@body)
+     (with-handler (wrap-ring-handler ~ring-handler)
+       ~@body)))
+
 (defn is-closed? [handler & requests]
   (with-handler handler
-    (let [connection @(http-connection {:url "http://localhost:8080"})]
+    (let [connection @(http-connection {:url "http://localhost:8080" :probes {:errors nil-channel}})]
       (apply enqueue connection requests)
       (try
 	(doall (lazy-channel-seq connection 1000))
 	(catch Exception e))
       (is (closed? connection)))))
 
-(defn test-handler-response [expected handler]
-  (with-handler handler
+(defn test-handler-response [expected aleph-handler ring-handler]
+  (with-handlers aleph-handler ring-handler
     (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 500))))
     (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 500))))))
 
 ;;;
 
 (deftest test-error-responses
-  (test-handler-response 500 error-handler*)
-  (test-handler-response 500 async-error-handler)
-  (test-handler-response 408 timeout-handler)
-  (test-handler-response 408 async-timeout-handler))
+  (test-handler-response 500 error-aleph-handler error-ring-handler)
+  (test-handler-response 500 async-error-aleph-handler async-error-ring-handler)
+  (test-handler-response 408 timeout-aleph-handler timeout-ring-handler)
+  (test-handler-response 408 async-timeout-aleph-handler async-timeout-ring-handler))
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")
@@ -169,7 +190,7 @@
 (deftest test-single-requests
   (with-handler basic-handler
     (doseq [[index [path result]] (indexed expected-results)]
-      (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
+      (let [client (default-http-client)]
 	(try
 	  (is (= result (wait-for-request client path)))
 	  (finally
@@ -177,7 +198,7 @@
 
 (deftest test-multiple-requests
   (with-handler basic-handler
-    (let [client (http-client {:url "http://localhost:8080", :auto-transform true})]
+    (let [client (default-http-client)]
       (doseq [[index [path result]] (indexed expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
@@ -185,7 +206,7 @@
 (deftest test-streaming-response
   (with-handler streaming-request-handler
     (let [content "abcdefghi"
-	  client (http-client {:url "http://localhost:8080", :auto-transform true})]
+	  client (default-http-client)]
       (try
 	(dotimes [_ 3]
 	  (is

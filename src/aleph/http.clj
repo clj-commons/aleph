@@ -117,6 +117,7 @@
   [f]
   (fn [channel request]
     (run-pipeline (request-body->input-stream request)
+      :error-handler (fn [_])
       (fn [request]
 	(f (assoc request :channel channel)))
       (fn [response]

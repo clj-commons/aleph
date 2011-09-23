@@ -28,10 +28,14 @@
 			 (append-to-server x)))))
 		 {:port 8888})]
     (try
-      (let [ch (wait-for-result (object-client {:host "localhost" :port 8888}))]
+      (let [ch (wait-for-result (object-client
+				  {:host "localhost"
+				   :port 8888
+				   :probes {:errors nil-channel}}))]
 	(dotimes [i 1000]
 	  (enqueue ch [i]))
 	(let [s (doall (lazy-channel-seq ch 1000))]
-	  (is (= s @server-messages))))
+	  (is (= s @server-messages)))
+	(close ch))
       (finally
 	(server)))))
