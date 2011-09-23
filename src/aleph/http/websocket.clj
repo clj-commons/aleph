@@ -13,7 +13,7 @@
     [aleph.http core]
     [aleph.http.server requests responses]
     [aleph formats netty]
-    [gloss.io])
+    [gloss core io])
   (:import
     [org.jboss.netty.handler.codec.http.websocket
      DefaultWebSocketFrame
@@ -30,17 +30,12 @@
     [org.jboss.netty.buffer
      ChannelBuffers]
     [org.jboss.netty.channel
-     ChannelUpstreamHandler]
-    [java.nio
-     ByteBuffer]
-    [java.security
-     MessageDigest]))
+     Channel
+     ChannelHandlerContext
+     ChannelUpstreamHandler]))
 
-(defn md5-hash [buf]
-  (->> buf
-    .array
-    (.digest (MessageDigest/getInstance "MD5"))
-    ByteBuffer/wrap))
+(defcodec response-codec [:int32 :int32 :int64])
+(defcodec request-codec :int64)
 
 (defn from-websocket-frame [^WebSocketFrame frame]
   (.getTextData frame))
@@ -53,10 +48,19 @@
     (= "upgrade" (.toLowerCase (.getHeader request "connection")))
     (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))
 
-(defn transform-key [k]
+(defn transform-key [^String k]
   (/
-    (-> k (.replaceAll "[^0-9]" "") Long/parseLong)
-    (-> k (.replaceAll "[^ ]" "") .length)))
+    (long (-> k (.replaceAll "[^0-9]" "") Long/parseLong))
+    (long (-> k (.replaceAll "[^ ]" "") .length))))
+
+(def handshake-magic-string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+
+(defn new-websocket-response [request]
+  (let [key (get-in request [:headers "sec-websocket-key"])]
+    (println (-> (str key handshake-magic-string) bytes->sha1 base64-encode))
+    {:status 101
+     :headers {"Sec-WebSocket-Accept"
+	       (-> (str key handshake-magic-string) bytes->sha1 base64-encode)}}))
 
 (defn secure-websocket-response [request]
   (let [headers (:headers request)]
@@ -68,11 +72,11 @@
 					  (when (:query-string request)
 					    (str "?" (:query-string request))))
 	       "Sec-WebSocket-Protocol" (headers "sec-websocket-protocol")}
-     :body (md5-hash
-	     (doto (ByteBuffer/allocate 16)
-	       (.putInt (transform-key (headers "sec-websocket-key1")))
-	       (.putInt (transform-key (headers "sec-websocket-key2")))
-	       (.putLong (-> request :body .readLong))))}))
+     :body (->> [(transform-key (headers "sec-websocket-key1"))
+		 (transform-key (headers "sec-websocket-key2"))
+		 (->> request :body bytes->byte-buffers (decode request-codec))]
+	     (encode response-codec)
+	     bytes->md5)}))
 
 (defn standard-websocket-response [request]
   (let [headers (:headers request)]
@@ -89,8 +93,14 @@
   (.setHeader request "content-type" "application/octet-stream")
   (let [request (transform-netty-request request netty-channel options)
 	headers (:headers request)
-	response (if (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
+	response (cond
+		   (headers "sec-websocket-version")
+		   (new-websocket-response request)
+		   
+		   (and (headers "sec-websocket-key1") (headers "sec-websocket-key2"))
 		   (secure-websocket-response request)
+
+		   :else
 		   (standard-websocket-response request))]
     (transform-aleph-response
       (update-in response [:headers]
@@ -99,7 +109,7 @@
 	   "Connection" "Upgrade"))
       options)))
 
-(defn- respond-to-handshake [ctx ^HttpRequest request options]
+(defn- respond-to-handshake [^ChannelHandlerContext ctx ^HttpRequest request options]
   (let [channel (.getChannel ctx)
 	pipeline (.getPipeline channel)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
@@ -118,7 +128,8 @@
 
 	(if-let [msg (message-event evt)]
 
-	  (let [ch (.getChannel ctx)]
+	  (let [ch ^Channel (.getChannel ctx)]
+
 	    (cond
 	      (instance? WebSocketFrame msg)
 	      (if (= msg WebSocketFrame/CLOSING_HANDSHAKE)
