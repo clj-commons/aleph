@@ -35,8 +35,6 @@
     [java.security
      MessageDigest]))
 
-(set! *warn-on-reflection* true)
-
 ;;;
 
 (defn- byte-array?
