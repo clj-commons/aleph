@@ -133,10 +133,11 @@
 (defn message-stage
   "Creates a final upstream stage that only captures MessageEvents."
   [handler]
-  (upstream-stage
-    (fn [evt]
-      (when-let [msg (message-event evt)]
-	(handler (.getChannel ^MessageEvent evt) msg)))))
+  (reify ChannelUpstreamHandler
+    (handleUpstream [_ ctx evt]
+      (if-let [msg (message-event evt)]
+	(handler (.getChannel ^MessageEvent evt) msg)
+	(.sendUpstream ctx evt)))))
 
 (defn channel-open-stage [f]
   (let [latch (atom false)]

@@ -14,7 +14,8 @@
     [aleph.http.client requests responses]
     [lamina core connections api])
   (:require
-    [clj-http.client :as client])
+    [clj-http.client :as client]
+    [aleph.http.websocket.hixie :as hixie])
   (:import
     [java.util.concurrent
      TimeoutException]
@@ -201,17 +202,17 @@
   (create-netty-pipeline (:name options)
     :decoder (HttpResponseDecoder.)
     :encoder (HttpRequestEncoder.)
-    :response (message-stage
+    :handshake (message-stage
 		(fn [^Channel netty-channel ^HttpResponse rsp]
 		  (if (not= 101 (-> rsp .getStatus .getCode))
 		    (error! result (Exception. "Proper handshake not received."))
 		    (let [pipeline (.getPipeline netty-channel)]
 		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
 		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
-		      (.replace pipeline "response" "response"
+		      (.replace pipeline "handshake" "response"
 			(message-stage
 			  (fn [netty-channel rsp]
-			    (enqueue ch (from-websocket-frame rsp))
+			    (enqueue ch (hixie/from-websocket-frame rsp))
 			    nil)))
 		      (success! result ch)))
 		  nil))))
@@ -238,6 +239,6 @@
 	(run-pipeline result
 	  (fn [_]
 	    (let [in (channel)]
-	      (siphon (map* to-websocket-frame in) ch)
+	      (siphon (map* hixie/to-websocket-frame in) ch)
 	      (on-closed in #(close ch))
 	      (splice ch in))))))))

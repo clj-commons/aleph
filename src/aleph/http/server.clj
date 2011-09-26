@@ -104,7 +104,7 @@
 	  :deflater (HttpContentCompressor.)
 	  :http-request (http-session-handler handler simple-handler options))]
     (when (:websocket options)
-      (.addBefore pipeline "http-request" "websocket" (websocket-handshake-handler handler options)))
+      (.addBefore pipeline "http-request" "websocket-handshake" (websocket-handshake-handler handler options)))
     pipeline))
 
 (defn start-http-server
