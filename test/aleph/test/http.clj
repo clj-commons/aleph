@@ -16,7 +16,7 @@
     [clojure.contrib.seq :only [indexed]])
   (:require
     [clojure.string :as str]
-    [clojure.contrib.logging :as log])
+    [clojure.tools.logging :as log])
   (:import
     [java.util.concurrent
      TimeoutException]
