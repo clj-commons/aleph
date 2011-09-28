@@ -13,7 +13,7 @@
     [lamina.core]
     [gloss core io])
   (:require
-    [clojure.contrib.logging :as log])
+    [clojure.tools.logging :as log])
   (:import
     [java.util.concurrent Executors]
     [org.jboss.netty.buffer ChannelBuffer]
