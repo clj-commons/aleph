@@ -53,7 +53,7 @@
   (compile-frame
     (header header-codec
       
-      (fn [{:keys [fin opcode mask length]}]
+      (fn [{:keys [fin opcode mask length] :as m}]
 	(case length
 	  126 (body-codec mask :short)
 	  127 (body-codec mask :long)
@@ -70,7 +70,7 @@
 	   :rsv1 false
 	   :rsv2 false
 	   :rsv3 false
-	   :opcode (msg-type->opcode (or type :text))
+	   :opcode (msg-type->opcode (or type :binary))
 	   :mask false
 	   :length (if (< byte-length 126)
 		     byte-length
@@ -110,13 +110,14 @@
 (defn post-process-frame [frame]
   (case (:type frame)
     :binary (:data frame)
-    :text (bytes->string (:data frame))))
+    :text (bytes->string (:data frame))
+    (bytes->string (:data frame))))
 
 (defn encode-frame [data]
   (encode websocket-frame
     (if (map? data)
       data
-      {:type (if (string? data) :text :binary)
+      {:type :text
        :data (bytes->byte-buffers data)})))
 
 (defn wrap-websocket-channel [src]
@@ -126,8 +127,9 @@
       (read-merge #(read-channel frames)
 	(fn [old-frame new-frame]
 	  (let [new-frame (pre-process-frame new-frame)]
-	    (enqueue dst new-frame)
-	    (restart)))))
+	    (enqueue dst (post-process-frame new-frame)))))
+      (fn [_]
+	(restart)))
     (on-closed dst #(close frames))
     dst))
 

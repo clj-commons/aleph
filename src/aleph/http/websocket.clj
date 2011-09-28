@@ -40,8 +40,7 @@
     (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))
 
 (defn hybi? [^HttpRequest request]
-  (.containsHeader request "Sec-WebSocket-Version")
-  false)
+  (.containsHeader request "Sec-WebSocket-Version"))
 
 (defn transform-handshake [^HttpRequest request netty-channel options]
   (.setHeader request "content-type" "application/octet-stream")
@@ -66,17 +65,16 @@
 
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
-
+	
 	(if-let [msg (message-event evt)]
-
+	  
 	  (let [ch ^Channel (.getChannel ctx)]
 	    (if (websocket-handshake? msg)
-	      (do
-		(let [handshake (transform-handshake msg ch options)
-		      response (websocket-response msg ch options)]
-		  (if (hybi? msg)
-		    (hybi/update-pipeline handler ctx ch handshake response)
-		    (hixie/update-pipeline handler ctx ch handshake response))))
+	      (let [handshake (transform-handshake msg ch options)
+		    response (websocket-response msg ch options)]
+		(if (hybi? msg)
+		  (hybi/update-pipeline handler ctx ch handshake response)
+		  (hixie/update-pipeline handler ctx ch handshake response)))
 	      (.sendUpstream ctx evt)))
 
 	  (.sendUpstream ctx evt))))))

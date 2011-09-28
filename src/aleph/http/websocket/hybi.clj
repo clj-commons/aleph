@@ -9,6 +9,7 @@
 (ns aleph.http.websocket.hybi
   (:use
     [lamina core]
+    [gloss io]
     [aleph formats netty]
     [aleph.http.websocket protocol])
   (:import
@@ -26,32 +27,34 @@
 	       (-> (str key handshake-magic-string) bytes->sha1 base64-encode)}}))
 
 (defn websocket-handler [handler ^Channel netty-channel handshake]
-  (let [[inner outer] (channel-pair)
-	inner (splice
-		(wrap-websocket-channel inner)
-		(wrap-write-channel inner))]
+  (let [in (channel)
+	out (channel)]
 
     ;; handle outgoing messages
-    (receive-all outer
+    (receive-all out
       (fn [[returned-result msg]]
 	(when msg
 	  (siphon-result
 	    (write-to-channel netty-channel (bytes->channel-buffer (encode-frame msg)) false)
 	    returned-result))))
 
-    (on-closed outer #(.close netty-channel))
+    (on-closed out #(.close netty-channel))
 
     (run-pipeline (.getCloseFuture netty-channel)
       wrap-netty-channel-future
       (fn [_]
-	(close inner)
-	(close outer)))
+	(close in)
+	(close out)))
 
-    (handler inner handshake)
+    (handler
+      (splice
+	(wrap-websocket-channel in)
+	(wrap-write-channel out))
+      handshake)
 
     (message-stage
-      (fn [msg]
-	(enqueue outer msg)))))
+      (fn [_ msg]
+	(enqueue in (bytes->byte-buffers msg))))))
 
 (defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response]
   (let [channel (.getChannel ctx)
