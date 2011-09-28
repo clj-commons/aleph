@@ -42,7 +42,7 @@ For more on HTTP functionality, read the [wiki](https://github.com/ztellman/alep
 This snippet prints out a never-ending sequence of tweets:
 
 ```clj
-(use 'lamina.core 'aleph.http)
+(use 'lamina.core 'aleph.http 'aleph.formats)
         
 (let [ch (:body
            (sync-http-request
