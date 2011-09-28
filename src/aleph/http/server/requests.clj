@@ -73,7 +73,8 @@
     #(decode-aleph-message % options)))
 
 (defn request-handler [handler options]
-  (let [f (executor
+  (let [timeout (:timeout options)
+	f (executor
 	    (:thread-pool options)
 	    (fn [req]
 	      (let [ch (wrap-response-channel (constant-channel))]
@@ -90,7 +91,7 @@
 	    options)]
     (fn [netty-channel req]
       (let [req (transform-netty-request req netty-channel options)]
-	(f [req])))))
+	(f [req] (when timeout {:timeout (timeout req)}))))))
 
 (defn consume-request-stream [netty-channel in handler options]
   (let [[a b] (channel-pair)
@@ -99,6 +100,7 @@
 		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))
 		    (run-pipeline (dissoc req :keep-alive?)
 		      :error-handler (fn [_])
+		      :timeout (when-let [timeout (:timeout options)] (timeout req))
 		      #(pre-process-request % options)
 		      #(handler c %))))]
     (run-pipeline in
