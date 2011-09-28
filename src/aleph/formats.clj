@@ -8,6 +8,8 @@
 
 (ns ^{:author "Zachary Tellman"}
   aleph.formats
+  (:use
+    [lamina core])
   (:require
     [clojure.contrib.json :as json]
     [clojure.xml :as xml]
@@ -28,9 +30,10 @@
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
-     CompositeChannelBuffer 
      ChannelBufferInputStream
-     ByteBufferBackedChannelBuffer]))
+     ByteBufferBackedChannelBuffer]
+    [java.security
+     MessageDigest]))
 
 ;;;
 
@@ -67,7 +70,9 @@
        (.toString ^ChannelBuffer buf ^String charset))))
 
 (defn- channel-buffers->channel-buffer [bufs]
-  (ChannelBuffers/wrappedBuffer (into-array ChannelBuffer (remove nil? bufs))))
+  (ChannelBuffers/wrappedBuffer
+    ^{:tag "[Lorg.jboss.netty.buffer.ChannelBuffer;"}
+    (into-array ChannelBuffer (remove nil? bufs))))
 
 ;;; Other formats into ChannelBuffer
 
@@ -76,7 +81,9 @@
     (ByteBufferBackedChannelBuffer. buf)))
 
 (defn- byte-buffers->channel-buffer [bufs]
-  (ChannelBuffers/wrappedBuffer (into-array ByteBuffer bufs)))
+  (ChannelBuffers/wrappedBuffer
+    ^{:tag "[Ljava.nio.ByteBuffer;"}
+    (into-array ByteBuffer bufs)))
 
 (defn- input-stream->channel-buffer [^InputStream stream]
   (when stream
@@ -90,44 +97,88 @@
 		(byte-buffers->channel-buffer (conj bufs (ByteBuffer/wrap ary 0 offset)))
 		(recur ary (+ offset byte-count) bufs)))))))))
 
+(defn- input-stream->channel-
+  [ch ^InputStream stream chunk-size]
+  (let [buffer? (and chunk-size (pos? chunk-size))
+	chunk-size (if buffer? chunk-size 1024)
+	create-array (if buffer?
+		       #(byte-array chunk-size)
+		       #(byte-array
+			  (if (pos? (.available stream))
+			    (.available stream)
+			    1024)))]
+    (loop [ary ^bytes (create-array), offset 0]
+      (let [ary-len (count ary)]
+	(if (= ary-len offset)
+	  (do
+	    (enqueue ch (ByteBuffer/wrap ary))
+	    (recur (create-array) 0))
+	  (let [byte-count (.read stream ary offset (- ary-len offset))]
+	    (if (neg? byte-count)
+	      (if (zero? offset)
+		(close ch)
+		(enqueue-and-close ch (ByteBuffer/wrap ary 0 offset)))
+	      (recur ary (+ offset byte-count)))))))))
+
+(defn input-stream->channel
+  "Converts an InputStream to a channel that emits bytes. Spawns a separate thread to read
+   from the stream.
+
+   If 'chunk-size' is specified, the channel will only emit byte sequences of the specified
+   length, unless the stream is closed before a full chunk can be accumulated.  If it is nil
+   or non-positive, bytes will be sent through the channel as soon as they enter the InputStream."
+  ([stream]
+     (input-stream->channel stream nil))
+  ([stream chunk-size]
+     (if-not stream
+       (closed-channel)
+       (let [ch (channel)]
+	 (doto
+	   (Thread. (fn [] (input-stream->channel- ch stream chunk-size)))
+	   (.setName "InputStream reader")
+	   .start)
+	 ch))))
+
 (defn- string->channel-buffer
   ([s]
      (string->channel-buffer s "UTF-8"))
-  ([^String s charset]
-     (-> s (.getBytes charset) ByteBuffer/wrap byte-buffer->channel-buffer)))
+  ([s charset]
+     (-> (.getBytes ^String s ^String charset) ByteBuffer/wrap byte-buffer->channel-buffer)))
 
 (defn- to-channel-buffer
   ([data]
      (to-channel-buffer data "utf-8"))
   ([data charset]
-     (cond
-       (instance? ChannelBuffer data)
-       data
-
-       (instance? ByteBuffer data)
-       (byte-buffer->channel-buffer data)
-
-       (instance? InputStream data)
-       (input-stream->channel-buffer data)
-
-       (instance? String data)
-       (string->channel-buffer data charset)
-
-       (byte-array? data)
-       (-> data ByteBuffer/wrap byte-buffer->channel-buffer)
-
-       (and (sequential? data) (every? #(instance? ByteBuffer %) data))
-       (byte-buffers->channel-buffer data)
-
-       (and (sequential? data) (every? #(instance? ChannelBuffer %) data))
-       (channel-buffers->channel-buffer data)
-
-       :else
-       (throw (Exception. (str "Cannot convert " (pr-str data) " to ChannelBuffer."))))))
+     (when data
+       (cond
+	 (instance? ChannelBuffer data)
+	 data
+	 
+	 (instance? ByteBuffer data)
+	 (byte-buffer->channel-buffer data)
+	 
+	 (instance? InputStream data)
+	 (input-stream->channel-buffer data)
+	 
+	 (instance? String data)
+	 (string->channel-buffer data charset)
+	 
+	 (byte-array? data)
+	 (-> data ByteBuffer/wrap byte-buffer->channel-buffer)
+	 
+	 (and (sequential? data) (every? #(instance? ByteBuffer %) data))
+	 (byte-buffers->channel-buffer data)
+	 
+	 (and (sequential? data) (every? #(instance? ChannelBuffer %) data))
+	 (channel-buffers->channel-buffer data)
+	 
+	 :else
+	 (throw (Exception. (str "Cannot convert " (pr-str data) " to ChannelBuffer.")))))))
 
 (defn- to-channel-buffer?
   [data]
   (or
+    (nil? data)
     (instance? ChannelBuffer data)
     (instance? ByteBuffer data)
     (instance? InputStream data)
@@ -151,23 +202,24 @@
   [x]
   (to-channel-buffer? x))
 
-(defn bytes->channel-buffer
+(defn ^ChannelBuffer bytes->channel-buffer
   "Converts bytes into a Netty ChannelBuffer. By default, 'charset' is UTF-8."
   ([data]
      (bytes->channel-buffer data "utf-8"))
   ([data charset]
      (to-channel-buffer data charset)))
 
-(defn bytes->input-stream
+(defn ^InputStream bytes->input-stream
   "Converts bytes into an InputStream. By default, 'charset' is UTF-8."
   ([data]
      (bytes->input-stream data "utf-8"))
   ([data charset]
-     (if (instance? InputStream data)
-       data
-       (-> data (to-channel-buffer charset) channel-buffer->input-stream))))
+     (when data
+       (if (instance? InputStream data)
+	 data
+	 (-> data (to-channel-buffer charset) channel-buffer->input-stream)))))
 
-(defn bytes->byte-buffer
+(defn ^ByteBuffer bytes->byte-buffer
   "Converts bytes into a ByteBuffer. By default, 'charset' is UTF-8.
 
    This may require copying multiple buffers into a single buffer. To avoid this,
@@ -175,53 +227,81 @@
   ([data]
      (bytes->byte-buffer data "utf-8"))
   ([data charset]
-     (if (instance? ByteBuffer data)
-       data
-       (-> data (to-channel-buffer charset) channel-buffer->byte-buffer))))
+     (when data
+       (if (instance? ByteBuffer data)
+	 data
+	 (-> data (to-channel-buffer charset) channel-buffer->byte-buffer)))))
+
+(defn ^bytes bytes->byte-array
+  "Convertes bytes into a byte array. By default, 'charset' is UTF-8."
+  ([data]
+     (bytes->byte-array data "utf-8"))
+  ([data charset]
+     (-> data (bytes->byte-buffer charset) .array)))
 
 (defn bytes->byte-buffers
   "Converts bytes into a sequence of one or more ByteBuffers."
   ([data]
      (bytes->byte-buffers data "utf-8"))
   ([data charset]
-     (-> data (to-channel-buffer charset) channel-buffer->byte-buffers)))
+     (when data
+       (-> data (to-channel-buffer charset) channel-buffer->byte-buffers))))
 
-(defn bytes->string
+(defn ^String bytes->string
   "Converts bytes to a string. By default, 'charset' is UTF-8."
   ([data]
      (bytes->string data "utf-8"))
   ([data charset]
-     (if (string? data)
-       data
-       (-> data (to-channel-buffer charset) (channel-buffer->string charset)))))
+     (when data
+       (if (string? data)
+	 data
+	 (-> data (to-channel-buffer charset) (channel-buffer->string charset))))))
 
-;;;
+;;
+
+(defn bytes->md5
+  "Returns an MD5 hash for the bytes."
+  [data]
+  (->> data
+    bytes->byte-array
+    (.digest (MessageDigest/getInstance "md5"))))
+
+(defn bytes->sha1
+  "Returns an SHA1 hash for the bytes."
+  [data]
+  (->> data
+    bytes->byte-array
+    (.digest (MessageDigest/getInstance "sha1"))))
 
 (defn base64-encode
   "Encodes the data into a base64 string representation."
   [data]
-  (-> data to-channel-buffer Base64/encode channel-buffer->string))
+  (when data
+    (-> data to-channel-buffer Base64/encode channel-buffer->string)))
 
 (defn base64-decode
   "Decodes a base64 encoded string into bytes."
   [string]
-  (-> string string->channel-buffer Base64/decode))
+  (when string
+    (-> string string->channel-buffer Base64/decode)))
 
 ;;;
 
 (defn decode-json
   "Takes bytes or a string that contain JSON, and returns a Clojure data structure representation."
   [data]
-  (-> data bytes->input-stream InputStreamReader. (json/read-json-from true false nil)))
+  (when data
+    (-> data bytes->input-stream InputStreamReader. (json/read-json-from true false nil))))
 
 (defn encode-json->bytes
   "Transforms a Clojure data structure to JSON, and returns a byte representation of the encoded data."
   [data]
-  (let [output (ByteArrayOutputStream.)
-	writer (PrintWriter. output)]
-    (json/write-json data writer)
-    (.flush writer)
-    (-> output .toByteArray to-channel-buffer)))
+  (when data
+    (let [output (ByteArrayOutputStream.)
+	  writer (PrintWriter. output)]
+      (json/write-json data writer)
+      (.flush writer)
+      (-> output .toByteArray to-channel-buffer))))
 
 (defn encode-json->string
   "Transforms a Clojure data structure to JSON, and returns a string representation of the encoded data."
@@ -233,14 +313,15 @@
 (defn decode-xml
   "Takes bytes or a string that contains XML, and returns a Clojure hash representing the parsed data."
   ([data]
-     (if (string? data)
-       (let [[header charset] (re-seq #"^\<\?.*encoding=\"(.*)\".*\?\>" data)]
-	 (decode-xml
-	   [(string->channel-buffer header "ascii")
-	    (string->channel-buffer
-	      (.substring ^String data (count header) (- (count data) (count header)))
-	      charset)]))
-       (-> data bytes->input-stream xml/parse))))
+     (when data
+       (if (string? data)
+	 (let [[header charset] (re-seq #"^\<\?.*encoding=\"(.*)\".*\?\>" data)]
+	   (decode-xml
+	     [(string->channel-buffer header "ascii")
+	      (string->channel-buffer
+		(.substring ^String data (count header) (- (count data) (count header)))
+		charset)]))
+	 (-> data bytes->input-stream xml/parse)))))
 
 (defn encode-xml->string
   "Takes a Clojure data structure representing a parse tree or prxml structure, and returns an XML string.
@@ -249,11 +330,12 @@
   ([x]
      (encode-xml->string x "utf-8"))
   ([x charset]
-     (with-out-str
-       (prxml/prxml [:decl! {:version "1.0" :encoding charset}])
-       (cond
-	 (vector? x) (prxml/prxml x)
-	 (map? x) (xml/emit-element x)))))
+     (when x
+       (with-out-str
+	 (prxml/prxml [:decl! {:version "1.0" :encoding charset}])
+	 (cond
+	   (vector? x) (prxml/prxml x)
+	   (map? x) (xml/emit-element x))))))
 
 (defn encode-xml->bytes
   "Takes a Clojure data structure representing a parse tree or prxml structure, and an XML representation as bytes.
@@ -262,16 +344,17 @@
   ([x]
      (encode-xml->bytes x "utf-8"))
   ([x charset]
-     (channel-buffers->channel-buffer
-       [(string->channel-buffer
-	  (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}]))
-	  "ascii")
-	(string->channel-buffer
-	  (with-out-str
-	    (cond
-	      (vector? x) (prxml/prxml x)
-	      (map? x) (xml/emit-element x)))
-	  charset)])))
+     (when x
+       (channel-buffers->channel-buffer
+	 [(string->channel-buffer
+	    (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}]))
+	    "ascii")
+	  (string->channel-buffer
+	    (with-out-str
+	      (cond
+		(vector? x) (prxml/prxml x)
+		(map? x) (xml/emit-element x)))
+	    charset)]))))
 
 ;;;
 
@@ -309,7 +392,7 @@
      (url-encode s charset nil))
   ([s charset options]
      (let [s (reduce
-	       (fn [s [from to]] (.replace ^String s (str from) to))
+	       (fn [s [from to]] (.replace ^String s (str from) ^String to))
 	       s
 	       (sort-replace-map (:url-encodings options)))]
        (URLEncoder/encode s charset))))

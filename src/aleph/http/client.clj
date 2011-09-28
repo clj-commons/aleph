@@ -14,7 +14,8 @@
     [aleph.http.client requests responses]
     [lamina core connections api])
   (:require
-    [clj-http.client :as client])
+    [clj-http.client :as client]
+    [aleph.http.websocket.hixie :as hixie])
   (:import
     [java.util.concurrent
      TimeoutException]
@@ -78,25 +79,30 @@
 		 identity
 		 options)]
     (run-pipeline client
+      :error-handler (fn [_])
       (fn [ch]
 	(splice
 	  (wrap-response-stream options ch)
 	  (siphon->> (wrap-request-stream options) ch))))))
 
 (defn- http-client- [client-fn options]
-  (let [options (merge
+  (let [options (process-options options)
+	options (merge
 		  {:name
 		   (str "http-client:" (:server-name options) ":" (gensym ""))
 		   :description
 		   (str (:scheme options) "://" (:server-name options) ":" (:server-port options))}
-		  (process-options options))
+		  options)
 	client (client-fn
-		 #(http-connection options))
+		 #(http-connection options)
+		 options)
 	f (fn [request timeout]
 	    (if (map? request)
-	      (client (assoc (merge options request)
-			:keep-alive? true))
-	      (client request)))]
+	      (client
+		(assoc (merge options request)
+		  :keep-alive? true)
+		timeout)
+	      (client request timeout)))]
     (fn this
       ([request]
 	 (this request -1))
@@ -141,7 +147,7 @@
      (let [start (System/currentTimeMillis)
 	   elapsed #(- (System/currentTimeMillis) start)
 	   latch (atom false)
-	   request (assoc request :keep-alive? false)
+	   request (merge {:keep-alive? false} request)
 	   response (result-channel)]
 
        ;; timeout
@@ -154,10 +160,13 @@
 		 (TimeoutException. (str "HTTP request timed out after " (elapsed) " milliseconds.")))))))
 
        ;; request
-       (let [connection (http-connection request)]
+       (let [connection (http-connection
+			  (update-in request [:probes :errors]
+			    #(or % nil-channel)))
+	     close-connection (pipeline :error-handler (fn [_]) close)]
 	 (run-pipeline connection
 	   :error-handler (fn [ex]
-			    (run-pipeline connection close)
+			    (close-connection connection)
 			    (when-not (instance? TimeoutException)
 			      (error! response ex)))
 	   (fn [ch]
@@ -167,11 +176,12 @@
 	     (if (compare-and-set! latch false true)
 	       (do
 		 (if (channel? (:body rsp))
-		   (on-closed (:body rsp) #(run-pipeline connection close))
-		   (run-pipeline connection close))
+		   (on-closed (:body rsp)
+		     #(close-connection connection))
+		   (close-connection connection))
 		 (success! response rsp))
-	       (run-pipeline connection close)))))
-
+	       (close-connection connection)))))
+       
        response)))
 
 ;;;
@@ -188,23 +198,23 @@
 
 (def expected-response (ByteBuffer/wrap (.getBytes "fQJ,fN/4F4!~K~MH" "utf-8")))
 
-(defn websocket-pipeline [ch success error options]
+(defn websocket-pipeline [ch result options]
   (create-netty-pipeline (:name options)
     :decoder (HttpResponseDecoder.)
     :encoder (HttpRequestEncoder.)
-    :response (message-stage
-		(fn [netty-channel rsp]
+    :handshake (message-stage
+		(fn [^Channel netty-channel ^HttpResponse rsp]
 		  (if (not= 101 (-> rsp .getStatus .getCode))
-		    (enqueue error [rsp (Exception. "Proper handshake not received.")])
+		    (error! result (Exception. "Proper handshake not received."))
 		    (let [pipeline (.getPipeline netty-channel)]
 		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
 		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
-		      (.replace pipeline "response" "response"
+		      (.replace pipeline "handshake" "response"
 			(message-stage
 			  (fn [netty-channel rsp]
-			    (enqueue ch (from-websocket-frame rsp))
+			    (enqueue ch (hixie/from-websocket-frame rsp))
 			    nil)))
-		      (enqueue success ch)))
+		      (success! result ch)))
 		  nil))))
 
 (defn websocket-client [options]
@@ -214,7 +224,7 @@
 		  options)
 	result (result-channel)
 	client (create-client
-		 #(websocket-pipeline % (.success result) (.error result) options)
+		 #(websocket-pipeline % result options)
 		 identity
 		 options)]
     (run-pipeline client
@@ -229,5 +239,6 @@
 	(run-pipeline result
 	  (fn [_]
 	    (let [in (channel)]
-	      (siphon (map* to-websocket-frame in) ch)
+	      (siphon (map* hixie/to-websocket-frame in) ch)
+	      (on-closed in #(close ch))
 	      (splice ch in))))))))

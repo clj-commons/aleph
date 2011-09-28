@@ -133,10 +133,11 @@
 (defn message-stage
   "Creates a final upstream stage that only captures MessageEvents."
   [handler]
-  (upstream-stage
-    (fn [evt]
-      (when-let [msg (message-event evt)]
-	(handler (.getChannel ^MessageEvent evt) msg)))))
+  (reify ChannelUpstreamHandler
+    (handleUpstream [_ ctx evt]
+      (if-let [msg (message-event evt)]
+	(handler (.getChannel ^MessageEvent evt) msg)
+	(.sendUpstream ctx evt)))))
 
 (defn channel-open-stage [f]
   (let [latch (atom false)]
@@ -161,6 +162,30 @@
 	(.close ch)
 	(.sendUpstream ctx evt)))))
 
+(def pipeline-handlers
+  (memoize
+    (fn [pipeline-name]
+      (let [error-probe (canonical-probe [pipeline-name :errors])
+	    error-handler (fn [^ChannelEvent evt]
+			    (when-let [ex ^ExceptionEvent (exception-event evt)]
+			      (when-not (instance? ClosedChannelException ex)
+				(when-not (trace error-probe
+					    {:exception ex
+					     :address (-> evt .getChannel channel-origin)})
+				  (log/error nil ex)))
+			      nil))
+	    traffic-handler (fn [probe-suffix]
+			      (let [traffic-probe (canonical-probe [pipeline-name :traffic probe-suffix])]
+				(fn [evt]
+				  (when-let [msg (message-event evt)]
+				    (trace traffic-probe
+				      {:address (-> evt channel-event channel-origin)
+				       :bytes (.readableBytes ^ChannelBuffer msg)}))
+				  nil)))]
+	{:error error-handler
+	 :in (traffic-handler :in)
+	 :out (traffic-handler :out)}))))
+
 (defn create-netty-pipeline
   "Creates a pipeline.  Each stage must have a name.
 
@@ -170,34 +195,17 @@
      :stage-b b)"
   [pipeline-name & stages]
   (let [netty-pipeline (Channels/pipeline)
-	error-probe (canonical-probe [pipeline-name :errors])
-	_ (register-probe error-probe)
-	error-handler (fn [evt]
-			(when-let [ex ^ExceptionEvent (exception-event evt)]
-			  (when-not (instance? ClosedChannelException ex)
-			    (when-not (trace error-probe
-					{:exception ex
-					 :address (-> ex .getChannel channel-origin)})
-			      (log/error nil ex)))
-			  nil))
-	traffic-handler (fn [probe-suffix]
-			  (let [traffic-probe (canonical-probe [pipeline-name :traffic probe-suffix])]
-			    (fn [evt]
-			      (when-let [msg (message-event evt)]
-				(trace traffic-probe
-				  {:address (-> evt channel-event channel-origin)
-				   :bytes (.readableBytes ^ChannelBuffer msg)}))
-			      nil)))]
+	{:keys [error in out]} (pipeline-handlers pipeline-name)]
     (doseq [[id stage] (partition 2 stages)]
       (.addLast netty-pipeline (name id) stage))
     (.addFirst netty-pipeline "incoming-traffic"
-      (upstream-stage (traffic-handler :in)))
+      (upstream-stage in))
     (.addFirst netty-pipeline "outgoing-traffic"
-      (downstream-stage (traffic-handler :out)))
+      (downstream-stage out))
     (.addLast netty-pipeline "outgoing-error"
-      (downstream-stage error-handler))
+      (downstream-stage error))
     (.addFirst netty-pipeline "incoming-error"
-      (upstream-stage error-handler))
+      (upstream-stage error))
     netty-pipeline))
 
 ;;;
@@ -257,7 +265,7 @@
     (run-pipeline
       (io!
 	(if (and host port)
-	  (.write netty-channel msg (InetSocketAddress. host port))
+	  (.write netty-channel msg (InetSocketAddress. ^String host (int port)))
 	  (.write netty-channel msg)))
       wrap-netty-channel-future
       (fn [_]
@@ -414,8 +422,7 @@
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)
-		   (.availableProcessors (Runtime/getRuntime))))]
+		   (Executors/newCachedThreadPool)))]
 
     ;; setup client probes
     (siphon-probes (:name options) (:probes options))
@@ -436,6 +443,7 @@
 
     ;; intialize client
     (run-pipeline (.connect client (InetSocketAddress. ^String host (int port)))
+      :error-handler (fn [_])
       wrap-netty-channel-future
       (fn [^Channel netty-channel]
 

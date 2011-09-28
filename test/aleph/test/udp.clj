@@ -27,7 +27,7 @@
       (enqueue d {:message text-msg :host "localhost" :port 2223})
       (is (= text-msg (:message (wait-for-message c 2000))))
       (finally
-        (close a)
         (close b)
-        (close c)
-        (close d)))))
+        (close d)
+        (close a)
+        (close c)))))

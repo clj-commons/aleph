@@ -10,7 +10,7 @@
   ^{:skip-wiki true}
   aleph.http.server
   (:use
-    [aleph netty formats]
+    [aleph netty formats core]
     [aleph.http utils core websocket]
     [aleph.http.server requests responses]
     [lamina core executors trace]
@@ -47,11 +47,10 @@
 (def timeout-response
   (transform-aleph-response {:status 408} nil))
 
-(defn http-session-handler [handler options]
+(defn http-session-handler [handler simple-handler options]
   (let [init? (atom false)
 	server-name (:name options)
-	ch (channel)
-	simple-handler (request-handler handler options)]
+	ch (channel)]
     (message-stage
       (fn [^Channel netty-channel request]
 	(when (and
@@ -66,8 +65,13 @@
 						  (instance? TimeoutException ex))
 					      timeout-response
 					      error-response)]
-			       (write-to-channel netty-channel response true)))
-	    #(respond netty-channel options (first %) (second %))
+			       (write-to-channel netty-channel response true)
+			       (complete nil)))
+	    (pipeline
+	      :error-handler (fn [_]
+			       (.close netty-channel)
+			       (complete nil))
+	      #(respond netty-channel options (first %) (second %)))
 	    (fn [_] (.close netty-channel)))
 	  (do
 	    (when (compare-and-set! init? false true)
@@ -88,7 +92,7 @@
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
-  [handler options]
+  [handler simple-handler options]
   (let [netty-options (:netty options)
 	pipeline ^ChannelPipeline
 	(create-netty-pipeline (:name options)
@@ -98,9 +102,9 @@
 		     (get netty-options "http.maxChunkSize" 16384))
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
-	  :http-request (http-session-handler handler options))]
+	  :http-request (http-session-handler handler simple-handler options))]
     (when (:websocket options)
-      (.addBefore pipeline "http-request" "websocket" (websocket-handshake-handler handler options)))
+      (.addBefore pipeline "http-request" "websocket-handshake" (websocket-handshake-handler handler options)))
     pipeline))
 
 (defn start-http-server
@@ -129,16 +133,37 @@
 				    (merge-with #(if (map? %1) (merge %1 %2) %2)
 				      {:name (str default-name ":thread-pool")}
 				      (:thread-pool options))))})
-	stop-fn (start-server
-		  #(create-pipeline handler options)
-		  options)]
-    (fn []
-      (async
-	(try
-	  (stop-fn)
-	  (finally
-	    (when-let [thread-pool (:thread-pool options)]
-	      (shutdown-thread-pool thread-pool))))))))
+	simple-handler (request-handler handler options)
+	server (start-server
+		 #(create-pipeline handler simple-handler options)
+		 options)]
+    (reify AlephServer
+      (stop-server-immediately [_]
+	(async
+	  (try
+	    (stop-server-immediately server)
+	    (finally
+	      (when-let [thread-pool (:thread-pool options)]
+		(shutdown-thread-pool thread-pool))))))
+      (stop-server [this timeout]
+	(async
+	  (try
+	    (stop-server server timeout)
+	    (finally
+	      (when-let [thread-pool (:thread-pool options)]
+		(shutdown-thread-pool thread-pool))))))
+      (server-probe [_ probe-name]
+	(server-probe server probe-name))
+      (netty-channels [_]
+	(netty-channels server))
+      clojure.lang.IFn
+      (invoke [this]
+	(stop-server-immediately this))
+      clojure.lang.Named
+      (getName [_]
+	(name server))
+      (getNamespace [_]
+	nil))))
 
 
 

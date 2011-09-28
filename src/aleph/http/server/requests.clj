@@ -8,12 +8,13 @@
 
 (ns aleph.http.server.requests
   (:use
-    [lamina.core.pipeline :only (closed-result)]
-    [lamina core connections executors]
+    [lamina core connections executors api]
     [aleph netty formats]
     [aleph.core lazy-map]
     [aleph.http core])
   (:import
+    [java.io
+     InputStream]
     [org.jboss.netty.handler.codec.http
      HttpHeaders
      HttpRequest
@@ -22,7 +23,7 @@
 (defn- request-destination [_]
   (fn [msg]
     (let [headers (:headers msg)]
-      (let [parts (.split ^String (or (headers "host") "") "[:]")]
+      (let [parts (.split (str (or (headers "host") "")) "[:]")]
 	{:server-name (first parts)
 	 :server-port (when-let [port (second parts)]
 			(Integer/parseInt port))}))))
@@ -58,11 +59,12 @@
 (defn wrap-response-channel [ch]
   (proxy-channel
     (fn [[rsp]]
-      (if (channel? (:body rsp))
-	(let [result (channel)]
-	  [result [[result rsp]]])
-	(let [result (result-channel)]
-	  [result [[result rsp]]])))
+      (let [body (:body rsp)]
+	(if (or (channel? body) (instance? InputStream body))
+	  (let [result (channel)]
+	    [result [[result rsp]]])
+	  (let [result (result-channel)]
+	    [result [[result rsp]]]))))
     ch))
 
 (defn pre-process-request [req options]
@@ -71,19 +73,25 @@
     #(decode-aleph-message % options)))
 
 (defn request-handler [handler options]
-  (let [f (executor
+  (let [timeout (:timeout options)
+	f (executor
 	    (:thread-pool options)
 	    (fn [req]
 	      (let [ch (wrap-response-channel (constant-channel))]
 		(run-pipeline req
+		  :error-handler (fn [_])
 		  #(pre-process-request % options)
-		  #(do
-		     (handler ch %)
-		     (read-channel ch)))))
+		  (fn [request]
+		    (let [result (result-channel)]
+		      (run-pipeline (handler ch request)
+			:error-handler #(error! result %))
+		      (siphon-result
+			(read-channel ch)
+			result))))))
 	    options)]
     (fn [netty-channel req]
       (let [req (transform-netty-request req netty-channel options)]
-	(f [req])))))
+	(f [req] (when timeout {:timeout (timeout req)}))))))
 
 (defn consume-request-stream [netty-channel in handler options]
   (let [[a b] (channel-pair)
@@ -91,6 +99,8 @@
 		  (let [c (constant-channel)]
 		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))
 		    (run-pipeline (dissoc req :keep-alive?)
+		      :error-handler (fn [_])
+		      :timeout (when-let [timeout (:timeout options)] (timeout req))
 		      #(pre-process-request % options)
 		      #(handler c %))))]
     (run-pipeline in

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 (defproject aleph "0.2.0-beta1"
+=======
+(defproject aleph "0.2.0-beta2-SNAPSHOT"
+>>>>>>> new
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"}
   :license {:name "Eclipse Public License - v 1.0"
@@ -7,8 +11,12 @@
   :dependencies [[org.clojure/clojure "1.2.0"] 
                  [org.jboss.netty/netty "3.2.4.Final"]
                  [clj-http "0.1.3"]
+<<<<<<< HEAD
                  [lamina "0.4.0-beta1"]
+=======
+                 [lamina "0.4.0-beta2-SNAPSHOT"]
+>>>>>>> new
                  [gloss "0.2.0-beta1"]
                  [user-agent-utils "1.2.3"]
                  [potemkin "0.1.0"]]
-  :jvm-opts ["-server"])
+  :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])

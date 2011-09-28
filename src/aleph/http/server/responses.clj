@@ -81,19 +81,6 @@
 
 ;;;
 
-(defn- respond-with-stream
-  [^Channel netty-channel options returned-result response]
-  (let [stream ^InputStream (:body response)
-	response (transform-aleph-response
-		   (update-in response [:body] #(bytes->channel-buffer %))
-		   options)]
-    (siphon-result*
-      (write-to-channel netty-channel response false
-	:on-write #(.close stream))
-      returned-result)))
-
-;;;
-
 (defn- respond-with-file
   [netty-channel options returned-result response]
   (let [file ^File (:body response)
@@ -144,6 +131,15 @@
       (fn [_]
 	(enqueue-and-close returned-result
 	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))
+
+;;;
+
+(defn- respond-with-stream
+  [^Channel netty-channel options returned-result response]
+  (let [stream ^InputStream (:body response)
+	ch (input-stream->channel stream (or (:chunk-size response) (:chunk-size options) 8192))]
+    (on-closed ch #(.close stream))
+    (respond-with-channel netty-channel options returned-result (assoc response :body ch))))
 
 ;;;
 

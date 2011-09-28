@@ -117,12 +117,14 @@
   [f]
   (fn [channel request]
     (run-pipeline (request-body->input-stream request)
+      :error-handler (fn [_])
       (fn [request]
-	(let [response (f (assoc request :channel channel))]
-	  (when (and
-		  response
-		  (not (:websocket request))
-		  (not (::ignore response))
-		  (not (result-channel? response)))
-	    (enqueue channel response)))))))
+	(f (assoc request :channel channel)))
+      (fn [response]
+	(when (and
+		response
+		(not (:websocket request))
+		(not (::ignore response))
+		(not (result-channel? response)))
+	  (enqueue channel response))))))
 

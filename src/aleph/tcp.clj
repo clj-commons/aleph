@@ -140,8 +140,8 @@
       (fn []
 	(basic-server-pipeline
 	  handler
-	  #(ChannelBuffers/wrappedBuffer (into-array ByteBuffer (to-buf-seq %)))
-	  #(seq (.toByteBuffers ^ChannelBuffer %))
+	  bytes->channel-buffer
+	  bytes->byte-buffers
 	  options))
       options)))
 
@@ -161,10 +161,10 @@
 		  (:delimiters options)
 		  (:strip-delimiters? options))]
     (create-client
-      (fn [ch] (basic-client-pipeline ch #(seq (.toByteBuffers ^ChannelBuffer %)) options))
+      (fn [ch] (basic-client-pipeline ch bytes->byte-buffers options))
       (fn [msg]
 	(let [msg (if encoder
 		    (encode encoder msg)
 		    (to-buf-seq msg))]
-	  (ChannelBuffers/wrappedBuffer (into-array ByteBuffer msg))))
+	  (bytes->channel-buffer msg)))
       options)))
