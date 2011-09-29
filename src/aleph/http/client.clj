@@ -37,6 +37,7 @@
      HttpMethod
      HttpHeaders
      HttpVersion]
+    [org.jboss.netty.handler.ssl SslHandler]
     [org.jboss.netty.channel
      Channel
      ExceptionEvent]
@@ -45,18 +46,33 @@
     [java.net
      URI]))
 
+
+;;;
+
+(defn- create-ssl-handler
+  [{:keys [server-name server-port]}]
+  (SslHandler.
+   (doto (.createSSLEngine (javax.net.ssl.SSLContext/getDefault)
+                           server-name
+                           server-port)
+     (.setUseClientMode true))))
+
 ;;;
 
 (defn create-pipeline [client options]
   (let [responses (channel)
-	init? (atom false)
-	pipeline (create-netty-pipeline (:name options)
-		   :codec (HttpClientCodec.)
-		   :inflater (HttpContentDecompressor.)
-		   :response (message-stage
-			       (fn [netty-channel rsp]
-				 (enqueue client rsp)
-				 nil)))]
+        init? (atom false)
+        stages [:codec (HttpClientCodec.)
+                :inflater (HttpContentDecompressor.)
+                :response (message-stage
+                           (fn [netty-channel rsp]
+                             (enqueue client rsp)
+                             nil))]
+        pipeline (apply create-netty-pipeline (:name options)
+                        (if (= "https" (:scheme options))
+                          (concat [:ssl (create-ssl-handler options)]
+                                  stages)
+                               stages))]
     pipeline))
 
 ;;;
@@ -181,7 +197,7 @@
 		   (close-connection connection))
 		 (success! response rsp))
 	       (close-connection connection)))))
-       
+
        response)))
 
 ;;;
