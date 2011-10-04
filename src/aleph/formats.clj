@@ -290,8 +290,9 @@
 (defn decode-json
   "Takes bytes or a string that contain JSON, and returns a Clojure data structure representation."
   [data]
-  (when data
-    (-> data bytes->input-stream InputStreamReader. (json/read-json-from true false nil))))
+  (let [stream (bytes->input-stream data)]
+    (when (pos? (.available stream))
+      (-> stream InputStreamReader. (json/read-json-from true false nil)))))
 
 (defn encode-json->bytes
   "Transforms a Clojure data structure to JSON, and returns a byte representation of the encoded data."

@@ -46,20 +46,23 @@
 	(close in)
 	(close out)))
 
-    (handler
-      (splice
-	(wrap-websocket-channel in)
-	(wrap-write-channel out))
-      handshake)
+    [#(handler
+	(splice
+	  (wrap-websocket-channel in)
+	  (wrap-write-channel out))
+	handshake)
 
-    (message-stage
-      (fn [_ msg]
-	(enqueue in (bytes->byte-buffers msg))))))
+     (message-stage
+       (fn [_ msg]
+	 (enqueue in (bytes->byte-buffers msg))))]
+    ))
 
 (defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response]
   (let [channel (.getChannel ctx)
-	pipeline (.getPipeline channel)]
-    (.replace pipeline "websocket-handshake" "websocket" (websocket-handler handler channel handshake))
+	pipeline (.getPipeline channel)
+	[handler stage] (websocket-handler handler channel handshake)]
+    (.replace pipeline "websocket-handshake" "websocket" stage)
     (.remove pipeline "decoder")
     (write-to-channel channel response false)
-    (.remove pipeline "encoder")))
+    (.remove pipeline "encoder")
+    (handler)))

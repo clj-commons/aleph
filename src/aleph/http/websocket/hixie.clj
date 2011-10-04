@@ -93,18 +93,21 @@
 	(close inner)
 	(close outer)))
 
-    (handler inner handshake)
-
-    (message-stage
-      (fn [_ msg]
-	(enqueue outer (from-websocket-frame msg))
-	true))))
+    [#(handler inner handshake)
+     
+     (message-stage
+       (fn [_ msg]
+	 (enqueue outer (from-websocket-frame msg))
+	 true))]
+    ))
 
 (defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response]
   (let [channel (.getChannel ctx)
-	pipeline (.getPipeline channel)]
+	pipeline (.getPipeline channel)
+	[handler stage] (websocket-handler handler channel handshake)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (.replace pipeline "websocket-handshake" "websocket" (websocket-handler handler channel handshake))
+    (.replace pipeline "websocket-handshake" "websocket" stage)
     (write-to-channel channel response false)
-    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
+    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
+    (handler)))
 
