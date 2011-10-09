@@ -131,10 +131,11 @@
 	options (merge
                   {:name default-name}
                   options
-                  {:result-transform second})]
+                  {:result-transform second})
+        simple-handler (request-handler handler options)]
 
     (start-server
-      (fn [options] (create-pipeline handler (request-handler handler options) options))
+      (fn [options] (create-pipeline handler simple-handler options))
       options)))
 
 
