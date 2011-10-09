@@ -62,7 +62,7 @@
   (let [channel (.getChannel ctx)
 	pipeline (.getPipeline channel)
 	[handler stage] (websocket-handler handler channel handshake options)]
-    (.replace pipeline "websocket-handshake" "websocket" stage)
+    (.replace pipeline "websocket-handshake" "websocket" ^ChannelUpstreamHandler stage)
     (.remove pipeline "decoder")
     (write-to-channel channel response false)
     (.remove pipeline "encoder")

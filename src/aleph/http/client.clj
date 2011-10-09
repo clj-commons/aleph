@@ -210,7 +210,7 @@
 		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
 		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
 		      (.replace pipeline "handshake" "response"
-			(message-stage
+                        (message-stage
 			  (fn [netty-channel rsp]
 			    (enqueue ch (hixie/from-websocket-frame rsp))
 			    nil)))

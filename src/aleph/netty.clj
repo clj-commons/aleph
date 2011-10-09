@@ -112,7 +112,7 @@
 
 ;;;
 
-(defn upstream-stage
+(defn ^ChannelUpstreamHandler upstream-stage
   "Creates a pipeline stage for upstream events."
   [handler]
   (reify ChannelUpstreamHandler
@@ -121,7 +121,7 @@
 	(.sendUpstream ctx upstream-evt)
 	(.sendUpstream ctx evt)))))
 
-(defn downstream-stage
+(defn ^ChannelDownstreamHandler downstream-stage
   "Creates a pipeline stage for downstream events."
   [handler]
   (reify ChannelDownstreamHandler
@@ -130,7 +130,7 @@
 	(.sendDownstream ctx downstream-evt)
 	(.sendDownstream ctx evt)))))
 
-(defn message-stage
+(defn ^ChannelUpstreamHandler message-stage
   "Creates a final upstream stage that only captures MessageEvents."
   [handler]
   (reify ChannelUpstreamHandler
@@ -347,7 +347,7 @@
   [pipeline-fn options]
   (let [options (merge
 		  {:name (gensym "server.")
-                   :thread-pool {:max-thread-count (.availableProcessors (Runtime/getRuntime))}
+                   ;;:thread-pool {:max-thread-count (.availableProcessors (Runtime/getRuntime))}
                    }
 		  options)
         tp (let [tp (merge

@@ -25,7 +25,7 @@
 ;;;
 
 (defn transform-key [^String k]
-  (/
+  (unchecked-divide
     (long (-> k (.replaceAll "[^0-9]" "") Long/parseLong))
     (long (-> k (.replaceAll "[^ ]" "") .length))))
 
@@ -106,7 +106,7 @@
 	pipeline (.getPipeline channel)
 	[handler stage] (websocket-handler handler channel handshake options)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (.replace pipeline "websocket-handshake" "websocket" stage)
+    (.replace pipeline "websocket-handshake" "websocket" ^ChannelUpstreamHandler stage)
     (write-to-channel channel response false)
     (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
     (handler)))
