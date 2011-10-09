@@ -8,6 +8,7 @@
   (future
     (dotimes [i 100]
       (enqueue ch (str i "\n")))
+    ;;(Thread/sleep 100) ;; track this down
     (close ch)))
 
 (defn handler [request]
@@ -18,16 +19,16 @@
       :body ch}))
 
 (deftest test-streaming-example
-  (let [server (start-http-server (wrap-ring-handler handler) {:port 8080})
-	response (:body
-		   (sync-http-request
-		     {:method :get
-		      :url "http://localhost:8080"}
-		     1000))]
+  (let [server (start-http-server (wrap-ring-handler handler) {:port 8080})]
     (try
-      (is (= (range 100)
-	     (->> (channel-seq response 1000)
-	       (map bytes->string)
-	       (map read-string))))
+      (let [response (:body
+                       (sync-http-request
+                         {:method :get
+                          :url "http://localhost:8080"}
+                         ))]
+        (is (= (range 100)
+              (->> (channel-seq response -1)
+                (map bytes->string)
+                (map read-string)))))
       (finally
 	(server)))))

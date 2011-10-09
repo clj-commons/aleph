@@ -108,10 +108,12 @@
 			   (let [result (apply write-to-channel args)]
 			     (enqueue returned-result result)
 			     result))]
+
     (run-pipeline (.getCloseFuture netty-channel)
       wrap-netty-channel-future
       (fn [_]
 	(close ch)))
+
     (run-pipeline (let [result (write-to-channel netty-channel initial-response false)]
 		    (enqueue returned-result result)
 		    result)
@@ -119,11 +121,11 @@
 	(receive-in-order
 	  (map*
 	    #(-> response
-	       (assoc :body %)
-	       (encode-aleph-message options)
-	       :body
-	       bytes->channel-buffer
-	       DefaultHttpChunk.)
+               (assoc :body %)
+               (encode-aleph-message options)
+               :body
+               bytes->channel-buffer
+               DefaultHttpChunk.)
 	    ch)
 	  (fn [msg]
 	    (enqueue returned-result (write-to-channel netty-channel msg false))

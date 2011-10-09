@@ -93,7 +93,7 @@
       (let [req (transform-netty-request req netty-channel options)]
 	(f [req] (when timeout {:timeout (timeout req)}))))))
 
-(defn consume-request-stream [netty-channel in handler options]
+(defn consume-request-stream [^Channel netty-channel in handler options]
   (let [[a b] (channel-pair)
 	handler (fn [ch req]
 		  (let [c (constant-channel)]
@@ -103,30 +103,33 @@
 		      :timeout (when-let [timeout (:timeout options)] (timeout req))
 		      #(pre-process-request % options)
 		      #(handler c %))))]
+
     (run-pipeline in
       read-channel
       (fn [req]
-	(let [keep-alive? (HttpHeaders/isKeepAlive req)
-	      req (transform-netty-request req netty-channel options)
-	      req (assoc req :keep-alive? keep-alive?)]
-	  (if-not (= ::chunked (:body req))
-	    (do
-	      (enqueue a req)
-	      keep-alive?)
-	    (let [chunks (->> in
-			   (take-while* #(instance? HttpChunk %))
-			   (map* #(if (final-netty-message? %)
-				    ::last
-				    (.getContent ^HttpChunk %)))
-			   (take-while* #(not= ::last %)))]
-	      (enqueue a (assoc req :body chunks))
-	      (run-pipeline (closed-result chunks)
-		(fn [_]
-		  keep-alive?))))))
+	(when req
+          (let [keep-alive? (HttpHeaders/isKeepAlive req)
+                req (transform-netty-request req netty-channel options)
+                req (assoc req :keep-alive? keep-alive?)]
+            (if-not (= ::chunked (:body req))
+              (do
+                (enqueue a req)
+                keep-alive?)
+              (let [chunks (->> in
+                             (take-while* #(instance? HttpChunk %))
+                             (map* #(if (final-netty-message? %)
+                                      ::last
+                                      (.getContent ^HttpChunk %)))
+                             (take-while* #(not= ::last %)))]
+                (enqueue a (assoc req :body chunks))
+                (run-pipeline (closed-result chunks)
+                  (fn [_]
+                    keep-alive?)))))))
       (fn [keep-alive?]
 	(if keep-alive?
 	  (restart)
 	  (close a))))
+
     (pipelined-server b handler
       (assoc options
 	:include-request true

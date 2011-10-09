@@ -40,7 +40,7 @@
     (start-server
       #(server-pipeline
 	 handler
-	 options)
+	 %)
       options)))
 
 (defn object-client

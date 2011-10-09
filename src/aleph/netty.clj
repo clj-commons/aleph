@@ -10,7 +10,7 @@
   aleph.netty
   (:use
     [clojure.contrib.def :only (defvar- defmacro-)]
-    [lamina core trace api]
+    [lamina core trace api executors]
     [aleph formats core]
     [gloss core])
   (:require
@@ -252,6 +252,7 @@
      (close-channel netty-channel nil))
   ([^Channel netty-channel close-callback]
      (run-pipeline (.close netty-channel)
+       :error-handler (fn [_])
        wrap-netty-channel-future
        (fn [_]
 	 (when close-callback
@@ -267,6 +268,7 @@
 	(if (and host port)
 	  (.write netty-channel msg (InetSocketAddress. ^String host (int port)))
 	  (.write netty-channel msg)))
+      :error-handler (fn [_])
       wrap-netty-channel-future
       (fn [_]
 	(when write-callback
@@ -344,8 +346,17 @@
   "Starts a server.  Returns a function that stops the server."
   [pipeline-fn options]
   (let [options (merge
-		  {:name (gensym "server.")}
+		  {:name (gensym "server.")
+                   :thread-pool {:max-thread-count (.availableProcessors (Runtime/getRuntime))}}
 		  options)
+        tp (let [tp (merge
+                      {:name (str (:name options) ":thread-pool")}
+                      (:thread-pool options))]
+             (if-not (map? tp)
+               tp
+               (thread-pool tp)))
+        options (assoc options
+                  :thread-pool tp)
 	refuse-connections? (atom false)
 	port (:port options)
 	channel-factory (NioServerSocketChannelFactory.
@@ -367,13 +378,15 @@
 	options
 	(canonical-probe [(:name options) :connections])
 	refuse-connections?
-	pipeline-fn))
+	#(pipeline-fn options)))
 
     ;; add parent channel to channel-group
     (.add channel-group (.bind server (InetSocketAddress. port)))
 
      ;; create server instance
     (reify AlephServer
+      (server-thread-pool [_]
+         tp)
       (stop-server-immediately [_]
 	(trace [(:name options) :shutdown]
 	  {:name options})
@@ -381,7 +394,9 @@
 	  (.close channel-group)
 	  wrap-netty-channel-group-future
 	  (fn [_]
-	    (future (.releaseExternalResources server)))))
+	    (future
+              (shutdown-thread-pool thread-pool)
+              (.releaseExternalResources server)))))
       (stop-server [this timeout]
 	(reset! refuse-connections? true)
 	(graceful-shutdown this timeout))
@@ -422,7 +437,8 @@
 	client (ClientBootstrap.
 		 (NioClientSocketChannelFactory.
 		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)))]
+		   (Executors/newCachedThreadPool)
+                   1))]
 
     ;; setup client probes
     (siphon-probes (:name options) (:probes options))

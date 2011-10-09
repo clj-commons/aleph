@@ -9,6 +9,7 @@
 (ns aleph.core)
 
 (defprotocol AlephServer
+  (server-thread-pool [_])
   (stop-server-immediately [_])
   (stop-server [_ timeout])
   (server-probe [_ probe-name])

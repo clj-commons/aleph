@@ -8,7 +8,7 @@
 
 (ns aleph.http.websocket.hixie
   (:use
-    [lamina core]
+    [lamina core executors]
     [aleph formats netty]
     [gloss core io])
   (:import
@@ -73,7 +73,7 @@
 (defn to-websocket-frame [msg]
   (DefaultWebSocketFrame. 0 (bytes->channel-buffer msg)))
 
-(defn websocket-handler [handler ^Channel netty-channel handshake]
+(defn websocket-handler [handler ^Channel netty-channel handshake options]
   (let [[inner outer] (channel-pair)
 	inner (wrap-write-channel inner)]
 
@@ -97,14 +97,14 @@
      
      (message-stage
        (fn [_ msg]
-	 (enqueue outer (from-websocket-frame msg))
-	 true))]
+	 (let [msg (from-websocket-frame msg)]
+           (enqueue outer msg))))]
     ))
 
-(defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response]
+(defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response options]
   (let [channel (.getChannel ctx)
 	pipeline (.getPipeline channel)
-	[handler stage] (websocket-handler handler channel handshake)]
+	[handler stage] (websocket-handler handler channel handshake options)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
     (.replace pipeline "websocket-handshake" "websocket" stage)
     (write-to-channel channel response false)

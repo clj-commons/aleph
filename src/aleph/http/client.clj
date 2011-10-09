@@ -152,8 +152,8 @@
 
        ;; timeout
        (when-not (neg? timeout)
-	 (run-pipeline (timed-channel (- timeout (elapsed)))
-	   read-channel
+	 (run-pipeline nil
+           (wait-stage (- timeout (elapsed)))
 	   (fn [_]
 	     (when (compare-and-set! latch false true)
 	       (error! response
