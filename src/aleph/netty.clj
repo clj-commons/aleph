@@ -347,7 +347,8 @@
   [pipeline-fn options]
   (let [options (merge
 		  {:name (gensym "server.")
-                   :thread-pool {:max-thread-count (.availableProcessors (Runtime/getRuntime))}}
+                   :thread-pool {:max-thread-count (.availableProcessors (Runtime/getRuntime))}
+                   }
 		  options)
         tp (let [tp (merge
                       {:name (str (:name options) ":thread-pool")}
