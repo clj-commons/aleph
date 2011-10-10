@@ -47,10 +47,11 @@
 (defn timeout-response []
   (transform-aleph-response {:status 408} nil))
 
-(defn http-session-handler [handler simple-handler options]
+(defn http-session-handler [simple-handler server-generator options]
   (let [init? (atom false)
 	server-name (:name options)
 	ch (channel)]
+
     (message-stage
       (fn [^Channel netty-channel request]
 	(when (and
@@ -58,7 +59,9 @@
 		(= "100-continue" (.getHeader ^HttpRequest request "Expect")))
 	  (.write netty-channel (continue-response)))
 	(if-not (or @init? (.isChunked ^HttpRequest request) (HttpHeaders/isKeepAlive request))
-	  (run-pipeline (simple-handler netty-channel request)
+
+          ;; one-off request handling
+          (run-pipeline (simple-handler netty-channel request)
 	    :error-handler (fn [ex]
 			     (let [response (if (or
 						  (instance? InterruptedException ex)
@@ -73,6 +76,8 @@
 			       (complete nil))
 	      #(respond netty-channel options (first %) (second %)))
 	    (fn [_] (.close netty-channel)))
+
+          ;; persistent connection or streaming request
 	  (do
 	    (when (compare-and-set! init? false true)
 
@@ -81,7 +86,7 @@
                 (fn [_] (close ch)))
 
               (run-pipeline
-		(receive-in-order (consume-request-stream netty-channel ch handler options)
+		(receive-in-order (consume-request-stream netty-channel ch server-generator options)
 		  (fn [{:keys [request response]}]
 		    (if (instance? Exception response)
 		      (let [response (if (or
@@ -98,7 +103,7 @@
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
-  [handler simple-handler options]
+  [handler simple-handler server-generator options]
   (let [netty-options (:netty options)
 	pipeline ^ChannelPipeline
 	(create-netty-pipeline (:name options)
@@ -108,7 +113,7 @@
 		     (get netty-options "http.maxChunkSize" 16384))
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
-	  :http-request (http-session-handler handler simple-handler options))]
+	  :http-request (http-session-handler simple-handler server-generator options))]
     (when (:websocket options)
       (.addBefore pipeline "http-request" "websocket-handshake" (websocket-handshake-handler handler options)))
     pipeline))
@@ -132,10 +137,11 @@
                   {:name default-name}
                   options
                   {:result-transform second})
-        simple-handler (request-handler handler options)]
+        simple-handler (request-handler handler options)
+        server-generator (http-server-generator handler options)]
 
     (start-server
-      (fn [options] (create-pipeline handler simple-handler options))
+      (fn [options] (create-pipeline handler simple-handler server-generator options))
       options)))
 
 
