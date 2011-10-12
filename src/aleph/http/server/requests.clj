@@ -96,12 +96,14 @@
 		  :error-handler (fn [_])
 		  #(pre-process-request % options)
 		  (fn [request]
-		    (let [result (result-channel)]
-		      (run-pipeline (handler ch request)
-			:error-handler #(error! result %))
-		      (siphon-result
-			(read-channel ch)
-			result))))))
+                    (let [return-result (handler ch request)]
+                      (if (result-channel? return-result)
+                        (let [result (result-channel)]
+                          (on-error return-result #(error! result %))
+                          (siphon-result
+                            (read-channel ch)
+                            result))
+                        (read-channel ch)))))))
 	    options)]
     (fn [netty-channel req]
       (let [req (transform-netty-request req netty-channel options)]
