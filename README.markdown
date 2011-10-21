@@ -12,7 +12,7 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 ```clj
 (defproject my-project "1.0.0"
   :dependencies [[org.clojure/clojure "1.2.1"]
-				 [aleph "0.2.0-beta2"]])
+				 [aleph "0.2.0-rc1"]])
 ```
 
 ## Code examples ##
