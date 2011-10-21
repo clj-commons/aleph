@@ -8,7 +8,7 @@
 
 (ns aleph.http.websocket.hybi
   (:use
-    [lamina core]
+    [lamina core executors]
     [gloss io]
     [aleph formats netty]
     [aleph.http.websocket protocol])
@@ -26,7 +26,7 @@
      :headers {"Sec-WebSocket-Accept"
 	       (-> (str key handshake-magic-string) bytes->sha1 base64-encode)}}))
 
-(defn websocket-handler [handler ^Channel netty-channel handshake]
+(defn websocket-handler [handler ^Channel netty-channel handshake options]
   (let [in (channel)
 	out (channel)]
 
@@ -46,20 +46,24 @@
 	(close in)
 	(close out)))
 
-    (handler
-      (splice
-	(wrap-websocket-channel in)
-	(wrap-write-channel out))
-      handshake)
+    [#(handler
+	(splice
+	  (wrap-websocket-channel in)
+	  (wrap-write-channel out))
+	handshake)
 
-    (message-stage
-      (fn [_ msg]
-	(enqueue in (bytes->byte-buffers msg))))))
+     (message-stage
+       (fn [_ msg]
+	 (let [msg (bytes->byte-buffers msg)]
+           (enqueue in msg))))]
+    ))
 
-(defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response]
+(defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response options]
   (let [channel (.getChannel ctx)
-	pipeline (.getPipeline channel)]
-    (.replace pipeline "websocket-handshake" "websocket" (websocket-handler handler channel handshake))
+	pipeline (.getPipeline channel)
+	[handler stage] (websocket-handler handler channel handshake options)]
+    (.replace pipeline "websocket-handshake" "websocket" ^ChannelUpstreamHandler stage)
     (.remove pipeline "decoder")
     (write-to-channel channel response false)
-    (.remove pipeline "encoder")))
+    (.remove pipeline "encoder")
+    (handler)))

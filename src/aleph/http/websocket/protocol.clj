@@ -86,7 +86,7 @@
   (let [limit (dec (.remaining buf))]
     (loop [idx 0, ary-idx ary-idx]
       (let [val (.get buf idx)]
-	(.put buf idx (bit-xor val (aget mask ary-idx)))
+	(.put buf idx (bit-xor (byte val) (byte (aget mask ary-idx))))
 	(if (= limit idx)
 	  ary-idx
 	  (recur (inc idx) (rem (inc ary-idx) 4)))))))

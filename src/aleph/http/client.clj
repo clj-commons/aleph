@@ -152,8 +152,8 @@
 
        ;; timeout
        (when-not (neg? timeout)
-	 (run-pipeline (timed-channel (- timeout (elapsed)))
-	   read-channel
+	 (run-pipeline nil
+           (wait-stage (- timeout (elapsed)))
 	   (fn [_]
 	     (when (compare-and-set! latch false true)
 	       (error! response
@@ -210,7 +210,7 @@
 		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
 		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
 		      (.replace pipeline "handshake" "response"
-			(message-stage
+                        (message-stage
 			  (fn [netty-channel rsp]
 			    (enqueue ch (hixie/from-websocket-frame rsp))
 			    nil)))

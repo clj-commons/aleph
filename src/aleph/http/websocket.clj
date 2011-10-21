@@ -74,8 +74,8 @@
 	      (let [handshake (transform-handshake msg ch options)
 		    response (websocket-response msg ch options)]
 		(if (hybi? msg)
-		  (hybi/update-pipeline handler ctx ch handshake response)
-		  (hixie/update-pipeline handler ctx ch handshake response)))
+		  (hybi/update-pipeline handler ctx ch handshake response options)
+		  (hixie/update-pipeline handler ctx ch handshake response options)))
 	      (.sendUpstream ctx evt)))
 
 	  (.sendUpstream ctx evt))))))

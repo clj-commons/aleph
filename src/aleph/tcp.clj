@@ -10,7 +10,7 @@
   aleph.tcp
   (:use
     [aleph netty formats]
-    [lamina core trace]
+    [lamina core trace executors]
     [gloss core io])
   (:require
     [clojure.contrib.logging :as log])
@@ -56,6 +56,7 @@
 		(if-not decoder
 		  inner
 		  (splice (decode-channel inner decoder) inner)))]
+    
     (create-netty-pipeline (:name options)
       :channel-open (upstream-stage
 		      (channel-open-stage
@@ -66,8 +67,9 @@
 			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
 			    (run-pipeline nil
 			      :error-handler (fn [ex]
-					       (trace [(:name options) :errors]
-						 {:exception ex, :channel inner}))
+					       (when-not (trace [(:name options) :errors]
+                                                           {:exception ex, :channel inner})
+                                                 (log/error ex)))
 			      (fn [_]
 				(receive-in-order outer
 				  (fn [[returned-result msg]]
@@ -85,7 +87,8 @@
 			   (close outer))))
       :receive (message-stage
 		 (fn [netty-channel msg]
-		   (enqueue outer (receive-encoder msg))
+		   (let [msg (receive-encoder msg)]
+                     (enqueue outer msg))
 		   nil)))))
 
 (defn basic-client-pipeline
@@ -137,12 +140,11 @@
 		  {:name (str "tcp-server:" (:port options))}
 		  options)]
     (start-server
-      (fn []
-	(basic-server-pipeline
-	  handler
-	  bytes->channel-buffer
-	  bytes->byte-buffers
-	  options))
+      #(basic-server-pipeline
+         handler
+         bytes->channel-buffer
+         bytes->byte-buffers
+         %)
       options)))
 
 (defn tcp-client

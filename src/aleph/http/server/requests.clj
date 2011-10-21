@@ -72,6 +72,20 @@
     #(process-chunks % options)
     #(decode-aleph-message % options)))
 
+(defn http-server-generator [handler options]
+  (let [handler (fn [ch req]
+		  (let [c (constant-channel)]
+		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))
+		    (run-pipeline (dissoc req :keep-alive?)
+		      :error-handler (fn [_])
+		      :timeout (when-let [timeout (:timeout options)] (timeout req))
+		      #(pre-process-request % options)
+		      #(handler c %))))]
+    (pipelined-server-generator handler
+      (assoc options
+        :include-request true
+        :response-channel #(wrap-response-channel (constant-channel))))))
+
 (defn request-handler [handler options]
   (let [timeout (:timeout options)
 	f (executor
@@ -82,54 +96,49 @@
 		  :error-handler (fn [_])
 		  #(pre-process-request % options)
 		  (fn [request]
-		    (let [result (result-channel)]
-		      (run-pipeline (handler ch request)
-			:error-handler #(error! result %))
-		      (siphon-result
-			(read-channel ch)
-			result))))))
+                    (let [return-result (handler ch request)]
+                      (if (result-channel? return-result)
+                        (let [result (result-channel)]
+                          (on-error return-result #(error! result %))
+                          (siphon-result
+                            (read-channel ch)
+                            result))
+                        (read-channel ch)))))))
 	    options)]
     (fn [netty-channel req]
       (let [req (transform-netty-request req netty-channel options)]
 	(f [req] (when timeout {:timeout (timeout req)}))))))
 
-(defn consume-request-stream [netty-channel in handler options]
-  (let [[a b] (channel-pair)
-	handler (fn [ch req]
-		  (let [c (constant-channel)]
-		    (receive c #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))
-		    (run-pipeline (dissoc req :keep-alive?)
-		      :error-handler (fn [_])
-		      :timeout (when-let [timeout (:timeout options)] (timeout req))
-		      #(pre-process-request % options)
-		      #(handler c %))))]
+(defn consume-request-stream [^Channel netty-channel in server-generator options]
+  (let [[a b] (channel-pair)]
+
     (run-pipeline in
       read-channel
       (fn [req]
-	(let [keep-alive? (HttpHeaders/isKeepAlive req)
-	      req (transform-netty-request req netty-channel options)
-	      req (assoc req :keep-alive? keep-alive?)]
-	  (if-not (= ::chunked (:body req))
-	    (do
-	      (enqueue a req)
-	      keep-alive?)
-	    (let [chunks (->> in
-			   (take-while* #(instance? HttpChunk %))
-			   (map* #(if (final-netty-message? %)
-				    ::last
-				    (.getContent ^HttpChunk %)))
-			   (take-while* #(not= ::last %)))]
-	      (enqueue a (assoc req :body chunks))
-	      (run-pipeline (closed-result chunks)
-		(fn [_]
-		  keep-alive?))))))
+	(when req
+          (let [keep-alive? (HttpHeaders/isKeepAlive req)
+                req (transform-netty-request req netty-channel options)
+                req (assoc req :keep-alive? keep-alive?)]
+            (if-not (= ::chunked (:body req))
+              (do
+                (enqueue a req)
+                keep-alive?)
+              (let [chunks (->> in
+                             (take-while* #(instance? HttpChunk %))
+                             (map* #(if (final-netty-message? %)
+                                      ::last
+                                      (.getContent ^HttpChunk %)))
+                             (take-while* #(not= ::last %)))]
+                (enqueue a (assoc req :body chunks))
+                (run-pipeline (closed-result chunks)
+                  (fn [_]
+                    keep-alive?)))))))
       (fn [keep-alive?]
 	(if keep-alive?
 	  (restart)
 	  (close a))))
-    (pipelined-server b handler
-      (assoc options
-	:include-request true
-	:response-channel #(wrap-response-channel (constant-channel))))
+
+    (server-generator b)
+    
     a))
 

@@ -8,7 +8,7 @@
 
 (ns aleph.http.websocket.hixie
   (:use
-    [lamina core]
+    [lamina core executors]
     [aleph formats netty]
     [gloss core io])
   (:import
@@ -25,7 +25,7 @@
 ;;;
 
 (defn transform-key [^String k]
-  (/
+  (unchecked-divide
     (long (-> k (.replaceAll "[^0-9]" "") Long/parseLong))
     (long (-> k (.replaceAll "[^ ]" "") .length))))
 
@@ -73,7 +73,7 @@
 (defn to-websocket-frame [msg]
   (DefaultWebSocketFrame. 0 (bytes->channel-buffer msg)))
 
-(defn websocket-handler [handler ^Channel netty-channel handshake]
+(defn websocket-handler [handler ^Channel netty-channel handshake options]
   (let [[inner outer] (channel-pair)
 	inner (wrap-write-channel inner)]
 
@@ -93,18 +93,21 @@
 	(close inner)
 	(close outer)))
 
-    (handler inner handshake)
+    [#(handler inner handshake)
+     
+     (message-stage
+       (fn [_ msg]
+	 (let [msg (from-websocket-frame msg)]
+           (enqueue outer msg))))]
+    ))
 
-    (message-stage
-      (fn [_ msg]
-	(enqueue outer (from-websocket-frame msg))
-	true))))
-
-(defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response]
+(defn update-pipeline [handler ^ChannelHandlerContext ctx ^Channel channel handshake response options]
   (let [channel (.getChannel ctx)
-	pipeline (.getPipeline channel)]
+	pipeline (.getPipeline channel)
+	[handler stage] (websocket-handler handler channel handshake options)]
     (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-    (.replace pipeline "websocket-handshake" "websocket" (websocket-handler handler channel handshake))
+    (.replace pipeline "websocket-handshake" "websocket" ^ChannelUpstreamHandler stage)
     (write-to-channel channel response false)
-    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))))
+    (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
+    (handler)))
 

@@ -38,33 +38,36 @@
 
 ;;;
 
-(def continue-response
+(defn continue-response []
   (DefaultHttpResponse. HttpVersion/HTTP_1_1 HttpResponseStatus/CONTINUE))
 
-(def error-response
+(defn error-response []
   (transform-aleph-response {:status 500} nil))
 
-(def timeout-response
+(defn timeout-response []
   (transform-aleph-response {:status 408} nil))
 
-(defn http-session-handler [handler simple-handler options]
+(defn http-session-handler [simple-handler server-generator options]
   (let [init? (atom false)
 	server-name (:name options)
 	ch (channel)]
+
     (message-stage
       (fn [^Channel netty-channel request]
 	(when (and
 		(instance? HttpRequest request)
 		(= "100-continue" (.getHeader ^HttpRequest request "Expect")))
-	  (.write netty-channel continue-response))
+	  (.write netty-channel (continue-response)))
 	(if-not (or @init? (.isChunked ^HttpRequest request) (HttpHeaders/isKeepAlive request))
-	  (run-pipeline (simple-handler netty-channel request)
+
+          ;; one-off request handling
+          (run-pipeline (simple-handler netty-channel request)
 	    :error-handler (fn [ex]
 			     (let [response (if (or
 						  (instance? InterruptedException ex)
 						  (instance? TimeoutException ex))
-					      timeout-response
-					      error-response)]
+					      (timeout-response)
+					      (error-response))]
 			       (write-to-channel netty-channel response true)
 			       (complete nil)))
 	    (pipeline
@@ -73,26 +76,34 @@
 			       (complete nil))
 	      #(respond netty-channel options (first %) (second %)))
 	    (fn [_] (.close netty-channel)))
+
+          ;; persistent connection or streaming request
 	  (do
 	    (when (compare-and-set! init? false true)
-	      (run-pipeline
-		(receive-in-order (consume-request-stream netty-channel ch handler options)
+
+              (run-pipeline (.getCloseFuture netty-channel)
+                wrap-netty-channel-future
+                (fn [_] (close ch)))
+
+              (run-pipeline
+		(receive-in-order (consume-request-stream netty-channel ch server-generator options)
 		  (fn [{:keys [request response]}]
 		    (if (instance? Exception response)
 		      (let [response (if (or
 					   (instance? InterruptedException response)
 					   (instance? TimeoutException response))
-				       timeout-response
-				       error-response)]
+				       (timeout-response)
+				       (error-response))]
 			(write-to-channel netty-channel response (not (:keep-alive? request))))
 		      (respond netty-channel options (first response) (second response)))))
 		(fn [_] (.close netty-channel))))
+            
 	    (enqueue ch request)))
 	nil))))
 
 (defn create-pipeline
   "Creates an HTTP pipeline."
-  [handler simple-handler options]
+  [handler simple-handler server-generator options]
   (let [netty-options (:netty options)
 	pipeline ^ChannelPipeline
 	(create-netty-pipeline (:name options)
@@ -102,7 +113,7 @@
 		     (get netty-options "http.maxChunkSize" 16384))
 	  :encoder (HttpResponseEncoder.)
 	  :deflater (HttpContentCompressor.)
-	  :http-request (http-session-handler handler simple-handler options))]
+	  :http-request (http-session-handler simple-handler server-generator options))]
     (when (:websocket options)
       (.addBefore pipeline "http-request" "websocket-handshake" (websocket-handshake-handler handler options)))
     pipeline))
@@ -122,48 +133,16 @@
    communicates via complete (i.e. non-streaming) strings."
   [handler options]
   (let [default-name (str "http-server:" (:port options))
-	options (merge options {:result-transform second})
 	options (merge
-		  {:name default-name}
-		  options
-		  {:thread-pool (when (and
-					(contains? options :thread-pool)
-					(not (nil? (:thread-pool options))))
-				  (thread-pool
-				    (merge-with #(if (map? %1) (merge %1 %2) %2)
-				      {:name (str default-name ":thread-pool")}
-				      (:thread-pool options))))})
-	simple-handler (request-handler handler options)
-	server (start-server
-		 #(create-pipeline handler simple-handler options)
-		 options)]
-    (reify AlephServer
-      (stop-server-immediately [_]
-	(async
-	  (try
-	    (stop-server-immediately server)
-	    (finally
-	      (when-let [thread-pool (:thread-pool options)]
-		(shutdown-thread-pool thread-pool))))))
-      (stop-server [this timeout]
-	(async
-	  (try
-	    (stop-server server timeout)
-	    (finally
-	      (when-let [thread-pool (:thread-pool options)]
-		(shutdown-thread-pool thread-pool))))))
-      (server-probe [_ probe-name]
-	(server-probe server probe-name))
-      (netty-channels [_]
-	(netty-channels server))
-      clojure.lang.IFn
-      (invoke [this]
-	(stop-server-immediately this))
-      clojure.lang.Named
-      (getName [_]
-	(name server))
-      (getNamespace [_]
-	nil))))
+                  {:name default-name}
+                  options
+                  {:result-transform second})
+        simple-handler (request-handler handler options)
+        server-generator (http-server-generator handler options)]
+
+    (start-server
+      (fn [options] (create-pipeline handler simple-handler server-generator options))
+      options)))
 
 
 

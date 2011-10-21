@@ -37,7 +37,8 @@
     #(decode-aleph-message % options)))
 
 (defn wrap-response-stream [options in]
-  (let [out (channel)]
+  (let [out (channel)
+        cnt (atom 0)]
     (run-pipeline
       (receive-in-order in
 	(fn [^HttpResponse response]
