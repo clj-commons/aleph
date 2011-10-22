@@ -9,7 +9,6 @@
 (ns ^{:skip-wiki true}
   aleph.netty
   (:use
-    [clojure.contrib.def :only (defvar- defmacro-)]
     [lamina core trace api executors]
     [aleph formats core]
     [gloss core])

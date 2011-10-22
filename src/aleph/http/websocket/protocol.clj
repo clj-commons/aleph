@@ -10,8 +10,7 @@
   (:use
     [gloss core io]
     [lamina core]
-    [aleph formats]
-    [clojure.contrib.def :only (defn-memo)])
+    [aleph formats])
   (:import
     [java.nio
      ByteBuffer]))
@@ -37,17 +36,18 @@
 (def msg-type->opcode
   (zipmap (vals opcode->msg-type) (keys opcode->msg-type)))
 
-(defn-memo body-codec
-  [mask? length]
-  (let [basic-frame (case length
-		      :short (finite-block :uint16)
-		      :long (finite-block :uint64))]
-    (compile-frame
-      (if-not mask?
-	{:data basic-frame}
-	(ordered-map
-	  :mask :int32
-	  :data basic-frame)))))
+(def body-codec
+  (memoize
+    (fn [mask? length]
+      (let [basic-frame (case length
+                          :short (finite-block :uint16)
+                          :long (finite-block :uint64))]
+        (compile-frame
+          (if-not mask?
+            {:data basic-frame}
+            (ordered-map
+              :mask :int32
+              :data basic-frame)))))))
 
 (defcodec websocket-frame
   (compile-frame
