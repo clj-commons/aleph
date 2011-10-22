@@ -13,6 +13,8 @@
     [aleph.core lazy-map]
     [aleph.http core])
   (:import
+    [org.jboss.netty.channel
+     Channel]
     [java.io
      InputStream]
     [org.jboss.netty.handler.codec.http

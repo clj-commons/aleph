@@ -25,7 +25,7 @@
 ;;;
 
 (defn transform-key [^String k]
-  (unchecked-divide
+  (/
     (long (-> k (.replaceAll "[^0-9]" "") Long/parseLong))
     (long (-> k (.replaceAll "[^ ]" "") .length))))
 
