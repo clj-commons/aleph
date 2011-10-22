@@ -12,11 +12,10 @@
     [aleph.http.client :only (http-connection)]
     [lamina core connections trace api]
     [clojure.test]
-    [clojure.contrib.duck-streams :only [pwd]]
     [clojure.contrib.seq :only [indexed]])
   (:require
     [clojure.string :as str]
-    [clojure.contrib.logging :as log])
+    [clojure.tools.logging :as log])
   (:import
     [java.util.concurrent
      TimeoutException]
@@ -30,7 +29,8 @@
 
 (def string-response "String!")
 (def seq-response ["sequence: " 1 " two " 3.0])
-(def file-response (File. (str (pwd) "/test/starry_night.jpg")))
+(def file-response (File. (str (System/getProperty "user.dir")
+                               "/test/starry_night.jpg")))
 (def stream-response "Stream!")
 
 (defn string-handler [request]

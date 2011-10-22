@@ -15,7 +15,7 @@
     [gloss core])
   (:require
     [clj-http.client :as client]
-    [clojure.contrib.logging :as log])
+    [clojure.tools.logging :as log])
   (:import
     [org.jboss.netty.channel
      Channel
@@ -172,7 +172,7 @@
 				(when-not (trace error-probe
 					    {:exception ex
 					     :address (-> evt .getChannel channel-origin)})
-				  (log/error nil ex)))
+				  (log/error ex)))
 			      nil))
 	    traffic-handler (fn [probe-suffix]
 			      (let [traffic-probe (canonical-probe [pipeline-name :traffic probe-suffix])]

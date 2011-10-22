@@ -17,7 +17,7 @@
     [lamina.core.pipeline :only (success-result)]
     [clojure.pprint])
   (:require
-    [clojure.contrib.logging :as log]
+    [clojure.tools.logging :as log]
     [clojure.string :as str])
   (:import
     [org.jboss.netty.handler.codec.http

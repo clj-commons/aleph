@@ -13,7 +13,7 @@
     [lamina core trace executors]
     [gloss core io])
   (:require
-    [clojure.contrib.logging :as log])
+    [clojure.tools.logging :as log])
   (:import
     [org.jboss.netty.channel
      Channel
