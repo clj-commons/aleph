@@ -32,9 +32,8 @@
       (map
 	#(let [pair (str/split % inner-separator)]
 	   (list (first pair) (or (second pair) ""))))
-      (partition 2)
-      (map #(apply hash-map %))
-      (into {}))))
+      (apply concat)
+      (apply hash-map))))
 
 (defn cookie->hash [cookie]
   (string->hash cookie #"[;]" #"[=]"))
