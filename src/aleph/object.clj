@@ -38,9 +38,8 @@
 		  {:name (str "object-server:" (:port options))}
 		  options)]
     (start-server
-      #(server-pipeline
-	 handler
-	 %)
+      (fn [options]
+        #(server-pipeline handler options))
       options)))
 
 (defn object-client

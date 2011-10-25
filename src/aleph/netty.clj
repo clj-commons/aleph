@@ -379,7 +379,7 @@
 	options
 	(canonical-probe [(:name options) :connections])
 	refuse-connections?
-	#(pipeline-fn options)))
+	(pipeline-fn options)))
 
     ;; add parent channel to channel-group
     (.add channel-group (.bind server (InetSocketAddress. port)))
