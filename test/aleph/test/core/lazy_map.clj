@@ -34,3 +34,9 @@
 (deftest apply-to-3
   (is (thrown-with-msg? RuntimeException #"Wrong number of args \(3\) passed to: LazyMap"
         (apply (make-lazy-map) [:one :too :many]))))
+
+(deftest conj-test
+  (is (conj (make-lazy-map) [3 4])))
+
+(deftest merge-test
+  (is (= :bar (:foo (merge (make-lazy-map) {:foo :bar})))))
