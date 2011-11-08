@@ -421,16 +421,33 @@
    "readWriteFair" true,
    "connectTimeoutMillis" 3000})
 
+(defn parse-url [url]
+  (let [url-parsed (java.net.URL. url)]
+    {:scheme (.getProtocol url-parsed)
+     :server-name (.getHost url-parsed)
+     :server-port (.getPort url-parsed)
+     :uri (.getPath url-parsed)
+     :user-info (.getUserInfo url-parsed)
+     :query-string (.getQuery url-parsed)}))
+
 (defn split-url [options]
-  (if (:url options)
-    ((client/wrap-url identity) options)
+  (if-let [url (:url options)]
+    (-> options (dissoc :url) (merge (parse-url url)))
     options))
+
+(defn get-port [options]
+  (let [port (or (:port options) (:server-port options))]
+    (if (= port -1)
+      (case (:scheme options)
+        "http"  80
+        "https" 443)
+      port)))
 
 (defn create-client
   [pipeline-fn send-encoder options]
   (let [options (split-url options)
 	host (or (:host options) (:server-name options))
-	port (or (:port options) (:server-port options))
+	port (get-port options)
 	[inner outer] (channel-pair)
 	inner (wrap-write-channel inner)
 	channel-group (DefaultChannelGroup.)
