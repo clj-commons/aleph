@@ -13,6 +13,11 @@
     [java.net
      URI]))
 
+(defn get-host [^String host ^Integer port]
+  (if (= port -1)
+    host
+    (str host ":" port)))
+
 (defn transform-aleph-request [request scheme ^String host ^Integer port options]
   (let [uri (URI. scheme nil host port (:uri request) (:query-string request) (:fragment request))
         req (DefaultHttpRequest.
@@ -26,7 +31,7 @@
 		  "?")
 		(.getQuery uri)))
 	body (:body request)]
-    (.setHeader req "Host" (str host ":" port))
+    (.setHeader req "Host" (get-host host port))
     (.setHeader req "Accept-Encoding" "gzip")
     (transform-aleph-message req request options)))
 
