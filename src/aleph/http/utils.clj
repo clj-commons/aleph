@@ -129,7 +129,8 @@
        client/wrap-accept
        client/wrap-query-params
        client/wrap-basic-auth
-       client/wrap-method))
+       client/wrap-method
+       client/wrap-url))
    request))
 
 (defn wrap-response [response]
