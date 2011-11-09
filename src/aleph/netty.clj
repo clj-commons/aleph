@@ -426,6 +426,17 @@
     ((client/wrap-url identity) options)
     options))
 
+(def nio-channel-factory (atom nil))
+
+(defn get-nio-channel-factory
+  "NioClientSocketChannelFactory singleton"
+  []
+  (or
+    @nio-channel-factory
+    (reset! nio-channel-factory (NioClientSocketChannelFactory.
+	    (Executors/newCachedThreadPool)
+	    (Executors/newCachedThreadPool)))))
+
 (defn create-client
   [pipeline-fn send-encoder options]
   (let [options (split-url options)
@@ -434,11 +445,7 @@
 	[inner outer] (channel-pair)
 	inner (wrap-write-channel inner)
 	channel-group (DefaultChannelGroup.)
-	client (ClientBootstrap.
-		 (NioClientSocketChannelFactory.
-		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)
-                   1))]
+	client (ClientBootstrap. (get-nio-channel-factory))]
 
     ;; setup client probes
     (siphon-probes (:name options) (:probes options))
@@ -474,8 +481,7 @@
 	      (close outer)
 	      (run-pipeline
 		(.close channel-group)
-		wrap-netty-channel-group-future
-		(fn [_] (future (.releaseExternalResources client))))))
+		wrap-netty-channel-group-future)))
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer
