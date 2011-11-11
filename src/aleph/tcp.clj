@@ -140,11 +140,12 @@
 		  {:name (str "tcp-server:" (:port options))}
 		  options)]
     (start-server
-      #(basic-server-pipeline
-         handler
-         bytes->channel-buffer
-         bytes->byte-buffers
-         %)
+      (fn [options]
+        #(basic-server-pipeline
+           handler
+           bytes->channel-buffer
+           bytes->byte-buffers
+           options))
       options)))
 
 (defn tcp-client
