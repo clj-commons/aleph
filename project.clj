@@ -8,7 +8,7 @@
                  [org.jboss.netty/netty "3.2.5.Final"]
                  [clj-http "0.1.3"]
                  [lamina "0.4.0-rc2"]
-                 [gloss "0.2.0-rc1"]
+                 [gloss "0.2.0-rc2"]
                  [user-agent-utils "1.2.3"]
                  [potemkin "0.1.0"]]
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
