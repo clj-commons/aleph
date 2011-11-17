@@ -431,11 +431,9 @@
 (defn get-nio-channel-factory
   "NioClientSocketChannelFactory singleton"
   []
-  (or
-    @nio-channel-factory
-    (reset! nio-channel-factory (NioClientSocketChannelFactory.
-	    (Executors/newCachedThreadPool)
-	    (Executors/newCachedThreadPool)))))
+  (swap! nio-channel-factory #(or % (NioClientSocketChannelFactory. 
+                                      (Executors/newCachedThreadPool)
+                                      (Executors/newCachedThreadPool)))))
 
 (defn create-client
   [pipeline-fn send-encoder options]
