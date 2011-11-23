@@ -14,5 +14,5 @@
                  [lamina "0.4.1-SNAPSHOT"]
                  [gloss "0.2.1-SNAPSHOT"]
                  [user-agent-utils "1.2.3"]
-                 [potemkin "0.1.1-SNAPSHOT"]]
+                 [potemkin "0.1.0"]]
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
