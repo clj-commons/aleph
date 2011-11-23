@@ -24,6 +24,8 @@
      ChannelHandlerContext
      MessageEvent
      ChannelEvent
+     ChannelState
+     ChannelStateEvent
      ExceptionEvent
      ChannelPipelineFactory
      Channels
@@ -293,10 +295,21 @@
   [^ChannelGroup channel-group options
    connections-probe refuse-connections?
    pipeline-fn & args]
-  (let [connection-count (atom 0)]
+  (let [connection-count (atom 0)
+        close-callback (or (options :close-callback) (fn []))]
     (reify ChannelPipelineFactory
       (getPipeline [_]
 	(let [pipeline ^ChannelPipeline (apply pipeline-fn args)]
+	  (.addLast pipeline
+	    "close-handler"
+	    (upstream-stage
+  	    (fn [evt]
+  	      (when
+  	        (and (instance? ChannelStateEvent evt)
+  	             (= (.getState evt) ChannelState/OPEN)
+  	             (= (.getValue evt) false))
+  	            (close-callback))
+  	      evt)))
 	  (.addFirst pipeline
 	    "channel-listener"
 	    (if (and refuse-connections? @refuse-connections?)
@@ -451,7 +464,14 @@
     (.setPipelineFactory client
       (create-pipeline-factory
 	channel-group
-	options
+	(merge options
+	  {:close-callback
+	    (fn []
+	      (close inner)
+	      (close outer)
+	      (run-pipeline (.close channel-group)
+		      wrap-netty-channel-group-future
+		      (fn [_] (future (.releaseExternalResources client)))))})
 	(canonical-probe [(:name options) :connections])
 	nil
 	pipeline-fn
@@ -467,15 +487,6 @@
 	(let [write-queue (create-write-queue
 			    netty-channel
 			    #(write-to-channel netty-channel nil true))]
-	  (run-pipeline (.getCloseFuture netty-channel)
-	    wrap-netty-channel-future
-	    (fn [_]
-	      (close inner)
-	      (close outer)
-	      (run-pipeline
-		(.close channel-group)
-		wrap-netty-channel-group-future
-		(fn [_] (future (.releaseExternalResources client))))))
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer
