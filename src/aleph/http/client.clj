@@ -71,7 +71,7 @@
   [options]
   (let [options (process-options options)
 	options (merge
-		  {:name (str "http-connection:" (:server-name options) ":" (gensym ""))}
+		  {:name (str "http-connection:" (:server-name options))}
 		  options)
 	requests (channel)
 	client (create-client
