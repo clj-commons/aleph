@@ -80,7 +80,6 @@
 (defn- process-options [options]
   (-> options
     split-url
-    (update-in [:server-port] #(or % 80))
     (update-in [:keep-alive?] #(or % true))))
 
 (defn http-connection
