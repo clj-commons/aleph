@@ -421,6 +421,14 @@
    "readWriteFair" true,
    "connectTimeoutMillis" 3000})
 
+(defn get-port [options]
+  (let [port (or (:port options) (:server-port options))]
+    (if (= port -1)
+      (case (:scheme options)
+        "http"  80
+        "https" 443)
+      port)))
+
 (defn parse-url [url]
   (let [url-parsed (java.net.URL. url)]
     {:scheme (.getProtocol url-parsed)
@@ -443,13 +451,6 @@
   (swap! nio-channel-factory #(or % (NioClientSocketChannelFactory. 
                                       (Executors/newCachedThreadPool)
                                       (Executors/newCachedThreadPool)))))
-(defn get-port [options]
-  (let [port (or (:port options) (:server-port options))]
-    (if (= port -1)
-      (case (:scheme options)
-        "http"  80
-        "https" 443)
-      port)))
 
 (defn create-client
   [pipeline-fn send-encoder options]
