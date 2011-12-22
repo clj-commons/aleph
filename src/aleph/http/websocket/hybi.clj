@@ -47,9 +47,10 @@
 	(close out)))
 
     [#(handler
-	(splice
-	  (wrap-websocket-channel in)
-	  (wrap-write-channel out))
+	(let [out (wrap-write-channel out)]
+          (splice
+            (wrap-websocket-channel in out)
+            out))
 	handshake)
 
      (message-stage
