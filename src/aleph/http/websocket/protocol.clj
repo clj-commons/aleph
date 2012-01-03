@@ -108,7 +108,7 @@
     (loop [bufs bufs, ary-idx 0]
       (when-not (empty? bufs)
 	(let [ary-idx (mask-buffer mask ary-idx (first bufs))]
-	  (recur (rest bufs) ary-idx))))
+	  (recur (rest bufs) (inc ary-idx)))))
     bufs))
 
 (defn pre-process-frame [frame]

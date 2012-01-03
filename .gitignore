@@ -5,5 +5,5 @@ classes
 .DS_Store
 push
 autodoc
-.lein-failures
+.lein*
 dump.rdb
