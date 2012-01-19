@@ -29,7 +29,8 @@
      Channels
      ChannelPipeline
      ChannelFuture
-     ChannelFutureListener]
+     ChannelFutureListener
+     SimpleChannelUpstreamHandler]
     [org.jboss.netty.buffer
      ChannelBuffer]
     [org.jboss.netty.channel.group
@@ -289,14 +290,25 @@
    "readWriteFair" true,
    "child.tcpNoDelay" true})
 
+(defn create-simple-channel-upstream-handler [close-callback]
+  (proxy [SimpleChannelUpstreamHandler] []
+    (channelClosed [ctx e]
+      (close-callback e))
+    (exceptionCaught [ctx e]
+      (-> e .getChannel .close))))
+
 (defn create-pipeline-factory
   [^ChannelGroup channel-group options
    connections-probe refuse-connections?
-   pipeline-fn & args]
+   close-callback pipeline-fn & args]
   (let [connection-count (atom 0)]
     (reify ChannelPipelineFactory
       (getPipeline [_]
 	(let [pipeline ^ChannelPipeline (apply pipeline-fn args)]
+    (when-not (nil? close-callback)
+      (.addLast pipeline
+        "close-listener"
+        (create-simple-channel-upstream-handler close-callback)))
 	  (.addFirst pipeline
 	    "channel-listener"
 	    (if (and refuse-connections? @refuse-connections?)
@@ -378,6 +390,7 @@
 	options
 	(canonical-probe [(:name options) :connections])
 	refuse-connections?
+	nil
 	(pipeline-fn options)))
 
     ;; add parent channel to channel-group
@@ -476,6 +489,11 @@
 	options
 	(canonical-probe [(:name options) :connections])
 	nil
+	(fn [_]
+    (close inner)
+    (close outer)
+    (run-pipeline (.close channel-group)
+      wrap-netty-channel-group-future))
 	pipeline-fn
 	outer))
 
@@ -491,12 +509,7 @@
 			    #(write-to-channel netty-channel nil true))]
 	  (run-pipeline (.getCloseFuture netty-channel)
 	    wrap-netty-channel-future
-	    (fn [_]
-	      (close inner)
-	      (close outer)
-	      (run-pipeline
-		(.close channel-group)
-		wrap-netty-channel-group-future)))
+	    )
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer
