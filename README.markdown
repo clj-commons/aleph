@@ -64,7 +64,7 @@ Making a simple chat client is trivial.  In this, we assume that the first messa
 ```clj
 (use 'lamina.core 'aleph.http)
 
-(def broadcast-channel (channel))
+(def broadcast-channel (permanent-channel))
 
 (defn chat-handler [ch handshake]
   (receive ch
