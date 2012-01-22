@@ -6,7 +6,9 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.core.lazy-map)
+(ns aleph.core.lazy-map
+  (:import java.util.Map$Entry)
+  (:import clojure.lang.IPersistentVector))
 
 (defmacro delayed [f]
   `(let [f# ~f]
@@ -28,6 +30,14 @@
     (and
       (map? x)
       (= x (into {} this))))
+  (cons [this o]
+    (cond
+      (instance? Map$Entry o)
+        (let [[a b] o] (assoc this a b))
+      (instance? IPersistentVector o)
+        (do (assert (= 2 (count o))) (let [[a b] o] (assoc this a b)))
+      :else
+        (reduce conj this o)))
   clojure.lang.Counted
   (count [this]
     (count (seq this)))
