@@ -35,10 +35,10 @@
 
 
 (defn websocket-handshake? [^HttpRequest request]
-  (let [connection-header (.getHeader request "connection") ]
-    (and connection-header
-         (= "upgrade" (.toLowerCase connection-header))
-         (= "websocket" (.toLowerCase (.getHeader request "upgrade"))))))
+  (when-let [connection-header (.toLowerCase (.getHeader request "connection")) ]
+    (let [connection-params (set (clojure.string/split connection-header #", ")) ]
+           (and (contains? connection-params "upgrade")
+                (= "websocket" (.toLowerCase (.getHeader request "upgrade")))))))
 
 (defn hybi? [^HttpRequest request]
   (.containsHeader request "Sec-WebSocket-Version"))
