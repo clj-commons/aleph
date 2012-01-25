@@ -1,4 +1,4 @@
-Aleph is a Clojure framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina). 
+Aleph is a Clojure framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina).
 
 
 ### What is Aleph good for? ###
@@ -12,7 +12,7 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 ```clj
 (defproject my-project "1.0.0"
   :dependencies [[org.clojure/clojure "1.2.1"]
-				 [aleph "0.2.0-rc1"]])
+				 [aleph "0.2.0"]])
 ```
 
 ## Code examples ##
@@ -24,7 +24,7 @@ Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/r
 
 ```clj
 (use 'lamina.core 'aleph.http)
-        
+
 (defn hello-world [channel request]
   (enqueue channel
     {:status 200
@@ -43,12 +43,12 @@ This snippet prints out a never-ending sequence of tweets:
 
 ```clj
 (use 'lamina.core 'aleph.http 'aleph.formats)
-        
+
 (let [ch (:body
            (sync-http-request
              {:method :get
               :basic-auth ["aleph_example" "_password"]
-              :url "http://stream.twitter.com/1/statuses/sample.json"
+              :url "https://stream.twitter.com/1/statuses/sample.json"
               :delimiters ["\r"]}))]
   (doseq [tweet (map decode-json (lazy-channel-seq ch))]
     (prn tweet)))
@@ -82,7 +82,7 @@ Here is a basic echo server:
 
 ```clj
 (use 'lamina.core 'aleph.tcp)
-        
+
 (defn echo-handler [channel client-info]
   (siphon channel channel))
 

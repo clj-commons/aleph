@@ -11,8 +11,7 @@
     [aleph http]
     [aleph.http.client :only (http-connection)]
     [lamina core connections trace api]
-    [clojure.test]
-    [clojure.contrib.seq :only [indexed]])
+    [clojure.test])
   (:require
     [clojure.string :as str]
     [clojure.tools.logging :as log])
@@ -189,7 +188,7 @@
 
 (deftest test-single-requests
   (with-handler basic-handler
-    (doseq [[index [path result]] (indexed expected-results)]
+    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
       (let [client (default-http-client)]
 	(try
 	  (is (= result (wait-for-request client path)))
@@ -199,7 +198,7 @@
 (deftest test-multiple-requests
   (with-handler basic-handler
     (let [client (default-http-client)]
-      (doseq [[index [path result]] (indexed expected-results)]
+      (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
 	(is (= result (wait-for-request client path))))
       (close-connection client))))
 

@@ -378,7 +378,7 @@
 	options
 	(canonical-probe [(:name options) :connections])
 	refuse-connections?
-	#(pipeline-fn options)))
+	(pipeline-fn options)))
 
     ;; add parent channel to channel-group
     (.add channel-group (.bind server (InetSocketAddress. port)))
@@ -421,24 +421,46 @@
    "readWriteFair" true,
    "connectTimeoutMillis" 3000})
 
+(defn get-port [options]
+  (let [port (or (:port options) (:server-port options))]
+    (if (= port -1)
+      (case (:scheme options)
+        "http"  80
+        "https" 443)
+      port)))
+
+(defn parse-url [url]
+  (let [url-parsed (java.net.URL. url)]
+    {:scheme (.getProtocol url-parsed)
+     :server-name (.getHost url-parsed)
+     :server-port (.getPort url-parsed)
+     :uri (.getPath url-parsed)
+     :user-info (.getUserInfo url-parsed)
+     :query-string (.getQuery url-parsed)}))
+
 (defn split-url [options]
-  (if (:url options)
-    ((client/wrap-url identity) options)
+  (if-let [url (:url options)]
+    (-> options (dissoc :url) (merge (parse-url url)))
     options))
+
+(def nio-channel-factory (atom nil))
+
+(defn get-nio-channel-factory
+  "NioClientSocketChannelFactory singleton"
+  []
+  (swap! nio-channel-factory #(or % (NioClientSocketChannelFactory. 
+                                      (Executors/newCachedThreadPool)
+                                      (Executors/newCachedThreadPool)))))
 
 (defn create-client
   [pipeline-fn send-encoder options]
   (let [options (split-url options)
 	host (or (:host options) (:server-name options))
-	port (or (:port options) (:server-port options))
+	port (get-port options)
 	[inner outer] (channel-pair)
 	inner (wrap-write-channel inner)
 	channel-group (DefaultChannelGroup.)
-	client (ClientBootstrap.
-		 (NioClientSocketChannelFactory.
-		   (Executors/newCachedThreadPool)
-		   (Executors/newCachedThreadPool)
-                   1))]
+	client (ClientBootstrap. (get-nio-channel-factory))]
 
     ;; setup client probes
     (siphon-probes (:name options) (:probes options))
@@ -474,8 +496,7 @@
 	      (close outer)
 	      (run-pipeline
 		(.close channel-group)
-		wrap-netty-channel-group-future
-		(fn [_] (future (.releaseExternalResources client))))))
+		wrap-netty-channel-group-future)))
 	  (.add channel-group netty-channel)
 	  (run-pipeline
 	    (receive-in-order outer

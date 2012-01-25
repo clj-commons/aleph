@@ -10,7 +10,8 @@
   (:use
     [gloss core io]
     [lamina core]
-    [aleph formats])
+    [aleph formats]
+    [gloss.core.codecs :only (identity-codec)])
   (:import
     [java.nio
      ByteBuffer]))
@@ -36,35 +37,43 @@
 (def msg-type->opcode
   (zipmap (vals opcode->msg-type) (keys opcode->msg-type)))
 
+(def uint16-and-mask
+  (compile-frame :uint16
+    #(- % 4)
+    #(+ % 4)))
+
+(def uint64-and-mask
+  (compile-frame :uint64
+    #(- % 4)
+    #(+ % 4)))
+
 (def body-codec
   (memoize
-    (fn [mask? length]
-      (let [basic-frame (case length
-                          :short (finite-block :uint16)
-                          :long (finite-block :uint64))]
-        (compile-frame
-          (if-not mask?
-            {:data basic-frame}
-            (ordered-map
-              :mask :int32
-              :data basic-frame)))))))
+    (fn [mask? length type]
+      (compile-frame
+        (case length
+          :short (finite-frame
+                   (if mask? uint16-and-mask :uint16)
+                   [(when mask? :int32) identity-codec])
+          :long (finite-frame
+                  (if mask? uint64-and-mask :uint64)
+                  [(when mask? :int32) identity-codec])
+          [(when mask? :int32) (finite-block length)])
+        (fn [m] [(:mask m) (:data m)])
+        (fn [[mask data :as v]] {:mask mask, :data data, :type type})))))
 
 (defcodec websocket-frame
   (compile-frame
     (header header-codec
       
-      (fn [{:keys [fin opcode mask length]}]
-	(case length
-	  126 (body-codec mask :short)
-	  127 (body-codec mask :long)
-	  (compile-frame
-	    (if-not mask
-	      {:data (finite-block length)}
-	      (ordered-map
-		:mask :int32
-		:data (finite-block length))))))
+      (fn [{:keys [fin opcode mask length] :as m}]
+	(let [type (opcode->msg-type opcode)]
+          (case length
+            126 (body-codec mask :short type)
+            127 (body-codec mask :long type)
+            (body-codec mask length type))))
 
-      (fn [{:keys [data mask type final?]}]
+      (fn [{:keys [data mask type final?] :as m}]
 	(let [byte-length (byte-count data)]
 	  {:fin (or final? true)
 	   :rsv1 false
@@ -72,9 +81,10 @@
 	   :rsv3 false
 	   :opcode (msg-type->opcode (or type :binary))
 	   :mask (boolean mask)
-	   :length (if (< byte-length 126)
-		     byte-length
-		     127)})))))
+	   :length (cond
+                     (< byte-length 126) byte-length
+                     (< byte-length 0xFFFF) 126
+		     :else 127)})))))
 
 (defn mask->byte-array [mask]
   (->> [24 16 8 0]
@@ -98,7 +108,7 @@
     (loop [bufs bufs, ary-idx 0]
       (when-not (empty? bufs)
 	(let [ary-idx (mask-buffer mask ary-idx (first bufs))]
-	  (recur (rest bufs) ary-idx))))
+	  (recur (rest bufs) (inc ary-idx)))))
     bufs))
 
 (defn pre-process-frame [frame]
@@ -128,15 +138,17 @@
       {:type :binary
        :data (bytes->byte-buffers data)})))
 
-(defn wrap-websocket-channel [src]
+(defn wrap-websocket-channel [src write-channel]
   (let [dst (channel)
 	frames (decode-channel src websocket-frame)]
     (run-pipeline nil
       :error-handler (fn [_] (close dst))
       (read-merge #(read-channel frames)
 	(fn [old-frame new-frame]
-	  (let [new-frame (pre-process-frame new-frame)]
-	    (enqueue dst (post-process-frame new-frame)))))
+          (if (= :close (:type new-frame))
+            (enqueue write-channel {:type :close})
+            (let [new-frame (pre-process-frame new-frame)]
+              (enqueue dst (post-process-frame new-frame))))))
       (fn [_]
 	(restart)))
     (on-closed dst #(close frames))

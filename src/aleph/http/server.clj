@@ -136,12 +136,13 @@
 	options (merge
                   {:name default-name}
                   options
-                  {:result-transform second})
-        simple-handler (request-handler handler options)
-        server-generator (http-server-generator handler options)]
+                  {:result-transform second})]
 
     (start-server
-      (fn [options] (create-pipeline handler simple-handler server-generator options))
+      (fn [options]
+        (let [simple-handler (request-handler handler options)
+              server-generator (http-server-generator handler options)]
+          #(create-pipeline handler simple-handler server-generator options)))
       options)))
 
 

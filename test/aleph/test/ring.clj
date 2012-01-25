@@ -53,7 +53,7 @@
 		 (get-request-value request keys)))})))
 
 (defmacro with-server [keys & body]
-  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8080})]
+  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8080, :thread-pool {}})]
      (try
        ~@body
        (finally
