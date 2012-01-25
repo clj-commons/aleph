@@ -12,20 +12,25 @@
     [lamina.core]
     [aleph.http core]
     [aleph.http.server requests responses]
-    [aleph formats netty]
-    [gloss core io])
-  (:require
-    [aleph.http.websocket.hybi :as hybi]
-    [aleph.http.websocket.hixie :as hixie])
+    [aleph formats netty])
   (:import
-    
     [org.jboss.netty.handler.codec.http
      HttpRequest
      HttpResponse
      DefaultHttpResponse
      DefaultHttpRequest
      HttpVersion
-     HttpResponseStatus]
+     HttpResponseStatus
+     HttpChunkAggregator]
+    [org.jboss.netty.handler.codec.http.websocketx
+     WebSocketFrame
+     CloseWebSocketFrame
+     PingWebSocketFrame
+     PongWebSocketFrame
+     TextWebSocketFrame
+     BinaryWebSocketFrame
+     WebSocketServerHandshaker
+     WebSocketServerHandshakerFactory]
     [org.jboss.netty.buffer
      ChannelBuffers]
     [org.jboss.netty.channel
@@ -33,49 +38,72 @@
      ChannelHandlerContext
      ChannelUpstreamHandler]))
 
+(set! *warn-on-reflection* true)
 
-(defn websocket-handshake? [^HttpRequest request]
-  (let [connection-header (.getHeader request "connection") ]
-    (and connection-header
-         (= "upgrade" (.toLowerCase connection-header))
-         (= "websocket" (.toLowerCase (.getHeader request "upgrade"))))))
+(defn create-handshaker [^HttpRequest req]
+  (when (= "Upgrade" (.getHeader req "Connection"))
+    (->
+      (WebSocketServerHandshakerFactory.
+        (str "ws://" (.getHeaders req "Host") (.getUri req))
+        nil
+        false)
+      (.newHandshaker req))))
 
-(defn hybi? [^HttpRequest request]
-  (.containsHeader request "Sec-WebSocket-Version"))
+(defn automatic-reply [^Channel ch ^WebSocketServerHandshaker handshaker ^WebSocketFrame frame]
+  (cond
+    (instance? CloseWebSocketFrame frame)
+    (do
+      (.close handshaker ch frame)
+      true)
 
-(defn transform-handshake [^HttpRequest request netty-channel options]
-  (.setHeader request "content-type" "application/octet-stream")
-  (assoc (transform-netty-request request netty-channel options)
-    :websocket true))
+    (instance? PingWebSocketFrame frame)
+    (do
+      (.write ch (PongWebSocketFrame. (.getBinaryData frame)))
+      true)
 
-(defn websocket-response [^HttpRequest netty-request netty-channel options]
-  (let [request (transform-handshake netty-request netty-channel options)
-	response (if (hybi? netty-request)
-		   (hybi/websocket-response request)
-		   (hixie/websocket-response request))]
-    (transform-aleph-response
-      (update-in response [:headers]
-	#(assoc %
-	   "Upgrade" "WebSocket"
-	   "Connection" "Upgrade"))
-      options)))
+    :else
+    false))
+
+(defn unwrap-frame [^WebSocketFrame frame]
+  (if (instance? TextWebSocketFrame frame)
+    (.getText ^TextWebSocketFrame frame)
+    (.getBinaryData frame)))
+
+(defn wrap-frame [x]
+  (if (string? x)
+    (TextWebSocketFrame. ^String x)
+    (BinaryWebSocketFrame. (bytes->channel-buffer x))))
 
 (defn websocket-handshake-handler [handler options]
   (let [[inner outer] (channel-pair)
-	inner (wrap-write-channel inner)]
+	inner (wrap-write-channel inner)
+        latch (atom false)
+        handshaker (atom nil)]
 
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
-	
-	(if-let [msg (message-event evt)]
-	  
-	  (let [ch ^Channel (.getChannel ctx)]
-	    (if (websocket-handshake? msg)
-	      (let [handshake (transform-handshake msg ch options)
-		    response (websocket-response msg ch options)]
-		(if (hybi? msg)
-		  (hybi/update-pipeline handler ctx ch handshake response options)
-		  (hixie/update-pipeline handler ctx ch handshake response options)))
-	      (.sendUpstream ctx evt)))
+	(let [netty-channel (.getChannel ctx)]
+          (if-let [msg (message-event evt)]
+           (if (compare-and-set! latch false true)
+             (if-let [h (create-handshaker msg)]
+               (do
+                 (reset! handshaker h)
+                 (-> ctx .getPipeline (.addFirst "workaround" (HttpChunkAggregator. 1)))
+                 (.handshake ^WebSocketServerHandshaker @handshaker netty-channel msg)
+                 (receive-all outer
+                   (fn [[returned-result msg]]
+                     (when msg
+                       (siphon-result
+                         (write-to-channel netty-channel (wrap-frame msg) false)
+                         returned-result))))
+                 (handler
+                   inner
+                   (assoc (transform-netty-request msg netty-channel options)
+                     :websocket true)))
+               (.sendUpstream ctx evt))
+             (if @handshaker
+               (when-not (automatic-reply netty-channel @handshaker msg)
+                 (enqueue outer (unwrap-frame msg)))
+               (.sendUpstream ctx evt)))
 
-	  (.sendUpstream ctx evt))))))
+           (.sendUpstream ctx evt)))))))

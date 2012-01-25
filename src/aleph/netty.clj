@@ -172,7 +172,7 @@
 				(when-not (trace error-probe
 					    {:exception ex
 					     :address (-> evt .getChannel channel-origin)})
-				  (log/error ex)))
+				  (log/error ex "Unhandled error in Netty pipeline.")))
 			      nil))
 	    traffic-handler (fn [probe-suffix]
 			      (let [traffic-probe (canonical-probe [pipeline-name :traffic probe-suffix])]
@@ -507,19 +507,21 @@
 	(let [write-queue (create-write-queue
 			    netty-channel
 			    #(write-to-channel netty-channel nil true))]
+          
 	  (run-pipeline (.getCloseFuture netty-channel)
 	    wrap-netty-channel-future
 	    )
 	  (.add channel-group netty-channel)
-	  (run-pipeline
-	    (receive-in-order outer
-	      (fn [[returned-result msg]]
-		(enqueue write-queue
-		  (let [result (write-to-channel netty-channel (send-encoder msg) false)]
-		    (siphon-result result returned-result)
-		    result))))
-	    (fn [_]
-	      (close write-queue)))
+          
+	  (receive-all outer
+            (fn [[returned-result msg]]
+              (when returned-result
+                (enqueue write-queue
+                  (let [result (write-to-channel netty-channel (send-encoder msg) false)]
+                    (siphon-result result returned-result)
+                    result)))))
+          (on-drained outer #(close write-queue))
+          
 	  inner)))))
 
 ;;;

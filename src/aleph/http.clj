@@ -15,8 +15,7 @@
   (:require
     [aleph.http.server :as server]
     [aleph.http.client :as client]
-    [aleph.http.utils :as utils]
-    [aleph.http.policy-file :as policy])
+    [aleph.http.utils :as utils])
   (:import
     [java.io InputStream]))
 
@@ -24,7 +23,6 @@
 (import-fn client/http-client)
 (import-fn client/pipelined-http-client)
 (import-fn client/http-request)
-(import-fn client/websocket-client)
 
 (defn sync-http-request
   "A synchronous version of http-request.  Halts the thread until the response has returned,
@@ -33,8 +31,6 @@
      (sync-http-request request -1))
   ([request timeout]
      @(http-request request timeout)))
-
-(import-fn policy/start-policy-file-server)
 
 (defn wrap-aleph-handler
   "Allows for an asynchronous handler to be used within a largely synchronous application.

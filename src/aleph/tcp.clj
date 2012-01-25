@@ -65,21 +65,17 @@
 					      netty-channel
 					      #(write-to-channel netty-channel nil true))]
 			    (handler inner {:remote-addr (.getRemoteAddress netty-channel)})
-			    (run-pipeline nil
-			      :error-handler (fn [ex]
-					       (when-not (trace [(:name options) :errors]
-                                                           {:exception ex, :channel inner})
-                                                 (log/error ex)))
-			      (fn [_]
-				(receive-in-order outer
-				  (fn [[returned-result msg]]
-				    (enqueue write-queue
-				      (let [result (write-to-channel netty-channel (send-encoder msg) false)]
-					(siphon-result result returned-result)
-					result))
-				    nil)))
-			      (fn [_]
-				(close write-queue)))))))
+			    (receive-all outer
+                              (fn [[returned-result msg]]
+                                (when returned-result
+                                  (enqueue write-queue
+                                    (let [result (write-to-channel netty-channel
+                                                   (when-not (nil? msg) (send-encoder msg))
+                                                   false)]
+                                      (siphon-result result returned-result)
+                                      result)))
+                                nil))
+                            (on-drained outer #(close write-queue))))))
       :channel-close (upstream-stage
 		       (channel-close-stage
 			 (fn [_]

@@ -148,6 +148,7 @@
 			    ;;:results log-info
 			    :errors nil-channel
 			    }
+                   :websocket true
 		   :auto-transform true
 		   })
      ~@body))
@@ -225,13 +226,6 @@
   (with-handler json-response-handler
     (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
       (is (= {:foo 1, :bar 2} (:body result))))))
-
-(deftest test-websockets
-  (with-server (start-http-server (fn [ch _] (siphon ch ch)) {:port 8080, :websocket true})
-    (let [ch @(websocket-client {:url "http://localhost:8080"})]
-      (enqueue ch "a" "b" "c")
-      (is (= ["a" "b" "c"] (channel-seq ch 1000)))
-      (close ch))))
 
 (deftest test-single-response-close
   (is-closed? basic-handler

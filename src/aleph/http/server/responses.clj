@@ -131,8 +131,9 @@
 	    (enqueue returned-result (write-to-channel netty-channel msg false))
 	    nil)))
       (fn [_]
-	(enqueue-and-close returned-result
-	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))
+	(let [final-write (write-to-channel netty-channel HttpChunk/LAST_CHUNK false)]
+          (enqueue-and-close returned-result final-write)
+          final-write)))))
 
 ;;;
 
@@ -159,7 +160,10 @@
 (defn respond [^Channel netty-channel options returned-result response]
   (let [response (pre-process-aleph-message response options)
 	response (update-in response [:headers] (partial merge {"Server" "aleph (0.2.0)"}))
-	response (merge ((content-info nil) response) response)
+	response (merge
+                   {:content-type (http-content-type response)
+                    :character-encoding (http-character-encoding response)}
+                   response)
 	body (:body response)]
     (cond
       (nil? body)
