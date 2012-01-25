@@ -131,8 +131,9 @@
 	    (enqueue returned-result (write-to-channel netty-channel msg false))
 	    nil)))
       (fn [_]
-	(enqueue-and-close returned-result
-	  (write-to-channel netty-channel HttpChunk/LAST_CHUNK false))))))
+	(let [final-write (write-to-channel netty-channel HttpChunk/LAST_CHUNK false)]
+          (enqueue-and-close returned-result final-write)
+          final-write)))))
 
 ;;;
 
