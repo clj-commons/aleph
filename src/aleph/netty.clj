@@ -309,31 +309,31 @@
       (.addLast pipeline
         "close-listener"
         (create-simple-channel-upstream-handler close-callback)))
-	  (.addFirst pipeline
-	    "channel-listener"
-	    (if (and refuse-connections? @refuse-connections?)
-	      (refuse-connection-stage)
-	      (upstream-stage
-		(fn [evt]
-		  (when-let [ch ^Channel (channel-event evt)]
-		    (if (.isOpen ch)
-		      (when (.add channel-group ch)
-			(let [origin (channel-origin ch)
-			      connections (swap! connection-count inc)]
-			  (trace connections-probe
-			    {:event :opened
-			     :connections connections
-			     :address origin})
-			  (run-pipeline (.getCloseFuture ch)
-			    wrap-netty-channel-future
-			    (fn [_]
-			      (let [connections (swap! connection-count dec)]
-				(trace connections-probe
-				  {:event :closed
-				   :connections connections
-				   :address origin}))))))))
-		  nil))))
-	  pipeline)))))
+    (.addFirst pipeline
+      "channel-listener"
+      (if (and refuse-connections? @refuse-connections?)
+        (refuse-connection-stage)
+        (upstream-stage
+          (fn [evt]
+            (when-let [ch ^Channel (channel-event evt)]
+              (if (.isOpen ch)
+                (when (.add channel-group ch)
+                  (let [origin (channel-origin ch)
+                        connections (swap! connection-count inc)]
+                    (trace connections-probe
+                      {:event :opened
+                       :connections connections
+                       :address origin})
+                    (run-pipeline (.getCloseFuture ch)
+                      wrap-netty-channel-future
+                      (fn [_]
+                        (let [connections (swap! connection-count dec)]
+                          (trace connections-probe
+                            {:event :closed
+                             :connections connections
+                             :address origin}))))))))
+            nil))))
+    pipeline)))))
 
 (defn graceful-shutdown [server timeout]
   (let [connections (server-probe server :connections)
@@ -484,16 +484,16 @@
 
     ;; set pipeline factory
     (.setPipelineFactory client
-      (create-pipeline-factory
+      (create-pipeline-factory 
 	channel-group
 	options
 	(canonical-probe [(:name options) :connections])
 	nil
 	(fn [_]
-    (close inner)
-    (close outer)
-    (run-pipeline (.close channel-group)
-      wrap-netty-channel-group-future))
+          (close inner)
+          (close outer)
+          (run-pipeline (.close channel-group)
+            wrap-netty-channel-group-future))
 	pipeline-fn
 	outer))
 

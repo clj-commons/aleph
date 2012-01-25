@@ -95,9 +95,11 @@
     (run-pipeline client
       :error-handler (fn [_])
       (fn [ch]
-	(splice
-	  (wrap-response-stream options ch)
-	  (siphon->> (wrap-request-stream options) ch))))))
+	(let [requests (siphon->> (wrap-request-stream options) ch)]
+          (on-closed requests #(close ch))
+          (splice
+            (wrap-response-stream options ch)
+            requests))))))
 
 (defn- http-client- [client-fn options]
   (let [options (process-options options)
@@ -173,16 +175,19 @@
 	       (error! response
 		 (TimeoutException. (str "HTTP request timed out after " (elapsed) " milliseconds.")))))))
 
+
        ;; request
        (let [connection (http-connection
 			  (update-in request [:probes :errors]
 			    #(or % nil-channel)))
 	     close-connection (pipeline :error-handler (fn [_]) close)]
+         (run-pipeline response
+           :error-handler (fn [ex]
+                            (close-connection connection)))
 	 (run-pipeline connection
 	   :error-handler (fn [ex]
 			    (close-connection connection)
-			    (when-not (instance? TimeoutException)
-			      (error! response ex)))
+			    (error! response ex))
 	   (fn [ch]
 	     (enqueue ch request)
 	     (read-channel ch timeout))
