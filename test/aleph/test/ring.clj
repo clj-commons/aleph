@@ -85,7 +85,7 @@
 
 (deftest test-server-name
   (with-server [:server-name]
-    (is (= "localhost" (request)))))
+    (is (= "127.0.0.1" (request)))))
 
 (deftest test-server-port
   (with-server [:server-port]

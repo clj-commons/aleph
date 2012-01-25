@@ -13,10 +13,92 @@
     [aleph formats])
   (:require
     [clj-http.client :as client]
-    [clojure.string :as str])
+    [clojure.string :as str]
+    [clojure.tools.logging :as log])
   (:import
+    [org.jboss.netty.handler.codec.http
+     HttpMessage
+     HttpMethod
+     HttpRequest
+     HttpChunk
+     HttpHeaders
+     HttpRequestDecoder
+     HttpResponseEncoder
+     HttpContentCompressor]
+    [org.jboss.netty.channel
+     Channel]
+    [java.net
+     InetAddress
+     InetSocketAddress]
     [nl.bitwalker.useragentutils
      UserAgent]))
+
+;;;
+
+(def request-methods [:get :post :put :delete :trace :connect :head :options :patch])
+
+(def request-method->keyword
+  (zipmap
+    (map #(HttpMethod/valueOf (name %)) request-methods)
+    request-methods))
+
+(def keyword->request-method
+  (zipmap
+    (vals request-method->keyword)
+    (keys request-method->keyword)))
+
+(defn request-method [^HttpRequest request]
+  (request-method->keyword (.getMethod request)))
+
+(defn http-headers [^HttpMessage msg]
+  (let [k (keys (.getHeaders msg))]
+    (zipmap
+      (map str/lower-case k)
+      (map #(.getHeader msg %) k))))
+
+(defn http-content-type [msg]
+  (if (map? msg)
+    (get-in msg [:headers "content-type"])
+    (.getHeader msg "Content-Type")))
+
+(defn http-character-encoding [msg]
+  (when-let [content-type (if (map? msg)
+                            (get-in msg [:headers "content-type"])
+                            (.getHeader ^HttpMessage msg "Content-Type"))]
+    (->> (str/split content-type #"[;=]")
+      (map str/trim)
+      (drop-while #(not= % "charset"))
+      second)))
+
+(defn http-content-length [^HttpMessage msg]
+  (when-let [content-length (.getHeader msg "Content-Length")]
+    (try
+      (Integer/parseInt content-length)
+      (catch Exception e
+        (log/error e (str "Error parsing content-length: " content-length))
+        nil))))
+
+(defn request-uri [^HttpRequest request]
+  (first (str/split (.getUri request) #"[?]")))
+
+(defn request-query-string [^HttpRequest request]
+  (second (str/split (.getUri request) #"[?]")))
+
+(defn channel-remote-host-address [^Channel channel]
+  (when-let [socket-address (.getRemoteAddress channel)]
+    (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
+      (.getHostAddress ^InetAddress inet-address))))
+
+(defn channel-local-host-address [^Channel channel]
+  (when-let [socket-address (.getLocalAddress channel)]
+    (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
+      (.getHostAddress ^InetAddress inet-address))))
+
+(defn channel-local-port [^Channel channel]
+  (when-let [socket-address (.getLocalAddress channel)]
+    (.getPort ^InetSocketAddress socket-address)))
+
+;;;
 
 (defn to-str [x]
   (if (keyword? x)

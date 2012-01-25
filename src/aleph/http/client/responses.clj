@@ -11,22 +11,18 @@
     [lamina.core.pipeline :only (closed-result)]
     [lamina core]
     [aleph formats]
-    [aleph.http core]
-    [aleph.core lazy-map])
+    [aleph.http core utils])
   (:import
     [org.jboss.netty.handler.codec.http
      HttpResponse
      HttpChunk]))
 
 (defn transform-netty-response [^HttpResponse netty-response options]
-  (let [headers (delayed (netty-headers netty-response))
-	content-info (delayed (content-info netty-response))
-	content-length (delayed (content-length netty-response))
-	response (lazy-map
-		   :headers headers
-		   :content-encoding content-info
-		   :content-type content-info
-		   :content-length content-length
+  (let [response (lazy-map
+		   :headers (delay (http-headers netty-response))
+		   :character-encoding (delay (http-character-encoding netty-response))
+		   :content-type (delay (http-content-type netty-response))
+		   :content-length (delay (http-content-length netty-response))
 		   :status (-> netty-response .getStatus .getCode))]
     (assoc response
       :body (.getContent netty-response))))

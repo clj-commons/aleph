@@ -9,6 +9,7 @@
 (ns ^{:skip-wiki true}
   aleph.http.core
   (:use
+    [potemkin]
     [aleph netty formats]
     [aleph.http utils]
     [lamina.core]
@@ -45,20 +46,18 @@
 
 ;;;
 
-(def keyword->request-method
-  {:get HttpMethod/GET
-   :put HttpMethod/PUT
-   :delete HttpMethod/DELETE
-   :post HttpMethod/POST
-   :trace HttpMethod/TRACE
-   :connect HttpMethod/CONNECT
-   :options HttpMethod/OPTIONS
-   :head HttpMethod/HEAD})
+(def-custom-map LazyMap
+  :get
+  (fn [_ data _ key default-value]
+    `(if-not (contains? ~data ~key)
+       ~default-value
+       (let [val# (get ~data ~key)]
+         (if (delay? val#)
+           @val#
+           val#)))))
 
-(def request-method->keyword
-  (zipmap
-    (vals keyword->request-method)
-    (keys keyword->request-method)))
+(defn lazy-map [& {:as m}]
+  (LazyMap. m))
 
 ;;;
 
@@ -131,46 +130,6 @@
     (and (instance? HttpMessage msg) (not (.isChunked ^HttpMessage msg)))))
 
 ;;;
-
-(defn netty-headers
-  "Get headers from Netty message."
-  [^HttpMessage msg]
-  (fn [_]
-    {:headers (let [headers (into {} (.getHeaders msg))]
-		(into {}
-		  (map
-		    (fn [[k v]] [(str/lower-case k) v])
-		    (into {} (.getHeaders msg)))))}))
-
-(defn netty-request-method
-  "Get HTTP method from Netty request."
-  [^HttpRequest req]
-  (fn [_]
-    {:request-method (->> req .getMethod request-method->keyword)}))
-
-(defn netty-request-uri
-  "Get URI from Netty request."
-  [^HttpRequest req]
-  (fn [_]
-    (let [paths (.split (.getUri req) "[?]")]
-      {:uri (first paths)
-       :query-string (second paths)})))
-
-(defn content-length [_]
-  (fn [msg]
-    (let [headers (:headers msg)]
-      (when-let [content-length (or (get headers "content-length") (get headers "Content-Length"))]
-	{:content-length (Integer/parseInt content-length)}))))
-
-(defn content-info [_]
-  (fn [msg]
-    (let [headers (:headers msg)]
-      (when-let [content-type (or (get headers "content-type") (get headers "Content-Type"))]
-	{:content-type content-type
-	 :character-encoding (->> (str/split content-type #"[;=]")
-			       (map str/trim)
-			       (drop-while #(not= % "charset"))
-			       second)}))))
 
 (defn pre-process-aleph-message [msg options]
   (update-in msg [:headers]

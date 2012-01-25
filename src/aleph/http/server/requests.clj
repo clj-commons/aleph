@@ -10,8 +10,7 @@
   (:use
     [lamina core connections executors api]
     [aleph netty formats]
-    [aleph.core lazy-map]
-    [aleph.http core])
+    [aleph.http core utils])
   (:import
     [org.jboss.netty.channel
      Channel]
@@ -33,24 +32,18 @@
 (defn transform-netty-request
   "Transforms a Netty request into a Ring request."
   [^HttpRequest req netty-channel options]
-  (let [destination (delayed (request-destination req))
-	headers (delayed (netty-headers req))
-	content-info (delayed (content-info req))
-	content-length (delayed (content-length req))
-	request-method (delayed (netty-request-method req))
-	uri (delayed (netty-request-uri req))
-	request (lazy-map
+  (let [request (lazy-map
 		  :scheme :http
-		  :remote-addr (channel-origin netty-channel)
-		  :headers headers
-		  :server-name destination
-		  :uri uri
-		  :query-string uri
-		  :server-port destination
-		  :content-type content-info
-		  :character-encoding content-info
-		  :content-length content-length
-		  :request-method request-method)]
+		  :remote-addr (delay (channel-remote-host-address netty-channel))
+		  :headers (delay (http-headers req))
+		  :server-name (delay (channel-local-host-address netty-channel))
+		  :uri (delay (request-uri req))
+		  :query-string (delay (request-query-string req))
+		  :server-port (delay (channel-local-port netty-channel))
+		  :content-type (delay (http-content-type req))
+		  :character-encoding (delay (http-character-encoding req))
+		  :content-length (delay (http-content-length req))
+		  :request-method (delay (request-method req)))]
     (assoc request
       :body (if (.isChunked req)
 	      ::chunked

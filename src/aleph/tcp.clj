@@ -69,7 +69,9 @@
                               (fn [[returned-result msg]]
                                 (when returned-result
                                   (enqueue write-queue
-                                    (let [result (write-to-channel netty-channel (send-encoder msg) false)]
+                                    (let [result (write-to-channel netty-channel
+                                                   (when-not (nil? msg) (send-encoder msg))
+                                                   false)]
                                       (siphon-result result returned-result)
                                       result)))
                                 nil))
