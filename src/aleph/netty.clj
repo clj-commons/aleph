@@ -508,9 +508,6 @@
 			    netty-channel
 			    #(write-to-channel netty-channel nil true))]
           
-	  (run-pipeline (.getCloseFuture netty-channel)
-	    wrap-netty-channel-future
-	    )
 	  (.add channel-group netty-channel)
           
 	  (receive-all outer
