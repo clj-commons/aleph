@@ -14,8 +14,7 @@
     [aleph.http.client requests responses]
     [lamina core connections api])
   (:require
-    [clj-http.client :as client]
-    [aleph.http.websocket.hixie :as hixie])
+    [clj-http.client :as client])
   (:import
     [java.util.concurrent
      TimeoutException]
@@ -199,61 +198,3 @@
 
        response)))
 
-;;;
-
-(defn websocket-handshake [protocol]
-  (wrap-client-request
-    {:method :get
-     :headers {"Sec-WebSocket-Key1" "18x 6]8vM;54 *(5:  {   U1]8  z [  8" ;;TODO: actually randomly generate these
-	       "Sec-WebSocket-Key2" "1_ tx7X d  <  nw  334J702) 7]o}` 0"
-	       "Sec-WebSocket-Protocol" protocol
-	       "Upgrade" "WebSocket"
-	       "Connection" "Upgrade"}
-     :body (ByteBuffer/wrap (.getBytes "Tm[K T2u" "utf-8"))}))
-
-(def expected-response (ByteBuffer/wrap (.getBytes "fQJ,fN/4F4!~K~MH" "utf-8")))
-
-(defn websocket-pipeline [ch result options]
-  (create-netty-pipeline (:name options)
-    :decoder (HttpResponseDecoder.)
-    :encoder (HttpRequestEncoder.)
-    :handshake (message-stage
-		(fn [^Channel netty-channel ^HttpResponse rsp]
-		  (if (not= 101 (-> rsp .getStatus .getCode))
-		    (error! result (Exception. "Proper handshake not received."))
-		    (let [pipeline (.getPipeline netty-channel)]
-		      (.replace pipeline "decoder" "websocket-decoder" (WebSocketFrameDecoder.))
-		      (.replace pipeline "encoder" "websocket-encoder" (WebSocketFrameEncoder.))
-		      (.replace pipeline "handshake" "response"
-                        (message-stage
-			  (fn [netty-channel rsp]
-			    (enqueue ch (hixie/from-websocket-frame rsp))
-			    nil)))
-		      (success! result ch)))
-		  nil))))
-
-(defn websocket-client [options]
-  (let [options (split-url options)
-	options (merge
-		  {:name (str "websocket-client:" (:host options) ":" (gensym ""))}
-		  options)
-	result (result-channel)
-	client (create-client
-		 #(websocket-pipeline % result options)
-		 identity
-		 options)]
-    (run-pipeline client
-      (fn [ch]
-	(enqueue ch
-	  (transform-aleph-request
-	    (websocket-handshake (or (:protocol options) "aleph"))
-	    (:scheme options)
-	    (:server-name options)
-	    (:server-port options)
-	    options))
-	(run-pipeline result
-	  (fn [_]
-	    (let [in (channel)]
-	      (siphon (map* hixie/to-websocket-frame in) ch)
-	      (on-closed in #(close ch))
-	      (splice ch in))))))))

@@ -69,7 +69,7 @@
 			      :error-handler (fn [ex]
 					       (when-not (trace [(:name options) :errors]
                                                            {:exception ex, :channel inner})
-                                                 (log/error ex)))
+                                                 (log/error ex "Unhandled exception in TCP connection handler.")))
 			      (fn [_]
 				(receive-in-order outer
 				  (fn [[returned-result msg]]

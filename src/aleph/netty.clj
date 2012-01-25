@@ -171,7 +171,7 @@
 				(when-not (trace error-probe
 					    {:exception ex
 					     :address (-> evt .getChannel channel-origin)})
-				  (log/error ex)))
+				  (log/error ex "Unhandled error in Netty pipeline.")))
 			      nil))
 	    traffic-handler (fn [probe-suffix]
 			      (let [traffic-probe (canonical-probe [pipeline-name :traffic probe-suffix])]
