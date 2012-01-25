@@ -148,6 +148,7 @@
 			    ;;:results log-info
 			    :errors nil-channel
 			    }
+                   :websocket true
 		   :auto-transform true
 		   })
      ~@body))

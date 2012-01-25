@@ -41,12 +41,13 @@
 (set! *warn-on-reflection* true)
 
 (defn create-handshaker [^HttpRequest req]
-  (->
-    (WebSocketServerHandshakerFactory.
-      (str "ws://" (.getHeaders req "Host") (.getUri req))
-      nil
-      false)
-    (.newHandshaker req)))
+  (when (= "Upgrade" (.getHeader req "Connection"))
+    (->
+      (WebSocketServerHandshakerFactory.
+        (str "ws://" (.getHeaders req "Host") (.getUri req))
+        nil
+        false)
+      (.newHandshaker req))))
 
 (defn automatic-reply [^Channel ch ^WebSocketServerHandshaker handshaker ^WebSocketFrame frame]
   (cond
