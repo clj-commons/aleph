@@ -458,8 +458,15 @@
 
 (def nio-channel-factory (atom nil))
 
-(defn get-nio-channel-factory
-  "NioClientSocketChannelFactory singleton"
+(defn set-default-nio-channel-factory
+  "Sets the default channel factory that is used by
+  create client when no channel factory are provided."
+  [channel-factory]
+  (reset! nio-channel-factory channel-factory))
+
+(defn get-default-nio-channel-factory
+  "Returns the default channel factory. If the user hasn't
+  provided one, a default one is created."
   []
   (swap! nio-channel-factory #(or % (NioClientSocketChannelFactory. 
                                       (Executors/newCachedThreadPool)
@@ -473,8 +480,8 @@
 	[inner outer] (channel-pair)
 	inner (wrap-write-channel inner)
 	channel-group (DefaultChannelGroup.)
-	client (ClientBootstrap. (get-nio-channel-factory))]
-
+	channel-factory (or (:channel-factory options) (get-default-nio-channel-factory))
+	client (ClientBootstrap. channel-factory)]
     ;; setup client probes
     (siphon-probes (:name options) (:probes options))
 
