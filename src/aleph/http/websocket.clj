@@ -44,7 +44,7 @@
   (when (= "Upgrade" (.getHeader req "Connection"))
     (->
       (WebSocketServerHandshakerFactory.
-        (str "ws://" (.getHeaders req "Host") (.getUri req))
+        (str "ws://" (.getHeader req "Host") (.getUri req))
         nil
         false)
       (.newHandshaker req))))
