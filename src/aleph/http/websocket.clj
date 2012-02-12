@@ -90,16 +90,32 @@
                  (reset! handshaker h)
                  (-> ctx .getPipeline (.addFirst "workaround" (HttpChunkAggregator. 1)))
                  (.handshake ^WebSocketServerHandshaker @handshaker netty-channel msg)
+
+                 ;;
                  (receive-all outer
                    (fn [[returned-result msg]]
                      (when msg
                        (siphon-result
                          (write-to-channel netty-channel (wrap-frame msg) false)
                          returned-result))))
+
+
+                 ;;
+                 (run-pipeline (.getCloseFuture netty-channel)
+                   wrap-netty-channel-future
+                   (fn [_]
+                     (close inner)
+                     (close outer)))
+
+
+                 (on-drained outer #(.close netty-channel))
+                 
+                 ;;
                  (handler
                    inner
                    (assoc (transform-netty-request msg netty-channel options)
-                     :websocket true)))
+                     :websocket true))
+                 )
                (.sendUpstream ctx evt))
              (if @handshaker
                (when-not (automatic-reply netty-channel @handshaker msg)

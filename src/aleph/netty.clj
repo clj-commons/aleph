@@ -408,7 +408,8 @@
 	  wrap-netty-channel-group-future
 	  (fn [_]
 	    (future
-              (shutdown-thread-pool thread-pool)
+              (when tp
+                (shutdown-thread-pool tp))
               (.releaseExternalResources server)))))
       (stop-server [this timeout]
 	(reset! refuse-connections? true)

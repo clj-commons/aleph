@@ -31,7 +31,7 @@
         alert('The WebSocket is not open!');
     }
   }
- 
+
   function parse( response ) {
     // parse response: json or xml, etc
     $('out').innerHTML = response;
@@ -42,7 +42,8 @@
  
 <body onload='openWebSocket()' onunload='closeWebSocket()'> 
  
-<INPUT type="button" value="Click Me" name="button1" onClick="send('check')"> 
+<INPUT type="button" value="Send" name="button1" onClick="send('check')"> 
+<INPUT type="button" value="Close" name="button2" onClick="closeWebSocket()">
  
 <div id='out'></div> 
 <!-- more html here --> 
