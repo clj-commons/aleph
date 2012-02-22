@@ -13,6 +13,8 @@
     [aleph.http core]
     [aleph.http.server requests responses]
     [aleph formats netty])
+  (:require
+    [clojure.string :as str])
   (:import
     [org.jboss.netty.handler.codec.http
      HttpRequest
@@ -41,7 +43,7 @@
 (set! *warn-on-reflection* true)
 
 (defn create-handshaker [^HttpRequest req]
-  (when (= "Upgrade" (.getHeader req "Connection"))
+  (when (= "websocket" (str/lower-case (.getHeader req "Upgrade")))
     (->
       (WebSocketServerHandshakerFactory.
         (str "ws://" (.getHeader req "Host") (.getUri req))

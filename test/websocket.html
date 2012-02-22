@@ -1,9 +1,9 @@
 <html>
-<head> 
-<title>WebSocket</title> 
-<script> 
+<head>
+<title>WebSocket</title>
+<script>
   var socket;
- 
+
   function openWebSocket() {
      if (window.WebSocket) {
          socket = new WebSocket('ws://127.0.0.1:10000/socket?a=b&c=d');
@@ -14,15 +14,15 @@
          alert('Your browser does not support WebSockets yet.');
      }
   }
- 
+
   function closeWebSocket() {
     socket.close();
   }
- 
+
   function $(id) {
     return document.getElementById(id);
   }
- 
+
   function send(message) {
     if (!window.WebSocket) { return; }
     if (socket.readyState == (WebSocket.OPEN || 1)) {
@@ -36,16 +36,16 @@
     // parse response: json or xml, etc
     $('out').innerHTML = response;
   }
- 
-</script> 
-</head> 
- 
-<body onload='openWebSocket()' onunload='closeWebSocket()'> 
- 
-<INPUT type="button" value="Send" name="button1" onClick="send('check')"> 
+
+</script>
+</head>
+
+<body onload='openWebSocket()' onunload='closeWebSocket()'>
+
+<INPUT type="button" value="Send" name="button1" onClick="send('check')">
 <INPUT type="button" value="Close" name="button2" onClick="closeWebSocket()">
- 
-<div id='out'></div> 
-<!-- more html here --> 
-</body> 
+
+<div id='out'></div>
+<!-- more html here -->
+</body>
 </html>
