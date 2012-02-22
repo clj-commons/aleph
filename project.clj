@@ -12,7 +12,7 @@
                  [io.netty/netty "3.3.0.Final"]
                  [clj-http "0.1.3"]
                  [lamina "0.4.1-alpha1"]
-                 [gloss "0.2.1-alpha1"]
+                 [gloss "0.2.1-alpha2-SNAPSHOT"]
                  [user-agent-utils "1.2.3"]
                  [potemkin "0.1.1"]]
   :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
@@ -21,7 +21,7 @@
                      [io.netty/netty "3.3.0.Final"]
                      [clj-http "0.1.3"]
                      [lamina "0.4.1-alpha1"]
-                     [gloss "0.2.1-alpha1"]
+                     [gloss "0.2.1-alpha2-SNAPSHOT"]
                      [user-agent-utils "1.2.3"]
                      [potemkin "0.1.1"]]
                "1.2" [[org.clojure/clojure "1.2.1"]]}

@@ -172,6 +172,7 @@
 	(do
 	  (.setContent netty-msg (:body (encode-aleph-message msg options)))
 	  (HttpHeaders/setContentLength netty-msg (-> netty-msg .getContent .readableBytes))))
-      (HttpHeaders/setContentLength netty-msg 0))
+      (when-not (= :get (:request-method msg))
+        (HttpHeaders/setContentLength netty-msg 0)))
     netty-msg))
 
