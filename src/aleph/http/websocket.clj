@@ -12,8 +12,7 @@
     [lamina.core]
     [aleph.http core]
     [aleph.http.server requests responses]
-    [aleph formats netty]
-    [clojure.core [incubator :only [-?>]]])
+    [aleph formats netty])
   (:require
     [clojure.string :as str])
   (:import
@@ -44,7 +43,7 @@
 (set! *warn-on-reflection* true)
 
 (defn create-handshaker [^HttpRequest req]
-  (when (= "websocket" (-?> req (.getHeader "Upgrade") str/lower-case))
+  (when (= "websocket" (str/lower-case (or (.getHeader req "Upgrade") "")))
     (->
       (WebSocketServerHandshakerFactory.
         (str "ws://" (.getHeader req "Host") (.getUri req))
