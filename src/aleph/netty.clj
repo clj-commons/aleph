@@ -361,12 +361,13 @@
                    ;;:thread-pool {:max-thread-count (.availableProcessors (Runtime/getRuntime))}
                    }
 		  options)
-        tp (let [tp (merge
-                      {:name (str (:name options) ":thread-pool")}
-                      (:thread-pool options))]
-             (if-not (map? tp)
-               tp
-               (thread-pool tp)))
+        tp (when (contains? options :thread-pool)
+             (let [tp (merge
+                        {:name (str (:name options) ":thread-pool")}
+                        (:thread-pool options))]
+               (if-not (map? tp)
+                 tp
+                 (thread-pool tp))))
         options (assoc options
                   :thread-pool tp)
 	refuse-connections? (atom false)
