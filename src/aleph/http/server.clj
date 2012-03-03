@@ -119,8 +119,10 @@
     pipeline))
 
 (defn start-http-server
-  "Starts an HTTP server on the specified :port.  To support WebSockets, set :websocket to
-   true.
+  "Starts an HTTP server on the specified :port.  Returns a function that can be used to
+   stop the server.
+
+   To support WebSockets, set :websocket to true.
 
    'handler' should be a function that takes two parameters, a channel and a request hash.
    The request is a hash that conforms to the Ring standard, with :websocket set to true
