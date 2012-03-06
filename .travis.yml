@@ -1,0 +1,4 @@
+language: clojure
+before_install:
+  - lein plugin install lein-multi 1.1.0
+script: lein multi test
