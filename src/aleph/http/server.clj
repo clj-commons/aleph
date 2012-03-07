@@ -85,17 +85,21 @@
                 wrap-netty-channel-future
                 (fn [_] (close ch)))
 
-              (run-pipeline
-		(receive-in-order (consume-request-stream netty-channel ch server-generator options)
-		  (fn [{:keys [request response]}]
-		    (if (instance? Exception response)
-		      (let [response (if (or
-					   (instance? InterruptedException response)
-					   (instance? TimeoutException response))
-				       (timeout-response)
-				       (error-response))]
-			(write-to-channel netty-channel response (not (:keep-alive? request))))
-		      (respond netty-channel options (first response) (second response)))))
+              (run-pipeline nil
+                :error-handler (fn [_]
+                                 (.close netty-channel)
+                                 (complete nil))
+		(fn [_]
+                  (receive-in-order (consume-request-stream netty-channel ch server-generator options)
+                    (fn [{:keys [request response]}]
+                      (if (instance? Exception response)
+                        (let [response (if (or
+                                             (instance? InterruptedException response)
+                                             (instance? TimeoutException response))
+                                         (timeout-response)
+                                         (error-response))]
+                          (write-to-channel netty-channel response (not (:keep-alive? request))))
+                        (respond netty-channel options (first response) (second response))))))
 		(fn [_] (.close netty-channel))))
             
 	    (enqueue ch request)))
