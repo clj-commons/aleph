@@ -1,4 +1,4 @@
-(defproject aleph "0.2.1-alpha2-SNAPSHOT"
+(defproject aleph "0.2.1-beta1"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -11,18 +11,18 @@
                  [org.clojure.contrib/prxml "1.3.0-alpha4"]
                  [io.netty/netty "3.3.1.Final"]
                  [clj-http "0.1.3"]
-                 [lamina "0.4.1-alpha2-SNAPSHOT"]
-                 [gloss "0.2.1-alpha2-SNAPSHOT"]
+                 [lamina "0.4.1-beta1"]
+                 [gloss "0.2.1-beta1"]
                  [user-agent-utils "1.2.3"]
-                 [potemkin "0.1.2-SNAPSHOT"]]
+                 [potemkin "0.1.2"]]
   :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
                      [org.clojure/data.json "0.1.1"]
                      [org.clojure.contrib/prxml "1.3.0-alpha4"]
                      [io.netty/netty "3.3.1.Final"]
                      [clj-http "0.1.3"]
-                     [lamina "0.4.1-alpha2-SNAPSHOT"]
-                     [gloss "0.2.1-alpha2-SNAPSHOT"]
+                     [lamina "0.4.1-beta1"]
+                     [gloss "0.2.1-beta1"]
                      [user-agent-utils "1.2.3"]
-                     [potemkin "0.1.2-SNAPSHOT"]]
+                     [potemkin "0.1.2"]]
                "1.2" [[org.clojure/clojure "1.2.1"]]}
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
