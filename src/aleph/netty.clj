@@ -263,12 +263,13 @@
   [^Channel netty-channel msg close?
    & {close-callback :on-close write-callback :on-write host :host port :port}]
   (if msg
-    (run-pipeline
-      (io!
-	(if (and host port)
-	  (.write netty-channel msg (InetSocketAddress. ^String host (int port)))
-	  (.write netty-channel msg)))
+    (run-pipeline nil
       :error-handler (fn [_])
+      (fn [_]
+        (io!
+          (if (and host port)
+            (.write netty-channel msg (InetSocketAddress. ^String host (int port)))
+            (.write netty-channel msg))))
       wrap-netty-channel-future
       (fn [_]
 	(when write-callback

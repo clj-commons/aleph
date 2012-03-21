@@ -99,7 +99,9 @@
                                          (timeout-response)
                                          (error-response))]
                           (write-to-channel netty-channel response (not (:keep-alive? request))))
-                        (respond netty-channel options (first response) (second response))))))
+                        (do
+                          (respond netty-channel options (first response) (second response))
+                          nil)))))
 		(fn [_] (.close netty-channel))))
             
 	    (enqueue ch request)))

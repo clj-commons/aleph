@@ -117,6 +117,7 @@
     (run-pipeline (let [result (write-to-channel netty-channel initial-response false)]
 		    (enqueue returned-result result)
 		    result)
+      :error-handler (fn [_])
       (fn [_]
 	(receive-in-order
 	  (map*
