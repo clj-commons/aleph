@@ -6,6 +6,16 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.netty)
+(ns aleph.netty.core
+  (:import
+    [org.jboss.netty.channel
+     Channel]
+    [java.net
+     InetAddress]))
 
+(set! *warn-on-reflection* true)
 
+(defn channel-origin [^Channel channel]
+  (when-let [socket-address (.getRemoteAddress channel)]
+    (when-let [^InetAddress inet-address (.getAddress socket-address)]
+      (.getHostAddress inet-address))))
