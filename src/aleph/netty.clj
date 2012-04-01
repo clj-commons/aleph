@@ -6,6 +6,17 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.netty)
+(ns aleph.netty
+  (:use
+    [potemkin])
+  (:require
+    [aleph.netty.core :as core]
+    [aleph.netty.server :as server]))
+
+(import-fn server/start-server)
+(import-fn server/server-message-handler)
+
+(import-fn core/current-options)
+(import-macro core/create-netty-pipeline)
 
 
