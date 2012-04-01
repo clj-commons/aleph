@@ -40,32 +40,43 @@
           p-c (pipelined-client (constantly @(tcp-client {:host "localhost", :port 10000})))
           p-cl (comp bytes->string deref p-c)]
 
-      (bench "single tcp client echo"
+      (bench "tcp echo request"
         (enqueue ch "a")
         @(read-channel ch))
-      (bench "single tcp client echo w/ lamina.connections/client"
+      (bench "tcp echo request w/ lamina.connections/client"
         (cl "a"))
-      (bench "single tcp client echo w/ lamina.connections/pipelined-client"
+      (bench "tcp echo request w/ lamina.connections/pipelined-client"
         (p-cl "a"))
 
       (close-connection p-c)
       (close-connection c)
       (close ch))
 
-    (bench "multiple tcp clients echo"
+    ;; we can't do a full benchmark run, since that exhausts ephemeral
+    ;; ports.  Instead, do a manual warm-up before doing quick-benches.
+    (dotimes [_ 20]
+      (dotimes [_ 1e3]
+        (let [ch @(tcp-client {:host "localhost", :port 10000})]
+          (enqueue ch "a")
+          @(read-channel ch)
+          (close ch)))
+      (Thread/sleep 1000))
+
+    
+    (quick-bench "tcp connect + echo request"
       (let [ch @(tcp-client {:host "localhost", :port 10000})]
         (enqueue ch "a")
         @(read-channel ch)
         (close ch)))
 
-    (bench "multiple tcp clients echo w/ lamina.connections/client"
+    (quick-bench "tcp connect + echo request w/ lamina.connections/client"
       (let [ch @(tcp-client {:host "localhost", :port 10000})
             c (client (constantly ch))
             cl (comp bytes->string deref c)]
         (cl "a")
         (close-connection c)))
 
-    (bench "multiple tcp clients echo w/ lamina.connections/pipelined-client"
+    (quick-bench "tcp connect + echo request w/ lamina.connections/pipelined-client"
       (let [ch @(tcp-client {:host "localhost", :port 10000})
             c (pipelined-client (constantly ch))
             cl (comp bytes->string deref c)]
