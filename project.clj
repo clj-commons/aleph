@@ -12,4 +12,7 @@
                  [potemkin "0.1.2"]]
   :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
                      [codox "0.4.1"]]
+  :test-selectors {:default #(not (some #{:benchmark} (cons (:tag %) (keys %))))
+                   :benchmark :benchmark
+                   :all (constantly true)}
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
