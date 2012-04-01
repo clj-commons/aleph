@@ -10,4 +10,6 @@
                  [io.netty/netty "3.3.1.Final"]
                  [lamina "0.5.0-SNAPSHOT"]
                  [potemkin "0.1.2"]]
+  :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
+                     [codox "0.4.1"]]
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])

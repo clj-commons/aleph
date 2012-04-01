@@ -11,10 +11,13 @@
     [potemkin])
   (:require
     [aleph.netty.core :as core]
-    [aleph.netty.server :as server]))
+    [aleph.netty.server :as server]
+    [aleph.netty.client :as client]))
 
 (import-fn server/start-server)
 (import-fn server/server-message-handler)
+
+(import-fn client/create-client)
 
 (import-fn core/current-options)
 (import-macro core/create-netty-pipeline)

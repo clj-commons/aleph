@@ -9,10 +9,15 @@
 (ns aleph.tcp
   (:use
     [lamina core trace]
-    [aleph netty])
+    [aleph netty formats])
   (:import
     [java.nio.channels
      ClosedChannelException]))
+
+(defn- wrap-tcp-channel [ch]
+  (let [ch* (channel)]
+    (join (map* bytes->channel-buffer ch*) ch)
+    (splice ch ch*)))
 
 (defn start-tcp-server [handler options]
   (let [server-name (or
@@ -22,10 +27,29 @@
         error-predicate (or
                           (:error-predicate options)
                           #(not (instance? ClosedChannelException %)))]
-    (doseq [[k v] (:probes options)]
-      (siphon (probe-channel [server-name k]) v))
     (start-server
+      server-name
       (fn [channel-group]
         (create-netty-pipeline server-name error-predicate channel-group
-          :handler (server-message-handler handler)))
+          :handler (server-message-handler
+                     (fn [ch x]
+                       (handler (wrap-tcp-channel ch) x)))))
       options)))
+
+(defn tcp-client [options]
+  (let [client-name (or
+                      (:name options)
+                      (-> options :client :name)
+                      "tcp-client")
+        error-predicate (or
+                          (:error-predicate options)
+                          #(not (instance? ClosedChannelException %)))]
+    (run-pipeline nil
+      {:error-handler (fn [_])}
+      (fn [_]
+        (create-client
+          client-name
+          (fn [channel-group]
+            (create-netty-pipeline client-name error-predicate channel-group))
+          options))
+      wrap-tcp-channel)))

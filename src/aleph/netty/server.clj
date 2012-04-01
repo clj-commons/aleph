@@ -8,7 +8,7 @@
 
 (ns aleph.netty.server
   (:use
-    [lamina core]
+    [lamina core trace]
     [aleph.netty core])
   (:import
     [org.jboss.netty.channel
@@ -34,13 +34,16 @@
    "readWriteFair" true,
    "child.tcpNoDelay" true})
 
-(defn start-server [pipeline-generator options]
+(defn start-server [server-name pipeline-generator options]
   (let [port (:port options)
         channel-factory (NioServerSocketChannelFactory.
                           (cached-thread-executor options)
                           (cached-thread-executor options))
         channel-group (DefaultChannelGroup.)
         server (ServerBootstrap. channel-factory)]
+
+    (doseq [[k v] (:probes options)]
+      (siphon (probe-channel [server-name k]) v))
     
     (.setPipelineFactory server
       (create-pipeline-factory channel-group pipeline-generator))
@@ -69,11 +72,24 @@
                 (instance? ChannelEvent evt)
                 (compare-and-set! latch false true))
           (let [netty-channel (.getChannel evt)]
-            (handler b {:address (channel-origin netty-channel)})
+
+            ;; set up write handling
             (receive-all a
               #(wrap-netty-channel-future (.write netty-channel %)))
+
+            ;; lamina -> netty
             (on-drained a
-              #(.close netty-channel))))
+              #(.close netty-channel))
+
+            ;; netty -> lamina
+            (run-pipeline (.getCloseFuture netty-channel)
+              wrap-netty-channel-future
+              (fn [_]
+                (close a)
+                (close b)))
+
+            ;; call handler
+            (handler b {:address (channel-origin netty-channel)})))
 
         ;; handle messages
         (if-let [msg (event-message evt)]

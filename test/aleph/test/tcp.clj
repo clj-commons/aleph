@@ -8,89 +8,66 @@
 
 (ns aleph.test.tcp
   (:use
-    [lamina.core]
-    [gloss.core]
-    [aleph tcp formats]
+    [aleph.test.utils]
     [clojure.test]
-    [clojure.set :only (difference)]))
+    [lamina core connections]
+    [aleph tcp formats]))
 
-(def server-messages (atom []))
-(def server-write-results (atom []))
-(def client-write-results (atom []))
+(defmacro with-server [handler port & body]
+  `(let [stop-server# (start-tcp-server ~handler {:port ~port})]
+     (try
+       ~@body
+       (finally
+         (stop-server#)))))
 
-(defn append-to-server [msg]
-  (swap! server-messages conj (when msg (str msg))))
+(defn echo-handler [ch _]
+  (siphon ch ch))
 
-(defmacro tcp-test [& body]
-  `(do
-     (reset! server-messages [])
-     (reset! server-write-results [])
-     (reset! client-write-results [])
-     ~@body))
+(deftest test-echo-server
+  (with-server echo-handler 10000
+    (let [c (comp
+              bytes->string
+              deref
+              (client #(deref (tcp-client {:host "localhost", :port 10000}))))]
+      (dotimes [_ 10]
+        (is (= "a" (c "a")))))))
 
-(deftest echo-server
-  (tcp-test
-    (let [server (start-tcp-server
-		   (fn [ch _]
-		     (receive-all ch
-		       (fn [x]
-			 (when x
-			   (append-to-server x)
-			   (swap! server-write-results conj (enqueue ch x))))))
-		   {:frame (string :utf-8 :delimiters ["\0"])
-		    :port 8888})]
-      (try
-	(let [ch (wait-for-result
-		   (tcp-client {:host "localhost"
-				:port 8888
-				:frame (string :utf-8 :delimiters ["\0"])})
-		   1000)]
-	  (doseq [[i j] (partition 2 (range 1000))]
-	    (swap! client-write-results conj (enqueue ch (str i) (str j))))
-	  (let [s (doall (map str (take 1000 (lazy-channel-seq ch 1000))))]
-	    (is (= s (map str @server-messages)))
-	    (is (every? true? (map deref @server-write-results)))
-	    (is (every? true? (map deref @client-write-results)))))
-	(finally
-	  (server))))))
+(deftest ^:benchmark test-echo-server
+  (with-server echo-handler 10000
+    (let [ch @(tcp-client {:host "localhost", :port 10000})
+          c (client (constantly @(tcp-client {:host "localhost", :port 10000})))
+          cl (comp bytes->string deref c)
+          p-c (pipelined-client (constantly @(tcp-client {:host "localhost", :port 10000})))
+          p-cl (comp bytes->string deref p-c)]
 
-(deftest client-enqueue-and-close
-  (tcp-test
-    (let [server (start-tcp-server
-		   (fn [ch _]
-		     (receive-all ch
-		       (fn [x]
-			 (append-to-server x))))
-		   {:port 8888
-		    :frame (string :utf-8)
-		    :delimiters ["x"]})]
-      (try
-	(let [ch (wait-for-result
-		   (tcp-client {:host "localhost"
-				:port 8888
-				:frame (string :utf-8)
-				:delimiters ["x"]})
-		   1000)]
-	  (enqueue ch "a")
-	  (enqueue ch "b")
-	  (enqueue-and-close ch "c")
-	  (Thread/sleep 500)
-	  (is (= ["a" "b" "c" nil] @server-messages)))
-	(finally
-	  (server))))))
+      (bench "single tcp client echo"
+        (enqueue ch "a")
+        @(read-channel ch))
+      (bench "single tcp client echo w/ lamina.connections/client"
+        (cl "a"))
+      (bench "single tcp client echo w/ lamina.connections/pipelined-client"
+        (p-cl "a"))
 
-(deftest server-enqueue-and-close
-  (let [server (start-tcp-server
-		 (fn [ch _]
-		   (enqueue-and-close ch "a"))
-		 {:frame (string :utf-8)
-		  :port 8888})]
-    (try
-      (let [ch (wait-for-result
-		 (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)})
-		 1000)]
-	(is (= ["a"] (doall (map str (channel-seq ch 1000)))))
-	(is (drained? ch)))
-      (finally
-	(server)))))
+      (close-connection p-c)
+      (close-connection c)
+      (close ch))
 
+    (bench "multiple tcp clients echo"
+      (let [ch @(tcp-client {:host "localhost", :port 10000})]
+        (enqueue ch "a")
+        @(read-channel ch)
+        (close ch)))
+
+    (bench "multiple tcp clients echo w/ lamina.connections/client"
+      (let [ch @(tcp-client {:host "localhost", :port 10000})
+            c (client (constantly ch))
+            cl (comp bytes->string deref c)]
+        (cl "a")
+        (close-connection c)))
+
+    (bench "multiple tcp clients echo w/ lamina.connections/pipelined-client"
+      (let [ch @(tcp-client {:host "localhost", :port 10000})
+            c (pipelined-client (constantly ch))
+            cl (comp bytes->string deref c)]
+        (cl "a")
+        (close-connection c)))))
