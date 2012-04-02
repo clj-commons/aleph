@@ -14,6 +14,8 @@
     [clojure.data.json :as json]
     [clojure.xml :as xml]
     [clojure.contrib.prxml :as prxml])
+  (:require
+    [gloss.io :as gloss])
   (:import
     [java.io
      InputStream
@@ -383,7 +385,7 @@
 	       (sort-replace-map (:url-decodings options)))]
        (URLDecoder/decode s charset))))
 
--(defn url-encode
+(defn url-encode
   "URL-encodes a string.  By default 'charset' is UTF-8.
 
    'options' may contain a :url-encodings hash, which can specify custom encodings for certain characters or substrings."
@@ -397,3 +399,27 @@
 	       s
 	       (sort-replace-map (:url-encodings options)))]
        (URLEncoder/encode s charset))))
+
+;;;
+
+(defn decode-channel [frame ch]
+  (gloss/decode-channel (map* bytes->byte-buffers ch) frame))
+
+(defn wrap-socket-channel [options ch]
+  (let [encoder (or (:encoder options) (:frame options))
+        decoder (or (:decoder options) (:frame options))
+        ch* (channel)]
+    (if encoder
+      (join
+        (->> ch*
+          (map* #(gloss/encode encoder %))
+          (map* bytes->channel-buffer))
+        ch)
+      (join
+        (map* bytes->channel-buffer ch*)
+        ch))
+    (splice
+      (if decoder
+        (decode-channel decoder ch)
+        ch)
+      ch*)))

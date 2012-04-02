@@ -14,10 +14,12 @@
     [java.nio.channels
      ClosedChannelException]))
 
-(defn- wrap-tcp-channel [ch]
-  (let [ch* (channel)]
-    (join (map* bytes->channel-buffer ch*) ch)
-    (splice ch ch*)))
+(defn- wrap-tcp-channel [options ch]
+  (wrap-socket-channel
+    options
+    (let [ch* (channel)]
+      (join (map* bytes->channel-buffer ch*) ch)
+      (splice ch ch*))))
 
 (defn start-tcp-server [handler options]
   (let [server-name (or
@@ -33,7 +35,7 @@
         (create-netty-pipeline server-name error-predicate channel-group
           :handler (server-message-handler
                      (fn [ch x]
-                       (handler (wrap-tcp-channel ch) x)))))
+                       (handler (wrap-tcp-channel options ch) x)))))
       options)))
 
 (defn tcp-client [options]
@@ -52,4 +54,4 @@
           (fn [channel-group]
             (create-netty-pipeline client-name error-predicate channel-group))
           options))
-      wrap-tcp-channel)))
+      (partial wrap-tcp-channel options))))

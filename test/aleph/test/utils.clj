@@ -17,11 +17,13 @@
          (println "\n-----\n" ~name "\n-----\n")
          (criterium.core/bench
            (do ~@body)
-           :reduce-with #(and %1 %2))))
+           :reduce-with #(and %1 %2))
+         (flush)))
     (defmacro quick-bench [name & body]
       `(do
          (println "\n-----\n" ~name "\n-----\n")
          (criterium.core/quick-bench
            (do ~@body)
-           :reduce-with #(and %1 %2))))))
+           :reduce-with #(and %1 %2))
+         (flush)))))
 

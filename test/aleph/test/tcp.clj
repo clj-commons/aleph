@@ -11,7 +11,8 @@
     [aleph.test.utils]
     [clojure.test]
     [lamina core connections]
-    [aleph tcp formats]))
+    [aleph tcp formats]
+    [gloss core]))
 
 (defmacro with-server [handler port & body]
   `(let [stop-server# (start-tcp-server ~handler {:port ~port})]
@@ -20,38 +21,52 @@
        (finally
          (stop-server#)))))
 
-(defn echo-handler [ch _]
+(defn basic-echo-handler [ch _]
   (siphon ch ch))
 
-(deftest test-echo-server
-  (with-server echo-handler 10000
-    (let [c (comp
-              bytes->string
-              deref
-              (client #(deref (tcp-client {:host "localhost", :port 10000}))))]
-      (dotimes [_ 10]
-        (is (= "a" (c "a")))))))
+(defn server-echo-handler [ch _]
+  (server (fn [ch x] (enqueue ch x)) ch {}))
 
-(deftest ^:benchmark test-echo-server
-  (with-server echo-handler 10000
-    (let [ch @(tcp-client {:host "localhost", :port 10000})
-          c (client (constantly @(tcp-client {:host "localhost", :port 10000})))
-          cl (comp bytes->string deref c)
-          p-c (pipelined-client (constantly @(tcp-client {:host "localhost", :port 10000})))
-          p-cl (comp bytes->string deref p-c)]
+;;;
 
-      (bench "tcp echo request"
-        (enqueue ch "a")
-        @(read-channel ch))
-      (bench "tcp echo request w/ lamina.connections/client"
-        (cl "a"))
-      (bench "tcp echo request w/ lamina.connections/pipelined-client"
-        (p-cl "a"))
+(defn test-echo-server []
+  (let [c (client #(deref (tcp-client {:host "localhost", :port 10000, :frame (string :utf-8)})))]
+    (dotimes [_ 2]
+      (is (= "a" @(c "a"))))
+    (close-connection c)))
 
-      (close-connection p-c)
-      (close-connection c)
-      (close ch))
+(deftest test-echo-servers
+  (with-server basic-echo-handler 10000
+    (test-echo-server))
+  (with-server server-echo-handler 10000
+    (test-echo-server)))
 
+;;;
+
+(defn run-echo-benchmark [frame?]
+  (let [create-conn #(deref (tcp-client {:host "localhost", :port 10000, :frame (when % (string :utf-8))}))]
+
+      (let [ch (create-conn frame?)]
+        (bench "tcp echo request"
+          (enqueue ch "a")
+          @(read-channel ch))
+        (close ch))
+      
+      (let [c (client (constantly (create-conn frame?)))]
+        (bench "tcp echo request w/ lamina.connections/client"
+          @(c "a"))
+        (close-connection c))
+      
+      (let [c (pipelined-client (constantly (create-conn frame?)))]
+        (bench "tcp echo request w/ lamina.connections/pipelined-client"
+          @(c "a"))
+        (close-connection c))))
+
+(deftest ^:benchmark benchmark-connect-and-query
+  (with-server basic-echo-handler 10000
+
+    (println "priming JIT for client connectino")
+    
     ;; we can't do a full benchmark run, since that exhausts ephemeral
     ;; ports.  Instead, do a manual warm-up before doing quick-benches.
     (dotimes [_ 20]
@@ -60,25 +75,24 @@
           (enqueue ch "a")
           @(read-channel ch)
           (close ch)))
-      (Thread/sleep 1000))
-
+      (Thread/sleep 2000))
     
     (quick-bench "tcp connect + echo request"
-      (let [ch @(tcp-client {:host "localhost", :port 10000})]
+      (let [ch @(tcp-client {:host "localhost", :port 10000, :frame (string :utf-8)})]
         (enqueue ch "a")
         @(read-channel ch)
-        (close ch)))
+        (close ch)))))
 
-    (quick-bench "tcp connect + echo request w/ lamina.connections/client"
-      (let [ch @(tcp-client {:host "localhost", :port 10000})
-            c (client (constantly ch))
-            cl (comp bytes->string deref c)]
-        (cl "a")
-        (close-connection c)))
+(deftest ^:benchmark benchmark-echo-server
+  (with-server basic-echo-handler 10000
 
-    (quick-bench "tcp connect + echo request w/ lamina.connections/pipelined-client"
-      (let [ch @(tcp-client {:host "localhost", :port 10000})
-            c (pipelined-client (constantly ch))
-            cl (comp bytes->string deref c)]
-        (cl "a")
-        (close-connection c)))))
+    (println "\n=== basic with :frame")
+    (run-echo-benchmark true)
+    (println "\n=== basic without :frame")
+    (run-echo-benchmark false)
+
+    )
+
+  (with-server server-echo-handler 10000
+    (println "\n=== lamina.connections/server without :frame")
+    (run-echo-benchmark false)))

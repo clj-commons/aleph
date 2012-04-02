@@ -9,8 +9,10 @@
                  [org.clojure/tools.logging "0.2.3"]
                  [io.netty/netty "3.3.1.Final"]
                  [lamina "0.5.0-SNAPSHOT"]
-                 [potemkin "0.1.2"]]
-  :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
+                 [gloss "0.2.2-SNAPSHOT"]
+                 [potemkin "0.1.2"]
+[criterium "0.2.1-SNAPSHOT"]]
+  :dev-dependencies [
                      [codox "0.4.1"]]
   :test-selectors {:default #(not (some #{:benchmark} (cons (:tag %) (keys %))))
                    :benchmark :benchmark
