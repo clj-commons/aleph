@@ -80,7 +80,8 @@
                 (compare-and-set! latch false true))
           (let [netty-channel (.getChannel evt)]
 
-            (.set options-store options)
+            (.set local-options options)
+            (.set local-channel netty-channel)
 
             ;; set up write handling
             (receive-all ch

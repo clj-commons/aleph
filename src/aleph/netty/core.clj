@@ -46,10 +46,15 @@
 
 ;;;
 
-(def ^ThreadLocal options-store (ThreadLocal.))
+(def ^ThreadLocal local-options (ThreadLocal.))
+
+(def ^ThreadLocal local-channel (ThreadLocal.))
 
 (defn current-options []
-  (.get options-store))
+  (.get local-options))
+
+(defn ^Channel current-channel []
+  (.get local-channel))
 
 (defn cached-thread-executor [options]
   (Executors/newCachedThreadPool
@@ -57,15 +62,24 @@
       (newThread [_ r]
         (Thread.
           (fn []
-            (.set options-store options)
+            (.set local-options options)
             (.run r)))))))
 
 ;;;
 
-(defn channel-origin [^Channel channel]
-  (when-let [^InetSocketAddress socket-address (.getRemoteAddress channel)]
-    (when-let [^InetAddress inet-address (.getAddress socket-address)]
-      (.getHostAddress inet-address))))
+(defn channel-remote-host-address [^Channel channel]
+  (when-let [socket-address (.getRemoteAddress channel)]
+    (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
+      (.getHostAddress ^InetAddress inet-address))))
+
+(defn channel-local-host-address [^Channel channel]
+  (when-let [socket-address (.getLocalAddress channel)]
+    (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
+      (.getHostAddress ^InetAddress inet-address))))
+
+(defn channel-local-port [^Channel channel]
+  (when-let [socket-address (.getLocalAddress channel)]
+    (.getPort ^InetSocketAddress socket-address)))
 
 (defmacro def-event-accessor [name type accessor]
   `(defn ~name [~(with-meta 'evt {:tag type})]

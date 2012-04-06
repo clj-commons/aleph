@@ -65,7 +65,7 @@
 (deftest ^:benchmark benchmark-connect-and-query
   (with-server basic-echo-handler 10000
 
-    (println "priming JIT for client connectino")
+    (println "priming JIT for client connection")
     
     ;; we can't do a full benchmark run, since that exhausts ephemeral
     ;; ports.  Instead, do a manual warm-up before doing quick-benches.

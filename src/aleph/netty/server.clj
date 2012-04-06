@@ -73,6 +73,8 @@
                 (compare-and-set! latch false true))
           (let [netty-channel (.getChannel evt)]
 
+            (.set local-channel netty-channel)
+
             ;; set up write handling
             (receive-all a
               #(wrap-netty-channel-future (.write netty-channel %)))
@@ -89,7 +91,7 @@
                 (close b)))
 
             ;; call handler
-            (handler b {:address (channel-origin netty-channel)})))
+            (handler b {:address (channel-remote-host-address netty-channel)})))
 
         ;; handle messages
         (if-let [msg (event-message evt)]
