@@ -29,38 +29,50 @@
 
 ;;;
 
-(defn test-echo-server []
-  (let [c (client #(deref (tcp-client {:host "localhost", :port 10000, :frame (string :utf-8)})))]
-    (dotimes [_ 2]
+(def n 100)
+
+(defn test-echo-server [client-fn]
+  (let [c (client-fn #(deref (tcp-client {:host "localhost", :port 10000, :frame (string :utf-8 :delimiters ["\n"])})))]
+    (dotimes [_ n]
       (is (= "a" @(c "a"))))
+    (dotimes [_ n]
+      (is (= (repeat n "a") @(apply merge-results (repeatedly n #(c "a"))))))
     (close-connection c)))
 
 (deftest test-echo-servers
   (with-server basic-echo-handler 10000
-    (test-echo-server))
+    (test-echo-server client)
+    (test-echo-server pipelined-client))
   (with-server server-echo-handler 10000
-    (test-echo-server)))
+    (test-echo-server client)
+    (test-echo-server pipelined-client)))
 
 ;;;
 
 (defn run-echo-benchmark [frame?]
-  (let [create-conn #(deref (tcp-client {:host "localhost", :port 10000, :frame (when % (string :utf-8))}))]
+  (let [create-conn #(deref (tcp-client {:host "localhost", :port 10000, :frame (when % (string :utf-8 :delimiters ["\n"]))}))]
 
-      (let [ch (create-conn frame?)]
-        (bench "tcp echo request"
-          (enqueue ch "a")
-          @(read-channel ch))
-        (close ch))
+    (let [ch (create-conn frame?)]
+      (bench "tcp echo request"
+        (enqueue ch "a")
+        @(read-channel ch))
+      (close ch))
       
-      (let [c (client (constantly (create-conn frame?)))]
-        (bench "tcp echo request w/ lamina.connections/client"
-          @(c "a"))
-        (close-connection c))
+    (let [c (client (constantly (create-conn frame?)))]
+      (bench "tcp echo request w/ lamina.connections/client"
+        @(c "a"))
+      (close-connection c))
       
-      (let [c (pipelined-client (constantly (create-conn frame?)))]
-        (bench "tcp echo request w/ lamina.connections/pipelined-client"
-          @(c "a"))
-        (close-connection c))))
+    (let [c (pipelined-client (constantly (create-conn frame?)))]
+      (bench "tcp echo request w/ lamina.connections/pipelined-client"
+        @(c "a"))
+      (close-connection c))
+
+    (when frame?
+      (let [c (pipelined-client (constantly (create-conn true)))]
+        (bench "batched echo requests"
+          @(apply merge-results (repeatedly 1e3 #(c "a"))))
+        (close-connection c)))))
 
 (deftest ^:benchmark benchmark-connect-and-query
   (with-server basic-echo-handler 10000
