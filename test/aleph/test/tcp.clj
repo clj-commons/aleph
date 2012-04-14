@@ -34,9 +34,9 @@
 (defn test-echo-server [client-fn]
   (let [c (client-fn #(deref (tcp-client {:host "localhost", :port 10000, :frame (string :utf-8 :delimiters ["\n"])})))]
     (dotimes [_ n]
-      (is (= "a" @(c "a"))))
+      (is (= "a" @(c "a" 1000))))
     (dotimes [_ n]
-      (is (= (repeat n "a") @(apply merge-results (repeatedly n #(c "a"))))))
+      (is (= (repeat n "a") @(apply merge-results (repeatedly n #(c "a" 5000))))))
     (close-connection c)))
 
 (deftest test-echo-servers
