@@ -80,8 +80,7 @@
               #(wrap-netty-channel-future (.write netty-channel %)))
 
             ;; lamina -> netty
-            (on-drained a
-              #(.close netty-channel))
+            (on-drained a #(.close netty-channel))
 
             ;; netty -> lamina
             (run-pipeline (.getCloseFuture netty-channel)
