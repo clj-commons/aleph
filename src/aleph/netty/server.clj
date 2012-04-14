@@ -25,7 +25,7 @@
 
 ;;;
 
-(def default-server-options
+(def default-netty-server-options
   {"child.reuseAddress" true,
    "reuseAddress" true,
    "child.keepAlive" true,
@@ -48,7 +48,7 @@
     (.setPipelineFactory server
       (create-pipeline-factory channel-group pipeline-generator))
 
-    (doseq [[k v] (merge default-server-options (-> options :netty :options))]
+    (doseq [[k v] (merge default-netty-server-options (-> options :netty :options))]
       (.setOption server k v))
 
     (.add channel-group (.bind server (InetSocketAddress. port)))

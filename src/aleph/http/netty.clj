@@ -23,7 +23,9 @@
      HttpMessage
      HttpRequestDecoder
      HttpResponseEncoder
-     HttpContentCompressor]
+     HttpContentCompressor
+     HttpContentDecompressor
+     HttpClientCodec]
     [java.nio.channels
      ClosedChannelException]))
 
@@ -74,3 +76,69 @@
                          (wrap-http-server-channel options)
                          channel-handler)))))
       options)))
+
+(defn wrap-http-client-channel [options ch]
+  (let [ch* (channel)]
+    (join
+      (->> ch*
+        (map*
+          (fn [req]
+            (let [req (merge options req)]
+              (update-in req [:keep-alive?] #(or % true)))))
+        (http/expand-writes http/ring-map->netty-request))
+      ch)
+    (splice
+      (->> ch
+        http/collapse-reads
+        (map* http/netty-response->ring-map)
+        (map* #(dissoc % :keep-alive?)))
+      ch*)))
+
+(defn http-connection [options]
+  (let [client-name (or
+                      (:name options)
+                      (-> options :client :name)
+                      "http-client")
+        error-predicate (or
+                          (:error-predicate options)
+                          #(not (instance? ClosedChannelException %)))]
+    (run-pipeline nil
+      {:error-handler (fn [_])}
+      (fn [_]
+        (create-client
+          client-name
+          (fn [channel-group]
+            (create-netty-pipeline client-name error-predicate channel-group
+              :codec (HttpClientCodec.)
+              :inflater (HttpContentDecompressor.)))
+          options))
+      (partial wrap-http-client-channel options))))
+
+(defn http-client [options]
+  (client #(http-connection options)))
+
+(defn pipelined-http-client [options]
+  (pipelined-client #(http-connection options)))
+
+(defn http-request
+  ([request]
+     (http-request request nil))
+  ([request timeout]
+     (let [request (assoc request :keep-alive? false)
+           start (System/currentTimeMillis)]
+       (run-pipeline request
+         {:error-handler (fn [_])}
+         http-connection
+         (fn [ch]
+           (let [elapsed (- (System/currentTimeMillis) start)]
+             (run-pipeline ch
+               {:timeout (when timeout (- timeout elapsed))
+                :error-handler (fn [_] (close ch))}
+               (fn [ch]
+                 (enqueue ch request)
+                 (read-channel ch))
+               (fn [rsp]
+                 (if (channel? (:body rsp))
+                   (on-closed (:body rsp) #(close ch))
+                   (close ch))
+                 rsp))))))))

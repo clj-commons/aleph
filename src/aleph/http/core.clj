@@ -11,6 +11,7 @@
     [potemkin]
     [lamina core api])
   (:require
+    [aleph.netty.client :as client]
     [aleph.formats :as formats]
     [aleph.netty :as netty]
     [clojure.string :as str]
@@ -23,6 +24,7 @@
     [org.jboss.netty.handler.codec.http
      DefaultHttpChunk
      DefaultHttpResponse
+     DefaultHttpRequest
      HttpVersion
      HttpResponseStatus
      HttpResponse
@@ -50,6 +52,11 @@
   (zipmap
     (map #(HttpMethod/valueOf (name %)) request-methods)
     request-methods))
+
+(def keyword->netty-method
+  (zipmap
+    (vals netty-method->keyword)
+    (keys netty-method->keyword)))
 
 (defn request-method [^HttpRequest request]
   (netty-method->keyword (.getMethod request)))
@@ -128,11 +135,12 @@
       (update-in [:content-type] #(or % type))
       (update-in [:character-encoding] #(or % encoding))
       (update-in [:headers "Content-Type"]
-        #(or %
-           (str
-             (:content-type m)
-             (when-let [charset (:character-encoding m)]
-               (str "; charset=" charset))))))))
+        #(when (:body m)
+           (or %
+             (str
+               (:content-type m)
+               (when-let [charset (:character-encoding m)]
+                 (str "; charset=" charset)))))))))
 
 ;;;
 
@@ -288,6 +296,7 @@
                 (:charset (netty/current-options))
                 "utf-8")))
           (HttpHeaders/setContentLength msg (.readableBytes (.getContent msg))))
+        (prn msg)
         {:msg msg}))))
 
 (defn ring-map->netty-response [m]
@@ -298,4 +307,20 @@
     (populate-netty-msg m response)))
 
 (defn ring-map->netty-request [m]
-  )
+  (let [m (-> m
+            normalize-ring-map
+            client/expand-client-options)
+        request (DefaultHttpRequest.
+                  HttpVersion/HTTP_1_1
+                  (-> m :request-method keyword->netty-method)
+                  (str
+                    (if (empty? (:uri m))
+                      "/"
+                      (:uri m))
+                    (when-not (empty? (:query-string m))
+                      (str "?" (:query-string m)))))]
+    (.setHeader request "Host"
+      (str (:server-name m)
+        (when (:port m)
+          (str ":" (:port m)))))
+    (populate-netty-msg m request)))

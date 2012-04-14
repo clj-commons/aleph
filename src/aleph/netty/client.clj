@@ -23,6 +23,8 @@
      NioClientSocketChannelFactory]
     [org.jboss.netty.bootstrap
      ClientBootstrap]
+    [org.jboss.netty.handler.ssl
+     SslHandler]
     [java.net
      InetSocketAddress]))
 
@@ -48,16 +50,17 @@
        :user-info (.getUserInfo url)
        :query-string (.getQuery url)})))
 
-(defn transform-options [options]
+(defn expand-client-options [options]
   (let [options (merge
                   options
                   (url->options (:url options)))]
-    (assoc options
-      :port (options->port options))))
+    (-> options
+      (assoc :port (options->port options))
+      (dissoc :url))))
 
 ;;;
 
-(def default-client-options
+(def default-netty-client-options
   {"tcpNoDelay" true,
    "reuseAddress" true,
    "readWriteFair" true,
@@ -102,20 +105,31 @@
           (enqueue ch msg)
           (.sendUpstream ctx evt))))))
 
+(defn create-ssl-handler
+  [{:keys [server-name server-port]}]
+  (SslHandler.
+    (doto
+      (.createSSLEngine
+        (javax.net.ssl.SSLContext/getDefault)
+        server-name
+        server-port)
+      (.setUseClientMode true))))
+
 (defn create-client
   [client-name pipeline-generator options]
-  (let [options (transform-options options)]
-
+  (let [options (expand-client-options options)
+        ssl? (= "https" (:scheme options))]
+    
     (doseq [[k v] (:probes options)]
       (siphon (probe-channel [client-name k]) v))
 
     (let [[a b] (channel-pair)
           channel-group (DefaultChannelGroup.)
           client (ClientBootstrap. @channel-factory)
-          ^String host (:host options)
+          ^String host (or (:server-name options) (:host options))
           port (int (:port options))]
 
-      (doseq [[k v] (merge default-client-options (-> options :netty :options))]
+      (doseq [[k v] (merge default-netty-client-options (-> options :netty :options))]
         (.setOption client k v))
 
       (.setPipelineFactory client
@@ -124,6 +138,8 @@
           (fn [channel-group]
             (let [^ChannelPipeline pipeline (pipeline-generator channel-group)]
               (.addLast pipeline "handler" (client-message-handler a options))
+              (when ssl?
+                (.addFirst pipeline "ssl" (create-ssl-handler options)))
               pipeline))))
 
       (run-pipeline (.connect client (InetSocketAddress. host port))
