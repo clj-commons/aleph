@@ -10,6 +10,8 @@
   (:use
     [lamina core trace]
     [aleph.netty core])
+  (:require
+    [clojure.tools.logging :as log])
   (:import
     [org.jboss.netty.channel
      ChannelUpstreamHandler
@@ -25,7 +27,7 @@
 
 ;;;
 
-(def default-netty-server-options
+(def default-server-options
   {"child.reuseAddress" true,
    "reuseAddress" true,
    "child.keepAlive" true,
@@ -48,7 +50,7 @@
     (.setPipelineFactory server
       (create-pipeline-factory channel-group pipeline-generator))
 
-    (doseq [[k v] (merge default-netty-server-options (-> options :netty :options))]
+    (doseq [[k v] (merge default-server-options (-> options :netty :options))]
       (.setOption server k v))
 
     (.add channel-group (.bind server (InetSocketAddress. port)))
@@ -64,34 +66,40 @@
 (defn server-message-handler [handler]
   (let [[a b] (channel-pair)
         latch (atom false)]
+
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
+        (let [netty-channel (.getChannel ctx)]
 
-        ;; handle initial setup
-        (when (and
-                (instance? ChannelEvent evt)
-                (compare-and-set! latch false true))
-          (let [netty-channel (.getChannel evt)]
+          (.set local-channel netty-channel)
+        
+          ;; handle initial setup
+          (when (and
+                  (instance? ChannelEvent evt)
+                  (compare-and-set! latch false true))
 
-            (.set local-channel netty-channel)
+            (on-error a
+              (fn [ex]
+                (log/error ex)
+                (.close netty-channel)))
 
             ;; set up write handling
             (receive-all a
               #(wrap-netty-channel-future (.write netty-channel %)))
-
+            
             ;; lamina -> netty
             (on-drained a #(.close netty-channel))
-
+            
             ;; netty -> lamina
             (run-pipeline (.getCloseFuture netty-channel)
               wrap-netty-channel-future
               (fn [_]
                 (close a)
                 (close b)))
-
+            
             ;; call handler
             (handler b {:address (channel-remote-host-address netty-channel)})))
-
+        
         ;; handle messages
         (if-let [msg (event-message evt)]
           (enqueue a msg)

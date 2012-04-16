@@ -10,6 +10,8 @@
   (:use
     [lamina core trace]
     [aleph.netty core])
+  (:require
+    [clojure.tools.logging :as log])
   (:import
     [java.util.concurrent
      Executors]
@@ -77,29 +79,35 @@
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
 
-        ;; handle initial setup
-        (when (and
-                (instance? ChannelEvent evt)
-                (compare-and-set! latch false true))
-          (let [netty-channel (.getChannel evt)]
+        (let [netty-channel (.getChannel ctx)]
 
-            (.set local-options options)
-            (.set local-channel netty-channel)
+          (.set local-channel netty-channel)
+          (.set local-options options)
+
+          ;; handle initial setup
+          (when (and
+                  (instance? ChannelEvent evt)
+                  (compare-and-set! latch false true))
+
+            (on-error ch
+              (fn [ex]
+                (log/error ex)
+                (.close netty-channel)))
 
             ;; set up write handling
             (receive-all ch
               #(wrap-netty-channel-future (.write netty-channel %)))
-
+            
             ;; lamina -> netty
             (on-drained ch
               #(.close netty-channel))
-
+            
             ;; netty -> lamina
             (run-pipeline (.getCloseFuture netty-channel)
               wrap-netty-channel-future
               (fn [_]
                 (close ch)))))
-
+        
         ;; handle messages
         (if-let [msg (event-message evt)]
           (enqueue ch msg)
@@ -119,7 +127,7 @@
   [client-name pipeline-generator options]
   (let [options (expand-client-options options)
         ssl? (= "https" (:scheme options))]
-    
+
     (doseq [[k v] (:probes options)]
       (siphon (probe-channel [client-name k]) v))
 

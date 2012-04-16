@@ -11,6 +11,7 @@
     [potemkin]
     [lamina core api])
   (:require
+    [aleph.http.options :as options]
     [aleph.netty.client :as client]
     [aleph.formats :as formats]
     [aleph.netty :as netty]
@@ -120,7 +121,7 @@
            (URLConnection/guessContentTypeFromName (.getName ^File body))
            "application/octet-stream")]
 
-        (formats/bytes?)
+        (formats/bytes? body)
         ["application/octet-stream"]))))
 
 (defn normalize-ring-map [m]
@@ -135,8 +136,8 @@
       (update-in [:content-type] #(or % type))
       (update-in [:character-encoding] #(or % encoding))
       (update-in [:headers "Content-Type"]
-        #(when (:body m)
-           (or %
+        #(or %
+           (when (:body m)
              (str
                (:content-type m)
                (when-let [charset (:character-encoding m)]
@@ -144,23 +145,48 @@
 
 ;;;
 
-(defn expand-writes [f ch]
+(defn decode-body [content-type character-encoding body]
+  (when body
+    (let [charset (or character-encoding (options/charset))]
+      (cond
+        (.startsWith ^String content-type "text/")
+        (formats/bytes->string body charset)
+        
+        (= content-type "application/json")
+        (formats/decode-json body)
+        
+        (= content-type "application/xml")
+        (formats/decode-xml body)
+        
+        :else
+        body))))
+
+(defn decode-message [{:keys [content-type character-encoding body] :as msg}]
+  (if (channel? body)
+    (run-pipeline (reduce* conj [] body)
+      #(decode-message (assoc msg :body %)))
+    (assoc msg :body (decode-body content-type character-encoding body))))
+
+;;;
+
+(defn expand-writes [f honor-keep-alive? ch]
   (let [ch* (channel)
-        default-charset (or
-                          (:charset (netty/current-options))
-                          "utf-8")]
+        default-charset (options/charset)]
     (bridge-join ch "aleph.http.core/expand-writes"
       (fn [m]
-        (let [{:keys [msg chunks]} (f m)
-              result (enqueue ch* msg)] 
+        (let [{:keys [msg chunks write-callback]} (f m)
+              result (enqueue ch* msg)
+              final-stage (fn [_]
+                            (when write-callback
+                              (write-callback))
+                            (if (and honor-keep-alive? (not (:keep-alive? m)))
+                              (close ch*)
+                              true))] 
           (if-not chunks
 
             ;; non-streaming response
             (run-pipeline result
-              (fn [_]
-                (if-not (:keep-alive? m)
-                  (close ch*)
-                  true)))
+              final-stage)
 
             ;; streaming response
             (run-pipeline nil
@@ -172,14 +198,11 @@
                        (formats/bytes->channel-buffer %
                          (or (:character-encoding m) default-charset)))
                     chunks)
-                  ch)
+                  ch*)
                 (drained-result chunks))
               (fn [_]
                 (enqueue ch* HttpChunk/LAST_CHUNK))
-              (fn [_]
-                (if-not (:keep-alive? m)
-                  (close ch*)
-                  true))))))
+              final-stage))))
       ch*)
     ch*))
 
@@ -189,11 +212,15 @@
     (bridge-join ch "aleph.http.core/collapse-reads"
       (fn [msg]
         (if (instance? HttpMessage msg)
+
+          ;; headers
           (if-not (.isChunked ^HttpMessage msg)
             (enqueue ch* {:msg msg})
             (let [chunks (channel)]
               (reset! current-stream chunks)
               (enqueue ch* {:msg msg, :chunks chunks})))
+
+          ;; chunk
           (if (.isLast ^HttpChunk msg)
             (close @current-stream)
             (enqueue @current-stream msg))))
@@ -220,9 +247,9 @@
         request (lazy-map
                   :scheme :http
                   :keep-alive? (HttpHeaders/isKeepAlive netty-request)
-                  :remote-addr (delay #_(netty/channel-remote-host-address netty-channel))
-                  :server-name (delay #_(netty/channel-local-host-address netty-channel))
-                  :server-port (delay #_(netty/channel-local-port netty-channel))
+                  :remote-addr (delay (netty/channel-remote-host-address netty-channel))
+                  :server-name (delay (netty/channel-local-host-address netty-channel))
+                  :server-port (delay (netty/channel-local-port netty-channel))
                   :request-method (delay (request-method netty-request))
                   :headers (delay (http-headers netty-request))
                   :content-type (delay (http-content-type netty-request))
@@ -284,19 +311,19 @@
                   ChannelBuffers/wrappedBuffer)]
         (.setContent msg buf)
         (HttpHeaders/setContentLength msg (.size fc))
-        {:msg msg})
+        {:msg msg
+         :write-callback #(.close fc)})
 
       :else
       (do
         (when body
-          (.setContent msg
-            (formats/bytes->channel-buffer body
-              (or
-                (:character-encoding m)
-                (:charset (netty/current-options))
-                "utf-8")))
+          (let [encode #(formats/bytes->channel-buffer %
+                          (or (:character-encoding m) (options/charset)))
+                body (if (coll? body)
+                       (encode (map encode body))
+                       (encode body))]
+            (.setContent msg body))
           (HttpHeaders/setContentLength msg (.readableBytes (.getContent msg))))
-        (prn msg)
         {:msg msg}))))
 
 (defn ring-map->netty-response [m]
@@ -308,8 +335,7 @@
 
 (defn ring-map->netty-request [m]
   (let [m (-> m
-            normalize-ring-map
-            client/expand-client-options)
+            normalize-ring-map)
         request (DefaultHttpRequest.
                   HttpVersion/HTTP_1_1
                   (-> m :request-method keyword->netty-method)
@@ -324,3 +350,5 @@
         (when (:port m)
           (str ":" (:port m)))))
     (populate-netty-msg m request)))
+
+;;;

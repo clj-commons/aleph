@@ -12,10 +12,15 @@
     [aleph netty formats]
     [lamina core api connections])
   (:require
+    [aleph.http.client-middleware :as middleware]
+    [aleph.netty.client :as client]
     [aleph.netty :as netty]
     [aleph.formats :as formats]
-    [aleph.http.core :as http])
+    [aleph.http.core :as http]
+    [aleph.http.options :as options])
   (:import
+    [java.util.concurrent
+     TimeoutException]
     [org.jboss.netty.handler.codec.http
      HttpHeaders
      DefaultHttpChunk
@@ -32,15 +37,22 @@
 ;;;
 
 (defn wrap-http-server-channel [options ch]
-  (let [ch* (channel)]
+  (let [responses (channel)
+        auto-decode? (options/auto-decode?)]
+
+    ;; transform responses
     (join
-      (http/expand-writes http/ring-map->netty-response ch*)
+      (http/expand-writes http/ring-map->netty-response true responses)
       ch)
-    (splice
-      (->> ch
-        http/collapse-reads
-        (map* http/netty-request->ring-map))
-      ch*)))
+
+    ;; transform requests
+    (let [requests (->> ch
+                     http/collapse-reads
+                     (map* http/netty-request->ring-map))
+          requests (if auto-decode?
+                     (map* http/decode-message requests)
+                     requests)]
+          (splice requests responses))))
 
 (defn start-http-server [handler options]
   (let [server-name (or
@@ -54,12 +66,19 @@
         channel-handler (server-generator
                           (fn [ch req]
                             (run-pipeline (dissoc req :keep-alive?)
+                              {:error-handler (fn [_])}
                               #(let [ch* (result-channel)]
                                  (handler ch* %)
                                  ch*)
                               #(enqueue ch
                                  (assoc % :keep-alive? (:keep-alive? req)))))
-                          (:server options))]
+                          (merge
+                            {:error-response (fn [ex]
+                                               (prn "error-response" ex)
+                                               (if (instance? TimeoutException ex)
+                                                 {:status 408}
+                                                 {:status 500}))}
+                            (:server options)))]
     (netty/start-server
       server-name
       (fn [channel-group]
@@ -77,22 +96,34 @@
                          channel-handler)))))
       options)))
 
+;;;
+
 (defn wrap-http-client-channel [options ch]
-  (let [ch* (channel)]
+  (let [requests (channel)
+        options (client/expand-client-options options)
+        auto-decode? (options/auto-decode? options)]
+
+    ;; transform requests
     (join
-      (->> ch*
+      (->> requests
         (map*
           (fn [req]
-            (let [req (merge options req)]
-              (update-in req [:keep-alive?] #(or % true)))))
-        (http/expand-writes http/ring-map->netty-request))
+            (let [req (client/expand-client-options req)
+                  req (merge options req)
+                  req (middleware/transform-request req)]
+              (update-in req [:keep-alive?] #(if (nil? %) true %)))))
+        (http/expand-writes http/ring-map->netty-request false))
       ch)
-    (splice
-      (->> ch
-        http/collapse-reads
-        (map* http/netty-response->ring-map)
-        (map* #(dissoc % :keep-alive?)))
-      ch*)))
+
+    ;; transform responses
+    (let [responses (->> ch
+                      http/collapse-reads
+                      (map* http/netty-response->ring-map)
+                      (map* #(dissoc % :keep-alive?)))
+          responses (if auto-decode?
+                      (map* http/decode-message responses)
+                      responses)]
+      (splice responses requests))))
 
 (defn http-connection [options]
   (let [client-name (or

@@ -10,8 +10,8 @@
   aleph.formats
   (:use
     [lamina core])
-  #_(:require
-    [clojure.data.json :as json]
+  (:require
+    [clj-json.core :as json]
     [clojure.xml :as xml]
     [clojure.contrib.prxml :as prxml])
   (:require
@@ -289,31 +289,24 @@
 
 ;;;
 
-#_(defn decode-json
+(defn decode-json
   "Takes bytes or a string that contain JSON, and returns a Clojure data structure representation."
   [data]
-  (let [stream (bytes->input-stream data)]
-    (when (pos? (.available stream))
-      (-> stream InputStreamReader. (json/read-json-from true false nil)))))
+  (-> data bytes->string (json/parse-string true)))
 
-#_(defn encode-json->bytes
-  "Transforms a Clojure data structure to JSON, and returns a byte representation of the encoded data."
-  [data]
-  (when data
-    (let [output (ByteArrayOutputStream.)
-	  writer (PrintWriter. output)]
-      (json/write-json data writer false)
-      (.flush writer)
-      (-> output .toByteArray to-channel-buffer))))
-
-#_(defn encode-json->string
+(defn ^String encode-json->string
   "Transforms a Clojure data structure to JSON, and returns a string representation of the encoded data."
   [data]
-  (-> data encode-json->bytes bytes->string))
+  (-> data json/generate-string))
+
+(defn encode-json->bytes
+  "Transforms a Clojure data structure to JSON, and returns a byte representation of the encoded data."
+  [data]
+  (-> data encode-json->string (.getBytes "utf-8")))
 
 ;;;
 
-#_(defn decode-xml
+(defn decode-xml
   "Takes bytes or a string that contains XML, and returns a Clojure hash representing the parsed data."
   ([data]
      (when data
@@ -326,7 +319,7 @@
 		charset)]))
 	 (-> data bytes->input-stream xml/parse)))))
 
-#_(defn encode-xml->string
+(defn encode-xml->string
   "Takes a Clojure data structure representing a parse tree or prxml structure, and returns an XML string.
 
    By default, 'charset' is UTF-8."
@@ -340,7 +333,7 @@
 	   (vector? x) (prxml/prxml x)
 	   (map? x) (xml/emit-element x))))))
 
-#_(defn encode-xml->bytes
+(defn encode-xml->bytes
   "Takes a Clojure data structure representing a parse tree or prxml structure, and an XML representation as bytes.
 
    By default, 'charset' is UTF-8."
