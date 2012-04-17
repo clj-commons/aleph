@@ -13,8 +13,6 @@
     [aleph.http core utils websocket]
     [aleph.http.client requests responses]
     [lamina core connections api])
-  (:require
-    [clj-http.client :as client])
   (:import
     [java.util.concurrent
      TimeoutException]
