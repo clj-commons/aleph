@@ -31,7 +31,7 @@
 (defn wrap-ring-handler [f]
   (fn [ch request]
     (run-pipeline request
-      {:error-handler (fn [_])} 
+      {:error-handler (fn [ex] (error ch ex))} 
 
       ;; transform body
       (if (options/streaming-ring-requests?)
@@ -47,7 +47,8 @@
                   (reduce* conj [] body)
                   body))
               #(update-in request [:body]
-                 (formats/bytes->input-stream %)))
+                 (when-not (empty? %)
+                   (formats/bytes->input-stream %))))
             request)))
 
       ;; call into handler

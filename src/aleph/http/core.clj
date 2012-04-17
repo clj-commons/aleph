@@ -328,6 +328,7 @@
 
 (defn ring-map->netty-response [m]
   (let [m (normalize-ring-map m)
+        m (update-in m [:body] #(if (nil? %) "" %))
         response (DefaultHttpResponse.
                    HttpVersion/HTTP_1_1
                    (HttpResponseStatus/valueOf (:status m)))]

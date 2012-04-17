@@ -166,16 +166,16 @@
 
 (defn test-handler-response [expected aleph-handler ring-handler]
   (with-handlers aleph-handler ring-handler
-    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 500))))
-    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 500))))))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 1000))))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 1000))))))
 
 ;;;
 
-#_(deftest test-error-responses
+(deftest test-error-responses
   (test-handler-response 500 error-aleph-handler error-ring-handler)
-  (test-handler-response 500 async-error-aleph-handler async-error-ring-handler)
+  #_(test-handler-response 500 async-error-aleph-handler async-error-ring-handler)
   (test-handler-response 408 timeout-aleph-handler timeout-ring-handler)
-  (test-handler-response 408 async-timeout-aleph-handler async-timeout-ring-handler))
+  #_(test-handler-response 408 async-timeout-aleph-handler async-timeout-ring-handler))
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")

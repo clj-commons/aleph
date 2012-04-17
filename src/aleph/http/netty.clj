@@ -10,7 +10,7 @@
   (:use
     [aleph.http.core]
     [aleph netty formats]
-    [lamina core api connections])
+    [lamina core api connections viz])
   (:require
     [aleph.http.client-middleware :as middleware]
     [aleph.netty.client :as client]
@@ -74,7 +74,6 @@
                                  (assoc % :keep-alive? (:keep-alive? req)))))
                           (merge
                             {:error-response (fn [ex]
-                                               (prn "error-response" ex)
                                                (if (instance? TimeoutException ex)
                                                  {:status 408}
                                                  {:status 500}))}
@@ -143,7 +142,9 @@
               :codec (HttpClientCodec.)
               :inflater (HttpContentDecompressor.)))
           options))
-      (partial wrap-http-client-channel options))))
+      (fn [connection]
+        (let [ch (wrap-http-client-channel options connection)]
+          ch)))))
 
 (defn http-client [options]
   (client #(http-connection options)))
@@ -164,7 +165,7 @@
            (let [elapsed (- (System/currentTimeMillis) start)]
              (run-pipeline ch
                {:timeout (when timeout (- timeout elapsed))
-                :error-handler (fn [_] (close ch))}
+                :error-handler (fn [ex] (close ch))}
                (fn [ch]
                  (enqueue ch request)
                  (read-channel ch))
