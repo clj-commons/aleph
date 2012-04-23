@@ -5,12 +5,11 @@
   :license {:name "Eclipse Public License - v 1.0"
             :url "http://www.eclipse.org/legal/epl-v10.html"
             :distribution :repo}
-  :dependencies [[org.clojure/clojure "1.3.0"]
+  :dependencies [[org.clojure/clojure "1.4.0"]
                  [org.clojure/tools.logging "0.2.3"]
                  [io.netty/netty "3.3.1.Final"]
                  [lamina "0.5.0-SNAPSHOT"]
                  [gloss "0.2.2-SNAPSHOT"]
-                 [potemkin "0.1.2"]
                  [clj-json "0.5.0"]
                  [prxml "1.3.1"]]
   :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
