@@ -36,7 +36,7 @@
       ;; transform body
       (if (options/streaming-ring-requests?)
         identity
-        (fn [{:keys [body] :as request}]
+        (fn [{:keys [body character-encoding] :as request}]
 
           ;; if it's a streaming request, wait for it to complete
           (if (channel? body)
@@ -46,10 +46,13 @@
                 (if (channel? body)
                   (reduce* conj [] body)
                   body))
-              #(update-in request [:body]
-                 (when-not (empty? %)
-                   (formats/bytes->input-stream %))))
-            request)))
+              #(assoc request
+                 :body
+                 (formats/bytes->input-stream % character-encoding)))
+
+            ;; if it's not a streaming request, just turn it into an input stream
+            (update-in request [:body]
+              formats/bytes->input-stream character-encoding))))
 
       ;; call into handler
       (fn [request]
