@@ -10,7 +10,8 @@
   (:use
     [aleph http]
     [lamina core connections trace api]
-    [clojure.test])
+    [clojure.test]
+    [aleph.test.utils])
   (:require
     [aleph.formats :as formats]
     [clojure.string :as str]
@@ -241,3 +242,18 @@
   (is-closed? basic-handler
     {:method :get, :url "http://localhost:8080/string", :keep-alive? true}
     {:method :get, :url "http://localhost:8080/string", :keep-alive? false}))
+
+;;;
+
+(defn hello-world-handler [ch request]
+  (enqueue ch {:status 200, :body "hello"}))
+
+(deftest ^:benchmark run-http-benchmark 
+  (with-handler hello-world-handler
+    (let [create-conn #(deref (http-connection {:url "http://localhost:8080"}))]
+      
+      (let [ch (create-conn)]
+        (bench "http hello-world"
+          (enqueue ch {:method :get})
+          @(read-channel ch))
+        (close ch)))))

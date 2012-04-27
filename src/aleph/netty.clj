@@ -18,6 +18,10 @@
 (import-fn core/channel-local-host-address)
 (import-fn core/channel-local-port)
 
+(import-fn core/wrap-netty-channel-future)
+
+(import-fn core/event-message)
+
 (import-fn server/start-server)
 (import-fn server/server-message-handler)
 

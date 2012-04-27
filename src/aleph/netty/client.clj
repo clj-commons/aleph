@@ -44,13 +44,25 @@
 
 (defn url->options [url]
   (when url
-    (let [url (java.net.URL. url)]
-      {:scheme (.getProtocol url)
+    (let [url (java.net.URI. url)
+          path (.getPath url)]
+      {:scheme (.getScheme url)
        :server-name (.getHost url)
        :server-port (.getPort url)
-       :uri (.getPath url)
+       :uri (if (empty? path) "/" path)
        :user-info (.getUserInfo url)
        :query-string (.getQuery url)})))
+
+(defn options->url [options]
+  (str
+    (java.net.URI.
+      (:scheme options)
+      (:user-info options)
+      (:server-name options)
+      (:server-port options)
+      (:uri options)
+      (:query-string options)
+      "")))
 
 (defn expand-client-options [options]
   (let [options (merge
@@ -85,9 +97,7 @@
           (.set local-options options)
 
           ;; handle initial setup
-          (when (and
-                  (instance? ChannelEvent evt)
-                  (compare-and-set! latch false true))
+          (when (compare-and-set! latch false true)
 
             (on-error ch
               (fn [ex]

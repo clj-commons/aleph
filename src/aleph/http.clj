@@ -8,12 +8,15 @@
 
 (ns aleph.http
   (:require
+    [aleph.http.websocket :as ws]
     [aleph.http.netty :as http]
     [aleph.formats :as formats]
     [aleph.http.options :as options])
   (:use
     [lamina.core]
     [potemkin]))
+
+(import-fn ws/websocket-client)
 
 (import-fn http/start-http-server)
 

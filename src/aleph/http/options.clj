@@ -32,3 +32,9 @@
      (streaming-ring-requests? (current-options)))
   ([options]
      (boolean (:streaming-ring-requests? options))))
+
+(defn websocket?
+  ([]
+     (websocket? (current-options)))
+  ([options]
+     (boolean (or (:websocket options) (:websocket? options)))))

@@ -10,8 +10,9 @@
   (:use
     [aleph.http.core]
     [aleph netty formats]
-    [lamina core api connections viz])
+    [lamina core api connections])
   (:require
+    [aleph.http.websocket :as ws]
     [aleph.http.client-middleware :as middleware]
     [aleph.netty.client :as client]
     [aleph.netty :as netty]
@@ -59,9 +60,6 @@
                       (:name options)
                       (-> options :server :name)
                       "http-server")
-        error-predicate (or
-                          (:error-predicate options)
-                          #(not (instance? ClosedChannelException %)))
         netty-options (-> options :netty)
         channel-handler (server-generator
                           (fn [ch req]
@@ -83,18 +81,22 @@
     (netty/start-server
       server-name
       (fn [channel-group]
-        (netty/create-netty-pipeline server-name error-predicate channel-group
-          :decoder (HttpRequestDecoder.
-		     (get netty-options "http.maxInitialLineLength" 8192)
-		     (get netty-options "http.maxHeaderSize" 16384)
-		     (get netty-options "http.maxChunkSize" 16384))
-	  :encoder (HttpResponseEncoder.)
-	  :deflater (HttpContentCompressor.)
-          :handler (server-message-handler
-                     (fn [ch _]
-                       (->> ch
-                         (wrap-http-server-channel options)
-                         channel-handler)))))
+        (let [pipeline (netty/create-netty-pipeline server-name nil channel-group
+                         :decoder (HttpRequestDecoder.
+                                    (get netty-options "http.maxInitialLineLength" 8192)
+                                    (get netty-options "http.maxHeaderSize" 16384)
+                                    (get netty-options "http.maxChunkSize" 16384))
+                         :encoder (HttpResponseEncoder.)
+                         :deflater (HttpContentCompressor.)
+                         :handler (server-message-handler
+                                    (fn [ch _]
+                                      (->> ch
+                                        (wrap-http-server-channel options)
+                                        channel-handler))))]
+          (when (options/websocket? options)
+            (.addBefore pipeline "handler" "websocket"
+              (ws/server-handshake-stage handler)))
+          pipeline))
       options)))
 
 ;;;
@@ -130,17 +132,14 @@
   (let [client-name (or
                       (:name options)
                       (-> options :client :name)
-                      "http-client")
-        error-predicate (or
-                          (:error-predicate options)
-                          #(not (instance? ClosedChannelException %)))]
+                      "http-client")]
     (run-pipeline nil
       {:error-handler (fn [_])}
       (fn [_]
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name error-predicate channel-group
+            (create-netty-pipeline client-name nil channel-group
               :codec (HttpClientCodec.)
               :inflater (HttpContentDecompressor.)))
           options))

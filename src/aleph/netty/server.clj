@@ -63,44 +63,48 @@
 
 ;;;
 
-(defn server-message-handler [handler]
-  (let [[a b] (channel-pair)
-        latch (atom false)]
+(defn server-message-handler
+  ([handler]
+     (server-message-handler handler nil))
+  ([handler netty-channel]
+     (let [[a b] (channel-pair)
+           latch (atom false)
+           initializer (fn [netty-channel]
+                         (when (compare-and-set! latch false true)
+                        
+                           (on-error a
+                             (fn [ex]
+                               (log/error ex)
+                               (.close netty-channel)))
+                           
+                           ;; set up write handling
+                           (receive-all a
+                             #(wrap-netty-channel-future (.write netty-channel %)))
+                           
+                           ;; lamina -> netty
+                           (on-drained a #(.close netty-channel))
+                           
+                           ;; netty -> lamina
+                           (run-pipeline (.getCloseFuture netty-channel)
+                             wrap-netty-channel-future
+                             (fn [_]
+                               (close a)
+                               (close b)))
 
-    (reify ChannelUpstreamHandler
-      (handleUpstream [_ ctx evt]
-        (let [netty-channel (.getChannel ctx)]
+                           ;; call handler
+                           (handler b {:address (channel-remote-host-address netty-channel)})))]
 
-          (.set local-channel netty-channel)
+       (when netty-channel (initializer netty-channel))
+
+       (reify ChannelUpstreamHandler
+         (handleUpstream [_ ctx evt]
+
+           (let [netty-channel (.getChannel ctx)]
+             (.set local-channel netty-channel)
+             (initializer netty-channel))
         
-          ;; handle initial setup
-          (when (and
-                  (instance? ChannelEvent evt)
-                  (compare-and-set! latch false true))
+           ;; handle messages
+           (if-let [msg (event-message evt)]
+             (enqueue a msg)
+             (.sendUpstream ctx evt)))))))
 
-            (on-error a
-              (fn [ex]
-                (log/error ex)
-                (.close netty-channel)))
-
-            ;; set up write handling
-            (receive-all a
-              #(wrap-netty-channel-future (.write netty-channel %)))
-            
-            ;; lamina -> netty
-            (on-drained a #(.close netty-channel))
-            
-            ;; netty -> lamina
-            (run-pipeline (.getCloseFuture netty-channel)
-              wrap-netty-channel-future
-              (fn [_]
-                (close a)
-                (close b)))
-            
-            ;; call handler
-            (handler b {:address (channel-remote-host-address netty-channel)})))
-        
-        ;; handle messages
-        (if-let [msg (event-message evt)]
-          (enqueue a msg)
-          (.sendUpstream ctx evt))))))

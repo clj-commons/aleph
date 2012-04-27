@@ -29,7 +29,7 @@
 
 ;;;
 
-(def n 100)
+(def n 10)
 
 (defn test-echo-server [client-fn]
   (let [c (client-fn #(deref (tcp-client {:host "localhost", :port 10000, :frame (string :utf-8 :delimiters ["\n"])})))]

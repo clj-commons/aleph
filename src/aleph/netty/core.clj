@@ -11,6 +11,7 @@
     [lamina core trace]
     [potemkin])
   (:require
+    [aleph.formats :as formats]
     [clojure.tools.logging :as log])
   (:import
     [org.jboss.netty.buffer
@@ -105,7 +106,8 @@
 ;;;
 
 (defn ^ChannelUpstreamHandler upstream-error-handler [pipeline-name error-predicate]
-  (let [error-probe (error-probe-channel [pipeline-name :error])]
+  (let [error-probe (error-probe-channel [pipeline-name :error])
+        error-predicate (or error-predicate (constantly true))]
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
         (if-let [error (event-exception evt)]
@@ -114,7 +116,8 @@
           (.sendUpstream ctx evt))))))
 
 (defn ^ChannelDownstreamHandler downstream-error-handler [pipeline-name error-predicate]
-  (let [error-probe (error-probe-channel [pipeline-name :error])]
+  (let [error-probe (error-probe-channel [pipeline-name :error])
+        error-predicate (or error-predicate (constantly true))]
     (reify ChannelDownstreamHandler
       (handleDownstream [_ ctx evt]
         (if-let [error (event-exception evt)]
