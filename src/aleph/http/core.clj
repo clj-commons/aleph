@@ -282,10 +282,7 @@
                   content))))))
 
 (defn populate-netty-msg [m ^HttpMessage msg]
-  (let [body (:body m)
-        body (if (instance? InputStream body)
-               (formats/input-stream->channel body)
-               body)]
+  (let [body (:body m)]
 
     ;; populate headers
     (doseq [[k v] (:headers m)]
@@ -304,6 +301,13 @@
         {:msg msg
          :chunks body})
 
+      (instance? InputStream body)
+      (do
+        (.setHeader msg "Transfer-Encoding" "chunked")
+        {:msg msg
+         :chunks (formats/input-stream->channel body)
+         :write-callback #(.close ^InputStream body)})
+
       (instance? File body)
       (let [fc (.getChannel (RandomAccessFile. body "r"))
             buf (-> fc
@@ -320,7 +324,10 @@
           (let [encode #(formats/bytes->channel-buffer %
                           (or (:character-encoding m) (options/charset)))
                 body (if (coll? body)
-                       (encode (map encode body))
+                       (->> body
+                         (map str)
+                         (map encode)
+                         encode)
                        (encode body))]
             (.setContent msg body))
           (HttpHeaders/setContentLength msg (.readableBytes (.getContent msg))))

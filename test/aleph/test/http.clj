@@ -29,7 +29,7 @@
 (def string-response "String!")
 (def seq-response ["sequence: " 1 " two " 3.0])
 (def file-response (File. (str (System/getProperty "user.dir")
-                               "/test/starry_night.jpg")))
+                               "/test/file.txt")))
 (def stream-response "Stream!")
 
 (defn string-handler [request]
@@ -44,12 +44,15 @@
 
 (defn file-handler [request]
   {:status 200
+   :content-type "text/plain"
    :body file-response})
 
 (defn stream-handler [request]
   {:status 200
    :content-type "text/html"
    :body (ByteArrayInputStream. (.getBytes stream-response))})
+
+
 
 (def latch (promise))
 (def browser-server (atom nil))
@@ -77,9 +80,9 @@
 (def expected-results
   (->>
     ["string" string-response
-     ;;"stream" stream-response
-     ;;"seq" (apply str seq-response)
-     ]
+     "stream" stream-response
+     "seq" (apply str seq-response)
+     "file" "this is a file"]
     (repeat 10)
     (apply concat)
     (partition 2)))
@@ -152,7 +155,7 @@
   `(do
      (with-handler ~aleph-handler
        ~@body)
-     (with-handler (wrap-ring-handler ~ring-handler)
+     #_(with-handler (wrap-ring-handler ~ring-handler)
        ~@body)))
 
 (defn is-closed? [handler & requests]
@@ -173,9 +176,9 @@
 
 (deftest test-error-responses
   (test-handler-response 500 error-aleph-handler error-ring-handler)
-  #_(test-handler-response 500 async-error-aleph-handler async-error-ring-handler)
+  (test-handler-response 500 async-error-aleph-handler async-error-ring-handler)
   (test-handler-response 408 timeout-aleph-handler timeout-ring-handler)
-  #_(test-handler-response 408 async-timeout-aleph-handler async-timeout-ring-handler))
+  (test-handler-response 408 async-timeout-aleph-handler async-timeout-ring-handler))
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")

@@ -65,16 +65,18 @@
         netty-options (-> options :netty)
         channel-handler (server-generator
                           (fn [ch req]
-                            (run-pipeline (dissoc req :keep-alive?)
-                              {:error-handler (fn [_])}
-                              #(let [ch* (result-channel)]
-                                 (handler ch* %)
-                                 ch*)
-                              #(enqueue ch
-                                 (assoc % :keep-alive? (:keep-alive? req)))))
+                            (let [ch* (result-channel)]
+                              (run-pipeline (dissoc req :keep-alive?)
+                                {:error-handler #(error ch* %)}
+                                #(handler ch* %))
+                              (run-pipeline ch*
+                                {:error-handler (fn [_])}
+                                #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))
                           (merge
                             {:error-response (fn [ex]
-                                               (if (instance? TimeoutException ex)
+                                               (if (or
+                                                     (= ex :lamina/timeout!)
+                                                     (instance? TimeoutException ex))
                                                  {:status 408}
                                                  {:status 500}))}
                             (:server options)))]

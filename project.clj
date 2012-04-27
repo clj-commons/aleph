@@ -12,6 +12,14 @@
                  [gloss "0.2.2-SNAPSHOT"]
                  [clj-json "0.5.0"]
                  [prxml "1.3.1"]]
+  :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
+                     [io.netty/netty "3.3.1.Final"]
+                     [lamina "0.5.0-SNAPSHOT"]
+                     [gloss "0.2.2-SNAPSHOT"]
+                     [clj-json "0.5.0"]
+                     [prxml "1.3.1"]]
+               "1.2" [[org.clojure/clojure "1.2.0"]]
+               "1.3" [[org.clojure/clojure "1.3.0"]]}
   :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
                      [codox "0.4.1"]]
   :test-selectors {:default #(not (some #{:benchmark} (cons (:tag %) (keys %))))
