@@ -24,5 +24,6 @@
                      [gloss "0.2.1-rc1"]
                      [user-agent-utils "1.2.3"]
                      [potemkin "0.1.3"]]
-               "1.2" [[org.clojure/clojure "1.2.1"]]}
+               "1.2" [[org.clojure/clojure "1.2.1"]]
+               "1.4" [[org.clojure/clojure "1.4.0"]]}
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
