@@ -15,7 +15,8 @@
     [clojure.xml :as xml]
     [clojure.contrib.prxml :as prxml])
   (:require
-    [gloss.io :as gloss])
+    [gloss.io :as gloss-io]
+    [gloss.core :as gloss])
   (:import
     [java.io
      InputStream
@@ -395,17 +396,39 @@
 
 ;;;
 
+(defn options->frame [{:keys [frame delimiters strip-delimiters?]
+                       :or {strip-delimiters? true}}]
+  (cond
+    (and frame delimiters) (gloss/delimited-frame delimiters frame)
+    (and frame (not delimiters)) (gloss/compile-frame frame)
+    (and (not frame) delimiters) (gloss/delimited-block delimiters strip-delimiters?)
+    :else nil))
+
+(defn options->decoder [options]
+  (-> options
+    (update-in [:frame] #(or (:decoder options) %))
+    options->frame))
+
+(defn options->encoder [options]
+  (-> options
+    (update-in [:frame] #(or (:encoder options) %))
+    options->frame))
+
 (defn decode-channel [frame ch]
-  (gloss/decode-channel (map* bytes->byte-buffers ch) frame))
+  (gloss-io/decode-channel
+    (map* bytes->byte-buffers ch)
+    (if (map? frame)
+      (options->decoder frame)
+      frame)))
 
 (defn wrap-socket-channel [options ch]
-  (let [encoder (or (:encoder options) (:frame options))
-        decoder (or (:decoder options) (:frame options))
+  (let [encoder (options->encoder options)
+        decoder (options->decoder options)
         ch* (channel)]
     (if encoder
       (join
         (->> ch*
-          (map* #(gloss/encode encoder %))
+          (map* #(gloss-io/encode encoder %))
           (map* bytes->channel-buffer))
         ch)
       (join

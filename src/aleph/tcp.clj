@@ -25,14 +25,11 @@
   (let [server-name (or
                       (:name options)
                       (-> options :server :name)
-                      "tcp-server")
-        error-predicate (or
-                          (:error-predicate options)
-                          #(not (instance? ClosedChannelException %)))]
+                      "tcp-server")]
     (start-server
       server-name
       (fn [channel-group]
-        (create-netty-pipeline server-name error-predicate channel-group
+        (create-netty-pipeline server-name nil channel-group
           :handler (server-message-handler
                      (fn [ch x]
                        (handler (wrap-tcp-channel options ch) x)))))
@@ -42,16 +39,13 @@
   (let [client-name (or
                       (:name options)
                       (-> options :client :name)
-                      "tcp-client")
-        error-predicate (or
-                          (:error-predicate options)
-                          #(not (instance? ClosedChannelException %)))]
+                      "tcp-client")]
     (run-pipeline nil
       {:error-handler (fn [_])}
       (fn [_]
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name error-predicate channel-group))
+            (create-netty-pipeline client-name nil channel-group))
           options))
       (partial wrap-tcp-channel options))))

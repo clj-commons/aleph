@@ -125,6 +125,9 @@
                       (map* #(dissoc % :keep-alive?)))
           responses (if auto-decode?
                       (map* http/decode-message responses)
+                      responses)
+          responses (if-let [frame (formats/options->decoder options)]
+                      (formats/decode-channel frame responses)
                       responses)]
       (splice responses requests))))
 
