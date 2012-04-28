@@ -179,12 +179,19 @@
            (fn [[stage-name stage]]
              `(.addLast pipeline## ~(name stage-name) ~stage))
            (partition 2 stages))
+
+       ;; traffic probes
        (.addFirst pipeline## "incoming-traffic"
          (upstream-traffic-handler ~pipeline-name))
        (.addFirst pipeline## "outgoing-traffic"
          (downstream-traffic-handler ~pipeline-name))
-       (.addFirst pipeline## "channel-group-handler"
-         (connection-handler ~pipeline-name channel-group#))
+
+       ;; connections
+       (when channel-group#
+         (.addFirst pipeline## "channel-group-handler"
+           (connection-handler ~pipeline-name channel-group#)))
+
+       ;; error logging
        (.addLast pipeline## "outgoing-error"
          (downstream-error-handler ~pipeline-name error-predicate#))
        (.addFirst pipeline## "incoming-error"

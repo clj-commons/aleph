@@ -10,6 +10,7 @@
   (:use
     [potemkin])
   (:require
+    [aleph.netty.udp :as udp]
     [aleph.netty.core :as core]
     [aleph.netty.server :as server]
     [aleph.netty.client :as client]))
@@ -17,19 +18,17 @@
 (import-fn core/channel-remote-host-address)
 (import-fn core/channel-local-host-address)
 (import-fn core/channel-local-port)
-
 (import-fn core/wrap-netty-channel-future)
-
 (import-fn core/event-message)
+
+(import-macro core/create-netty-pipeline)
+
+(import-fn core/current-options)
+(import-fn core/current-channel)
 
 (import-fn server/start-server)
 (import-fn server/server-message-handler)
 
 (import-fn client/create-client)
 
-(import-fn core/current-options)
-(import-fn core/current-channel)
-
-(import-macro core/create-netty-pipeline)
-
-
+(import-fn udp/create-udp-socket)
