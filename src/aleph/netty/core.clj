@@ -192,10 +192,11 @@
            (connection-handler ~pipeline-name channel-group#)))
 
        ;; error logging
-       (.addLast pipeline## "outgoing-error"
+       #_(.addLast pipeline## "outgoing-error"
          (downstream-error-handler ~pipeline-name error-predicate#))
-       (.addFirst pipeline## "incoming-error"
+       #_(.addFirst pipeline## "incoming-error"
          (upstream-error-handler ~pipeline-name error-predicate#))
+
        pipeline##)))
 
 (defn create-pipeline-factory [channel-group pipeline-generator]
