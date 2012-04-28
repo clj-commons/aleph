@@ -25,7 +25,7 @@
 		    (sync-http-request
 		      {:method :get
 		       :basic-auth [username password]
-		       :url "http://stream.twitter.com/1/statuses/sample.json"
+		       :url "https://stream.twitter.com/1/statuses/sample.json"
 		       :delimiters ["\r"]
 		       }))]
        (Thread/sleep duration)
@@ -40,7 +40,7 @@
       (http-request 
 	{:method :get 
 	 :basic-auth ["aleph_example" "_password"]
-	 :url "http://stream.twitter.com/1/statuses/sample.json"}))))
+	 :url "https://stream.twitter.com/1/statuses/sample.json"}))))
 
 (defn init-stream-channel [ch]
   ;; we need a sink for messages, since we always fork the original channel
@@ -50,7 +50,7 @@
     (let [response (http-request 
 		     {:method :get 
 		      :basic-auth ["aleph_example" "_password"]
-		      :url "http://stream.twitter.com/1/statuses/sample.json"
+		      :url "https://stream.twitter.com/1/statuses/sample.json"
 		      :delimiters ["\r"]})]
       (siphon (:body response) ch))))
 
