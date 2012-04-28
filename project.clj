@@ -17,7 +17,7 @@
                  [potemkin "0.1.3"]]
   :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
                      [org.clojure/data.json "0.1.1"]
-                     [org.clojure.contrib/prxml "1.3.0-alpha4"]
+                     [prxml "1.3.1"]	
                      [io.netty/netty "3.4.2.Final"]
                      [clj-http "0.1.3"]
                      [lamina "0.4.1-rc1"]
