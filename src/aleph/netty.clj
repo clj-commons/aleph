@@ -13,7 +13,6 @@
     [aleph formats core]
     [gloss core])
   (:require
-    [clj-http.client :as client]
     [clojure.tools.logging :as log])
   (:import
     [org.jboss.netty.channel

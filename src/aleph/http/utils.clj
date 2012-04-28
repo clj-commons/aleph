@@ -205,7 +205,6 @@
   ((comp
      wrap-request
      (-> identity
-       client/wrap-input-coercion
        client/wrap-content-type
        client/wrap-accept
        client/wrap-query-params
