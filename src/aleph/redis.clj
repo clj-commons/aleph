@@ -31,7 +31,7 @@
 		      :description (str "redis @ " (:host options) ":" (:port options))}
 		     options)
 	   database (atom nil)
-	   connection-callback (fn [ch]
+	   on-connected (fn [ch]
 				 (run-pipeline nil
 				   (fn [_]
 				     (when-let [password (:password options)]
@@ -42,20 +42,20 @@
 				       (enqueue ch [:select db])
 				       (read-channel ch)))
 				   (fn [_]
-				     (when-let [callback (:connection-callback options)]
+				     (when-let [callback (:on-connected options)]
 				       (callback ch)))))
 	   client-fn (pipelined-client
 		       #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
 		       (merge
 			 options
-			 {:connection-callback connection-callback}))]
+			 {:on-connected on-connected}))]
        (fn [& args]
 	 (let [result (apply client-fn args)]
 	   (when (and (coll? (first args)) (= :select (ffirst args)))
 	     (run-pipeline result
 	       {:error-handler (fn [_] )}
 	       (fn [_] (reset! database (-> args first second)))))
-	   result))))) 
+	   result)))))
 
 (defn enqueue-task
   "Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure."
@@ -107,7 +107,7 @@
 		       {:name "redis"
 			:description (str "redis stream @ " (:host options) ":" (:port options))}
 		       options
-		       {:connection-callback
+		       {:on-connected
 			(fn [ch]
 			  ;; NOTE: this is a bit of a race condition (subscription messages
 			  ;; may be sent twice), but subscription messages are idempotent.
@@ -150,9 +150,3 @@
    to the PUNSUBSCRIBE command."
   [redis-stream & stream-patterns]
   (enqueue redis-stream (list* "punsubscribe" stream-patterns)))
-
-
-
-
-
-
