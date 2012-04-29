@@ -23,39 +23,74 @@
 
    The function will return a result-channel representing the response.  To close the
    connection, use lamina.connections/close-connection."
-  ([options]
+  ([{:keys [host
+            port
+            charset
+            name
+            password
+            heartbeat?]
+     :or {heartbeat? true
+          charset :utf-8}
+     :as options}]
      (let [options (merge
-		     {:port 6379
-		      :charset :utf-8
-		      :name "redis"
-		      :description (str "redis @ " (:host options) ":" (:port options))}
-		     options)
-	   database (atom nil)
-	   on-connected (fn [ch]
-				 (run-pipeline nil
-				   (fn [_]
-				     (when-let [password (:password options)]
-				       (enqueue ch [:auth password])
-				       (read-channel ch)))
-				   (fn [_]
-				     (when-let [db @database]
-				       (enqueue ch [:select db])
-				       (read-channel ch)))
-				   (fn [_]
-				     (when-let [callback (:on-connected options)]
-				       (callback ch)))))
+                     {:host "localhost"
+                      :port 6379
+                      :name "redis-client"}
+                     options)
+
+           options (if heartbeat?
+                     (assoc options :heartbeat
+                       {:request [:ping]
+                        :timeout 2500
+                        :interval 5000
+                        :response-validator #(= "PONG" %)})
+                     options)
+
+           database (atom nil)
+
+           on-connected (fn [ch]
+                          (run-pipeline nil
+                            {:error-handler (fn [_])}
+
+                            ;; set password
+                            (fn [_]
+                              (when password
+                                (enqueue ch [:auth password])
+                                (read-channel ch)))
+                            ;; set database
+                            (fn [_]
+                              (when-let [db @database]
+                                (prn "switching to" db)
+                                (enqueue ch [:select db])
+                                (read-channel ch)))
+
+                            ;; invoke on-connected callback
+                            (fn [_]
+                              (when-let [callback (:on-connected options)]
+                                (callback ch)))))
+
 	   client-fn (pipelined-client
-		       #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
+		       #(tcp-client (merge options {:frame (redis-codec charset)}))
 		       (merge
 			 options
 			 {:on-connected on-connected}))]
-       (fn [& args]
-	 (let [result (apply client-fn args)]
-	   (when (and (coll? (first args)) (= :select (ffirst args)))
-	     (run-pipeline result
-	       {:error-handler (fn [_] )}
-	       (fn [_] (reset! database (-> args first second)))))
-	   result)))))
+       (with-meta
+         (fn [& args]
+           (run-pipeline (apply client-fn args)
+             {:error-handler (fn [_])}
+             (fn [result]
+
+               ;; if it was a :select command, register the database
+               (when (and (coll? (first args)) (= :select (ffirst args)))
+                 (reset! database (-> args first second)))
+
+               ;; coerce exceptions into an error-result
+               (if (instance? Exception result)
+                 (error-result result)
+                 result))))
+         {::heartbeat? heartbeat?}))))
+
+;;;
 
 (defn enqueue-task
   "Enqueues a task onto a Redis queue. 'task' must be a printable Clojure data structure."
@@ -68,9 +103,13 @@
    value received from Redis will be a readable data structure, and :task will contain a
    Clojure data structure."
   [redis-client & queue-names]
-  (run-pipeline
-    (redis-client (concat ["brpop"] queue-names [0]))
+  (assert (not (::heartbeat? (meta redis-client))))
+  (run-pipeline nil
+    {:error-handler (fn [_])}
+    (fn [_] (redis-client (concat ["brpop"] queue-names [0])))
     #(hash-map :queue (first %) :task (read-string (second %)))))
+
+;;;
 
 (defn- filter-messages [ch]
   (->> ch
@@ -82,7 +121,7 @@
     (map*
       #(let [cnt (count %)]
 	 (hash-map
-	   :stream (nth % (- cnt 2))
+	   :channel (nth % (- cnt 2))
 	   :message (nth % (- cnt 1)))))))
 
 (defn redis-stream
@@ -94,40 +133,43 @@
    (pattern-subscribe stream & channel-patterns). To unsubscribe, use (unsubscribe ...) and
    (pattern-unsubscribe ...).
 
-   Messages from the stream will be of the structure {:channel \"channel-name\", :message \"message\"}.
+   Messages from the stream will be of the structure:
+
+      {:channel \"channel-name\", :message \"message\"}
+
    :message will always be a string."
   ([options]
-     (let [options (merge {:port 6379 :charset :utf-8} options)
-	   control-messages (channel)
+     (let [control-messages (channel)
 	   stream (channel)
-	   control-message-accumulator (atom [])]
-       (receive-all control-messages
-	 #(swap! control-message-accumulator conj %))
-       (let [options (merge
-		       {:name "redis"
-			:description (str "redis stream @ " (:host options) ":" (:port options))}
-		       options
-		       {:on-connected
-			(fn [ch]
-			  ;; NOTE: this is a bit of a race condition (subscription messages
-			  ;; may be sent twice), but subscription messages are idempotent.
-			  ;; Regardless, maybe clean this up.
-			  (let [control-messages* (fork control-messages)]
-			    (doseq [msg @control-message-accumulator]
-			      (enqueue ch msg))
-			    (siphon control-messages* ch))
-			  (siphon (filter-messages ch) stream))})
-	     connection (persistent-connection
-			  #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
-			  options)
-	     close-fn (fn []
-			(close-connection connection)
-			(close stream)
-			(close control-messages))]
-	 (on-closed control-messages close-fn)
-	 (with-meta
-	   (splice stream control-messages)
-	   {:lamina.connections/close-fn close-fn})))))
+
+           options (merge
+                     {:port 6379
+                      :host "localhost"
+                      :charset :utf-8
+                      :name "redis-stream"}
+                     options
+                     {:on-connected
+                      (fn [ch]
+                        (siphon (fork control-messages) ch)
+                        (siphon (filter-messages ch) stream))})
+
+           connection (persistent-connection
+                        #(tcp-client (merge options {:frame (redis-codec (:charset options))}))
+                        options)
+
+           _ (connection) ;; force a connection, since persistent-connection is lazy
+           
+           close-fn (fn []
+                      (close-connection connection)
+                      (close stream)
+                      (close control-messages))] 
+
+       (on-closed control-messages close-fn)
+
+       (with-meta
+         (splice stream control-messages)
+         {:lamina.connections/close-fn close-fn
+          :lamina.connections/reset-fn #(reset-connection connection)}))))
 
 (defn subscribe
   "Subscribes a stream to one or more streams.  Corresponds to the SUBSCRIBE command."

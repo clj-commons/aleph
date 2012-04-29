@@ -49,8 +49,14 @@
     :multi-bulk (map process-response (second rsp))
     (second rsp)))
 
+(defn coerce [x]
+  (cond
+    (keyword? x) (name x)
+    ;;(number? x) x
+    :else (str x)))
+
 (defn process-request [req]
-  [:multi-bulk (map #(vector :bulk (if (keyword? %) (name %) (str %))) req)])
+  [:multi-bulk (map #(vector :bulk (coerce %)) req)])
 
 (defn redis-codec [charset]
   (let [codecs (codec-map charset)]
