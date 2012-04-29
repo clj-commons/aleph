@@ -72,6 +72,24 @@
     (redis-client (concat ["brpop"] queue-names [0]))
     #(hash-map :queue (first %) :task (read-string (second %)))))
 
+(defn task-receiver-channel
+  "Returns a channel that will receive tasks on the specified queue(s).
+   If the channels is closed this will also close the client
+   connection to prevent an eventual pending command to cause the loss
+   of a message"
+  [redis-client & queue-names]
+  (let [ch (channel)]
+    (run-pipeline
+     nil
+     (fn [_]
+       (apply receive-task redis-client queue-names))
+     #(enqueue ch %)
+     (fn [_]
+       (when-not (closed? ch)
+         (restart nil))))
+    (on-closed ch #(close-connection redis-client))
+    ch))
+
 (defn- filter-messages [ch]
   (->> ch
     (filter*
