@@ -103,11 +103,33 @@
    value received from Redis will be a readable data structure, and :task will contain a
    Clojure data structure."
   [redis-client & queue-names]
+  (assert (not (empty? queue-names)))
   (assert (not (::heartbeat? (meta redis-client))))
   (run-pipeline nil
     {:error-handler (fn [_])}
     (fn [_] (redis-client (concat ["brpop"] queue-names [0])))
     #(hash-map :queue (first %) :task (read-string (second %)))))
+
+(defn task-channel
+  "Returns a channel that will continuously consume tasks from the specified queue(s).
+
+   Closing the channel will halt further consumption."
+  [options & queue-names]
+  (let [r (redis-client (assoc options :heartbeat? false))
+        ch (channel)]
+    (run-pipeline nil
+      {:error-handler (fn [ex]
+                        (close ch))}
+      (fn [_]
+        (if-not (closed? ch)
+          (apply receive-task r queue-names)
+          (complete nil)))
+      #(enqueue ch %)
+      (fn [_] (restart)))
+
+    (on-closed ch #(close-connection r))
+
+    ch))
 
 ;;;
 
