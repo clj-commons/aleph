@@ -22,7 +22,7 @@
                "1.3" [[org.clojure/clojure "1.3.0"]]}
   :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
                      [codox "0.4.1"]]
-  :test-selectors {:default #(not (or (:benchmark %) (:redis %)))
+  :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
                    :integration :redis
                    :benchmark :benchmark
                    :all (constantly true)}
