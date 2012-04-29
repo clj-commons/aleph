@@ -39,11 +39,12 @@
                      options)
 
            options (if heartbeat?
-                     (assoc options :heartbeat
-                       {:request [:ping]
-                        :timeout 2500
-                        :interval 5000
-                        :response-validator #(= "PONG" %)})
+                     (update-in options [:heartbeat]
+                       #(or %
+                          {:request [:ping]
+                           :timeout 10000
+                           :interval 10000
+                           :response-validator (fn [rsp] (= "PONG" rsp))}))
                      options)
 
            database (atom nil)
@@ -57,10 +58,10 @@
                               (when password
                                 (enqueue ch [:auth password])
                                 (read-channel ch)))
+
                             ;; set database
                             (fn [_]
                               (when-let [db @database]
-                                (prn "switching to" db)
                                 (enqueue ch [:select db])
                                 (read-channel ch)))
 
@@ -104,11 +105,12 @@
    Clojure data structure."
   [redis-client & queue-names]
   (assert (not (empty? queue-names)))
-  (assert (not (::heartbeat? (meta redis-client))))
   (run-pipeline nil
     {:error-handler (fn [_])}
-    (fn [_] (redis-client (concat ["brpop"] queue-names [0])))
-    #(hash-map :queue (first %) :task (read-string (second %)))))
+    (fn [_] (redis-client (concat ["brpop"] queue-names [5])))
+    #(if (empty? %)
+       (restart)
+       (hash-map :queue (first %) :task (read-string (second %))))))
 
 (defn task-channel
   "Returns a channel that will continuously consume tasks from the specified queue(s).

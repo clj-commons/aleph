@@ -15,6 +15,7 @@
 
 (defmacro with-redis-client [[r & {:as options}] & body]
   `(let [~r (redis-client (merge {:host "localhost"} ~options))]
+     (~r [:flush-all])
      (try
        ~@body
        (finally
@@ -58,14 +59,9 @@
     (is (= "foo" @(r [:get :a])))))
 
 (deftest ^:redis test-task-handling
-
-  (with-redis-client [r :heartbeat? false]
-    (r [:del :q])
-    (enqueue-task r :q [1 2 3])
-    (is (= {:queue "q" :task [1 2 3]} @(receive-task r :a :b :c))))
-
   (with-redis-client [r]
-    (is (thrown? AssertionError (receive-task r :q)))))
+    (enqueue-task r :q [1 2 3])
+    (is (= {:queue "q" :task [1 2 3]} @(receive-task r :q)))))
 
 (deftest ^:redis test-pub-sub
   (with-redis-client [r]
@@ -92,12 +88,11 @@
 
 (deftest ^:redis test-task-channels
   (with-redis-client [r]
-    (let [ch (task-channel {:host "localhost"} :q) 
+    (let [ch (task-channel {:host "localhost"} :x) 
           task {:foo "bar"}]
       (try
-        (r [:del :q])
-        (enqueue-task r :q task)
-        (is (= {:queue "q" :task task} @(read-channel ch)))
+        (enqueue-task r :x task)
+        (is (= {:queue "x" :task task} @(read-channel ch)))
         (finally
           (close ch))))))
 
