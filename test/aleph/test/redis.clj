@@ -15,7 +15,7 @@
 
 (defmacro with-redis-client [[r & {:as options}] & body]
   `(let [~r (redis-client (merge {:host "localhost"} ~options))]
-     (~r [:flush-all])
+     (~r [:flushall])
      (try
        ~@body
        (finally
