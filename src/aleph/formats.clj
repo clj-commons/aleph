@@ -9,11 +9,11 @@
 (ns ^{:author "Zachary Tellman"}
   aleph.formats
   (:use
-    [lamina core])
+    [lamina core]
+    [clojure.data.xml :only [sexp-as-element emit]])
   (:require
     [cheshire.core :as json]
-    [clojure.xml :as xml]
-    [clojure.contrib.prxml :as prxml])
+    [clojure.xml :as xml])
   (:require
     [gloss.io :as gloss-io]
     [gloss.core :as gloss])
@@ -288,38 +288,35 @@
 		charset)]))
 	 (-> data bytes->input-stream xml/parse)))))
 
+(defn- emit-element-with-declaration
+  [x charset]
+  (print "<?xml version=\"1.0\" encoding=\"")
+  (print charset)
+  (print "\"?>")
+  (xml/emit-element x))
+
 (defn encode-xml->string
-  "Takes a Clojure data structure representing a parse tree or prxml structure, and returns an XML string.
+  "Takes a Clojure data structure representing a parse tree or prxml/hiccup-style data structure,
+   and returns an XML string.
 
    By default, 'charset' is UTF-8."
   ([x]
      (encode-xml->string x "utf-8"))
   ([x charset]
      (when x
-       (with-out-str
-	 (prxml/prxml [:decl! {:version "1.0" :encoding charset}])
-	 (cond
-	   (vector? x) (prxml/prxml x)
-	   (map? x) (xml/emit-element x))))))
+       (cond
+         (vector? x) (with-out-str (emit (sexp-as-element x) *out* :encoding charset))
+         (map? x) (with-out-str (emit-element-with-declaration x charset))))))
 
 (defn encode-xml->bytes
-  "Takes a Clojure data structure representing a parse tree or prxml structure, and an XML representation as bytes.
+  "Takes a Clojure data structure representing a parse tree or prxml/hiccup-style data structure,
+   and returns an XML representation as bytes.
 
    By default, 'charset' is UTF-8."
   ([x]
      (encode-xml->bytes x "utf-8"))
   ([x charset]
-     (when x
-       (channel-buffers->channel-buffer
-	 [(string->channel-buffer
-	    (with-out-str (prxml/prxml [:decl! {:version "1.0" :encoding charset}]))
-	    "ascii")
-	  (string->channel-buffer
-	    (with-out-str
-	      (cond
-		(vector? x) (prxml/prxml x)
-		(map? x) (xml/emit-element x)))
-	    charset)]))))
+     (string->channel-buffer (encode-xml->string x charset))))
 
 ;;;
 
