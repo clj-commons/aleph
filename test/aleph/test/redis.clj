@@ -14,7 +14,8 @@
     [aleph.test utils]))
 
 (defmacro with-redis-client [[r & {:as options}] & body]
-  `(let [~r (redis-client (merge {:host "localhost"} ~options))]
+  `(let [r# (redis-client (merge {:host "localhost"} ~options))
+         ~r (fn [req#] (wait-for-result (r# req#) 500))]
      (~r [:flushall])
      (try
        ~@body
@@ -33,12 +34,12 @@
 (deftest ^:redis test-basic-commands
   (with-redis-client [r]
     (r [:set :a 1])
-    (is (= "1" @(r [:get :a])))
+    (is (= "1" (r [:get :a])))
     
     (r [:set :a "abc"])
-    (is (= "abc" @(r [:get :a])))
+    (is (= "abc" (r [:get :a])))
 
-    (is (thrown? Exception @(r [:get])))))
+    (is (thrown? Exception (r [:get])))))
 
 (deftest ^:redis test-db-selection
   (with-redis-client [r]
@@ -47,21 +48,21 @@
     (r [:set :a "foo"])
 
     (r [:select 2])
-    @(r [:set :a "bar"])
+    (r [:set :a "bar"])
 
     (reset-connection r)
-    (is (= "bar" @(r [:get :a])))
+    (is (= "bar" (r [:get :a])))
 
     (r [:select 1])
-    (is (= "foo" @(r [:get :a])))
+    (is (= "foo" (r [:get :a])))
 
     (reset-connection r)
-    (is (= "foo" @(r [:get :a])))))
+    (is (= "foo" (r [:get :a])))))
 
 (deftest ^:redis test-task-handling
   (with-redis-client [r]
     (enqueue-task r :q [1 2 3])
-    (is (= {:queue "q" :task [1 2 3]} @(receive-task r :q)))))
+    (is (= {:queue "q" :task [1 2 3]} (wait-for-result (receive-task r :q) 500)))))
 
 (deftest ^:redis test-pub-sub
   (with-redis-client [r]
@@ -71,20 +72,20 @@
       (Thread/sleep 500)
 
       (r [:publish :a "foo"])
-      (is (= {:channel "a", :message "foo"} @(read-channel s)))
+      (is (= {:channel "a", :message "foo"} @(read-channel* s :timeout 500)))
 
       (pattern-subscribe s "b*")
       (r [:publish :bar "baz"])
-      (is (= {:channel "bar", :message "baz"} @(read-channel s)))
+      (is (= {:channel "bar", :message "baz"} @(read-channel* s :timeout 500)))
 
       (reset-connection s)
       (Thread/sleep 500)
 
       (r [:publish :a "foo"])
-      (is (= {:channel "a", :message "foo"} @(read-channel s)))
+      (is (= {:channel "a", :message "foo"} @(read-channel* s :timeout 500)))
 
       (r [:publish :bar "baz"])
-      (is (= {:channel "bar", :message "baz"} @(read-channel s))))))
+      (is (= {:channel "bar", :message "baz"} @(read-channel* s :timeout 500))))))
 
 (deftest ^:redis test-task-channels
   (with-redis-client [r]
@@ -92,7 +93,7 @@
           task {:foo "bar"}]
       (try
         (enqueue-task r :x task)
-        (is (= {:queue "x" :task task} @(read-channel ch)))
+        (is (= {:queue "x" :task task} @(read-channel* ch :timeout 500)))
         (finally
           (close ch))))))
 
@@ -101,6 +102,6 @@
 (deftest ^:benchmark test-redis-roundtrip
   (with-redis-client [r]
     (bench "simple redis roundtrip"
-      @(r [:ping]))
+      (r [:ping]))
     (bench "1e3 redis roundtrips"
-      @(apply merge-results (repeatedly 1e3 #(r [:ping]))))))
+      (apply merge-results (repeatedly 1e3 #(r [:ping]))))))
