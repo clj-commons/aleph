@@ -102,7 +102,7 @@
 
 (defn normalize-headers [headers]
   (zipmap
-    (map 
+    (map
       #(->> (str/split (name %) #"-")
          (map str/capitalize)
          (str/join "-"))
@@ -145,19 +145,19 @@
 
 ;;;
 
-(defn decode-body [content-type character-encoding body]
+(defn decode-body [^String content-type ^String character-encoding body]
   (when body
     (let [charset (or character-encoding (options/charset))]
       (cond
-        (.startsWith ^String content-type "text/")
+        (.startsWith content-type "text/")
         (formats/bytes->string body charset)
-        
-        (= content-type "application/json")
+
+        (.startsWith content-type "application/json")
         (formats/decode-json body)
-        
-        (= content-type "application/xml")
+
+        (.startsWith content-type "application/xml")
         (formats/decode-xml body)
-        
+
         :else
         body))))
 
@@ -181,7 +181,7 @@
                               (write-callback))
                             (if (and honor-keep-alive? (not (:keep-alive? m)))
                               (close ch*)
-                              true))] 
+                              true))]
           (if-not chunks
 
             ;; non-streaming response

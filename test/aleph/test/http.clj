@@ -99,7 +99,7 @@
 (defn json-response-handler [ch request]
   (enqueue ch
     {:status 200
-     :content-type "application/json"
+     :content-type "application/json; charset=UTF-8"
      :body (formats/encode-json->string {:foo 1 :bar 2})}))
 
 (defn error-aleph-handler [ch request]
@@ -248,10 +248,10 @@
 (defn hello-world-handler [ch request]
   (enqueue ch {:status 200, :body "hello"}))
 
-(deftest ^:benchmark run-http-benchmark 
+(deftest ^:benchmark run-http-benchmark
   (with-handler hello-world-handler
     (let [create-conn #(deref (http-connection {:url "http://localhost:8080"}))]
-      
+
       (let [ch (create-conn)]
         (bench "http hello-world"
           (enqueue ch {:method :get})
