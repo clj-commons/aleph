@@ -309,7 +309,7 @@
          :write-callback #(.close ^InputStream body)})
 
       (instance? File body)
-      (let [fc (.getChannel (RandomAccessFile. body "r"))
+      (let [fc (.getChannel (RandomAccessFile. ^File body "r"))
             buf (-> fc
                   (.map FileChannel$MapMode/READ_ONLY 0 (.size fc))
                   ChannelBuffers/wrappedBuffer)]
