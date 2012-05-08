@@ -1,4 +1,4 @@
-(defproject aleph "0.2.1-rc2"
+(defproject aleph "0.2.1-rc3"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -12,7 +12,7 @@
                  [io.netty/netty "3.4.2.Final"]
                  [clj-http "0.1.3"]
                  [lamina "0.4.1-rc1"]
-                 [gloss "0.2.1-rc1"]
+                 [gloss "0.2.1-rc2"]
                  [user-agent-utils "1.2.3"]
                  [potemkin "0.1.3"]]
   :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
