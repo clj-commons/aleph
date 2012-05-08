@@ -123,6 +123,7 @@
 			(close-connection connection)
 			(close stream)
 			(close control-messages))]
+         (on-closed stream close-fn)
 	 (on-closed control-messages close-fn)
 	 (with-meta
 	   (splice stream control-messages)
