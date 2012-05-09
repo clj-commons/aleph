@@ -95,6 +95,4 @@ For more on TCP functionality, visit the [wiki](https://github.com/ztellman/alep
 
 Other protocols are supported, and still more are forthcoming.
 
-Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
-
 For more information, visit the [wiki](https://github.com/ztellman/aleph/wiki) or the [API documentation](http://ztellman.github.com/aleph/index.html).  If you have questions, please visit the [mailing list](http://groups.google.com/group/aleph-lib).
