@@ -189,7 +189,8 @@
                       (close control-messages))] 
 
        (on-closed control-messages close-fn)
-
+       (on-closed stream close-fn)
+       
        (with-meta
          (splice stream control-messages)
          {:lamina.connections/close-fn close-fn
