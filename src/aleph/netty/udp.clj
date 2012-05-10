@@ -29,7 +29,8 @@
     [org.jboss.netty.channel
      Channel
      ChannelPipeline
-     ChannelUpstreamHandler]
+     ChannelUpstreamHandler
+     FixedReceiveBufferSizePredictor]
     [java.net
      InetAddress
      InetSocketAddress]))
@@ -96,12 +97,20 @@
 
   (let [[a b] (channel-pair)
         client (ConnectionlessBootstrap. @channel-factory)
-        {:keys [port broadcast? buf-size] :or {port 0}} options
+        {:keys [port broadcast? buf-size]
+         :or {port 0
+              buf-size 16384}} options
         netty-options (-> options
                         :netty
                         :options
-                        (update-in ["broadcast"] #(or % broadcast?))
-                        (update-in ["receiveBufferSize"] #(or % buf-size)))]
+                        (update-in ["broadcast"]
+                          #(or % broadcast?))
+                        (update-in ["receiveBufferSize"]
+                          #(or % buf-size))
+                        (update-in ["sendBufferSize"]
+                          #(or % buf-size))
+                        (update-in ["receiveBufferSizePredictor"]
+                          #(or % (when buf-size (FixedReceiveBufferSizePredictor. buf-size)))))]
 
     (doseq [[k v] netty-options]
       (when v

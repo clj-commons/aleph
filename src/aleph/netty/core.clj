@@ -125,10 +125,11 @@
             (enqueue error-probe error))
           (.sendDownstream ctx evt))))))
 
-(defn connection-handler [pipeline-name ^ChannelGroup channel-group]
+(defn connection-handler [pipeline-name ^ChannelGroup channel-group server?]
   (let [open? (atom false)
         closed? (atom true)
-        connection-probe (probe-channel [pipeline-name :connections])]
+        connection-probe (probe-channel [pipeline-name :connections])
+        offset (if server? -1 0)]
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
         (when (instance? ChannelEvent evt)
@@ -140,13 +141,17 @@
                 (compare-and-set! open? false channel-open?))
               (do
                 (.add channel-group (.getChannel ^ChannelEvent evt))
-                (enqueue connection-probe (dec (count channel-group))))
+                (enqueue connection-probe
+                  {:name pipeline-name
+                   :connections (+ offset (count channel-group))}))
 
               (and
                 (not channel-open?)
                 @open? 
                 (compare-and-set! closed? true channel-open?))
-              (enqueue connection-probe (dec (count channel-group))))))
+              (enqueue connection-probe
+                {:name pipeline-name
+                 :connections (+ offset (count channel-group))}))))
         (.sendUpstream ctx evt)))))
 
 (defn upstream-traffic-handler [pipeline-name]
@@ -170,11 +175,10 @@
         (.sendDownstream ctx evt)))))
 
 (defmacro create-netty-pipeline
-  [pipeline-name error-predicate channel-group & stages]
+  [pipeline-name server? channel-group & stages]
   (unify-gensyms
     `(let [pipeline## (Channels/pipeline)
-           channel-group# ~channel-group
-           error-predicate# ~error-predicate]
+           channel-group# ~channel-group]
        ~@(map
            (fn [[stage-name stage]]
              `(.addLast pipeline## ~(name stage-name) ~stage))
@@ -189,13 +193,13 @@
        ;; connections
        (when channel-group#
          (.addFirst pipeline## "channel-group-handler"
-           (connection-handler ~pipeline-name channel-group#)))
+           (connection-handler ~pipeline-name channel-group# ~server?)))
 
        ;; error logging
        #_(.addLast pipeline## "outgoing-error"
-         (downstream-error-handler ~pipeline-name error-predicate#))
+         (downstream-error-handler ~pipeline-name (constantly true)))
        #_(.addFirst pipeline## "incoming-error"
-         (upstream-error-handler ~pipeline-name error-predicate#))
+         (upstream-error-handler ~pipeline-name (constantly true)))
 
        pipeline##)))
 

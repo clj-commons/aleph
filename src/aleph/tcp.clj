@@ -29,7 +29,7 @@
     (start-server
       server-name
       (fn [channel-group]
-        (create-netty-pipeline server-name nil channel-group
+        (create-netty-pipeline server-name true channel-group
           :handler (server-message-handler
                      (fn [ch x]
                        (handler (wrap-tcp-channel options ch) x)))))
@@ -46,6 +46,6 @@
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name nil channel-group))
+            (create-netty-pipeline client-name false channel-group))
           options))
       (partial wrap-tcp-channel options))))

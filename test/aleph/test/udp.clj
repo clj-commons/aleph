@@ -21,7 +21,7 @@
         d @(udp-socket {:frame (string :utf-8)})
         e @(udp-socket)
         object-msg [{:a 1} "asdf" 23.3]
-	text-msg "testing 1,2,3"] 
+	text-msg (->> "a" (repeat 1e3) (apply str))] 
     (try
       (enqueue b {:message object-msg :host "localhost" :port 2222})
       (is (= object-msg (:message (wait-for-message a 2000))))

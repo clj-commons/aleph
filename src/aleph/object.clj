@@ -23,7 +23,7 @@
     (start-server
       server-name
       (fn [channel-group]
-        (create-netty-pipeline server-name nil channel-group
+        (create-netty-pipeline server-name true channel-group
           :encoder (ObjectEncoder.)
           :decoder (ObjectDecoder.)
           :handler (server-message-handler handler)))
@@ -40,7 +40,7 @@
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name nil channel-group
+            (create-netty-pipeline client-name false channel-group
               :encoder (ObjectEncoder.)
               :decoder (ObjectDecoder.)))
           options)))))

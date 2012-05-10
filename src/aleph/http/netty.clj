@@ -81,7 +81,7 @@
     (netty/start-server
       server-name
       (fn [channel-group]
-        (let [pipeline (netty/create-netty-pipeline server-name nil channel-group
+        (let [pipeline (netty/create-netty-pipeline server-name true channel-group
                          :decoder (HttpRequestDecoder.
                                     (get netty-options "http.maxInitialLineLength" 8192)
                                     (get netty-options "http.maxHeaderSize" 16384)
@@ -142,7 +142,7 @@
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name nil channel-group
+            (create-netty-pipeline client-name false channel-group
               :codec (HttpClientCodec.)
               :inflater (HttpContentDecompressor.)))
           options))
