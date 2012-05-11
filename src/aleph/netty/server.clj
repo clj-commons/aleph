@@ -42,9 +42,11 @@
                           (cached-thread-executor options)
                           (cached-thread-executor options))
         channel-group (DefaultChannelGroup.)
-        server (ServerBootstrap. channel-factory)]
+        server (ServerBootstrap. channel-factory)
+        close-result (result-channel)]
 
     (doseq [[k v] (:probes options)]
+      (run-pipeline close-result (fn [_] (close v)))
       (siphon (probe-channel [server-name k]) v))
     
     (.setPipelineFactory server
@@ -59,7 +61,8 @@
       (let [close-future (.close channel-group)]
         (future
           (.awaitUninterruptibly close-future)
-          (.releaseExternalResources server))))))
+          (.releaseExternalResources server)
+          (success close-result true))))))
 
 ;;;
 

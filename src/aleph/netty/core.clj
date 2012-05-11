@@ -18,7 +18,8 @@
      ChannelBuffer]
     [org.jboss.netty.channel.group
      DefaultChannelGroup
-     ChannelGroup]
+     ChannelGroup
+     ChannelGroupFutureListener]
     [java.util.concurrent
      ThreadFactory
      Executors]
@@ -100,6 +101,21 @@
 	  (if (.isSuccess netty-future)
 	    (success ch (.getChannel netty-future))
 	    (error ch (.getCause netty-future)))
+	  nil)))
+    ch))
+
+(defn wrap-netty-channel-group-future
+  [^ChannelFuture netty-future]
+  (let [ch (result-channel)]
+    (.addListener netty-future
+      (reify ChannelGroupFutureListener
+	(operationComplete [_ netty-future]
+	  (if (.isCompleteSuccess netty-future)
+	    (success ch (.getGroup netty-future))
+            (error ch
+              (->> netty-future
+                iterator-seq
+                (some #(.getCause ^ChannelFuture %)))))
 	  nil)))
     ch))
 

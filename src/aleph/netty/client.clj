@@ -138,14 +138,15 @@
   (let [options (expand-client-options options)
         ssl? (= "https" (:scheme options))]
 
-    (doseq [[k v] (:probes options)]
-      (siphon (probe-channel [client-name k]) v))
-
     (let [[a b] (channel-pair)
           channel-group (DefaultChannelGroup.)
           client (ClientBootstrap. @channel-factory)
           ^String host (or (:server-name options) (:host options))
           port (int (:port options))]
+
+      (doseq [[k v] (:probes options)]
+        (on-closed b #(close v))
+        (siphon (probe-channel [client-name k]) v))
 
       (doseq [[k v] (merge default-netty-client-options (-> options :netty :options))]
         (.setOption client k v))

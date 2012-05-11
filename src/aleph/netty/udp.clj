@@ -117,6 +117,7 @@
         (.setOption client k v)))
 
     (doseq [[k v] (:probes options)]
+      (on-closed b #(close v))
       (siphon (probe-channel [socket-name k]) v))
 
     (.setPipelineFactory client
