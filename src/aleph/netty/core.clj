@@ -176,7 +176,8 @@
       (handleUpstream [_ ctx evt]
         (when-let [^ChannelBuffer msg (event-message evt)]
           (enqueue traffic-probe
-            {:address (event-remote-address evt)
+            {:name pipeline-name
+             :address (event-remote-address evt)
              :bytes (.readableBytes msg)}))
         (.sendUpstream ctx evt)))))
 
@@ -186,7 +187,8 @@
       (handleDownstream [_ ctx evt]
         (when-let [^ChannelBuffer msg (event-message evt)]
           (enqueue traffic-probe
-            {:address (event-remote-address evt)
+            {:name pipeline-name
+             :address (event-remote-address evt)
              :bytes (.readableBytes msg)}))
         (.sendDownstream ctx evt)))))
 
