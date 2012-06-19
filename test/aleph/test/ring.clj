@@ -9,7 +9,7 @@
 (ns aleph.test.ring
   (:use
     [lamina.core]
-    [aleph http])
+    [aleph http formats])
   (:use [clojure test pprint])
   (:import [java.io StringReader PushbackReader]))
 
@@ -46,11 +46,14 @@
 (defn request-callback [keys]
   (wrap-ring-handler
     (fn [request]
+      (prn request)
       {:status 200
        :headers {"content-type" "text/plain"}
-       :body (with-out-str
-	       (write
-		 (get-request-value request keys)))})))
+       :body (let [value (get-request-value request keys)
+                   value (if (bytes? value)
+                           (bytes->string value)
+                           value)]
+               (pr-str value))})))
 
 (defmacro with-server [keys & body]
   `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8080, :thread-pool {}})]
@@ -98,6 +101,10 @@
 (deftest test-content-length
   (with-server [:content-length]
     (is (= 5 (request :body "hello")))))
+
+(deftest test-body
+  (with-server [:body]
+    (is (= "hello" (request :method :post, :body "hello")))))
 
 (deftest test-content-type
   (with-server [:content-type]
