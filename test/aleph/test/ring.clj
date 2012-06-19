@@ -46,7 +46,6 @@
 (defn request-callback [keys]
   (wrap-ring-handler
     (fn [request]
-      (prn request)
       {:status 200
        :headers {"content-type" "text/plain"}
        :body (let [value (get-request-value request keys)
