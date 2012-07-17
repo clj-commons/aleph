@@ -22,6 +22,15 @@
        (finally
          (close-connection ~r)))))
 
+(defmacro with-non-blocking-redis-client [[r & {:as options}] & body]
+  `(let [r# (redis-client (merge {:host "localhost"} ~options))
+         ~r (fn [req#] (r# req#))]
+     (~r [:flushall])
+     (try
+       ~@body
+       (finally
+         (close-connection ~r)))))
+
 (defmacro with-redis-stream [[r & {:as options}] & body]
   `(let [~r (redis-stream (merge {:host "localhost"} ~options))]
      (try
@@ -100,8 +109,8 @@
 ;;;
 
 (deftest ^:benchmark test-redis-roundtrip
-  (with-redis-client [r]
+  (with-non-blocking-redis-client [r]
     (bench "simple redis roundtrip"
-      (r [:ping]))
+      @(r [:ping]))
     (bench "1e3 redis roundtrips"
-      (apply merge-results (repeatedly 1e3 #(r [:ping]))))))
+      @(apply merge-results (repeatedly 1e3 #(r [:ping]))))))

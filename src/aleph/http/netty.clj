@@ -10,7 +10,7 @@
   (:use
     [aleph.http.core]
     [aleph netty formats]
-    [lamina core api connections])
+    [lamina core api connections trace])
   (:require
     [aleph.http.websocket :as ws]
     [aleph.http.client-middleware :as middleware]
@@ -156,25 +156,30 @@
 (defn pipelined-http-client [options]
   (pipelined-client #(http-connection options)))
 
+(defn-instrumented http-request-
+  {:name "aleph:http-request"}
+  [request timeout]
+  (let [request (assoc request :keep-alive? false)
+        start (System/currentTimeMillis)]
+    (run-pipeline request
+      {:error-handler (fn [_])}
+      http-connection
+      (fn [ch]
+        (let [elapsed (- (System/currentTimeMillis) start)]
+          (run-pipeline ch
+            {:timeout (when timeout (- timeout elapsed))
+             :error-handler (fn [ex] (close ch))}
+            (fn [ch]
+              (enqueue ch request)
+              (read-channel ch))
+            (fn [rsp]
+              (if (channel? (:body rsp))
+                (on-closed (:body rsp) #(close ch))
+                (close ch))
+              rsp)))))))
+
 (defn http-request
   ([request]
-     (http-request request nil))
+     (http-request- request nil))
   ([request timeout]
-     (let [request (assoc request :keep-alive? false)
-           start (System/currentTimeMillis)]
-       (run-pipeline request
-         {:error-handler (fn [_])}
-         http-connection
-         (fn [ch]
-           (let [elapsed (- (System/currentTimeMillis) start)]
-             (run-pipeline ch
-               {:timeout (when timeout (- timeout elapsed))
-                :error-handler (fn [ex] (close ch))}
-               (fn [ch]
-                 (enqueue ch request)
-                 (read-channel ch))
-               (fn [rsp]
-                 (if (channel? (:body rsp))
-                   (on-closed (:body rsp) #(close ch))
-                   (close ch))
-                 rsp))))))))
+     (http-request- request timeout)))
