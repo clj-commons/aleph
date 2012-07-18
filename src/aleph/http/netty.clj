@@ -83,7 +83,7 @@
       (fn [channel-group]
         (let [pipeline (netty/create-netty-pipeline server-name true channel-group
                          :decoder (HttpRequestDecoder.
-                                    (get netty-options "http.maxInitialLineLength" 8192)
+                                    (get netty-options "http.maxInitialLineLength" 16384)
                                     (get netty-options "http.maxHeaderSize" 16384)
                                     (get netty-options "http.maxChunkSize" 16384))
                          :encoder (HttpResponseEncoder.)
