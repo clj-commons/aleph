@@ -13,8 +13,4 @@
     [lamina core]))
 
 (defn stomp-connection [options]
-  (run-pipeline (tcp-client (assoc options :frame message-codec))
-    (fn [ch]
-      (splice
-        (remove* nil? ch)
-        ch))))
+  (tcp-client (assoc options :frame message-codec)))

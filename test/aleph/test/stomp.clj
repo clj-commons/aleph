@@ -41,12 +41,15 @@
     :body "abcdefghij"}
    {:command :subscribe
     :headers {}
-    :body "abcdefghij"}])
+    :body "abcdefghij"}
+   {:command :heartbeat}])
 
 (deftest test-basic-echo
   (with-server basic-echo-handler 10000
     (with-stomp-client [c] 10000
-      (doseq [m messages]
+      (doseq [m (->> messages
+                  (repeat 10)
+                  (apply concat))]
         (is (= m @(c m 1000)))))))
 
 (deftest ^:benchmark test-stomp-roundtrip

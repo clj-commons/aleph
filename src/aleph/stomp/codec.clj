@@ -34,11 +34,21 @@
 
 ;;;
 
+(def heartbeat-codec
+  (compile-frame
+    nil-codec
+    identity
+    (fn [_] {:command :heartbeat})))
+
 (def command-codec
   (compile-frame (string :utf-8 :delimiters ["\n"])
-    #(-> % name str/upper-case)
-    #(when-not (and (string? %) (empty? %))
-       (-> % str/lower-case keyword))))
+    #(if (nil? %)
+       ""
+       (-> % name str/upper-case))
+    #(if (= :heartbeat %)
+       ""
+       (when-not (and (string? %) (empty? %))
+         (-> % str/lower-case keyword)))))
 
 (def utf-8-codec
   (string :utf-8))
@@ -83,7 +93,9 @@
 (def message-codec
   (header command-codec
     (fn [command]
-      (if (and (string? command) (empty? command))
-        nil-codec
+      (if (or
+            (= command :heartbeat)
+            (and (string? command) (empty? command)))
+        heartbeat-codec
         (command->headers-and-body-codec command)))
     :command))
