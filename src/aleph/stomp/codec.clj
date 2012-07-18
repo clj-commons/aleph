@@ -8,8 +8,7 @@
 
 (ns aleph.stomp.codec
   (:use
-    [gloss core]
-    [aleph formats])
+    [gloss core])
   (:require
     [gloss.io :as io]
     [clojure.string :as str]))
@@ -38,7 +37,7 @@
 (def command-codec
   (compile-frame (string :utf-8 :delimiters ["\n"])
     #(-> % name str/upper-case)
-    #(when-not (empty? %)
+    #(when-not (and (string? %) (empty? %))
        (-> % str/lower-case keyword))))
 
 (def utf-8-codec
@@ -54,8 +53,9 @@
         (io/encode utf-8-codec)))
     (fn [b]
       (let [s ^String (io/decode utf-8-codec b)
-            kvs (.split s "[:\n]")]
-        (into {} kvs)))))
+            s (.substring s 0 (- (count s) 2))]
+        (when-not (empty? s)
+          (apply hash-map (.split s "[:\n]")))))))
 
 (defn command->headers-codec [command]
   (compile-frame
@@ -83,7 +83,7 @@
 (def message-codec
   (header command-codec
     (fn [command]
-      (if (empty? command)
+      (if (and (string? command) (empty? command))
         nil-codec
         (command->headers-and-body-codec command)))
     :command))

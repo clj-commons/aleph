@@ -6,5 +6,15 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns aleph.stomp)
+(ns aleph.stomp
+  (:use
+    [aleph.stomp.codec]
+    [aleph formats tcp]
+    [lamina core]))
 
+(defn stomp-connection [options]
+  (run-pipeline (tcp-client (assoc options :frame message-codec))
+    (fn [ch]
+      (splice
+        (remove* nil? ch)
+        ch))))
