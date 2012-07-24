@@ -8,9 +8,38 @@
 
 (ns aleph.stomp
   (:use
-    [aleph.stomp.codec]
+    [potemkin]
     [aleph formats tcp]
-    [lamina core]))
+    [lamina core connections trace])
+  (:require
+    [aleph.stomp.router :as r]
+    [aleph.stomp.codec :as c]))
 
 (defn stomp-connection [options]
-  (tcp-client (assoc options :frame message-codec)))
+  (tcp-client (assoc options :frame c/message-codec)))
+
+(defn start-router [options]
+  (let [name (or
+               (:name options)
+               (-> options :server :name)
+               "stomp-router")
+        r (r/router name)]
+    (start-tcp-server
+      (fn [ch _]
+        (r/register-publisher r ch)
+        (r/register-subscriber r ch))
+      (assoc options
+        :name name
+        :frame c/message-codec))))
+
+(defn endpoint [producer options]
+  (let [name (or
+               (:name options)
+               "stomp-endpoint")
+        conn #(tcp-client
+                (assoc options
+                  :name name
+                  :frame c/message-codec))]
+    (r/endpoint name conn producer)))
+
+(import-fn r/subscribe)

@@ -11,7 +11,7 @@
     [clojure test]
     [aleph stomp tcp]
     [aleph.test utils]
-    [lamina core connections]))
+    [lamina core connections trace executor]))
 
 ;;;
 
@@ -31,6 +31,28 @@
        ~@body
        (finally
          (close-connection ~c)))))
+
+(defmacro with-router [port & body]
+  `(let [stop-server# (start-router {:port ~port})]
+     (try
+       ~@body
+       (finally
+         (stop-server#)))))
+
+(defn probe-producer [id]
+  (map*
+    (fn [msg]
+      {:command :send
+       :headers {"destination" id}
+       :body (pr-str msg)})
+    (probe-channel id)))
+
+(defmacro with-endpoint [[e] port & body]
+  `(let [~e (endpoint probe-producer {:host "localhost", :port ~port})]
+     (try
+       ~@body
+       (finally
+         (close-connection ~e)))))
 
 ;;;
 
@@ -52,6 +74,29 @@
                   (apply concat))]
         (is (= m @(c m 1000)))))))
 
+;;;
+
+(deftest test-basic-router
+  (with-router 10000
+    (with-endpoint [c] 10000
+      (let [a (subscribe c "abc")
+            b (subscribe c "def")
+            consume #(-> % read-channel (wait-for-result 2500) :body read-string)]
+        (Thread/sleep 500)
+        (is (= true (trace :abc 1)))
+        (is (= true (trace :def 2)))
+        (is (= 1 (consume a)))
+        (is (= 2 (consume b)))
+        (close a)
+        (Thread/sleep 500)
+        (is (= false (trace :abc 3)))
+        (is (= true (trace :def 4)))
+        (is (= 4 (consume b)))))
+    (Thread/sleep 500)
+    (is (= false (trace :def 5)))))
+
+;;;
+
 (deftest ^:benchmark test-stomp-roundtrip
   (let [msg (first messages)]
     (with-server basic-echo-handler 10000
@@ -60,3 +105,19 @@
           @(c msg))
         (bench "1e3 stomp roundtrips"
           @(apply merge-results (repeatedly 1e3 #(c msg))))))))
+
+(deftest ^:benchmark test-router-roundtrip
+  (with-router 10000
+    (with-endpoint [c] 10000
+      (let [ch (subscribe c "abc")]
+        (Thread/sleep 500)
+        (bench "stomp router roundtrip"
+          (trace :abc 1)
+          @(read-channel ch))
+        (bench "1e3 stomp router roundtrip"
+          (let [f (task
+                    (dotimes [_ 1e3]
+                      @(read-channel ch)))]
+            (dotimes [_ 1e3]
+              (trace :abc 1))
+            @f))))))
