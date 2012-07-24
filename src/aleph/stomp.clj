@@ -26,7 +26,7 @@
         r (r/router name)]
     (start-tcp-server
       (fn [ch _]
-        (r/register-publisher r ch)
+        (r/register-publisher r nil ch)
         (r/register-subscriber r ch))
       (assoc options
         :name name
