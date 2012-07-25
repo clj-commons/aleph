@@ -23,7 +23,7 @@
                (:name options)
                (-> options :server :name)
                "stomp-router")
-        r (r/router name)]
+        r (r/router {:name name})]
     (start-tcp-server
       (fn [ch _]
         (r/register-publisher r nil ch)

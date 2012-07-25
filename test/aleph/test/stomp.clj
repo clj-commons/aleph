@@ -11,7 +11,7 @@
     [clojure test]
     [aleph stomp tcp]
     [aleph.test utils]
-    [lamina core connections trace executor]))
+    [lamina core connections trace executor viz]))
 
 ;;;
 
@@ -78,22 +78,39 @@
 
 (deftest test-basic-router
   (with-router 10000
-    (with-endpoint [c] 10000
-      (let [a (subscribe c "abc")
-            b (subscribe c "def")
+    (with-endpoint [c1] 10000
+      (let [a (subscribe c1 "abc")
+            b (subscribe c1 "def")
             consume #(-> % read-channel (wait-for-result 2500) :body read-string)]
+
+        ;; wait for subscriptions to propagate
         (Thread/sleep 500)
+
         (is (= true (trace :abc 1)))
         (is (= true (trace :def 2)))
         (is (= 1 (consume a)))
         (is (= 2 (consume b)))
+
+        ;; unsubscribe, and wait to propagate
         (close a)
         (Thread/sleep 500)
+        
         (is (= false (trace :abc 3)))
         (is (= true (trace :def 4)))
-        (is (= 4 (consume b)))))
+        (is (= 4 (consume b)))
+
+        (with-endpoint [c2] 10000
+
+          ;; wait for existing subscriptions to propagate
+          (Thread/sleep 500)
+
+          ;; this should double broadcast
+          (is (= true (trace :def 5)))
+          (is (= 5 (consume b)))
+          (is (= 5 (consume b))))))
+    
     (Thread/sleep 500)
-    (is (= false (trace :def 5)))))
+    (is (= false (trace :def 6)))))
 
 ;;;
 

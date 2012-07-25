@@ -58,14 +58,16 @@
                 assoc id destination)
               
               ;; broadcast subscription
-              (on-subscribe destination id)
+              (when on-subscribe
+                (on-subscribe destination id))
 
               ;; hook up unsubscription
               (on-closed ch 
                 (fn []
                   (swap! active-subscriptions
                     dissoc id)
-                  (on-unsubscribe id)))))))
+                  (when on-unsubscribe
+                    (on-unsubscribe id))))))))
 
       (release [_ destination]
         (c/release cache destination))
@@ -92,14 +94,8 @@
                      (splice out in)))
 
                  :on-subscribe
-                 (fn [destination id]
-                   (enqueue subscription-broadcaster
-                     (subscription destination id)))
-
-                 :on-unsubscribe
-                 (fn [id]
-                   (enqueue subscription-broadcaster
-                     (unsubscription id)))})
+                 (fn [destination _]
+                   (enqueue subscription-broadcaster destination))})
 
         generator #(get-or-create cache %)]
        
@@ -107,20 +103,42 @@
       
       (register-publisher [_ endpoint ch]
 
-        (let [local-broadcaster (channel)]
+        (let [local-broadcaster (channel)
+              endpoint-cache (subscription-cache
+                               {:generator
+                                #(channel* :description % :grounded? true)
+                                
+                                :on-subscribe
+                                (fn [destination id]
+                                  (enqueue ch
+                                    (subscription destination id)))
+                                
+                                :on-unsubscribe
+                                (fn [id]
+                                  (enqueue ch
+                                    (unsubscription id)))})
+              endpoint-generator #(get-or-create endpoint-cache %)]
           
-         ;; forward all subsequent subscriptions
-         (siphon subscription-broadcaster local-broadcaster ch)
-
-         ;; resend all active subscriptions
-         (doseq [[id destination] (subscriptions cache)]
-           (enqueue local-broadcaster (subscription destination id)))
-         
-         ;; handle all messages
-         (receive-all
-           (filter* #(= :send (:command %)) ch)
-           (fn [msg]
-             (enqueue (generator (destination msg)) msg)))))
+          ;; handle subscriptions
+          (siphon subscription-broadcaster local-broadcaster)
+          (on-closed ch #(close local-broadcaster))
+          (receive-all local-broadcaster
+            (fn [destination]
+              ;; connect endpoint destination to router destination
+              (let [[endpoint-destination transform] (endpoint-transform endpoint destination)]
+                (join
+                  (transform (endpoint-generator endpoint-destination))
+                  (generator destination)))))
+          
+          ;; resend all active subscriptions
+          (doseq [[_ destination] (subscriptions cache)]
+            (enqueue local-broadcaster destination))
+          
+          ;; handle all messages
+          (receive-all
+            (filter* #(= :send (:command %)) ch)
+            (fn [msg]
+              (enqueue (endpoint-generator (destination msg)) msg)))))
 
       (register-subscriber [_ ch]
         
@@ -177,7 +195,6 @@
                                 
                               (receive-all ch
                                 (fn [msg]
-
                                   (let [dest (destination msg)]
                                     (case (:command msg)
                                         
@@ -200,7 +217,10 @@
 
         connection (persistent-connection connection-generator
                      {:name name
-                      :on-connected connection-callback})]
+                      :on-connected connection-callback})
+
+        _ (connection) ;; don't be lazy about connecting
+        ]
 
     (with-meta
       (reify Endpoint
