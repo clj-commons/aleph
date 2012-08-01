@@ -59,7 +59,7 @@
 (def messages
   [{:command :message
     :headers {"content-length" "10"
-              "abc/def/bloop" "42"}
+              "abc/def/bloop : \n \\" "42 \\ \n :"}
     :body "abcdefghij"}
    {:command :subscribe
     :headers {}

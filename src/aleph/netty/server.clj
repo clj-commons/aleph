@@ -14,6 +14,7 @@
     [clojure.tools.logging :as log])
   (:import
     [org.jboss.netty.channel
+     Channel
      ChannelUpstreamHandler
      ChannelEvent]
     [org.jboss.netty.channel.group
@@ -24,6 +25,8 @@
      ServerBootstrap]
     [java.net
      InetSocketAddress]))
+
+(set! *warn-on-reflection* true)
 
 ;;;
 
@@ -72,7 +75,7 @@
   ([handler netty-channel]
      (let [[a b] (channel-pair)
            latch (atom false)
-           initializer (fn [netty-channel]
+           initializer (fn [^Channel netty-channel]
                          (when (compare-and-set! latch false true)
                         
                            (on-error a
@@ -95,7 +98,8 @@
                                (close b)))
 
                            ;; call handler
-                           (handler b {:address (channel-remote-host-address netty-channel)})))]
+                           (let [remote-address (channel-remote-host-address netty-channel)]
+                             (handler b {:address remote-address}))))]
 
        (when netty-channel (initializer netty-channel))
 

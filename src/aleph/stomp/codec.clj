@@ -36,7 +36,7 @@
 
 (def heartbeat-codec
   (compile-frame
-    nil-codec
+    nil-frame
     identity
     (fn [_] {:command :heartbeat})))
 
@@ -53,11 +53,23 @@
 (def utf-8-codec
   (string :utf-8))
 
+(defn decode-string [s]
+  (-> s
+    (str/replace #"\\n" "\n")
+    (str/replace #"\\c" ":")
+    (str/replace #"\\\\" "\\")))
+
+(defn encode-string [s]
+  (-> s
+    (str/replace #"\\" "\\\\")
+    (str/replace #"\n" "\\\\n")
+    (str/replace #":" "\\\\c")))
+
 (def headers-codec
   (compile-frame (delimited-block ["\n\n"] false)
     (fn [m]
       (->> m
-        (map (fn [[k v]] (str (name k) ":" v)))
+        (map (fn [[k v]] (str (encode-string (name k)) ":" (encode-string v))))
         (interpose "\n")
         (apply str)
         (io/encode utf-8-codec)))
@@ -65,7 +77,9 @@
       (let [s ^String (io/decode utf-8-codec b)
             s (.substring s 0 (- (count s) 2))]
         (when-not (empty? s)
-          (apply hash-map (.split s "[:\n]")))))))
+          (->> (str/split s #"[:\n]")
+            (map decode-string)
+            (apply hash-map)))))))
 
 (defn command->headers-codec [command]
   (compile-frame

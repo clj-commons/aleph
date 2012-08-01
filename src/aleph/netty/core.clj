@@ -22,6 +22,7 @@
      ChannelGroupFutureListener]
     [java.util.concurrent
      ThreadFactory
+     Executor
      Executors]
     [org.jboss.netty.channel 
      Channel
@@ -58,7 +59,7 @@
 (defn ^Channel current-channel []
   (.get local-channel))
 
-(defn cached-thread-executor [options]
+(defn ^Executor cached-thread-executor [options]
   (Executors/newCachedThreadPool
     (reify ThreadFactory
       (newThread [_ r]
