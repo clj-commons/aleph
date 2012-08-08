@@ -63,7 +63,10 @@
      op#))
 
 (defoperator sum
-  :endpoint lamina.stats/sum
+  :endpoint (fn [options ch]
+              (->> ch
+                (lamina.stats/sum options)
+                (remove* zero?)))
   :aggregator (fn [options ch]
                 (->> ch
                   (map* :data)
@@ -71,7 +74,10 @@
   :post-aggregator lamina.stats/sum)
 
 (defoperator rate
-  :endpoint lamina.stats/rate
+  :endpoint (fn [options ch]
+              (->> ch
+                (lamina.stats/rate options)
+                (remove* zero?)))
   :aggregator (fn [options ch]
                 (->> ch
                   (map* :data)

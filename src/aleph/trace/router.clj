@@ -70,7 +70,7 @@
         (empty? post-endpoint)
         (and
           (aggregator? (first post-endpoint))
-          (post-aggregator? (rest post-endpoint)))))))
+          (every? post-aggregator? (rest post-endpoint)))))))
 
 (defn endpoint-unwrapper [ch]
   (->> ch
@@ -90,16 +90,17 @@
                                (map operator)
                                (take-while endpoint?))
           aggregator-operators (drop (count endpoint-operators) operators)]
+
       {:destination (update-in destination [:operators]
                       #(when %
-                         (take % (count endpoint-operators))))
+                         (take (count endpoint-operators) %)))
        :transform (fn [ch]
                     (let [ ;; unwrap the bundled messages
                           ch (endpoint-unwrapper ch)
 
                           ;; handle the origin-laden messages
                           ch (if-let [{:keys [name options]} (first aggregator-operators)]
-                               (post-aggregator (operator name) options ch)
+                               (aggregator (operator name) options ch)
                                (map* :data ch))]
 
                       ;; handle all subsequent steps

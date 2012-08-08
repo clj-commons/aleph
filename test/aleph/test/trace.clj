@@ -25,7 +25,9 @@
          (stop-server#)))))
 
 (defmacro with-endpoint [[e] port & body]
-  `(let [~e (trace-endpoint {:aggregation-period 100 :client-options {:host "localhost", :port ~port}})]
+  `(let [~e (trace-endpoint
+              {:aggregation-period 100
+               :client-options {:host "localhost", :port ~port}})]
      (try
        ~@body
        (finally
@@ -33,22 +35,27 @@
 
 ;;;
 
+(defn next-msg [ch]
+  (-> ch read-channel (wait-for-result 5000)))
 
+(defn next-non-zero-msg [ch]
+  (->> (repeatedly #(next-msg ch))
+    (drop-while zero?)
+    first))
 
 (deftest test-basic-routing
   (with-router 10000
     (with-endpoint [c1] 10000
       (let [a (subscribe c1 "abc")
-            b (subscribe c1 "def")
-            consume #(-> % read-channel (wait-for-result 2500))]
+            b (subscribe c1 "def")]
 
         ;; wait for subscriptions to propagate
         (Thread/sleep 500)
 
         (is (= true (trace :abc 1)))
         (is (= true (trace :def 2)))
-        (is (= 1 (consume a)))
-        (is (= 2 (consume b)))
+        (is (= 1 (next-msg a)))
+        (is (= 2 (next-msg b)))
 
         ;; unsubscribe, and wait to propagate
         (close a)
@@ -56,7 +63,7 @@
         
         (is (= false (trace :abc 3)))
         (is (= true (trace :def 4)))
-        (is (= 4 (consume b)))
+        (is (= 4 (next-msg b)))
 
         (with-endpoint [c2] 10000
 
@@ -65,8 +72,27 @@
 
           ;; this should double broadcast
           (is (= true (trace :def 5)))
-          (is (= 5 (consume b)))
-          (is (= 5 (consume b))))))
+          (is (= 5 (next-msg b)))
+          (is (= 5 (next-msg b))))))
     
     (Thread/sleep 500)
     (is (= false (trace :def 6)))))
+
+(def sum-op {:name "sum" :options {:period 1000}})
+(def avg-op {:name "moving-average" :options {:period 1000}})
+
+(deftest test-basic-operators
+  (with-router 10000
+    (with-endpoint [c] 10000
+      (let [sum (subscribe c {:pattern "abc", :operators [sum-op]})
+            avg (subscribe c {:pattern "abc", :operators [avg-op]})
+            sum-avg (subscribe c {:pattern "abc", :operators [sum-op avg-op]})]
+
+        (Thread/sleep 500)
+
+        (doseq [x (range 1 5)]
+          (is (= true (trace :abc x))))
+
+        (is (= 10 (next-msg sum)))
+        (is (= 2.5 (next-msg avg)))
+        (is (= 10.0 (next-non-zero-msg sum-avg)))))))
