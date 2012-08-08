@@ -77,11 +77,14 @@
 
 (defn router
   [{:keys [name
-           endpoint-transform
-           aggregator]
+           endpoint-processor
+           aggregator-post-processor]
     :or {name "stomp-router"
-         endpoint-transform (fn [_ dest] [dest identity])
-         aggregator (fn [_ ch] ch)}}]
+         endpoint-processor (fn [_ dest]
+                              {:destination dest
+                               :transform identity})
+         aggregator-post-processor (fn [_ ch]
+                                     ch)}}]
   (let [subscription-broadcaster (permanent-channel)
         cache (subscription-cache
                 {:generator
@@ -89,7 +92,7 @@
                    (let [in (channel)
                          out (channel* :description destination :grounded? true)]
                      (join
-                       (aggregator destination in)
+                       (aggregator-post-processor destination in)
                        out)
                      (splice out in)))
 
@@ -125,9 +128,9 @@
           (receive-all local-broadcaster
             (fn [destination]
               ;; connect endpoint destination to router destination
-              (let [[endpoint-destination transform] (endpoint-transform endpoint destination)]
+              (when-let [{destination* :destination, transform :transform} (endpoint-processor endpoint destination)]
                 (join
-                  (transform (endpoint-generator endpoint-destination))
+                  (transform (endpoint-generator destination*))
                   (generator destination)))))
           
           ;; resend all active subscriptions
@@ -165,7 +168,15 @@
   (subscribe [_ destination])
   (publish [_ msg]))
 
-(defn endpoint [name connection-generator producer]
+(defn endpoint
+  [{:keys [name
+           connection-generator
+           producer
+           message-decoder
+           destination-encoder]
+    :or {name "stomp-endpoint"
+         destination-encoder identity
+         message-decoder identity}}]
   (let [conn (atom nil)
         subscribers (subscription-cache
                       {:generator
@@ -204,14 +215,16 @@
                                           (release subscribers dest)))
                                         
                                       :subscribe
-                                      (let [bridge (channel)]
-                                        (swap! active-publishers assoc (id msg) bridge)
-                                        (siphon (producer dest) bridge ch))
+                                      (when producer
+                                        (let [bridge (channel)]
+                                          (swap! active-publishers assoc (id msg) bridge)
+                                          (siphon (producer dest) bridge ch)))
                                         
                                       :unsubscribe
-                                      (let [id (id msg)]
-                                        (close (@active-publishers id))
-                                        (swap! active-publishers dissoc id))))))
+                                      (when producer
+                                        (let [id (id msg)]
+                                          (close (@active-publishers id))
+                                          (swap! active-publishers dissoc id)))))))
                                 
                               (closed-result ch))
 
@@ -226,9 +239,10 @@
       (reify Endpoint
         (subscribe [_ destination]
           (let [_ (connection)
-                ch (channel)]
+                ch (channel)
+                destination (destination-encoder destination)]
             (join (subscriber destination) ch)
-            ch))
+            (map* message-decoder ch)))
         (publish [_ msg]
           (when-let [conn (connection)]
             (enqueue conn msg))))

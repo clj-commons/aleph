@@ -33,7 +33,7 @@
          (close-connection ~c)))))
 
 (defmacro with-router [port & body]
-  `(let [stop-server# (start-router {:port ~port})]
+  `(let [stop-server# (start-stomp-router {:port ~port})]
      (try
        ~@body
        (finally
@@ -48,7 +48,7 @@
     (probe-channel id)))
 
 (defmacro with-endpoint [[e] port & body]
-  `(let [~e (endpoint probe-producer {:host "localhost", :port ~port})]
+  `(let [~e (stomp-endpoint {:producer probe-producer :client-options {:host "localhost", :port ~port}})]
      (try
        ~@body
        (finally

@@ -18,12 +18,14 @@
 (defn stomp-connection [options]
   (tcp-client (assoc options :frame c/message-codec)))
 
-(defn start-router [options]
+(defn start-stomp-router [options]
   (let [name (or
                (:name options)
                (-> options :server :name)
                "stomp-router")
-        r (r/router {:name name})]
+        r (r/router (merge
+                      options
+                      {:name name}))]
     (start-tcp-server
       (fn [ch _]
         (r/register-publisher r nil ch)
@@ -32,14 +34,21 @@
         :name name
         :frame c/message-codec))))
 
-(defn endpoint [producer options]
+(defn stomp-endpoint
+  [{:keys [client-options
+           name
+           producer]
+    :as options}]
   (let [name (or
                (:name options)
                "stomp-endpoint")
         conn #(tcp-client
-                (assoc options
+                (assoc client-options
                   :name name
                   :frame c/message-codec))]
-    (r/endpoint name conn producer)))
+    (r/endpoint
+      (assoc options
+        :name name
+        :connection-generator conn))))
 
 (import-fn r/subscribe)
