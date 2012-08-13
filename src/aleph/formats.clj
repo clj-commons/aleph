@@ -11,7 +11,7 @@
   (:use
     [lamina core])
   (:require
-    [clj-json.core :as json]
+    [cheshire.core :as json]
     [clojure.xml :as xml]
     [clojure.contrib.prxml :as prxml])
   (:require

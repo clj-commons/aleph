@@ -26,7 +26,7 @@
 
 (defmacro with-endpoint [[e] port & body]
   `(let [~e (trace-endpoint
-              {:aggregation-period 100
+              {:aggregation-period 1000
                :client-options {:host "localhost", :port ~port}})]
      (try
        ~@body
@@ -93,6 +93,13 @@
         (doseq [x (range 1 5)]
           (is (= true (trace :abc x))))
 
-        (is (= 10 (next-msg sum)))
-        (is (= 2.5 (next-msg avg)))
-        (is (= 10.0 (next-non-zero-msg sum-avg)))))))
+        (is (= 10 (next-non-zero-msg sum)))
+        (is (= 2.5 (next-non-zero-msg avg)))
+        (is (= 10.0 (next-non-zero-msg sum-avg)))
+
+        (Thread/sleep 1000)
+
+        (doseq [x (range 6 10)]
+          (is (= true (trace :abc x))))
+
+        (is (= 30 (next-msg sum)))))))
