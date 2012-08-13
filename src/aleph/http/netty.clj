@@ -18,7 +18,8 @@
     [aleph.netty :as netty]
     [aleph.formats :as formats]
     [aleph.http.core :as http]
-    [aleph.http.options :as options])
+    [aleph.http.options :as options]
+    [clojure.tools.logging :as log])
   (:import
     [java.util.concurrent
      TimeoutException]
@@ -61,6 +62,7 @@
                       (-> options :server :name)
                       "http-server")
         netty-options (-> options :netty)
+        error-probe (error-probe-channel [server-name :error])
         channel-handler (server-generator
                           (fn [ch req]
                             (let [ch* (result-channel)]
@@ -72,6 +74,7 @@
                                 #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))
                           (merge
                             {:error-response (fn [ex]
+                                               (enqueue error-probe ex)
                                                (if (or
                                                      (= ex :lamina/timeout!)
                                                      (instance? TimeoutException ex))
