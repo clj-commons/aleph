@@ -149,7 +149,7 @@
   `(with-server (start-http-server ~handler
 		  {:port 8080
                    :websocket true
-		   })
+		   :probes {:error (sink (fn [& _#]))}})
      ~@body))
 
 (defmacro with-handlers [aleph-handler ring-handler & body]
