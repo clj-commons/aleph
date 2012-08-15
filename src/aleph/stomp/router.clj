@@ -10,6 +10,7 @@
   (:use
     [lamina core trace connections])
   (:require
+    [clojure.tools.logging :as log]
     [lamina.cache :as c]))
 
 (defprotocol Router
@@ -61,6 +62,9 @@
               (when on-subscribe
                 (on-subscribe destination id))
 
+              (on-error ch
+                #(log/error % "Error in subscription cache."))
+
               ;; hook up unsubscription
               (on-closed ch 
                 (fn []
@@ -77,24 +81,15 @@
 
 (defn router
   [{:keys [name
-           endpoint-processor
-           aggregator-post-processor]
+           aggregator]
     :or {name "stomp-router"
-         endpoint-processor (fn [_ dest]
-                              {:destination dest
-                               :transform identity})
-         aggregator-post-processor (fn [_ ch]
-                                     ch)}}]
+         aggregator (fn [_ dest]
+                      {:destination dest
+                       :transform identity})}}]
   (let [subscription-broadcaster (permanent-channel)
         cache (subscription-cache
                 {:generator
-                 (fn [destination]
-                   (let [in (channel)
-                         out (channel* :description destination :grounded? true)]
-                     (join
-                       (aggregator-post-processor destination in)
-                       out)
-                     (splice out in)))
+                 #(channel* :description % :grounded? true)
 
                  :on-subscribe
                  (fn [destination _]
@@ -128,7 +123,8 @@
           (receive-all local-broadcaster
             (fn [destination]
               ;; connect endpoint destination to router destination
-              (when-let [{destination* :destination, transform :transform} (endpoint-processor endpoint destination)]
+              (when-let [{destination* :destination, transform :transform}
+                         (aggregator endpoint destination)]
                 (join
                   (transform (endpoint-generator destination*))
                   (generator destination)))))
@@ -172,11 +168,11 @@
   [{:keys [name
            connection-generator
            producer
-           message-decoder
+           message-post-processor
            destination-encoder]
     :or {name "stomp-endpoint"
          destination-encoder identity
-         message-decoder identity}}]
+         message-post-processor identity}}]
   (let [conn (atom nil)
         subscribers (subscription-cache
                       {:generator
@@ -242,7 +238,7 @@
                 ch (channel)
                 destination (destination-encoder destination)]
             (join (subscriber destination) ch)
-            (map* message-decoder ch)))
+            (message-post-processor ch)))
         (publish [_ msg]
           (when-let [conn (connection)]
             (enqueue conn msg))))

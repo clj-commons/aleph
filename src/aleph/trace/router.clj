@@ -8,138 +8,99 @@
 
 (ns aleph.trace.router
   (:use
-    [lamina core trace]
-    [aleph.trace.operators])
+    [lamina core trace])
   (:require
-    [lamina.trace.context]
+    [clojure.tools.logging :as log]
+    [aleph.trace.operators :as ops]
     [aleph.stomp :as stomp]
     [aleph.formats :as formats]))
 
 ;;; endpoint
 
-(def default-origin
-  {:host lamina.trace.context/host
-   :pid lamina.trace.context/pid})
-
-(def origin-builder (atom nil))
-
-(defn origin []
-  (if-let [builder @origin-builder]
-    (builder default-origin)
-    default-origin))
-
 (defn wrap-value [destination val]
   (let [body (formats/encode-json->string val)]
     {:command :send
-     :headers {:destination destination
-               :origin (formats/encode-json->string (origin))
+     :headers {:destination (formats/encode-json->string destination)
+               :origin (formats/encode-json->string (ops/origin))
                :content-type "application/json"
                :content-length (count body)}
      :body body}))
 
 ;;;
 
-(defn endpoint-wrapper [destination period ch]
-  (->> ch
-    (partition-every period)
-    (remove* empty?)
-    (map* (partial wrap-value destination))))
+(defn valid-destination? [{:keys [operators]}]
+  (ops/valid-operators? operators))
 
-(defn create-probe [{:keys [pattern operators]}]
-  (if-not (valid-operators? operators)
-    (do
-      ;; invalid stream
-      )
-    (let [probes (select-probes pattern)]
-      (reduce
-        (fn [ch {:keys [options name]}]
-          (endpoint (operator name) options ch))
-        probes
-        operators))))
-
-;;; aggregator
-
-(defn valid-destination? [{:keys [operators] :as m}]
-  (and
-    (valid-operators? operators)
-    (let [post-endpoint (->> operators
-                          (map :name)
-                          (map operator)
-                          (drop-while endpoint?))]
-      (or
-        (empty? post-endpoint)
-        (and
-          (aggregator? (first post-endpoint))
-          (every? post-aggregator? (rest post-endpoint)))))))
-
-(defn endpoint-unwrapper [ch]
-  (->> ch
-    (map* (fn [{:keys [headers body]}]
-            (let [origin (formats/decode-json (get headers "origin"))
-                  body (formats/decode-json body)]
-              (map #(hash-map :origin origin, :data %) body))))
-    concat*))
-
-(defn endpoint-processor [endpoint {:keys [operators] :as destination}]
+(defn create-probe [{:keys [pattern operators] :as destination}]
   (if-not (valid-destination? destination)
     (do
-      ;; invalid stream
+      (log/info "invalid probe destination" destination)
       )
-    (let [endpoint-operators (->> operators
-                               (map :name)
-                               (map operator)
-                               (take-while endpoint?))
-          aggregator-operators (drop (count endpoint-operators) operators)]
+    (->> pattern
+      select-probes
+      (ops/endpoint-chain-transform operators))))
 
-      {:destination (update-in destination [:operators]
-                      #(when %
-                         (take (count endpoint-operators) %)))
-       :transform (fn [ch]
-                    (let [ ;; unwrap the bundled messages
-                          ch (endpoint-unwrapper ch)
+(defn post-endpoint [{:keys [operators] :as destination} period ch]
+  (map*
+    (partial wrap-value destination)
+    (if-not (ops/periodic-chain? operators)
+      (->> ch (partition-every period) (remove* empty?))
+      (->> ch (map* vector)))))
 
-                          ;; handle the origin-laden messages
-                          ch (if-let [{:keys [name options]} (first aggregator-operators)]
-                               (aggregator (operator name) options ch)
-                               (map* :data ch))]
+(defn pre-aggregator [{:keys [operators] :as destination} ch]
+  (->> ch
+    (map* :body)
+    (map* formats/decode-json)
+    concat*))
 
-                      ;; handle all subsequent steps
-                      (reduce
-                        (fn [ch {:keys [options name]}]
-                          (post-aggregator (operator name) options ch))
-                        ch
-                        (rest aggregator-operators))))})))
+(defn post-aggregator [destination ch]
+  (->> ch
+    (map* vector)
+    (map* (partial wrap-value destination))))
+
+(defn aggregator [endpoint {:keys [operators] :as destination}]
+  (if-not (valid-destination? destination)
+    (do
+      (log/info "invalid aggregator destination" destination)
+      )
+    {:destination (update-in destination [:operators] ops/endpoint-chain)
+     :transform (fn [ch]
+                  (if-let [ops (-> operators ops/aggregator-chain seq)]
+                    (->> ch
+                      (pre-aggregator destination)
+                      (ops/aggregator-chain-transform ops)
+                      (post-aggregator destination))
+                    ch))}))
 
 ;;;
 
 (def router-options
-  {:endpoint-processor
+  {:aggregator
    (fn [endpoint destination]
-     (update-in (endpoint-processor endpoint (formats/decode-json destination))
+     (update-in (aggregator endpoint (formats/decode-json destination))
        [:destination]
-       formats/encode-json->string))
-
-   :aggregator-post-processor
-   (fn [destination ch]
-     (map* #(wrap-value destination %) ch))})
+       formats/encode-json->string))})
 
 (defn endpoint-options [aggregation-period]
   {:producer
    (fn [destination]
-     (endpoint-wrapper
-       destination
-       aggregation-period
-       (create-probe
-         (formats/decode-json destination))))
+     (let [destination (formats/decode-json destination)]
+       (->> destination
+         create-probe
+         (post-endpoint destination aggregation-period))))
 
-   :message-decoder
-   (fn [msg]
-     (-> msg :body formats/decode-json))
+   :message-post-processor
+   (fn [ch]
+     (->> ch
+       (map* :body)
+       (map* formats/decode-json)
+       concat*))
 
    :destination-encoder
    (fn [x]
      (formats/encode-json->string
        (if (string? x)
-         {:pattern x}
+         {:pattern x
+          :operators []}
          x)))})
 
