@@ -8,8 +8,9 @@
 
 (ns aleph.trace.operators
   (:use
-    [lamina.core])
+    [lamina core trace])
   (:require
+    [clojure.tools.logging :as log]
     [lamina.trace.context]
     [lamina.stats])
   (:import
@@ -34,7 +35,7 @@
 
 ;;;
 
-(def operators (ConcurrentHashMap.))
+(def ^ConcurrentHashMap operators (ConcurrentHashMap.))
 
 (defn operator [name]
   (.get operators name))
@@ -79,8 +80,14 @@
                (endpoint [_ desc# ch#]
                  (endpoint# desc# ch#))
                (pre-split [_ desc# ch#]
-                 (if pre-split#
+                 (cond
+                   pre-split#
                    (pre-split# desc# ch#)
+
+                   endpoint#
+                   (endpoint# desc# ch#)
+
+                   :else
                    ch#))
                (post-split [_ desc# ch#]
                  (if post-split#
@@ -105,28 +112,11 @@
           [op])))
     (apply concat)))
 
-(defn first-operation [ops]
-  (->> ops
-    operator-seq
-    (remove group-by?)
-    first))
-
-(defn butlast-operation [ops]
+(defn last-operation [ops]
   (let [op (last ops)]
     (if (group-by? op)
-      (concat (butlast ops) [(butlast-operation op)])
-      (butlast ops))))
-
-(defn rest-operations [ops]
-  (let [op (first ops)]
-    (if (group-by? op)
-      (cons (rest-operations op) (rest ops))
-      (rest ops))))
-
-(defn last-operation [ops]
-  (->> ops
-    operator-seq
-    last))
+     (update-in op [:operators] #(vector (last-operation %)))
+     op)))
 
 (defn endpoint-chain [ops]
   (loop [acc [], ops ops]
@@ -159,23 +149,23 @@
 ;;;
 
 (defn endpoint-chain-transform [ops ch]
-  (if-let [{:keys [name] :as op} (last-operation ops)]
+  (if-let [{:keys [name] :as op} (last ops)]
     (pre-split (operator name) op
       (reduce
         (fn [ch {:keys [name] :as desc}]
           (endpoint (operator name) desc ch))
         ch
-        (butlast-operation ops)))
+        (butlast ops)))
     ch))
 
 (defn aggregator-chain-transform [ops ch]
-  (if-let [{:keys [name] :as op} (first-operation ops)]
+  (if-let [{:keys [name] :as op} (first ops)]
     (post-split (operator name) op
       (reduce
         (fn [ch {:keys [name] :as desc}]
           (aggregator (operator name) desc ch))
         ch
-        (rest-operations ops)))
+        (rest ops)))
     ch))
 
 (defn periodic-chain? [ops]
@@ -186,6 +176,41 @@
     (some periodic?)
     boolean))
 
+;;; group-by
+
+(defn group-by-op [chain-transform {:keys [options facet operators]} ch]
+  ;; handle both keywords and strings
+  (let [str-facet (-> facet name)
+        key-facet (keyword str-facet)
+        facet #(if (contains? % str-facet)
+                 (get % str-facet)
+                 (get % key-facet))
+        expiration (get options :expiration (* 1000 30))]
+    (distribute-aggregate
+      facet
+      (fn [k ch]
+        (->> ch
+          (close-on-idle expiration)
+          (chain-transform operators)))
+      ch)))
+
+(defn merge-group-by [{:keys [options operators]} ch]
+  (let [expiration (get options :expiration (* 1000 30))]
+    (->> ch
+      concat*
+      (distribute-aggregate first
+        (fn [k ch]
+          (->> ch
+            (close-on-idle expiration)
+            (map* second)
+            (aggregator-chain-transform operators)))))))
+
+(defoperator group-by
+  :periodic? true
+  :endpoint (partial group-by-op endpoint-chain-transform)
+  :post-split merge-group-by
+  :aggregator (partial group-by-op aggregator-chain-transform))
+
 ;;;
 
 (defn sum-op [{:keys [options]} ch]
@@ -193,21 +218,17 @@
 
 (defoperator sum
   :periodic? true
-  :endpoint (fn [{:keys [options]} ch]
-              (->> ch
-                (lamina.stats/sum options)
-                (remove* zero?)))
+  :endpoint sum-op
   :aggregator sum-op)
+
+(defn rate-op [{:keys [options]} ch]
+  (lamina.stats/rate options ch))
 
 (defoperator rate
   :periodic? true
-  :endpoint (fn [{:keys [options]} ch]
-              (->> ch
-                (lamina.stats/rate options)
-                (remove* zero?)))
+  :endpoint rate-op
   :post-split sum-op
-  :aggregator (fn [{:keys [options]} ch]
-                (lamina.stats/rate options ch)))
+  :aggregator rate-op)
 
 (defoperator moving-average
   :periodic? true

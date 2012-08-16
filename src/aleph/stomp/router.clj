@@ -8,6 +8,7 @@
 
 (ns aleph.stomp.router
   (:use
+    [potemkin]
     [lamina core trace connections])
   (:require
     [clojure.tools.logging :as log]
@@ -33,7 +34,7 @@
   {:command :unsubscribe
    :headers {"id" id}})
 
-(defprotocol SubscriptionCache
+(defprotocol-once SubscriptionCache
   (get-or-create [_ destination])
   (release [_ destination])
   (subscriptions [_]))
@@ -61,9 +62,6 @@
               ;; broadcast subscription
               (when on-subscribe
                 (on-subscribe destination id))
-
-              (on-error ch
-                #(log/error % "Error in subscription cache."))
 
               ;; hook up unsubscription
               (on-closed ch 
@@ -160,7 +158,7 @@
 
 ;;;
 
-(defprotocol Endpoint
+(defprotocol-once Endpoint
   (subscribe [_ destination])
   (publish [_ msg]))
 
