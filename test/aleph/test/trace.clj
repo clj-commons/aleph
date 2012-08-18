@@ -115,24 +115,24 @@
       
       (let [foo-rate (subscribe c "abc.group-by(foo).rate()")
             bar-rate (subscribe c "abc.group-by(facet: bar).rate()")
-            bar-rate* (subscribe c "abc.select(bar).group-by(bar).rate()")
+            bar-rate* (subscribe c "abc.select(foo,bar).group-by(bar).rate()")
             bar-rate** (subscribe c "abc.select(bar).group-by(bar).bar.rate()")
-            foo-bar-rate (subscribe c "abc.group-by(foo).group-by(bar).rate()")
+            foo-bar-rate (subscribe c "abc.group-by(foo).select(bar).group-by(bar).rate()")
             foo-bar-rate* (subscribe c "abc.group-by([foo, bar]).rate()")
             val (fn [foo bar] {:foo foo, :bar bar})]
 
         (Thread/sleep 500)
 
-        (doseq [x (map val [:a :a :b :b :c] [:x :y :z :x :y])]
+        (doseq [x (map val [:a :a :b :b :c] [:x :x :z :y :y])]
           (is (= true (trace :abc x))))
 
         (is (= {:a 2, :b 2, :c 1}
               (next-msg foo-rate)))
         (is (= {:x 2, :y 2, :z 1}
               (next-msg bar-rate) (next-msg bar-rate*) (next-msg bar-rate**)))
-        (is (= {:c {:y 1}, :b {:x 1, :z 1}, :a {:y 1, :x 1}}
+        (is (= {:c {:y 1}, :b {:y 1, :z 1}, :a {:x 2}}
               (next-msg foo-bar-rate)))
-        (is (= {[:a :x] 1, [:a :y] 1, [:b :z] 1, [:c :y] 1, [:b :x] 1}
+        (is (= {[:a :x] 2, [:b :z] 1, [:c :y] 1, [:b :y] 1}
               (next-msg foo-bar-rate*)))))
 
     (Thread/sleep 500)
