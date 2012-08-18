@@ -212,7 +212,9 @@
                                       (when producer
                                         (let [bridge (channel)]
                                           (swap! active-publishers assoc (id msg) bridge)
-                                          (siphon (producer dest) bridge ch)))
+                                          (let [p (producer dest)]
+                                            (on-error p #(log/error % (str "Error in endpoint for " dest)))
+                                            (siphon p bridge ch))))
                                         
                                       :unsubscribe
                                       (when producer
