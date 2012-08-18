@@ -87,7 +87,7 @@
 
 (defn group-by-op [facet & operators]
   {:name "group-by"
-   :facet facet
+   :options {:facet facet}
    :operators operators})
 
 (deftest test-basic-operators

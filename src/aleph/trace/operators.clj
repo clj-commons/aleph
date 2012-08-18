@@ -176,18 +176,31 @@
     (some periodic?)
     boolean))
 
+;;;
+
+(defn getter [lookup]
+  (if (coll? lookup)
+    (let [fs (map getter lookup)]
+      (fn [m]
+        (map #(% m) fs)))
+    (let [str-facet (-> lookup name)
+          key-facet (keyword str-facet)]
+      (fn [m]
+        (if (contains? m str-facet)
+          (get m str-facet)
+          (get m key-facet))))))
+
+(defn selector [keys]
+  (let [lookups (zipmap keys (map getter keys))]
+    #(into {} (map (fn [[k f]] [k (f %)])))))
+
 ;;; group-by
 
-(defn group-by-op [chain-transform {:keys [options facet operators]} ch]
+(defn group-by-op [chain-transform {:keys [options operators]} ch]
   ;; handle both keywords and strings
-  (let [str-facet (-> facet name)
-        key-facet (keyword str-facet)
-        facet #(if (contains? % str-facet)
-                 (get % str-facet)
-                 (get % key-facet))
-        expiration (get options :expiration (* 1000 30))]
+  (let [expiration (get options :expiration (* 1000 30))]
     (distribute-aggregate
-      facet
+      (getter (:facet options))
       (fn [k ch]
         (->> ch
           (close-on-idle expiration)
