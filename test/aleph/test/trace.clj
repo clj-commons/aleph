@@ -81,23 +81,14 @@
 
     (is (= false (trace :def 6)))))
 
-(def sum-op {:name "sum"})
-(def rate-op {:name "rate"})
-(def avg-op {:name "moving-average" :options {:period 1000}})
-
-(defn group-by-op [facet & operators]
-  {:name "group-by"
-   :options {:facet facet}
-   :operators operators})
-
 (deftest test-basic-operators
   (with-router 10000
     (with-endpoint [c] 10000
 
-      (let [sum (subscribe c {:pattern "abc", :operators [sum-op]})
-            avg (subscribe c {:pattern "abc", :operators [avg-op]})
-            rate (subscribe c {:pattern "abc", :operators [rate-op]})
-            sum-avg (subscribe c {:pattern "abc", :operators [sum-op avg-op]})]
+      (let [sum (subscribe c "abc.sum()")
+            avg (subscribe c "abc.moving-average()")
+            rate (subscribe c "abc.rate(period: 1000)")
+            sum-avg (subscribe c "abc.sum().moving-average(period: 1000)")]
 
         (Thread/sleep 500)
 
@@ -122,16 +113,12 @@
 
       (is (= false (trace :abc 1)))
       
-      (let [foo-rate (subscribe c
-                       {:pattern "abc"
-                        :operators [(group-by-op :foo rate-op)]})
-            bar-rate (subscribe c
-                       {:pattern "abc"
-                        :operators [(group-by-op :bar rate-op)]})
-            foo-bar-rate (subscribe c
-                           {:pattern "abc"
-                            :operators [(group-by-op :foo
-                                          (group-by-op :bar rate-op))]})
+      (let [foo-rate (subscribe c "abc.group-by(foo).rate()")
+            bar-rate (subscribe c "abc.group-by(facet: bar).rate()")
+            bar-rate* (subscribe c "abc.select(bar).group-by(bar).rate()")
+            bar-rate** (subscribe c "abc.select(bar).group-by(bar).bar.rate()")
+            foo-bar-rate (subscribe c "abc.group-by(foo).group-by(bar).rate()")
+            foo-bar-rate* (subscribe c "abc.group-by([foo, bar]).rate()")
             val (fn [foo bar] {:foo foo, :bar bar})]
 
         (Thread/sleep 500)
@@ -142,9 +129,11 @@
         (is (= {:a 2, :b 2, :c 1}
               (next-msg foo-rate)))
         (is (= {:x 2, :y 2, :z 1}
-              (next-msg bar-rate)))
+              (next-msg bar-rate) (next-msg bar-rate*) (next-msg bar-rate**)))
         (is (= {:c {:y 1}, :b {:x 1, :z 1}, :a {:y 1, :x 1}}
-              (next-msg foo-bar-rate)))))
+              (next-msg foo-bar-rate)))
+        (is (= {[:a :x] 1, [:a :y] 1, [:b :z] 1, [:c :y] 1, [:b :x] 1}
+              (next-msg foo-bar-rate*)))))
 
     (Thread/sleep 500)
 

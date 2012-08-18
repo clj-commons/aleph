@@ -40,15 +40,15 @@
 (defn operator [name]
   (.get operators name))
 
-(defn group-by? [{:keys [name] :as op}]
+(defn group-by? [{:strs [name] :as op}]
   (when op
     (= "group-by" name)))
 
 (defn valid-operators? [operators]
   (or (empty? operators)
     (and
-      (->> operators (map :name) (every? operator))
-      (->> operators (filter group-by?) (mapcat :operators) valid-operators?))))
+      (->> operators (map #(get % "name")) (every? operator))
+      (->> operators (filter group-by?) (mapcat #(get % "operators")) valid-operators?))))
 
 ;;;
 
@@ -106,7 +106,7 @@
 (defn operator-seq [ops]
   (->> ops
     (map
-      (fn [{:keys [operators] :as op}]
+      (fn [{:strs [operators] :as op}]
         (if (group-by? op)
           (cons op (operator-seq operators))
           [op])))
@@ -115,19 +115,19 @@
 (defn last-operation [ops]
   (let [op (last ops)]
     (if (group-by? op)
-     (update-in op [:operators] #(vector (last-operation %)))
+     (update-in op ["operators"] #(vector (last-operation %)))
      op)))
 
 (defn endpoint-chain [ops]
   (loop [acc [], ops ops]
     (if (empty? ops)
       acc
-      (let [{:keys [operators name] :as op} (first ops)]
+      (let [{:strs [operators name] :as op} (first ops)]
         (if (group-by? op)
           (let [operators* (endpoint-chain operators)]
             (if (= operators operators*)
               (recur (conj acc op) (rest ops))
-              (conj acc (assoc op :operators operators*))))
+              (conj acc (assoc op "operators" operators*))))
           (if (endpoint? (operator name))
             (recur (conj acc op) (rest ops))
             (conj acc op)))))))
@@ -136,12 +136,12 @@
   (loop [ops ops*]
     (if (empty? ops)
       [(last-operation ops*)]
-      (let [{:keys [operators name] :as op} (first ops)]
+      (let [{:strs [operators name] :as op} (first ops)]
         (if (group-by? op)
           (let [operators* (aggregator-chain operators)]
             (if (= operators operators*)
               (recur (rest ops))
-              (cons (assoc op :operators operators*) (rest ops))))
+              (cons (assoc op "operators" operators*) (rest ops))))
           (if (endpoint? (operator name))
             (recur (rest ops))
             ops))))))
@@ -149,20 +149,20 @@
 ;;;
 
 (defn endpoint-chain-transform [ops ch]
-  (if-let [{:keys [name] :as op} (last ops)]
+  (if-let [{:strs [name] :as op} (last ops)]
     (pre-split (operator name) op
       (reduce
-        (fn [ch {:keys [name] :as desc}]
+        (fn [ch {:strs [name] :as desc}]
           (endpoint (operator name) desc ch))
         ch
         (butlast ops)))
     ch))
 
 (defn aggregator-chain-transform [ops ch]
-  (if-let [{:keys [name] :as op} (first ops)]
+  (if-let [{:strs [name] :as op} (first ops)]
     (post-split (operator name) op
       (reduce
-        (fn [ch {:keys [name] :as desc}]
+        (fn [ch {:strs [name] :as desc}]
           (aggregator (operator name) desc ch))
         ch
         (rest ops)))
@@ -171,18 +171,23 @@
 (defn periodic-chain? [ops]
   (->> ops
     operator-seq
-    (map :name)
+    (map #(get % "name"))
     (map operator)
     (some periodic?)
     boolean))
 
 ;;;
 
+(defn keywordize [m]
+  (zipmap
+    (map keyword (keys m))
+    (vals m)))
+
 (defn getter [lookup]
   (if (coll? lookup)
     (let [fs (map getter lookup)]
       (fn [m]
-        (map #(% m) fs)))
+        (vec (map #(% m) fs))))
     (let [str-facet (-> lookup name)
           key-facet (keyword str-facet)]
       (fn [m]
@@ -191,24 +196,45 @@
           (get m key-facet))))))
 
 (defn selector [keys]
-  (let [lookups (zipmap keys (map getter keys))]
-    #(into {} (map (fn [[k f]] [k (f %)])))))
+  (let [getters (map getter keys)]
+    (fn [m]
+      (zipmap
+        keys
+        (map #(% m) getters)))))
+
+(defoperator lookup
+  :periodic? false
+  :endpoint (fn [{:strs [options]} ch]
+              (map* (getter (get options "field")) ch))
+  :aggregator (fn [{:strs [options]} ch]
+                (map* (getter (get options "field")) ch)))
+
+(defoperator select
+  :periodic? false
+  :endpoint (fn [{:strs [options]} ch]
+              (map* (selector (vals options)) ch))
+  :aggregator (fn [{:strs [options]} ch]
+                (map* (selector (vals options)) ch)))
+ 
 
 ;;; group-by
 
-(defn group-by-op [chain-transform {:keys [options operators]} ch]
+(defn group-by-op [chain-transform {:strs [options operators]} ch]
   ;; handle both keywords and strings
-  (let [expiration (get options :expiration (* 1000 30))]
+  (let [expiration (get options "expiration" (* 1000 30))
+        facet (or
+                (get options "facet")
+                (get options "0"))]
     (distribute-aggregate
-      (getter (:facet options))
+      (getter facet)
       (fn [k ch]
         (->> ch
           (close-on-idle expiration)
           (chain-transform operators)))
       ch)))
 
-(defn merge-group-by [{:keys [options operators]} ch]
-  (let [expiration (get options :expiration (* 1000 30))]
+(defn merge-group-by [{:strs [options operators]} ch]
+  (let [expiration (get options "expiration" (* 1000 30))]
     (->> ch
       concat*
       (distribute-aggregate first
@@ -226,16 +252,16 @@
 
 ;;;
 
-(defn sum-op [{:keys [options]} ch]
-  (lamina.stats/sum options ch))
+(defn sum-op [{:strs [options]} ch]
+  (lamina.stats/sum (keywordize options) ch))
 
 (defoperator sum
   :periodic? true
   :endpoint sum-op
   :aggregator sum-op)
 
-(defn rate-op [{:keys [options]} ch]
-  (lamina.stats/rate options ch))
+(defn rate-op [{:strs [options]} ch]
+  (lamina.stats/rate (keywordize options) ch))
 
 (defoperator rate
   :periodic? true
@@ -245,8 +271,8 @@
 
 (defoperator moving-average
   :periodic? true
-  :aggregator (fn [{:keys [options]} ch]
-                (lamina.stats/moving-average options ch)))
+  :aggregator (fn [{:strs [options]} ch]
+                (lamina.stats/moving-average (keywordize options) ch)))
 
 
 

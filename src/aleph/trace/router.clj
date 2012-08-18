@@ -8,7 +8,8 @@
 
 (ns aleph.trace.router
   (:use
-    [lamina core trace])
+    [lamina core trace]
+    [aleph.trace.parse :as parse])
   (:require
     [clojure.tools.logging :as log]
     [aleph.trace.operators :as ops]
@@ -18,20 +19,20 @@
 ;;; endpoint
 
 (defn wrap-value [destination val]
-  (let [body (formats/encode-json->string val)]
+  (let [body (pr-str val)]
     {:command :send
      :headers {:destination (formats/encode-json->string destination)
                :origin (formats/encode-json->string (ops/origin))
-               :content-type "application/json"
+               :content-type "application/clojure"
                :content-length (count body)}
      :body body}))
 
 ;;;
 
-(defn valid-destination? [{:keys [operators]}]
+(defn valid-destination? [{:strs [operators]}]
   (ops/valid-operators? operators))
 
-(defn create-probe [{:keys [pattern operators] :as destination}]
+(defn create-probe [{:strs [pattern operators] :as destination}]
   (if-not (valid-destination? destination)
     (do
       (log/info "invalid probe destination" destination)
@@ -40,17 +41,17 @@
       select-probes
       (ops/endpoint-chain-transform operators))))
 
-(defn post-endpoint [{:keys [operators] :as destination} period ch]
+(defn post-endpoint [{:strs [operators] :as destination} period ch]
   (map*
     (partial wrap-value destination)
     (if-not (ops/periodic-chain? operators)
       (->> ch (partition-every period) (remove* empty?))
       (->> ch (map* vector)))))
 
-(defn pre-aggregator [{:keys [operators] :as destination} ch]
+(defn pre-aggregator [{:strs [operators] :as destination} ch]
   (->> ch
     (map* :body)
-    (map* formats/decode-json)
+    (map* read-string)
     concat*))
 
 (defn post-aggregator [destination ch]
@@ -58,12 +59,12 @@
     (map* vector)
     (map* (partial wrap-value destination))))
 
-(defn aggregator [endpoint {:keys [operators] :as destination}]
+(defn aggregator [endpoint {:strs [operators] :as destination}]
   (if-not (valid-destination? destination)
     (do
       (log/info "invalid aggregator destination" destination)
       )
-    {:destination (update-in destination [:operators] ops/endpoint-chain)
+    {:destination (update-in destination ["operators"] ops/endpoint-chain)
      :transform (fn [ch]
                   (if-let [ops (-> operators ops/aggregator-chain seq)]
                     (->> ch
@@ -77,14 +78,14 @@
 (def router-options
   {:aggregator
    (fn [endpoint destination]
-     (update-in (aggregator endpoint (formats/decode-json destination))
+     (update-in (aggregator endpoint (formats/decode-json destination false))
        [:destination]
        formats/encode-json->string))})
 
 (defn endpoint-options [aggregation-period]
   {:producer
    (fn [destination]
-     (let [destination (formats/decode-json destination)]
+     (let [destination (formats/decode-json destination false)]
        (->> destination
          create-probe
          (post-endpoint destination aggregation-period))))
@@ -93,14 +94,13 @@
    (fn [ch]
      (->> ch
        (map* :body)
-       (map* formats/decode-json)
+       (map* read-string)
        concat*))
 
    :destination-encoder
    (fn [x]
      (formats/encode-json->string
        (if (string? x)
-         {:pattern x
-          :operators []}
+         (parse/parse-stream x)
          x)))})
 

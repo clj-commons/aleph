@@ -292,8 +292,10 @@
 
 (defn decode-json
   "Takes bytes or a string that contain JSON, and returns a Clojure data structure representation."
-  [data]
-  (-> data bytes->string (json/parse-string true)))
+  ([data]
+     (decode-json data true))
+  ([data keywordize?]
+     (-> data bytes->string (json/parse-string keywordize?))))
 
 (defn ^String encode-json->string
   "Transforms a Clojure data structure to JSON, and returns a string representation of the encoded data."
