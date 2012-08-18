@@ -41,17 +41,12 @@
 (def ^ConcurrentHashMap operators (ConcurrentHashMap.))
 
 (defn operator [name]
-  (.get operators name))
+  (when name
+    (.get operators name)))
 
 (defn group-by? [{:strs [name] :as op}]
   (when op
     (= "group-by" name)))
-
-(defn valid-operators? [operators]
-  (or (empty? operators)
-    (and
-      (->> operators (map #(get % "name")) (every? operator))
-      (->> operators (filter group-by?) (mapcat #(get % "operators")) valid-operators?))))
 
 ;;;
 
@@ -131,27 +126,42 @@
             (if (= operators operators*)
               (recur (conj acc op) (rest ops))
               (conj acc (assoc op "operators" operators*))))
-          (if (endpoint? (operator name))
+          (if (or
+                (not (operator name))
+                (endpoint? (operator name)))
             (recur (conj acc op) (rest ops))
             (conj acc op)))))))
 
 (defn aggregator-chain [ops*]
-  (loop [ops ops*]
-    (if (empty? ops)
-      [(last-operation ops*)]
-      (let [{:strs [operators name] :as op} (first ops)]
-        (if (group-by? op)
-          (let [operators* (aggregator-chain operators)]
-            (if (= operators operators*)
+  (if (empty? ops*)
+    []
+    (loop [ops ops*]
+      (if (empty? ops)
+        [(last-operation ops*)]
+        (let [{:strs [operators name] :as op} (first ops)]
+          (if (group-by? op)
+            (let [operators* (aggregator-chain operators)]
+              (if (= operators operators*)
+                (recur (rest ops))
+                (cons (assoc op "operators" operators*) (rest ops))))
+            (if (or
+                  (not (operator name))
+                  (endpoint? (operator name)))
               (recur (rest ops))
-              (cons (assoc op "operators" operators*) (rest ops))))
-          (if (endpoint? (operator name))
-            (recur (rest ops))
-            ops))))))
+              ops)))))))
 
 ;;;
 
+(defn invalid-operators [ops]
+  (->> ops operator-seq (map #(get % "name")) (remove operator) seq))
+
+(defn assert-valid-operators [ops]
+  (if-let [invalid (invalid-operators ops)]
+    (throw (IllegalArgumentException. (str "Don't recognize: " (->> invalid (interpose ", ") (apply str)))))
+    true))
+
 (defn endpoint-chain-transform [ops ch]
+  (assert-valid-operators ops)
   (if-let [{:strs [name] :as op} (last ops)]
     (pre-split (operator name) op
       (reduce
@@ -162,6 +172,7 @@
     ch))
 
 (defn aggregator-chain-transform [ops ch]
+  (assert-valid-operators ops)
   (if-let [{:strs [name] :as op} (first ops)]
     (post-split (operator name) op
       (reduce

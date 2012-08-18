@@ -29,17 +29,10 @@
 
 ;;;
 
-(defn valid-destination? [{:strs [operators]}]
-  (ops/valid-operators? operators))
-
 (defn create-probe [{:strs [pattern operators] :as destination}]
-  (if-not (valid-destination? destination)
-    (do
-      (log/info "invalid probe destination" destination)
-      )
-    (->> pattern
-      select-probes
-      (ops/endpoint-chain-transform operators))))
+  (->> pattern
+    select-probes
+    (ops/endpoint-chain-transform operators)))
 
 (defn post-endpoint [{:strs [operators] :as destination} period ch]
   (map*
@@ -60,18 +53,14 @@
     (map* (partial wrap-value destination))))
 
 (defn aggregator [endpoint {:strs [operators] :as destination}]
-  (if-not (valid-destination? destination)
-    (do
-      (log/info "invalid aggregator destination" destination)
-      )
-    {:destination (update-in destination ["operators"] ops/endpoint-chain)
-     :transform (fn [ch]
-                  (if-let [ops (-> operators ops/aggregator-chain seq)]
-                    (->> ch
-                      (pre-aggregator destination)
-                      (ops/aggregator-chain-transform ops)
-                      (post-aggregator destination))
-                    ch))}))
+  {:destination (update-in destination ["operators"] ops/endpoint-chain)
+   :transform (fn [ch]
+                (if-let [ops (-> operators ops/aggregator-chain seq)]
+                  (->> ch
+                    (pre-aggregator destination)
+                    (ops/aggregator-chain-transform ops)
+                    (post-aggregator destination))
+                  ch))})
 
 ;;;
 
@@ -86,9 +75,13 @@
   {:producer
    (fn [destination]
      (let [destination (formats/decode-json destination false)]
-       (->> destination
-         create-probe
-         (post-endpoint destination aggregation-period))))
+       (if-let [invalid (ops/invalid-operators (:operators destination))]
+         (do
+           ;; invalid destination
+           )
+         (->> destination
+           create-probe
+           (post-endpoint destination aggregation-period)))))
 
    :message-post-processor
    (fn [ch]
