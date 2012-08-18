@@ -48,8 +48,8 @@
   (with-router 10000
     (with-endpoint [c1] 10000
 
-      (let [a (subscribe c1 "abc")
-            b (subscribe c1 "def")]
+      (let [a (subscribe c1 "ab*")
+            b (subscribe c1 "*ef")]
 
         ;; wait for subscriptions to propagate
         (Thread/sleep 500)
@@ -85,25 +85,32 @@
   (with-router 10000
     (with-endpoint [c] 10000
 
-      (let [sum (subscribe c "abc.sum()")
-            avg (subscribe c "abc.moving-average()")
+      (let [sum (subscribe c "abc.x.y.sum()")
+            sum* (subscribe c "abc.select(a: x.y, b: x).a.sum()")
+            filtered-sum* (subscribe c "abc.where(x.y > 1).x.y.sum()")
+            filtered-sum** (subscribe c "abc.x.where(y = 4).y.sum()")
+            filtered-sum*** (subscribe c "abc.x.y.where(_ < 4).sum()")
+            avg (subscribe c "abc.x.y.moving-average()")
             rate (subscribe c "abc.rate(period: 1000)")
-            sum-avg (subscribe c "abc.sum().moving-average(period: 1000)")]
+            sum-avg (subscribe c "abc.x.y.sum().moving-average(period: 1000)")]
 
         (Thread/sleep 500)
 
         (doseq [x (range 1 5)]
-          (is (= true (trace :abc x))))
+          (is (= true (trace :abc {:x {:y x}}))))
 
+        (is (= 10 (next-non-zero-msg sum) (next-non-zero-msg sum*)))
+        (is (= 9 (next-non-zero-msg filtered-sum*)))
+        (is (= 4 (next-non-zero-msg filtered-sum**)))
+        (is (= 6 (next-non-zero-msg filtered-sum***)))
         (is (= 4 (next-non-zero-msg rate)))
-        (is (= 10 (next-non-zero-msg sum)))
         (is (= 2.5 (next-non-zero-msg avg)))
         (is (= 10.0 (next-non-zero-msg sum-avg)))
 
         (Thread/sleep 1000)
 
         (doseq [x (range 6 10)]
-          (is (= true (trace :abc x))))
+          (is (= true (trace :abc {:x {:y x}}))))
 
         (is (= 30 (next-non-zero-msg sum)))))))
 
@@ -115,10 +122,10 @@
       
       (let [foo-rate (subscribe c "abc.group-by(foo).rate()")
             bar-rate (subscribe c "abc.group-by(facet: bar).rate()")
-            bar-rate* (subscribe c "abc.select(foo,bar).group-by(bar).rate()")
+            bar-rate* (subscribe c "abc.select(foo, bar).group-by(bar).rate()")
             bar-rate** (subscribe c "abc.select(bar).group-by(bar).bar.rate()")
             foo-bar-rate (subscribe c "abc.group-by(foo).select(bar).group-by(bar).rate()")
-            foo-bar-rate* (subscribe c "abc.group-by([foo, bar]).rate()")
+            foo-bar-rate* (subscribe c "abc.group-by([foo bar]).rate()")
             val (fn [foo bar] {:foo foo, :bar bar})]
 
         (Thread/sleep 500)

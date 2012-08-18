@@ -44,7 +44,7 @@
                 (.pattern ^Pattern x))
              p (Pattern/compile (str "^" s))]
          (fn [^String s]
-           (if-let [match (first (re-seq p s))]
+           (when-let [match (first (re-seq p s))]
              [(parser match) (.substring s (count match))]))))))
 
 (defmacro deftoken
@@ -137,20 +137,31 @@
 (declare stream)
 (declare pair)
 
-(deftoken pattern #"[a-zA-Z0-9:_\-]+")
-(deftoken id #"[a-zA-Z][a-zA-Z0-9\-_]*")
+(deftoken pattern #"[a-zA-Z0-9:_\-\*]+")
+(deftoken id #"[_a-zA-Z][a-zA-Z0-9\-_]*")
+(deftoken comparison #"[<|>|=|~=]")
+(deftoken field #"[_a-zA-Z][a-zA-Z0-9\-_\.]*")
 (deftoken number #"[0-9\.]+" read-string)
-(deftoken whitespace #"[ \t]*")
+(deftoken string #"[a-zA-Z0-9\-\*_]")
+(deftoken whitespace #"[ \t,]*")
 (deftoken empty-token #"")
-(def comma (token #"[ \t]*,[ \t]*"))
 (def colon (token #"[ \t]*:[ \t]*"))
+
+(def relationship
+  (chain
+    (ignore whitespace)
+    field
+    (ignore whitespace)
+    comparison
+    (ignore whitespace)
+    (one-of number string)))
 
 (def tuple
   (token
     (chain
       (ignore whitespace)
       (ignore #"\[")
-      (chain id (many (second* comma id)))
+      (chain field (many (second* whitespace field)))
       (ignore whitespace)
       (expect #"\]"))
     (fn [[[a b]]]
@@ -160,7 +171,7 @@
   (defn substream [s]
     (@t s)))
 
-(let [t (delay (one-of tuple pair substream id number))]
+(let [t (delay (one-of tuple pair substream relationship field number))]
   (defn param [s]
     (@t s)))
 
@@ -178,7 +189,7 @@
     (chain
       (ignore whitespace)
       (maybe param)
-      (many (second* comma param)))
+      (many (second* whitespace param)))
     (fn [[a b]]
       (if a
         (list* a b)

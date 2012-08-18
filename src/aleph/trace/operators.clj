@@ -10,10 +10,13 @@
   (:use
     [lamina core trace])
   (:require
+    [clojure.string :as str]
     [clojure.tools.logging :as log]
     [lamina.trace.context]
     [lamina.stats])
   (:import
+    [java.util.regex
+     Pattern]
     [java.util.concurrent
      ConcurrentHashMap]))
 
@@ -176,7 +179,7 @@
     (some periodic?)
     boolean))
 
-;;;
+;;; lookups
 
 (defn keywordize [m]
   (zipmap
@@ -185,22 +188,49 @@
 
 (defn getter [lookup]
   (if (coll? lookup)
+
+    ;; do tuple lookup
     (let [fs (map getter lookup)]
       (fn [m]
         (vec (map #(% m) fs))))
-    (let [str-facet (-> lookup name)
-          key-facet (keyword str-facet)]
-      (fn [m]
-        (if (contains? m str-facet)
-          (get m str-facet)
-          (get m key-facet))))))
 
-(defn selector [keys]
-  (let [getters (map getter keys)]
+    (let [str-facet (-> lookup name)]
+      (cond
+        (= "_" str-facet)
+        identity
+        
+        (= "_origin" str-facet)
+        (fn [m]
+          (origin))
+        
+        ;; do path lookup
+        (re-find #"\." str-facet)
+        (let [fields (map getter (str/split str-facet #"\."))]
+          (fn [m]
+            (reduce
+              (fn [m f]
+                (when (map? m)
+                  (f m)))
+              m
+              fields)))
+        
+        ;; do normal lookup
+        :else
+        (let [key-facet (keyword str-facet)]
+          (fn [m]
+            (if (contains? m str-facet)
+              (get m str-facet)
+              (get m key-facet))))))))
+
+(defn selector [m]
+  (let [ignore-key? #(re-find #"^[0-9]+" %)
+        ks (map (fn [[k v]] (if (ignore-key? k) v k)) m)
+        vs (->> m vals (map getter))]
+    (assert (every? #(not (re-find #"\." %)) ks))
     (fn [m]
       (zipmap
-        keys
-        (map #(% m) getters)))))
+        ks
+        (map #(% m) vs)))))
 
 (defoperator lookup
   :periodic? false
@@ -212,10 +242,32 @@
 (defoperator select
   :periodic? false
   :endpoint (fn [{:strs [options]} ch]
-              (map* (selector (vals options)) ch))
+              (map* (selector options) ch))
   :aggregator (fn [{:strs [options]} ch]
-                (map* (selector (vals options)) ch)))
- 
+                (map* (selector options) ch)))
+
+
+;;; where
+
+(defn comparison-filter [[a comparison b]]
+  (assert (and a comparison b))
+  (let [a (getter a)]
+    (case comparison
+      "=" #(= (a %) b)
+      "<" #(< (a %) b)
+      ">" #(> (a %) b)
+      "~=" (let [b (-> b (str/replace "*" ".*") Pattern/compile)]
+             #(boolean (re-find b (str (a %))))))))
+
+(defn filters [filters]
+  (fn [x] (->> filters (map #(% x)) (every? identity))))
+
+(defoperator where
+  :periodic? false
+  :endpoint (fn [{:strs [options]} ch]
+              (filter* (filters (->> options vals (map comparison-filter))) ch))
+  :aggregator (fn [{:strs [options]} ch]
+                (filter* (filters (->> options vals (map comparison-filter))) ch)))
 
 ;;; group-by
 
@@ -225,6 +277,7 @@
         facet (or
                 (get options "facet")
                 (get options "0"))]
+    (assert facet)
     (distribute-aggregate
       (getter facet)
       (fn [k ch]
