@@ -13,7 +13,7 @@
     [aleph.formats :as formats]
     [aleph.http.options :as options])
   (:use
-    [lamina.core]
+    [lamina core executor]
     [potemkin]))
 
 (import-fn ws/websocket-client)
@@ -36,30 +36,17 @@
     (run-pipeline request
       {:error-handler (fn [ex] (error ch ex))} 
 
-      ;; transform body
-      (if (options/streaming-ring-requests?)
-        identity
-        (fn [{:keys [body character-encoding] :as request}]
-
-          ;; if it's a streaming request, wait for it to complete
-          (if (channel? body)
-            (run-pipeline nil
-              {:error-handler (fn [_])}
-              (fn [_]
-                (if (channel? body)
-                  (reduce* conj [] body)
-                  body))
-              #(assoc request
-                 :body
-                 (formats/bytes->input-stream % character-encoding)))
-
-            ;; if it's not a streaming request, just turn it into an input stream
-            (update-in request [:body]
-              formats/bytes->input-stream character-encoding))))
-
       ;; call into handler
-      (fn [request]
-        (f (assoc request ::channel ch)))
+      (fn [{:keys [body character-encoding] :as request}]
+        (if (and (channel? body) (not (options/channel-ring-requests?)))
+
+          ;; spawn off a new thread, since there will be blocking reads
+          (task "input-stream-reader"
+            (f (assoc request
+                 ::channel ch
+                 :body (formats/channel->input-stream body character-encoding))))
+
+          (f (assoc request ::channel ch))))
 
       ;; send response
       (fn [response]

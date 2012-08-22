@@ -19,6 +19,9 @@
     [gloss.core :as gloss])
   (:import
     [java.io
+     PipedInputStream
+     PipedOutputStream
+     IOException
      InputStream
      InputStreamReader
      PrintWriter
@@ -99,48 +102,6 @@
 	      (if (neg? byte-count)
 		(byte-buffers->channel-buffer (conj bufs (ByteBuffer/wrap ary 0 offset)))
 		(recur ary (+ offset byte-count) bufs)))))))))
-
-(defn- input-stream->channel-
-  [ch ^InputStream stream chunk-size]
-  (let [buffer? (and chunk-size (pos? chunk-size))
-	chunk-size (if buffer? chunk-size 1024)
-	create-array (if buffer?
-		       #(byte-array chunk-size)
-		       #(byte-array
-			  (if (pos? (.available stream))
-			    (.available stream)
-			    1024)))]
-    (loop [ary ^bytes (create-array), offset 0]
-      (let [ary-len (count ary)]
-	(if (= ary-len offset)
-	  (do
-	    (enqueue ch (ByteBuffer/wrap ary))
-	    (recur (create-array) 0))
-	  (let [byte-count (.read stream ary offset (- ary-len offset))]
-	    (if (neg? byte-count)
-	      (if (zero? offset)
-		(close ch)
-		(enqueue-and-close ch (ByteBuffer/wrap ary 0 offset)))
-	      (recur ary (+ offset byte-count)))))))))
-
-(defn input-stream->channel
-  "Converts an InputStream to a channel that emits bytes. Spawns a separate thread to read
-   from the stream.
-
-   If 'chunk-size' is specified, the channel will only emit byte sequences of the specified
-   length, unless the stream is closed before a full chunk can be accumulated.  If it is nil
-   or non-positive, bytes will be sent through the channel as soon as they enter the InputStream."
-  ([stream]
-     (input-stream->channel stream nil))
-  ([stream chunk-size]
-     (if-not stream
-       (closed-channel)
-       (let [ch (channel)]
-	 (doto
-	   (Thread. (fn [] (input-stream->channel- ch stream chunk-size)))
-	   (.setName "InputStream reader")
-	   .start)
-	 ch))))
 
 (defn- string->channel-buffer
   ([s]
@@ -363,13 +324,14 @@
     reverse))
 
 (defn url-decode
-  "Takes a URL-encoded string, and returns a standard representation of the string.  By default, 'charset' is UTF-8.
+  "Takes a URL-encoded string, and returns a standard representation of the string.
+   By default, 'charset' is UTF-8.
 
-    'options' may contain a :url-decodings hash, which maps encoded strings onto how they should be decoded.  For instance,
-    the Java decoder doesn't recognize %99 as a trademark symbol, even though it's sometimes encoded that way.  To allow
-    for this encoding, you can simply use:
+   'options' may contain a :url-decodings hash, which maps encoded strings onto how they should
+   be decoded.  For instance, the Java decoder doesn't recognize %99 as a trademark symbol, even
+   though it's sometimes encoded that way.  To allow for this encoding, you can simply use:
 
-    (url-decode s \"utf-8\" {:url-decodings {\"%99\" \"\\u2122\"}})"
+   (url-decode s \"utf-8\" {:url-decodings {\"%99\" \"\\u2122\"}})"
   ([s]
      (url-decode s "utf-8"))
   ([s charset]
@@ -384,7 +346,8 @@
 (defn url-encode
   "URL-encodes a string.  By default 'charset' is UTF-8.
 
-   'options' may contain a :url-encodings hash, which can specify custom encodings for certain characters or substrings."
+   'options' may contain a :url-encodings hash, which can specify custom encodings for certain characters
+    or substrings."
   ([s]
      (url-encode s "utf-8"))
   ([s charset]
@@ -395,6 +358,78 @@
 	       s
 	       (sort-replace-map (:url-encodings options)))]
        (URLEncoder/encode s charset))))
+
+;;;
+
+(defn- input-stream->channel-
+  [ch ^InputStream stream chunk-size]
+  (let [buffer? (and chunk-size (pos? chunk-size))
+	chunk-size (if buffer? chunk-size 1024)
+	create-array (if buffer?
+		       #(byte-array chunk-size)
+		       #(byte-array
+			  (if (pos? (.available stream))
+			    (.available stream)
+			    1024)))]
+    (loop [ary ^bytes (create-array), offset 0]
+      (let [ary-len (count ary)]
+
+	(if (= ary-len offset)
+
+          ;; if we've filled the array, enqueue it and restart
+	  (do
+	    (enqueue ch (ByteBuffer/wrap ary))
+	    (recur (create-array) 0))
+
+          ;; read in as many bytes as we can
+	  (let [byte-count (try
+                             (.read stream ary offset (- ary-len offset))
+                             (catch IOException e
+                               -1))]
+
+	    (if (neg? byte-count)
+
+              ;; if we've reached the end, enqueue the last bytes and close
+	      (if (zero? offset)
+		(close ch)
+		(enqueue-and-close ch (ByteBuffer/wrap ary 0 offset)))
+
+	      (recur ary (+ offset byte-count)))))))))
+
+(defn input-stream->channel
+  "Converts an InputStream to a channel that emits bytes. Spawns a separate thread to read
+   from the stream.
+
+   If 'chunk-size' is specified, the channel will only emit byte sequences of the specified
+   length, unless the stream is closed before a full chunk can be accumulated.  If it is nil
+   or non-positive, bytes will be sent through the channel as soon as they enter the InputStream."
+  ([stream]
+     (input-stream->channel stream nil))
+  ([stream chunk-size]
+     (if-not stream
+       (closed-channel)
+       (let [ch (channel)]
+	 (doto
+	   (Thread. (fn [] (input-stream->channel- ch stream chunk-size)))
+	   (.setName "InputStream reader")
+	   .start)
+	 ch))))
+
+(defn channel->input-stream
+  "Consumes messages from a channel that emits bytes, and feeds them into an InputStream.
+
+   This does not create any threads.  If a blocking read on the InputStream is performed on
+   a thread which is responsible for feeding messages into the channel, this will cause a
+   deadlock."
+  ([ch]
+     (channel->input-stream ch "utf-8"))
+  ([ch charset]
+     (let [in (PipedInputStream.)
+           out (PipedOutputStream. in)
+           bytes (map* #(bytes->byte-array % charset) ch)]
+       (receive-all bytes #(.write out %))
+       (on-drained bytes #(.close out))
+       in)))
 
 ;;;
 

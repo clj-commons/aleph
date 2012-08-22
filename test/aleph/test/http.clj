@@ -70,10 +70,6 @@
 	       (catch Exception e
 		 )))})
 
-(defn print-vals [& args]
-  (apply prn args)
-  (last args))
-
 (defn basic-handler [ch request]
   (when-let [handler (route-map (:uri request))]
     (enqueue ch (handler request))))
@@ -95,6 +91,11 @@
     {:status 200
      :content-type (:content-type request)
      :body (:body request)}))
+
+(defn ring-streaming-request-handler [request]
+  {:status 200
+   :content-type (:content-type request)
+   :body (:body request)})
 
 (defn json-response-handler [ch request]
   (enqueue ch
@@ -152,11 +153,11 @@
 		   :probes {:error (sink (fn [& _#]))}})
      ~@body))
 
-(defmacro with-handlers [aleph-handler ring-handler & body]
+(defmacro with-handlers [[aleph-handler ring-handler] & body]
   `(do
      (with-handler ~aleph-handler
        ~@body)
-     #_(with-handler (wrap-ring-handler ~ring-handler)
+     (with-handler (wrap-ring-handler ~ring-handler)
        ~@body)))
 
 (defn is-closed? [handler & requests]
@@ -169,7 +170,7 @@
       (is (closed? connection)))))
 
 (defn test-handler-response [expected aleph-handler ring-handler]
-  (with-handlers aleph-handler ring-handler
+  (with-handlers [aleph-handler ring-handler]
     (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 1000))))
     (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 1000))))))
 
@@ -203,7 +204,7 @@
       (close-connection client))))
 
 (deftest test-streaming-response
-  (with-handler streaming-request-handler
+  (with-handlers [streaming-request-handler ring-streaming-request-handler]
     (let [content "abcdefghi"
 	  client (default-http-client)]
       (try
@@ -214,7 +215,7 @@
                                     :auto-transform true
                                     :headers {"content-type" "text/plain"}
                                     :body (apply closed-channel (map str content))})
-                           1000)]
+                           2000)]
             (is (= content (:body response)))))
 	(finally
 	  (close-connection client))))))

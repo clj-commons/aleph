@@ -27,11 +27,11 @@
   ([options]
      (or (:charset options) "utf-8")))
 
-(defn streaming-ring-requests?
+(defn channel-ring-requests?
   ([]
-     (streaming-ring-requests? (current-options)))
+     (channel-ring-requests? (current-options)))
   ([options]
-     (boolean (:streaming-ring-requests? options))))
+     (boolean (:channel-ring-requests? options))))
 
 (defn websocket?
   ([]

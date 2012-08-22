@@ -145,7 +145,7 @@
 (deftoken string #"[a-zA-Z0-9\-\*_]")
 (deftoken whitespace #"[ \t,]*")
 (deftoken empty-token #"")
-(def colon (token #"[ \t]*:[ \t]*"))
+(deftoken colon #"[ \t]*:[ \t]*")
 
 (def relationship
   (chain
