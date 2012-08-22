@@ -11,7 +11,7 @@
     [clojure test]
     [aleph stomp tcp]
     [aleph.test utils]
-    [lamina core connections trace executor viz]))
+    [lamina core connections trace executor]))
 
 ;;;
 
@@ -79,8 +79,8 @@
 (deftest test-basic-router
   (with-router 10000
     (with-endpoint [c1] 10000
-      (let [a (subscribe c1 "abc")
-            b (subscribe c1 "def")
+      (let [{a :messages} (subscribe c1 "abc")
+            {b :messages} (subscribe c1 "def")
             consume #(-> % read-channel (wait-for-result 2500) :body read-string)]
 
         ;; wait for subscriptions to propagate

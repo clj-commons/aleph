@@ -74,7 +74,7 @@
           @(apply merge-results (repeatedly 1e3 #(c "a"))))
         (close-connection c)))))
 
-(deftest ^:benchmark benchmark-connect-and-query
+#_(deftest ^:benchmark benchmark-connect-and-query
   (with-server basic-echo-handler 10000
 
     (println "priming JIT for client connection")

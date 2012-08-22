@@ -8,9 +8,11 @@
 
 (ns aleph.trace.router
   (:use
-    [lamina core trace]
-    [aleph.trace.parse :as parse])
+    [aleph.stomp.core :only (stomp-message)]
+    [lamina core trace])
   (:require
+    [aleph.trace.core :as trace]
+    [aleph.trace.parse :as parse]
     [clojure.tools.logging :as log]
     [aleph.trace.operators :as ops]
     [aleph.stomp :as stomp]
@@ -18,14 +20,10 @@
 
 ;;; endpoint
 
-(defn wrap-value [destination val]
-  (let [body (pr-str val)]
-    {:command :send
-     :headers {:destination (formats/encode-json->string destination)
-               :origin (formats/encode-json->string (ops/origin))
-               :content-type "application/clojure"
-               :content-length (count body)}
-     :body body}))
+(defn wrap-value [command destination val]
+  (-> (stomp-message command val)
+    (assoc-in [:headers "destination"] (formats/encode-json->string destination))
+    (assoc-in [:headers "origin"] (trace/origin))))
 
 ;;;
 
@@ -36,7 +34,7 @@
 
 (defn post-endpoint [{:strs [operators] :as destination} period ch]
   (map*
-    (partial wrap-value destination)
+    (partial wrap-value :send destination)
     (if-not (ops/periodic-chain? operators)
       (->> ch (partition-every period) (remove* empty?))
       (->> ch (map* vector)))))
@@ -50,7 +48,7 @@
 (defn post-aggregator [destination ch]
   (->> ch
     (map* vector)
-    (map* (partial wrap-value destination))))
+    (map* (partial wrap-value :send destination))))
 
 (defn aggregator [endpoint {:strs [operators] :as destination}]
   {:destination (update-in destination ["operators"] ops/endpoint-chain)
@@ -82,6 +80,9 @@
          (->> destination
            create-probe
            (post-endpoint destination aggregation-period)))))
+
+   :query-handler
+   (constantly nil)
 
    :message-post-processor
    (fn [ch]

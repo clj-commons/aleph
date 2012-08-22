@@ -9,16 +9,17 @@
 (ns aleph.test.trace
   (:use
     [clojure test]
-    [aleph trace]
     [aleph.test utils]
     [lamina core connections trace executor])
   (:require
+    [clojure.tools.logging :as log]
+    [aleph.trace :as t]
     [aleph.formats :as formats]))
 
 ;;;
 
 (defmacro with-router [port & body]
-  `(let [stop-server# (start-trace-router {:port ~port})]
+  `(let [stop-server# (t/start-trace-router {:port ~port})]
      (try
        ~@body
        (finally
@@ -26,7 +27,7 @@
          (Thread/sleep 500)))))
 
 (defmacro with-endpoint [[e] port & body]
-  `(let [~e (trace-endpoint
+  `(let [~e (t/trace-endpoint
               {:aggregation-period 1000
                :client-options {:host "localhost", :port ~port}})]
      (try
@@ -35,6 +36,11 @@
          (close-connection ~e)))))
 
 ;;;
+
+(defn subscribe [client destination]
+  (let [{:keys [messages errors]} (t/subscribe client destination)]
+    (receive-all errors #(log/error %))
+    messages))
 
 (defn next-msg [ch]
   (-> ch read-channel (wait-for-result 6000)))

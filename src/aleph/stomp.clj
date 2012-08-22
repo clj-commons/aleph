@@ -13,6 +13,7 @@
     [lamina core connections trace])
   (:require
     [aleph.stomp.router :as r]
+    [aleph.stomp.endpoint :as e]
     [aleph.stomp.codec :as c]))
 
 (defn stomp-connection [options]
@@ -46,9 +47,9 @@
                 (assoc client-options
                   :name name
                   :frame c/message-codec))]
-    (r/endpoint
+    (e/endpoint
       (assoc options
         :name name
         :connection-generator conn))))
 
-(import-fn r/subscribe)
+(import-fn e/subscribe)

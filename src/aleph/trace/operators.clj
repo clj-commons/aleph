@@ -8,7 +8,8 @@
 
 (ns aleph.trace.operators
   (:use
-    [lamina core trace])
+    [lamina core trace]
+    [aleph.trace.core])
   (:require
     [clojure.string :as str]
     [clojure.tools.logging :as log]
@@ -16,90 +17,13 @@
     [lamina.stats])
   (:import
     [java.util.regex
-     Pattern]
-    [java.util.concurrent
-     ConcurrentHashMap]))
+     Pattern]))
 
 ;;;
-
-(def default-origin
-  {:host lamina.trace.context/host
-   :pid lamina.trace.context/pid})
-
-(def origin-builder (atom nil))
-
-(defn register-origin-builder [f]
-  (reset! origin-builder f))
-
-(defn origin []
-  (if-let [builder @origin-builder]
-    (builder default-origin)
-    default-origin))
-
-;;;
-
-(def ^ConcurrentHashMap operators (ConcurrentHashMap.))
-
-(defn operator [name]
-  (when name
-    (.get operators name)))
 
 (defn group-by? [{:strs [name] :as op}]
   (when op
     (= "group-by" name)))
-
-;;;
-
-(defprotocol TraceOperator
-  (periodic? [_])
-  (endpoint? [_])
-  (endpoint [_ desc ch])
-  (pre-split [_ desc ch])
-  (post-split [_ desc ch])
-  (aggregator [_ desc ch]))
-
-(defmacro defoperator [name &
-                       {:keys [endpoint
-                               pre-split
-                               post-split
-                               aggregator
-                               periodic?]}]
-  `(let [endpoint# ~endpoint
-         aggregator# ~aggregator
-         pre-split# ~pre-split
-         post-split# ~post-split
-         periodic# ~periodic?
-         op# (reify
-               TraceOperator
-               (endpoint? [_]
-                 ~(boolean endpoint))
-               (periodic? [_]
-                 ~periodic?)
-               (endpoint [_ desc# ch#]
-                 (endpoint# desc# ch#))
-               (pre-split [_ desc# ch#]
-                 (cond
-                   pre-split#
-                   (pre-split# desc# ch#)
-
-                   endpoint#
-                   (endpoint# desc# ch#)
-
-                   :else
-                   ch#))
-               (post-split [_ desc# ch#]
-                 (if post-split#
-                   (post-split# desc# ch#)
-                   (aggregator# desc# ch#)))
-               (aggregator [_ desc# ch#]
-                 (aggregator# desc# ch#)))]
-     
-     (when-not (nil? (.putIfAbsent operators ~(str name) op#))
-       (throw (IllegalArgumentException. (str "An operator for '" ~(str name) "' already exists."))))
-
-     op#))
-
-;;;
 
 (defn operator-seq [ops]
   (->> ops
@@ -116,7 +40,10 @@
      (update-in op ["operators"] #(vector (last-operation %)))
      op)))
 
-(defn endpoint-chain [ops]
+(defn endpoint-chain
+  "Take from beginning of operator chain, taking all that can be
+   performed in the endpoint."
+  [ops]
   (loop [acc [], ops ops]
     (if (empty? ops)
       acc
@@ -132,23 +59,30 @@
             (recur (conj acc op) (rest ops))
             (conj acc op)))))))
 
-(defn aggregator-chain [ops*]
-  (if (empty? ops*)
+(defn aggregator-chain
+  "Drop from beginning of operator chain, getting rid of all that can
+   be performed in the endpoint, leaving the last for post-split aggregation."
+  [ops]
+  (if (empty? ops)
     []
-    (loop [ops ops*]
-      (if (empty? ops)
-        [(last-operation ops*)]
-        (let [{:strs [operators name] :as op} (first ops)]
-          (if (group-by? op)
-            (let [operators* (aggregator-chain operators)]
-              (if (= operators operators*)
+    (let [original-ops ops]
+      (loop [ops ops]
+        (if (empty? ops)
+          [(last-operation original-ops)]
+          (let [{:strs [operators name] :as op} (first ops)]
+            (if (group-by? op)
+              (let [operators* (aggregator-chain operators)]
+                (if (= operators operators*)
+                  (recur (rest ops))
+                  (cons (assoc op "operators" operators*) (rest ops))))
+              (if (or
+                    (not (operator name))
+                    (endpoint? (operator name)))
                 (recur (rest ops))
-                (cons (assoc op "operators" operators*) (rest ops))))
-            (if (or
-                  (not (operator name))
-                  (endpoint? (operator name)))
-              (recur (rest ops))
-              ops)))))))
+                ops))))))))
+
+(defn intra-op [ops]
+  (-> ops aggregator-chain first))
 
 ;;;
 
@@ -245,17 +179,17 @@
 
 (defoperator lookup
   :periodic? false
-  :endpoint (fn [{:strs [options]} ch]
-              (map* (getter (get options "field")) ch))
-  :aggregator (fn [{:strs [options]} ch]
-                (map* (getter (get options "field")) ch)))
+
+  (:endpoint :aggregator)
+  (fn [{:strs [options]} ch]
+    (map* (getter (get options "field")) ch)))
 
 (defoperator select
   :periodic? false
-  :endpoint (fn [{:strs [options]} ch]
-              (map* (selector options) ch))
-  :aggregator (fn [{:strs [options]} ch]
-                (map* (selector options) ch)))
+
+  (:endpoint :aggregator)
+  (fn [{:strs [options]} ch]
+    (map* (selector options) ch)))
 
 
 ;;; where
@@ -275,10 +209,10 @@
 
 (defoperator where
   :periodic? false
-  :endpoint (fn [{:strs [options]} ch]
-              (filter* (filters (->> options vals (map comparison-filter))) ch))
-  :aggregator (fn [{:strs [options]} ch]
-                (filter* (filters (->> options vals (map comparison-filter))) ch)))
+
+  (:endpoint :aggregator)
+  (fn [{:strs [options]} ch]
+    (filter* (filters (->> options vals (map comparison-filter))) ch)))
 
 ;;; group-by
 
@@ -311,7 +245,7 @@
 (defoperator group-by
   :periodic? true
   :endpoint (partial group-by-op endpoint-chain-transform)
-  :post-split merge-group-by
+  (:intra-split :post-split) merge-group-by
   :aggregator (partial group-by-op aggregator-chain-transform))
 
 ;;;
@@ -321,17 +255,15 @@
 
 (defoperator sum
   :periodic? true
-  :endpoint sum-op
-  :aggregator sum-op)
+  (:endpoint :aggregator :intra-split) sum-op)
 
 (defn rate-op [{:strs [options]} ch]
   (lamina.stats/rate (keywordize options) ch))
 
 (defoperator rate
   :periodic? true
-  :endpoint rate-op
-  :post-split sum-op
-  :aggregator rate-op)
+  (:endpoint :aggregator :intra-split) rate-op
+  :post-split sum-op)
 
 (defoperator moving-average
   :periodic? true
