@@ -71,7 +71,7 @@
 (deftest ^:redis test-task-handling
   (with-redis-client [r]
     (enqueue-task r :q [1 2 3])
-    (is (= {:queue "q" :task [1 2 3]} (wait-for-result (receive-task r :q) 500)))))
+    (is (= {:queue "q" :task [1 2 3]} (wait-for-result (receive-task r :q) 2000)))))
 
 (deftest ^:redis test-pub-sub
   (with-redis-client [r]
@@ -81,20 +81,20 @@
       (Thread/sleep 500)
 
       (r [:publish :a "foo"])
-      (is (= {:channel "a", :message "foo"} @(read-channel* s :timeout 500)))
+      (is (= {:channel "a", :message "foo"} @(read-channel* s :timeout 2000)))
 
       (pattern-subscribe s "b*")
       (r [:publish :bar "baz"])
-      (is (= {:channel "bar", :message "baz"} @(read-channel* s :timeout 500)))
+      (is (= {:channel "bar", :message "baz"} @(read-channel* s :timeout 2000)))
 
       (reset-connection s)
       (Thread/sleep 500)
 
       (r [:publish :a "foo"])
-      (is (= {:channel "a", :message "foo"} @(read-channel* s :timeout 500)))
+      (is (= {:channel "a", :message "foo"} @(read-channel* s :timeout 2000)))
 
       (r [:publish :bar "baz"])
-      (is (= {:channel "bar", :message "baz"} @(read-channel* s :timeout 500))))))
+      (is (= {:channel "bar", :message "baz"} @(read-channel* s :timeout 2000))))))
 
 (deftest ^:redis test-task-channels
   (with-redis-client [r]
@@ -102,7 +102,7 @@
           task {:foo "bar"}]
       (try
         (enqueue-task r :x task)
-        (is (= {:queue "x" :task task} @(read-channel* ch :timeout 500)))
+        (is (= {:queue "x" :task task} @(read-channel* ch :timeout 2000)))
         (finally
           (close ch))))))
 
