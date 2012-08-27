@@ -242,9 +242,11 @@
 
 (defn base64-encode
   "Encodes the data into a base64 string representation."
-  [data]
-  (when data
-    (-> data to-channel-buffer Base64/encode channel-buffer->string)))
+  ([data]
+     (base64-encode data true))
+  ([data ^Boolean breaklines]
+     (when data
+       (-> data to-channel-buffer (Base64/encode breaklines) channel-buffer->string))))
 
 (defn base64-decode
   "Decodes a base64 encoded string into bytes."
