@@ -21,6 +21,6 @@
       (let [ch @(object-client {:host "localhost", :port 8888})
             messages (map vector (range 1e2))]
         (apply enqueue ch messages)
-        (= messages (->> ch (take* (count messages)) lazy-channel-seq)))
+        (= messages (->> ch (take* (count messages)) channel->lazy-seq)))
       (finally
         (stop-fn)))))

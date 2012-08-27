@@ -178,7 +178,7 @@
     (let [connection @(http-connection {:url "http://localhost:8080"})]
       (apply enqueue connection requests)
       (try
-	(doall (lazy-channel-seq connection 1000))
+	(doall (channel->lazy-seq connection 1000))
 	(catch Exception e))
       (is (closed? connection)))))
 
