@@ -78,6 +78,7 @@
       (client (-> req
                 (dissoc :form-params)
                 (assoc
+                  :content-type content-type
                   :body (if (and (= content-type "application/json") auto-encode?)
                           (formats/encode-json->bytes form-params)
                           (generate-query-string form-params)))))
