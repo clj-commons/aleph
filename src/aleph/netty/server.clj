@@ -80,7 +80,7 @@
                         
                            (on-error a
                              (fn [ex]
-                               (log/error ex)
+                               (log/error ex "Error in server handler, closing connection.")
                                (.close netty-channel)))
                            
                            ;; set up write handling

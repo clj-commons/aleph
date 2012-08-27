@@ -193,7 +193,7 @@
   ([data charset]
      (when data
        (if (instance? ByteBuffer data)
-	 data
+	 (.duplicate ^ByteBuffer data)
 	 (-> data (to-channel-buffer charset) channel-buffer->byte-buffer)))))
 
 (defn ^bytes bytes->byte-array
@@ -201,7 +201,10 @@
   ([data]
      (bytes->byte-array data "utf-8"))
   ([data charset]
-     (-> data (bytes->byte-buffer charset) .array)))
+     (let [buf (bytes->byte-buffer data charset)
+           ary (byte-array (.remaining buf))]
+       (.get buf ary)
+       ary)))
 
 (defn bytes->byte-buffers
   "Converts bytes into a sequence of one or more ByteBuffers."

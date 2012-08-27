@@ -10,7 +10,7 @@
   (:use
     [aleph.http.core]
     [aleph netty formats]
-    [lamina core api connections trace])
+    [lamina core api connections trace executor])
   (:require
     [aleph.http.websocket :as ws]
     [aleph.http.client-middleware :as middleware]

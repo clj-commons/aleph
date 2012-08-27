@@ -1,4 +1,4 @@
-(defproject aleph "0.3.0-beta1"
+(defproject aleph "0.3.0-SNAPSHOT"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -18,7 +18,7 @@
                      [gloss "0.2.2-beta1"]
                      [cheshire "4.0.1"]
                      [prxml "1.3.1"]]
-               "master" [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]
+               ;;"master" [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]
                "1.2" [[org.clojure/clojure "1.2.0"]]
                "1.3" [[org.clojure/clojure "1.3.0"]]}
   :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]

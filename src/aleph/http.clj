@@ -46,7 +46,9 @@
                  ::channel ch
                  :body (formats/channel->input-stream body character-encoding))))
 
-          (f (assoc request ::channel ch))))
+          (f (assoc request
+               ::channel ch
+               :body (formats/bytes->input-stream body character-encoding)))))
 
       ;; send response
       (fn [response]

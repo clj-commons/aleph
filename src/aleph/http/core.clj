@@ -9,7 +9,7 @@
 (ns aleph.http.core
   (:use
     [potemkin]
-    [lamina core api])
+    [lamina core api executor])
   (:require
     [aleph.http.options :as options]
     [aleph.netty.client :as client]
@@ -207,7 +207,8 @@
     ch*))
 
 (defn collapse-reads [ch]
-  (let [ch* (channel)
+  (let [executor (options/executor)
+        ch* (channel)
         current-stream (atom nil)]
     (bridge-join ch "aleph.http.core/collapse-reads"
       (fn [msg]

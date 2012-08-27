@@ -9,7 +9,7 @@
 (ns aleph.test.http
   (:use
     [aleph http]
-    [lamina core connections trace api]
+    [lamina core connections trace api executor]
     [clojure.test]
     [aleph.test.utils])
   (:require
@@ -146,19 +146,32 @@
        (finally
 	 (kill-fn#)))))
 
+(defexecutor http-executor {})
+
 (defmacro with-handler [handler & body]
-  `(with-server (start-http-server ~handler
-		  {:port 8080
-                   :websocket true
-		   :probes {:error (sink (fn [& _#]))}})
-     ~@body))
+  `(do
+     (testing "w/o executor"
+       (with-server (start-http-server ~handler
+                      {:port 8080
+                       :websocket true
+                       :probes {:error (sink (fn [& _#]))}})
+         ~@body))
+     (testing "w/ executor"
+       (with-server (start-http-server ~handler
+                      {:port 8080
+                       :websocket true
+                       :server {:executor http-executor}
+                       :probes {:error (sink (fn [& _#]))}})
+         ~@body))))
 
 (defmacro with-handlers [[aleph-handler ring-handler] & body]
   `(do
-     (with-handler ~aleph-handler
-       ~@body)
-     (with-handler (wrap-ring-handler ~ring-handler)
-       ~@body)))
+     (testing "aleph handler"
+       (with-handler ~aleph-handler
+         ~@body))
+     (testing "ring handler"
+       (with-handler (wrap-ring-handler ~ring-handler)
+         ~@body))))
 
 (defn is-closed? [handler & requests]
   (with-handler handler

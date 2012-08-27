@@ -38,3 +38,9 @@
      (websocket? (current-options)))
   ([options]
      (boolean (or (:websocket options) (:websocket? options)))))
+
+(defn executor
+  ([]
+     (executor (current-options)))
+  ([options]
+     (-> options :server :executor)))
