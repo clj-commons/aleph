@@ -38,13 +38,18 @@
 
       ;; call into handler
       (fn [{:keys [body character-encoding] :as request}]
-        (if (and (channel? body) (not (options/channel-ring-requests?)))
+        (if (channel? body) 
 
-          ;; spawn off a new thread, since there will be blocking reads
-          (task "input-stream-reader"
-            (f (assoc request
-                 ::channel ch
-                 :body (formats/channel->input-stream body character-encoding))))
+          (if (options/channel-ring-requests?)
+
+            ;; leave channels as is
+            (f (assoc request ::channel ch))
+
+            ;; move onto another thread, since there will be blocking reads
+            (task "input-stream-reader"
+              (f (assoc request
+                   ::channel ch
+                   :body (formats/channel->input-stream body character-encoding)))))
 
           (f (assoc request
                ::channel ch
