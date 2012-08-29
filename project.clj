@@ -1,4 +1,4 @@
-(defproject aleph "0.3.0-beta2"
+(defproject aleph "0.3.0-SNAPSHOT"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -8,20 +8,20 @@
   :dependencies [[org.clojure/clojure "1.4.0"]
                  [org.clojure/tools.logging "0.2.3"]
                  [io.netty/netty "3.5.4.Final"]
-                 [lamina "0.5.0-beta2"]
+                 [lamina "0.5.0-SNAPSHOT"]
                  [gloss "0.2.2-beta1"]
                  [cheshire "4.0.1"]
                  [prxml "1.3.1"]]
   :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
                      [io.netty/netty "3.5.4.Final"]
-                     [lamina "0.5.0-beta2"]
+                     [lamina "0.5.0-SNAPSHOT"]
                      [gloss "0.2.2-beta1"]
                      [cheshire "4.0.1"]
                      [prxml "1.3.1"]]
                ;;"master" [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]
                "1.2" [[org.clojure/clojure "1.2.0"]]
                "1.3" [[org.clojure/clojure "1.3.0"]]}
-  :dev-dependencies [[criterium "0.2.1-SNAPSHOT"]
+  :dev-dependencies [[criterium "0.3.0-SNAPSHOT"]
                      [codox "0.4.1"]]
   :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
                    :integration :redis

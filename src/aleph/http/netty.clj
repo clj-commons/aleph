@@ -80,7 +80,8 @@
                                                      (instance? TimeoutException ex))
                                                  {:status 408}
                                                  {:status 500}))}
-                            (:server options)))]
+                            (:server options)
+                            {:name server-name}))]
     (netty/start-server
       server-name
       (fn [channel-group]
