@@ -10,6 +10,7 @@
   (:use
     [aleph.http.core]
     [aleph netty formats]
+    [aleph.netty.core :only (local-options)]
     [lamina core api connections trace executor])
   (:require
     [aleph.http.websocket :as ws]
@@ -65,13 +66,22 @@
         error-probe (error-probe-channel [server-name :error])
         channel-handler (server-generator
                           (fn [ch req]
+
+                            ;; set local options
+                            (.set local-options options)
+
                             (let [ch* (result-channel)]
+
+                              ;; run the handler
                               (run-pipeline (dissoc req :keep-alive?)
                                 {:error-handler #(error ch* %)}
                                 #(handler ch* %))
+
+                              ;; handle the response
                               (run-pipeline ch*
                                 {:error-handler (fn [_])}
                                 #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))
+                          
                           (merge
                             {:error-response (fn [ex]
                                                (enqueue error-probe ex)
