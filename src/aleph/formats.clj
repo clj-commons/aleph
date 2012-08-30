@@ -429,10 +429,12 @@
   ([ch]
      (channel->input-stream ch "utf-8"))
   ([ch charset]
-     (let [in (PipedInputStream.)
-           out (PipedOutputStream. in)
+     (let [out (PipedOutputStream.)
+           in (PipedInputStream. out 65536)
            bytes (map* #(bytes->byte-array % charset) ch)]
-       (receive-all bytes #(.write out %))
+       ;; if there are already bytes in there, the resulting flush might
+       ;; block on the write
+       (future (receive-all bytes #(.write out %)))
        (on-drained bytes #(.close out))
        in)))
 
