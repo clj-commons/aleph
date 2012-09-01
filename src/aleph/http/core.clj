@@ -9,6 +9,7 @@
 (ns aleph.http.core
   (:use
     [potemkin]
+    [aleph.netty.core :only (rfc-1123-date-string)]
     [lamina core api executor])
   (:require
     [aleph.http.options :as options]
@@ -340,6 +341,8 @@
         response (DefaultHttpResponse.
                    HttpVersion/HTTP_1_1
                    (HttpResponseStatus/valueOf (:status m)))]
+    (.setHeader response "Server" "aleph/0.3.0")
+    (.setHeader response "Date" (rfc-1123-date-string))
     (populate-netty-msg m response)))
 
 (defn elide-port? [m]

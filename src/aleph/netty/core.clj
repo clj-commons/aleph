@@ -14,6 +14,11 @@
     [aleph.formats :as formats]
     [clojure.tools.logging :as log])
   (:import
+    [java.text
+     DateFormat
+     SimpleDateFormat]
+    [java.util
+     Date]
     [org.jboss.netty.buffer
      ChannelBuffer]
     [org.jboss.netty.channel.group
@@ -53,6 +58,8 @@
 
 (def ^ThreadLocal local-channel (ThreadLocal.))
 
+(def ^ThreadLocal date-format (ThreadLocal.))
+
 (defn current-options []
   (.get local-options))
 
@@ -67,6 +74,15 @@
           (fn []
             (.set local-options options)
             (.run r)))))))
+
+(defn rfc-1123-date-string []
+  (let [^DateFormat format
+        (or
+          (.get date-format)
+          (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z")]
+            (.set date-format format)
+            format))]
+    (.format format (Date.))))
 
 ;;;
 
