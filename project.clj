@@ -21,7 +21,7 @@
                "master" [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]
                "1.2" [[org.clojure/clojure "1.2.0"]]
                "1.3" [[org.clojure/clojure "1.3.0"]]}
-  :dev-dependencies [[criterium "0.3.0-SNAPSHOT"]
+  :dev-dependencies [[criterium "0.3.0"]
                      [codox "0.4.1"]]
   :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
                    :integration :redis
