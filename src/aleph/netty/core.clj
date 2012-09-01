@@ -58,8 +58,6 @@
 
 (def ^ThreadLocal local-channel (ThreadLocal.))
 
-(def ^ThreadLocal date-format (ThreadLocal.))
-
 (defn current-options []
   (.get local-options))
 
@@ -74,6 +72,10 @@
           (fn []
             (.set local-options options)
             (.run r)))))))
+
+;;;
+
+(def ^ThreadLocal date-format (ThreadLocal.))
 
 (defn rfc-1123-date-string []
   (let [^DateFormat format

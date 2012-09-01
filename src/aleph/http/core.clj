@@ -183,6 +183,7 @@
                             (if (and honor-keep-alive? (not (:keep-alive? m)))
                               (close ch*)
                               true))]
+
           (if-not chunks
 
             ;; non-streaming response

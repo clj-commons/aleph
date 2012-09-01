@@ -389,7 +389,7 @@
           ;; read in as many bytes as we can
 	  (let [byte-count (try
                              (.read stream ary offset (- ary-len offset))
-                             (catch IOException e
+                             (catch IOException _
                                -1))]
 
 	    (if (neg? byte-count)
@@ -430,12 +430,13 @@
      (channel->input-stream ch "utf-8"))
   ([ch charset]
      (let [out (PipedOutputStream.)
-           in (PipedInputStream. out 65536)
+           in (PipedInputStream. out 16384)
            bytes (map* #(bytes->byte-array % charset) ch)]
        ;; if there are already bytes in there, the resulting flush might
        ;; block on the write
        (future (receive-all bytes #(.write out %)))
        (on-drained bytes #(.close out))
+              
        in)))
 
 ;;;
