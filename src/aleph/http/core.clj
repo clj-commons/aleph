@@ -342,6 +342,14 @@
                    (HttpResponseStatus/valueOf (:status m)))]
     (populate-netty-msg m response)))
 
+(defn elide-port? [m]
+  (let [port (:port m)
+        scheme (:scheme m)]
+    (or
+      (not port)
+      (and (= "http" scheme) (= 80 port))
+      (and (= "https" scheme) (= 443 port)))))
+
 (defn ring-map->netty-request [m]
   (let [m (-> m
             normalize-ring-map)
@@ -353,11 +361,13 @@
                       "/"
                       (:uri m))
                     (when-not (empty? (:query-string m))
-                      (str "?" (:query-string m)))))]
+                      (str "?" (:query-string m)))))
+        port (:port m)
+        server-name (:server-name m)]
     (.setHeader request "Host"
-      (str (:server-name m)
-        (when (:port m)
-          (str ":" (:port m)))))
+      (str server-name
+        (when-not (elide-port? m)
+          (str ":" port))))
     (populate-netty-msg m request)))
 
 ;;;
