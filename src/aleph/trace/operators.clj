@@ -218,12 +218,16 @@
 
 ;;; group-by
 
-(defn group-by-op [chain-transform {:strs [options operators]} ch]
+(defn group-by-op [chain-transform
+                   {:strs [options operators period]
+                    :or {period 1000}}
+                   ch]
   ;; handle both keywords and strings
-  (let [operators (if (periodic-chain? operators)
+  (let [periodic-chain? (periodic-chain? operators)
+        expiration (get options "expiration" (* 1000 60))
+        operators (if periodic-chain?
                     operators
-                    (concat operators [{"name" "partition-every"}]))
-        expiration (get options "expiration" (* 1000 30))
+                    (concat operators [{"name" "partition-every", "options" {"period" period}}]))
         facet (or
                 (get options "facet")
                 (get options "0"))]
@@ -279,6 +283,7 @@
 
 (defoperator sample
   :periodic? true
+  :post-split (fn [_ ch] ch)
   (:endpoint :aggregator) (fn [{:strs [options]} ch]
                             (let [period (or
                                            (get options "period")
@@ -288,6 +293,7 @@
 
 (defoperator partition-every
   :periodic? true
+  :post-split (fn [_ ch] ch)
   (:endpoint :aggregator) (fn [{:strs [options]} ch]
                             (let [period (or
                                            (get options "period")
