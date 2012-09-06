@@ -126,7 +126,8 @@
 
       (is (= false (trace :abc 1)))
       
-      (let [foo-rate (subscribe c "abc.group-by(foo).rate()")
+      (let [foo-grouping (subscribe c "abc.group-by(foo)")
+            foo-rate (subscribe c "abc.group-by(foo).rate()")
             bar-rate (subscribe c "abc.group-by(facet: bar).rate()")
             bar-rate* (subscribe c "abc.select(foo, bar).group-by(bar).rate()")
             bar-rate** (subscribe c "abc.select(bar).group-by(bar).bar.rate()")
@@ -139,6 +140,9 @@
         (doseq [x (map val [:a :a :b :b :c] [:x :x :z :y :y])]
           (is (= true (trace :abc x))))
 
+        (is (= {:a [:x :x], :b [:z :y], :c [:y]}
+              (let [m (next-msg foo-grouping)]
+                (zipmap (keys m) (map #(map :bar %) (vals m))))))
         (is (= {:a 2, :b 2, :c 1}
               (next-msg foo-rate)))
         (is (= {:x 2, :y 2, :z 1}

@@ -36,7 +36,7 @@
 
 (defn last-operation [ops]
   (let [op (last ops)]
-    (if (group-by? op)
+    (if (and (group-by? op) (seq (op "operators")))
      (update-in op ["operators"] #(vector (last-operation %)))
      op)))
 
@@ -218,7 +218,10 @@
 
 (defn group-by-op [chain-transform {:strs [options operators]} ch]
   ;; handle both keywords and strings
-  (let [expiration (get options "expiration" (* 1000 30))
+  (let [operators (if (periodic-chain? operators)
+                    operators
+                    (concat operators [{"name" "partition-every"}]))
+        expiration (get options "expiration" (* 1000 30))
         facet (or
                 (get options "facet")
                 (get options "0"))]
@@ -270,9 +273,25 @@
   :aggregator (fn [{:strs [options]} ch]
                 (lamina.stats/moving-average (keywordize options) ch)))
 
-
-
 ;;;
+
+(defoperator sample
+  :periodic? true
+  (:endpoint :aggregator) (fn [{:strs [options]} ch]
+                            (let [period (or
+                                           (get options "period")
+                                           (get options "0")
+                                           1000)]
+                              (sample-every period ch))))
+
+(defoperator partition-every
+  :periodic? true
+  (:endpoint :aggregator) (fn [{:strs [options]} ch]
+                            (let [period (or
+                                           (get options "period")
+                                           (get options "0")
+                                           1000)]
+                              (partition-every period ch))))
 
 
 
