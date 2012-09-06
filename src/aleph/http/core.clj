@@ -172,7 +172,13 @@
 
 (defn expand-writes [f honor-keep-alive? ch]
   (let [ch* (channel)
-        default-charset (options/charset)]
+        default-charset (options/charset)
+        current-stream (atom nil)]
+
+    (on-closed ch
+      #(when-let [stream @current-stream]
+         (close stream)))
+    
     (bridge-join ch "aleph.http.core/expand-writes"
       (fn [m]
         (let [{:keys [msg chunks write-callback]} (f m)
@@ -183,6 +189,8 @@
                             (if (and honor-keep-alive? (not (:keep-alive? m)))
                               (close ch*)
                               true))]
+
+          (reset! current-stream chunks)
 
           (if-not chunks
 
