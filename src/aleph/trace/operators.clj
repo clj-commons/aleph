@@ -95,7 +95,6 @@
     true))
 
 (defn endpoint-chain-transform [ops ch]
-  (log/info "end-chain" (pr-str ops))
   (assert-valid-operators ops)
   (if-let [{:strs [name] :as op} (last ops)]
     (pre-split (operator name) op
@@ -107,7 +106,6 @@
     ch))
 
 (defn aggregator-chain-transform [ops ch]
-  (log/info "ag-chain" (pr-str ops))
   (assert-valid-operators ops)
   (if-let [{:strs [name] :as op} (first ops)]
     (post-split (operator name) op
