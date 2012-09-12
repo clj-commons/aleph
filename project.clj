@@ -1,4 +1,4 @@
-(defproject aleph "0.3.0-beta3"
+(defproject aleph "0.3.0-SNAPSHOT"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -22,7 +22,7 @@
                "1.2" [[org.clojure/clojure "1.2.0"]]
                "1.3" [[org.clojure/clojure "1.3.0"]]}
   :dev-dependencies [[criterium "0.3.0"]
-                     [codox "0.4.1"]]
+                     [codox "0.6.1"]]
   :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
                    :integration :redis
                    :benchmark :benchmark

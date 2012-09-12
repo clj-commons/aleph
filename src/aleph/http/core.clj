@@ -172,12 +172,7 @@
 
 (defn expand-writes [f honor-keep-alive? ch]
   (let [ch* (channel)
-        default-charset (options/charset)
-        current-stream (atom nil)]
-
-    (on-closed ch
-      #(when-let [stream @current-stream]
-         (close stream)))
+        default-charset (options/charset)]
     
     (bridge-join ch "aleph.http.core/expand-writes"
       (fn [m]
@@ -190,8 +185,6 @@
                               (close ch*)
                               true))]
 
-          (reset! current-stream chunks)
-
           (if-not chunks
 
             ;; non-streaming response
@@ -199,20 +192,25 @@
               final-stage)
 
             ;; streaming response
-            (run-pipeline nil
-              {:error-handler (fn [_])}
-              (fn [_]
-                (siphon
-                  (map*
-                    #(DefaultHttpChunk.
-                       (formats/bytes->channel-buffer %
-                         (or (:character-encoding m) default-charset)))
-                    chunks)
-                  ch*)
-                (drained-result chunks))
-              (fn [_]
-                (enqueue ch* HttpChunk/LAST_CHUNK))
-              final-stage))))
+            (let [callback #(close chunks)]
+
+              (on-closed ch callback)
+
+              (run-pipeline nil
+                {:error-handler (fn [_])}
+                (fn [_]
+                  (siphon
+                    (map*
+                      #(DefaultHttpChunk.
+                         (formats/bytes->channel-buffer %
+                           (or (:character-encoding m) default-charset)))
+                      chunks)
+                    ch*)
+                  (drained-result chunks))
+                (fn [_]
+                  (cancel-callback ch callback)
+                  (enqueue ch* HttpChunk/LAST_CHUNK))
+                final-stage)))))
       ch*)
     ch*))
 
