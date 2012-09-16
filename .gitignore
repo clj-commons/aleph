@@ -8,3 +8,4 @@ autodoc
 doc
 .lein*
 dump.rdb
+target/**

@@ -8,20 +8,22 @@
   :dependencies [[org.clojure/clojure "1.4.0"]
                  [org.clojure/tools.logging "0.2.3"]
                  [io.netty/netty "3.5.6.Final"]
-                 [lamina "0.5.0-beta3"]
+                 [lamina "0.5.0-SNAPSHOT"]
                  [gloss "0.2.2-beta2"]
                  [cheshire "4.0.1"]
-                 [prxml "1.3.1"]]
+                 [prxml "1.3.1"]
+                 [criterium "0.3.0"]]
   :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
                      [io.netty/netty "3.5.6.Final"]
-                     [lamina "0.5.0-beta3"]
+                     [lamina "0.5.0-SNAPSHOT"]
                      [gloss "0.2.2-beta2"]
                      [cheshire "4.0.1"]
+                     [criterium "0.3.0"]
                      [prxml "1.3.1"]]
                "master" [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]
                "1.2" [[org.clojure/clojure "1.2.0"]]
                "1.3" [[org.clojure/clojure "1.3.0"]]}
-  :dev-dependencies [[criterium "0.3.0"]
+  :dev-dependencies [
                      [codox "0.6.1"]]
   :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
                    :integration :redis
