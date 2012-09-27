@@ -18,6 +18,7 @@
      DateFormat
      SimpleDateFormat]
     [java.util
+     TimeZone
      Date]
     [org.jboss.netty.buffer
      ChannelBuffer]
@@ -82,6 +83,7 @@
         (or
           (.get date-format)
           (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z")]
+            (.setTimeZone format (TimeZone/getTimeZone "GMT"))
             (.set date-format format)
             format))]
     (.format format (Date.))))
