@@ -28,10 +28,13 @@
      (or (:charset options) "utf-8")))
 
 (defn channel-ring-requests?
-  ([]
-     (channel-ring-requests? (current-options)))
-  ([options]
-     (boolean (:channel-ring-requests? options))))
+  ([request]
+     (channel-ring-requests? (current-options) request))
+  ([options request]
+     (let [channel-requests? (:channel-ring-requests? options)]
+       (if (ifn? channel-requests?)
+         (channel-requests? request)
+         channel-requests?))))
 
 (defn websocket?
   ([]

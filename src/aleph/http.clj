@@ -37,10 +37,10 @@
       {:error-handler (fn [ex] (error ch ex))} 
 
       ;; call into handler
-      (fn [{:keys [body character-encoding] :as request}]
+      (fn [{:keys [body content-type character-encoding] :as request}]
         (if (channel? body) 
 
-          (if (options/channel-ring-requests?)
+          (if (options/channel-ring-requests? request)
 
             ;; leave channels as is
             (f (assoc request ::channel ch))
