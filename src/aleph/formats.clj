@@ -199,7 +199,7 @@
 	 (.duplicate ^ByteBuffer data)
 	 (-> data (to-channel-buffer charset) channel-buffer->byte-buffer)))))
 
-(defn ^bytes bytes->byte-array
+(defn bytes->byte-array
   "Convertes bytes into a byte array. By default, 'charset' is UTF-8."
   ([data]
      (bytes->byte-array data "utf-8"))
