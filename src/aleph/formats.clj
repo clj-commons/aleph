@@ -18,6 +18,9 @@
     [gloss.io :as gloss-io]
     [gloss.core :as gloss])
   (:import
+    [java.util.zip
+     Deflater
+     Inflater]
     [java.io
      PipedInputStream
      PipedOutputStream
@@ -253,6 +256,50 @@
   [string]
   (when string
     (-> string string->channel-buffer Base64/decode)))
+
+(defn deflate-bytes
+  "Compresses bytes using ZLIB."
+  ([bytes]
+     (deflate-bytes bytes "utf-8"))
+  ([bytes charset]
+     (deflate-bytes bytes charset Deflater/BEST_COMPRESSION))
+  ([bytes charset compression-level]
+     (let [deflater (doto (Deflater.)
+                      (.setLevel compression-level)
+                      (.setInput (bytes->byte-array bytes charset))
+                      .finish)
+           out (PipedOutputStream.)
+           in (PipedInputStream. out)]
+
+       (let [buf (byte-array 1024)]
+         (loop []
+           (when-not (.finished deflater)
+             (let [cnt (.deflate deflater buf)]
+               (.write out buf 0 cnt)
+               (recur))))
+         (.close out))
+
+       (bytes->byte-array in charset))))
+
+(defn inflate-bytes
+  "Decompresses bytes that were processed using 'deflate-bytes'."
+  ([bytes]
+     (inflate-bytes bytes "utf-8"))
+  ([bytes charset]
+     (let [inflater (doto (Inflater.)
+                      (.setInput (bytes->byte-array bytes charset)))
+           out (PipedOutputStream.)
+           in (PipedInputStream. out)]
+
+       (let [buf (byte-array 1024)]
+         (loop []
+           (when-not (.finished inflater)
+             (let [cnt (.inflate inflater buf)]
+               (.write out buf 0 cnt)
+               (recur))))
+         (.close out))
+
+       (bytes->byte-array in charset))))
 
 ;;;
 
