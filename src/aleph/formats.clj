@@ -268,8 +268,7 @@
                       (.setLevel compression-level)
                       (.setInput (bytes->byte-array bytes charset))
                       .finish)
-           out (PipedOutputStream.)
-           in (PipedInputStream. out)]
+           out (ByteArrayOutputStream.)]
 
        (let [buf (byte-array 1024)]
          (loop []
@@ -279,7 +278,7 @@
                (recur))))
          (.close out))
 
-       (bytes->byte-array in charset))))
+       (.toByteArray out))))
 
 (defn inflate-bytes
   "Decompresses bytes that were processed using 'deflate-bytes'."
@@ -288,8 +287,7 @@
   ([bytes charset]
      (let [inflater (doto (Inflater.)
                       (.setInput (bytes->byte-array bytes charset)))
-           out (PipedOutputStream.)
-           in (PipedInputStream. out)]
+           out (ByteArrayOutputStream.)]
 
        (let [buf (byte-array 1024)]
          (loop []
@@ -304,7 +302,7 @@
          
          (.close out))
 
-       (bytes->byte-array in charset))))
+       (.toByteArray out))))
 
 ;;;
 
