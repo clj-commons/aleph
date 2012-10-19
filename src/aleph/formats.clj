@@ -293,10 +293,14 @@
 
        (let [buf (byte-array 1024)]
          (loop []
-           (when-not (.finished inflater)
+           (when-not (or (.needsInput inflater) (.finished inflater))
              (let [cnt (.inflate inflater buf)]
                (.write out buf 0 cnt)
                (recur))))
+
+         (when (.needsInput inflater)
+           (throw (IOException. "Incomplete stream of compressed bytes.")))
+         
          (.close out))
 
        (bytes->byte-array in charset))))
