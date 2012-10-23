@@ -22,7 +22,7 @@
 
 (defmacro with-handler [handler & body]
   `(with-server (start-http-server ~handler
-		  {:port 8080
+		  {:port 8008
                    :websocket true
 		   })
      ~@body))
@@ -31,7 +31,7 @@
   (siphon ch ch))
 
 (defn ws-client []
-  (websocket-client {:url "ws://localhost:8080"}))
+  (websocket-client {:url "ws://localhost:8008"}))
 
 (deftest test-echo-handler
   (with-handler echo-handler
@@ -45,7 +45,7 @@
 
 (deftest ^:benchmark run-echo-benchmark 
   (with-handler echo-handler
-    (let [create-conn #(deref (websocket-client {:url "ws://localhost:8080"}))]
+    (let [create-conn #(deref (websocket-client {:url "ws://localhost:8008"}))]
       
       (let [ch (create-conn)]
         (bench "websocket echo request"

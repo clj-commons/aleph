@@ -31,7 +31,7 @@ Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/r
      :headers {"content-type" "text/html"}
      :body "Hello World!"}))
 
-(start-http-server hello-world {:port 8080})
+(start-http-server hello-world {:port 8008})
 ```
 
 For more on HTTP functionality, read the [wiki](https://github.com/ztellman/aleph/wiki/HTTP).
@@ -72,7 +72,7 @@ Making a simple chat client is trivial.  In this, we assume that the first messa
       (siphon (map* #(str name ": " %) ch) broadcast-channel)
       (siphon broadcast-channel ch))))
 
-(start-http-server chat-handler {:port 8080 :websocket true})
+(start-http-server chat-handler {:port 8008 :websocket true})
 ```
 
 

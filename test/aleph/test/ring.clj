@@ -15,7 +15,7 @@
 
 (defn create-url
   ([path]
-     (create-url 8080 path))
+     (create-url 8008 path))
   ([port path]
      (create-url "http" "localhost" port path))
   ([scheme host port path]
@@ -55,7 +55,7 @@
                (pr-str value))})))
 
 (defmacro with-server [keys & body]
-  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8080, :thread-pool {}})]
+  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8008, :thread-pool {}})]
      (try
        ~@body
        (finally
@@ -91,7 +91,7 @@
 
 (deftest test-server-port
   (with-server [:server-port]
-    (is (= 8080 (request)))))
+    (is (= 8008 (request)))))
 
 (deftest test-remote-addr
   (with-server [:remote-addr]

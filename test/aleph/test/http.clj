@@ -129,13 +129,13 @@
 
 (defn default-http-client []
   (http-client
-    {:url "http://localhost:8080"
+    {:url "http://localhost:8008"
      :auto-decode? true}))
 
 ;;;
 
 (defn wait-for-request [client path]
-  (-> (client {:method :get, :url (str "http://localhost:8080/" path), :auto-transform true})
+  (-> (client {:method :get, :url (str "http://localhost:8008/" path), :auto-transform true})
     (wait-for-result 500)
     :body))
 
@@ -152,13 +152,13 @@
   `(do
      (testing "w/o executor"
        (with-server (start-http-server ~handler
-                      {:port 8080
+                      {:port 8008
                        :websocket true
                        :probes {:error (sink (fn [& _#]))}})
          ~@body))
      (testing "w/ executor"
        (with-server (start-http-server ~handler
-                      {:port 8080
+                      {:port 8008
                        :websocket true
                        :server {:executor http-executor}
                        :probes {:error (sink (fn [& _#]))}})
@@ -175,7 +175,7 @@
 
 (defn is-closed? [handler & requests]
   (with-handler handler
-    (let [connection @(http-connection {:url "http://localhost:8080"})]
+    (let [connection @(http-connection {:url "http://localhost:8008"})]
       (apply enqueue connection requests)
       (try
 	(doall (channel->lazy-seq connection 1000))
@@ -184,8 +184,8 @@
 
 (defn test-handler-response [expected aleph-handler ring-handler]
   (with-handlers [aleph-handler ring-handler]
-    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 1000))))
-    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 1000))))))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8008"} 1000))))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8008", :keep-alive? true} 1000))))))
 
 ;;;
 
@@ -197,7 +197,7 @@
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")
-    (reset! browser-server (start-http-server basic-handler {:port 8080}))
+    (reset! browser-server (start-http-server basic-handler {:port 8008}))
     (is @latch))
 
 (deftest test-single-requests
@@ -223,7 +223,7 @@
       (try
 	(dotimes [_ 3]
 	  (let [response (wait-for-result
-                           (client {:url "http://localhost:8080"
+                           (client {:url "http://localhost:8008"
                                     :method :post
                                     :auto-transform true
                                     :headers {"content-type" "text/plain"}
@@ -236,26 +236,26 @@
 (deftest test-auto-transform
   (with-handler json-response-handler
     (let [result (sync-http-request
-                   {:url "http://localhost:8080", :method :get, :auto-transform true}
+                   {:url "http://localhost:8008", :method :get, :auto-transform true}
                    1000)]
       (is (= {:foo 1, :bar 2} (:body result))))))
 
 (deftest test-single-response-close
   (is-closed? basic-handler
-    {:method :get, :url "http://localhost:8080/string", :keep-alive? false}))
+    {:method :get, :url "http://localhost:8008/string", :keep-alive? false}))
 
 (deftest test-streaming-request-close
   (is-closed? streaming-request-handler
     {:method :post
-     :url "http://localhost:8080/"
+     :url "http://localhost:8008/"
      :content-encoding "text/plain"
      :body (closed-channel "a" "b" "c")
      :keep-alive? false}))
 
 (deftest test-multiple-response-close
   (is-closed? basic-handler
-    {:method :get, :url "http://localhost:8080/string", :keep-alive? true}
-    {:method :get, :url "http://localhost:8080/string", :keep-alive? false}))
+    {:method :get, :url "http://localhost:8008/string", :keep-alive? true}
+    {:method :get, :url "http://localhost:8008/string", :keep-alive? false}))
 
 ;;;
 
@@ -264,7 +264,7 @@
 
 (deftest ^:benchmark run-http-benchmark
   (with-handler hello-world-handler
-    (let [create-conn #(deref (http-connection {:url "http://localhost:8080"}))]
+    (let [create-conn #(deref (http-connection {:url "http://localhost:8008"}))]
 
       (let [ch (create-conn)]
         (bench "http hello-world"
