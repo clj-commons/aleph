@@ -218,6 +218,10 @@
   (let [executor (options/executor)
         ch* (channel)
         current-stream (atom nil)]
+    (on-closed ch (fn []
+                    (when-let [cs @current-stream]
+                      (when-not (closed? cs)
+                        (close cs)))))
     (bridge-join ch "aleph.http.core/collapse-reads"
       (fn [msg]
         (if (instance? HttpMessage msg)
