@@ -115,7 +115,7 @@
   ([s]
      (string->channel-buffer s "UTF-8"))
   ([s charset]
-     (-> (.getBytes ^String s ^String charset) ByteBuffer/wrap byte-buffer->channel-buffer)))
+     (-> (.getBytes ^String s ^String (name charset)) ByteBuffer/wrap byte-buffer->channel-buffer)))
 
 (defn- to-channel-buffer
   ([data]
