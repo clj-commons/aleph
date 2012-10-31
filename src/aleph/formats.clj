@@ -29,13 +29,18 @@
      InputStreamReader
      PrintWriter
      ByteArrayOutputStream]
+    [org.apache.commons.codec.net
+     URLCodec]
+    [org.apache.commons.codec.binary
+     Base64]
+    [org.apache.commons.compress.compressors.gzip
+     GzipCompressorInputStream
+     GzipCompressorOutputStream]
     [java.net
      URLEncoder
      URLDecoder]
     [java.nio
      ByteBuffer]
-    [org.jboss.netty.handler.codec.base64
-     Base64]
     [org.jboss.netty.buffer
      ChannelBuffers
      ChannelBuffer
@@ -246,63 +251,18 @@
 (defn base64-encode
   "Encodes the data into a base64 string representation."
   ([data]
-     (base64-encode data true))
-  ([data ^Boolean breaklines]
+     (base64-encode data false))
+  ([data ^Boolean url-safe?]
      (when data
-       (-> data to-channel-buffer (Base64/encode breaklines) channel-buffer->string))))
+       (let [encoder (Base64. 76 (if url-safe? (byte-array 0) (.getBytes "\r\n")) url-safe?)]
+         (->> data bytes->byte-array (.encode encoder) String.)))))
 
 (defn base64-decode
   "Decodes a base64 encoded string into bytes."
-  [string]
+  [^String string]
   (when string
-    (-> string string->channel-buffer Base64/decode)))
-
-(defn deflate-bytes
-  "Compresses bytes using ZLIB."
-  ([bytes]
-     (deflate-bytes bytes "utf-8"))
-  ([bytes charset]
-     (deflate-bytes bytes charset Deflater/BEST_COMPRESSION))
-  ([bytes charset compression-level]
-     (let [deflater (doto (Deflater.)
-                      (.setLevel compression-level)
-                      (.setInput (bytes->byte-array bytes charset))
-                      .finish)
-           out (ByteArrayOutputStream.)]
-
-       (let [buf (byte-array 1024)]
-         (loop []
-           (when-not (.finished deflater)
-             (let [cnt (.deflate deflater buf)]
-               (.write out buf 0 cnt)
-               (recur))))
-         (.close out))
-
-       (.toByteArray out))))
-
-(defn inflate-bytes
-  "Decompresses bytes that were processed using 'deflate-bytes'."
-  ([bytes]
-     (inflate-bytes bytes "utf-8"))
-  ([bytes charset]
-     (let [inflater (doto (Inflater.)
-                      (.setInput (bytes->byte-array bytes charset)))
-           out (ByteArrayOutputStream.)]
-
-       (let [buf (byte-array 1024)]
-         (loop []
-           (when-not (.finished inflater)
-
-             (when (.needsInput inflater)
-               (throw (IOException. "Incomplete stream of compressed bytes.")))
-             
-             (let [cnt (.inflate inflater buf)]
-               (.write out buf 0 cnt)
-               (recur))))
-         
-         (.close out))
-
-       (.toByteArray out))))
+    (let [decoder (Base64.)]
+      (.decode decoder string))))
 
 ;;;
 
@@ -370,46 +330,22 @@
 
 ;;;
 
-(defn- sort-replace-map [m]
-  (->> m
-    (sort-by #(-> % key count))
-    reverse))
-
 (defn url-decode
   "Takes a URL-encoded string, and returns a standard representation of the string.
-   By default, 'charset' is UTF-8.
-
-   'options' may contain a :url-decodings hash, which maps encoded strings onto how they should
-   be decoded.  For instance, the Java decoder doesn't recognize %99 as a trademark symbol, even
-   though it's sometimes encoded that way.  To allow for this encoding, you can simply use:
-
-   (url-decode s \"utf-8\" {:url-decodings {\"%99\" \"\\u2122\"}})"
+   By default, 'charset' is UTF-8."
   ([s]
      (url-decode s "utf-8"))
-  ([s charset]
-     (url-decode s charset nil))
-  ([s charset options]
-     (let [s (reduce
-	       (fn [s [from to]] (.replace ^String s ^String (str from) ^String to))
-	       s
-	       (sort-replace-map (:url-decodings options)))]
-       (URLDecoder/decode s charset))))
+  ([^String s charset]
+     (let [decoder (URLCodec. charset)]
+       (.decode decoder s))))
 
 (defn url-encode
-  "URL-encodes a string.  By default 'charset' is UTF-8.
-
-   'options' may contain a :url-encodings hash, which can specify custom encodings for certain characters
-    or substrings."
+  "URL-encodes a string.  By default 'charset' is UTF-8."
   ([s]
      (url-encode s "utf-8"))
   ([s charset]
-     (url-encode s charset nil))
-  ([s charset options]
-     (let [s (reduce
-	       (fn [s [from to]] (.replace ^String s (str from) ^String to))
-	       s
-	       (sort-replace-map (:url-encodings options)))]
-       (URLEncoder/encode s charset))))
+     (let [encoder (URLCodec. charset)]
+       (.encode encoder s))))
 
 ;;;
 
@@ -485,6 +421,43 @@
        (on-drained bytes #(.close out))
               
        in)))
+
+(defn bytes->channel
+  "Returns a channel that emits ChannelBuffers."
+  ([data]
+     (bytes->channel data "utf-8"))
+  ([data charset]
+     (if (instance? InputStream data)
+       (input-stream->channel data)
+       (closed-channel (bytes->channel-buffer data charset)))))
+
+;;;
+
+(defn gzip-bytes
+  "Compresses bytes using gzip. Returns an InputStream."
+  ([bytes]
+     (gzip-bytes bytes "utf-8"))
+  ([bytes charset]
+     (let [out (PipedOutputStream.)
+           in (PipedInputStream. out)
+           compressor (GzipCompressorOutputStream. out)
+           ch (bytes->channel bytes charset)]
+       
+       (future
+         (receive-all ch
+           #(.write compressor (bytes->byte-array %)))
+
+         (on-drained ch
+           #(.close compressor)))
+
+       in)))
+
+(defn ungzip-bytes
+  "Decompresses bytes that were processed using 'gzip-bytes'.  Returns an InputStream."
+  ([bytes]
+     (ungzip-bytes bytes "utf-8"))
+  ([bytes charset]
+     (-> bytes (bytes->input-stream charset) GzipCompressorInputStream.)))
 
 ;;;
 
