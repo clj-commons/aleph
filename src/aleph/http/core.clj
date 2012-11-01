@@ -40,6 +40,8 @@
      Channel]
     [org.jboss.netty.buffer
      ChannelBuffers]
+    [java.nio
+     ByteBuffer]
     [java.nio.channels
      FileChannel
      FileChannel$MapMode]
@@ -319,10 +321,10 @@
 
       (instance? File body)
       (let [fc (.getChannel (RandomAccessFile. ^File body "r"))
-            buf (-> fc
-                  (.map FileChannel$MapMode/READ_ONLY 0 (.size fc))
-                  ChannelBuffers/wrappedBuffer)]
-        (.setContent msg buf)
+            buf (ByteBuffer/allocate (.size fc))]
+        (.read fc buf)
+        (.rewind buf)
+        (.setContent msg (ChannelBuffers/wrappedBuffer buf))
         (HttpHeaders/setContentLength msg (.size fc))
         {:msg msg
          :write-callback #(.close fc)})
