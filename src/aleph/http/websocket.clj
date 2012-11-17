@@ -131,7 +131,8 @@
 ;;;
 
 (defn client-handshake-stage [result url]
-  (let [latch (atom false)
+  (let [handshake-latch (atom false)
+        response-latch (atom false)
         handshaker (.newHandshaker
                      (WebSocketClientHandshakerFactory.)
                      url
@@ -142,18 +143,23 @@
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
         (let [netty-channel (.getChannel evt)]
+
+          ;; send out handshake
           (when (and
                   (.isConnected netty-channel)
-                  (compare-and-set! latch false true))
+                  (compare-and-set! handshake-latch false true))
             (.handshake handshaker netty-channel))
-          (if-let [msg (netty/event-message evt)]
-            (do
-              (.finishHandshake handshaker netty-channel msg)
-              (-> ctx
-                .getPipeline
-                (.remove "handshaker"))
-              (success result true))
-            (.sendUpstream ctx evt)))))))
+
+          ;; handle response
+          (let [msg (netty/event-message evt)]
+            (if (and msg (compare-and-set! response-latch false true))
+              (do
+                (.finishHandshake handshaker netty-channel msg)
+                (-> ctx
+                  .getPipeline
+                  (.remove "handshaker"))
+                (success result true))
+              (.sendUpstream ctx evt))))))))
 
 (defn websocket-client [options]
   (let [options (client/expand-client-options options)
