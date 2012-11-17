@@ -105,18 +105,20 @@
                          (create-server-handshaker msg))]
               (do
                 (reset! handshaker h)
-                (.handshake @handshaker netty-channel msg)
-                (-> ctx
-                  .getPipeline
-                  (.replace "handler" "handler"
-                    (netty/server-message-handler
-                      (fn [ch _]
-                        (handler
-                          (wrap-websocket-channel ch)
-                          (assoc (http/netty-request->ring-map {:msg msg})
-                            :websocket true ;; deprecated
-                            :websocket? true)))
-                      netty-channel))))
+                (run-pipeline (.handshake @handshaker netty-channel msg)
+                  netty/wrap-netty-channel-future
+                  (fn [_]
+                    (-> ctx
+                      .getPipeline
+                      (.replace "handler" "handler"
+                        (netty/server-message-handler
+                          (fn [ch _]
+                            (handler
+                              (wrap-websocket-channel ch)
+                              (assoc (http/netty-request->ring-map {:msg msg})
+                                :websocket true ;; deprecated
+                                :websocket? true)))
+                          netty-channel))))))
               
               (when-not (and
                           @handshaker
