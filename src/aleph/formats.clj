@@ -254,7 +254,7 @@
      (base64-encode data false))
   ([data ^Boolean url-safe?]
      (when data
-       (let [encoder (Base64. 76 (if url-safe? (byte-array 0) (.getBytes "\r\n")) url-safe?)]
+       (let [encoder (Base64. -1 (byte-array 0) url-safe?)]
          (->> data bytes->byte-array (.encode encoder) String.)))))
 
 (defn base64-decode
