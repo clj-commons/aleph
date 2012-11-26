@@ -141,7 +141,14 @@
                       (map* http/decode-message responses)
                       responses)
           responses (if-let [frame (formats/options->decoder options)]
-                      (formats/decode-channel frame responses)
+                      (map*
+                        (fn [rsp]
+                          (update-in rsp [:body]
+                            #(let [body (if (channel? %)
+                                          %
+                                          (closed-channel %))]
+                               (formats/decode-channel frame body))))
+                        responses)
                       responses)]
       (splice responses requests))))
 

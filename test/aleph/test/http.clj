@@ -127,10 +127,15 @@
 (defn async-timeout-ring-handler [request]
   (error-result (TimeoutException.)))
 
-(defn default-http-client []
-  (http-client
-    {:url "http://localhost:8008"
-     :auto-decode? true}))
+(defn default-http-client
+  ([]
+     (default-http-client nil))
+  ([options]
+     (http-client
+       (merge
+         {:url "http://localhost:8008"
+          :auto-decode? true}
+         options))))
 
 ;;;
 
@@ -219,17 +224,25 @@
 (deftest test-streaming-response
   (with-handlers [streaming-request-handler ring-streaming-request-handler]
     (let [content "abcdefghi"
-	  client (default-http-client)]
+	  client (default-http-client
+                   {:delimiters ["\n"]
+                    :auto-decode? false})]
       (try
 	(dotimes [_ 3]
 	  (let [response (wait-for-result
                            (client {:url "http://localhost:8008"
                                     :method :post
-                                    :auto-transform true
                                     :headers {"content-type" "text/plain"}
-                                    :body (apply closed-channel (map str content))})
+                                    :body (->> content
+                                            (map str)
+                                            (map #(str % "\n"))
+                                            (apply closed-channel))})
                            2000)]
-            (is (= content (:body response)))))
+            (is (= content (->> response
+                             :body
+                             channel->lazy-seq
+                             (map formats/bytes->string)
+                             (apply str))))))
 	(finally
 	  (close-connection client))))))
 

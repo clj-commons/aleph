@@ -13,13 +13,13 @@
   ([]
      (auto-decode? (current-options)))
   ([options]
-     (boolean (or (:auto-decode? options) (:auto-transform options)))))
+     (boolean (or (:auto-decode? options) (:auto-transform options) (:auto-transform? options)))))
 
 (defn auto-encode?
   ([]
      (auto-encode? (current-options)))
   ([options]
-     (boolean (or (:auto-encode? options) (:auto-transform options)))))
+     (boolean (or (:auto-encode? options) (:auto-transform options) (:auto-transform? options)))))
 
 (defn charset
   ([]
