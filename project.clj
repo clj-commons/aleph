@@ -5,30 +5,23 @@
   :license {:name "Eclipse Public License - v 1.0"
             :url "http://www.eclipse.org/legal/epl-v10.html"
             :distribution :repo}
-  :dependencies [[org.clojure/clojure "1.4.0"]
-                 [org.clojure/tools.logging "0.2.3"]
+  :dependencies [[org.clojure/tools.logging "0.2.3"]
                  [org.clojure/data.xml "0.0.6"]
                  [io.netty/netty "3.5.8.Final"]
-                 [lamina "0.5.0-beta7"]
-                 [gloss "0.2.2-beta3"]
+                 [lamina "0.5.0-SNAPSHOT"]
+                 [gloss "0.2.2-beta4"]
                  [cheshire "4.0.1"]
-                 [criterium "0.3.0"]
                  [commons-codec/commons-codec "1.7"]
                  [org.apache.commons/commons-compress "1.4.1"]]
-  :multi-deps {:all [[org.clojure/tools.logging "0.2.3"]
-                     [org.clojure/data.xml "0.0.6"]
-                     [io.netty/netty "3.5.8.Final"]
-                     [lamina "0.5.0-beta7"]
-                     [gloss "0.2.2-beta3"]
-                     [cheshire "4.0.1"]
-                     [criterium "0.3.0"]
-                     [commons-codec/commons-codec "1.7"]
-                     [org.apache.commons/commons-compress "1.4.1"]]
-               "master" [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]
-               "1.2" [[org.clojure/clojure "1.2.0"]]
-               "1.3" [[org.clojure/clojure "1.3.0"]]}
-  :dev-dependencies [
-                     [codox "0.6.1"]]
+  :exclusions [org.clojure/contrib
+               org.clojure/clojure-contrib]
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.4.0"]
+                                  [criterium "0.3.1"]]}
+             :1.2 {:dependencies [[org.clojure/clojure "1.2.1"]]}
+             :1.3 {:dependencies [[org.clojure/clojure "1.3.0"]]}
+             :1.5 {:dependencies [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]}}
+  :aliases {"all" ["with-profile" "1.2:1.3:dev:1.5"]}
+  :plugins [[codox "0.6.2"]]
   :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
                    :integration :redis
                    :benchmark :benchmark
