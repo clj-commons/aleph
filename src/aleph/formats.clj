@@ -427,8 +427,14 @@
   ([data]
      (bytes->channel data "utf-8"))
   ([data charset]
-     (if (instance? InputStream data)
+     (cond
+       (channel? data)
+       (map* bytes->channel-buffer data)
+       
+       (instance? InputStream data)
        (input-stream->channel data)
+
+       :else
        (closed-channel (bytes->channel-buffer data charset)))))
 
 ;;;
