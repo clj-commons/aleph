@@ -19,6 +19,9 @@
      ChannelPipeline
      ChannelUpstreamHandler
      ChannelEvent]
+    [javax.net.ssl
+     X509TrustManager
+     SSLContext]
     [org.jboss.netty.channel.group
      DefaultChannelGroup]
     [org.jboss.netty.channel.socket.nio
@@ -123,15 +126,31 @@
           (enqueue ch msg)
           (.sendUpstream ctx evt))))))
 
+;;;
+
+(def naive-trust-manager
+  (reify X509TrustManager
+    (checkClientTrusted [_ _ _])
+    (checkServerTrusted [_ _ _])
+    (getAcceptedIssuers [_])))
+
 (defn create-ssl-handler
-  [{:keys [server-name server-port]}]
-  (SslHandler.
-    (doto
-      (.createSSLEngine
-        (javax.net.ssl.SSLContext/getDefault)
-        server-name
-        server-port)
-      (.setUseClientMode true))))
+  [{:keys [server-name server-port ignore-ssl-certs?]}]
+  (doto
+    (SslHandler.
+      (doto
+        (.createSSLEngine
+          (if ignore-ssl-certs?
+            (doto (SSLContext/getInstance "TLS")
+              (.init nil (into-array [naive-trust-manager]) nil))
+            (SSLContext/getDefault))
+          server-name
+          server-port)
+        (.setUseClientMode true)))
+    (.setIssueHandshake true)
+    (.setCloseOnSSLException true)))
+
+;;;
 
 (defn create-client
   [client-name pipeline-generator options]
@@ -158,7 +177,7 @@
             (let [^ChannelPipeline pipeline (pipeline-generator channel-group)]
               (.addLast pipeline "handler" (client-message-handler a options))
               (when ssl?
-                (.addFirst pipeline "ssl" (create-ssl-handler options)))
+                (.addAfter pipeline "incoming-traffic" "ssl" (create-ssl-handler options)))
               pipeline))))
 
       (run-pipeline (.connect client (InetSocketAddress. host port))

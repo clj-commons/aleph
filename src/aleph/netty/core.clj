@@ -20,6 +20,8 @@
     [java.util
      TimeZone
      Date]
+    [java.nio.channels
+     ClosedChannelException]
     [org.jboss.netty.buffer
      ChannelBuffer]
     [org.jboss.netty.channel.group
@@ -32,6 +34,7 @@
      Executors]
     [org.jboss.netty.channel 
      Channel
+     ChannelException
      ChannelHandler
      ChannelUpstreamHandler
      ChannelDownstreamHandler
@@ -213,6 +216,14 @@
              :bytes (.readableBytes msg)}))
         (.sendDownstream ctx evt)))))
 
+
+;;;
+
+(def default-exception-predicate
+  #(and
+     (not (instance? ClosedChannelException %))
+     (not (instance? ChannelException %))))
+
 (defmacro create-netty-pipeline
   [pipeline-name server? channel-group & stages]
   (unify-gensyms
@@ -235,10 +246,10 @@
            (connection-handler ~pipeline-name channel-group# ~server?)))
 
        ;; error logging
-       #_(.addLast pipeline## "outgoing-error"
-         (downstream-error-handler ~pipeline-name (constantly true)))
-       #_(.addFirst pipeline## "incoming-error"
-         (upstream-error-handler ~pipeline-name (constantly true)))
+       (.addLast pipeline## "outgoing-error"
+         (downstream-error-handler ~pipeline-name default-exception-predicate))
+       (.addFirst pipeline## "incoming-error"
+         (upstream-error-handler ~pipeline-name default-exception-predicate))
 
        pipeline##)))
 

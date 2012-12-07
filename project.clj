@@ -7,7 +7,7 @@
             :distribution :repo}
   :dependencies [[org.clojure/tools.logging "0.2.3"]
                  [org.clojure/data.xml "0.0.6"]
-                 [io.netty/netty "3.5.8.Final"]
+                 [io.netty/netty "3.5.9.Final"]
                  [lamina "0.5.0-SNAPSHOT"]
                  [gloss "0.2.2-beta4"]
                  [cheshire "4.0.1"]
