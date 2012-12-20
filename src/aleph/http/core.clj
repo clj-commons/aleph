@@ -180,18 +180,16 @@
       (fn [m]
         (let [{:keys [msg chunks write-callback]} (f m)
               result (enqueue ch* msg)
-              final-stage (fn [_]
-                            (when write-callback
-                              (write-callback))
-                            (if (and honor-keep-alive? (not (:keep-alive? m)))
-                              (close ch*)
-                              true))]
+              cleanup (fn []
+                        (when write-callback
+                          (write-callback))
+                        (when (and honor-keep-alive? (not (:keep-alive? m)))
+                          (close ch*)))]
 
           (if-not chunks
 
-            ;; non-streaming response
-            (run-pipeline result
-              final-stage)
+            ;; non-streaming request
+            (cleanup)
 
             ;; streaming response
             (let [callback #(close chunks)]
@@ -211,8 +209,8 @@
                   (drained-result chunks))
                 (fn [_]
                   (cancel-callback ch callback)
-                  (enqueue ch* HttpChunk/LAST_CHUNK))
-                final-stage)))))
+                  (enqueue ch* HttpChunk/LAST_CHUNK)
+                  (cleanup)))))))
       ch*)
     ch*))
 
