@@ -189,7 +189,9 @@
           (if-not chunks
 
             ;; non-streaming request
-            (cleanup)
+            (do
+              (cleanup)
+              result)
 
             ;; streaming response
             (let [callback #(close chunks)]
@@ -209,8 +211,9 @@
                   (drained-result chunks))
                 (fn [_]
                   (cancel-callback ch callback)
-                  (enqueue ch* HttpChunk/LAST_CHUNK)
-                  (cleanup)))))))
+                  (let [result (enqueue ch* HttpChunk/LAST_CHUNK)]
+                    (cleanup)
+                    result)))))))
       ch*)
     ch*))
 
