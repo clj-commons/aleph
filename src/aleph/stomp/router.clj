@@ -15,7 +15,7 @@
     [clojure.tools.logging :as log]
     [lamina.cache :as c]))
 
-(defprotocol Router
+(defprotocol+ Router
   (register-publisher [_ endpoint ch])
   (register-subscriber [_ ch]))
 

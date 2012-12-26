@@ -7,7 +7,10 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.trace.core
-  (:require [lamina.trace.context])
+  (:use
+    [potemkin :only (defprotocol+)])
+  (:require
+    [lamina.trace.context])
   (:import
     [java.util.concurrent
      ConcurrentHashMap]))
@@ -48,7 +51,7 @@
     (apply concat)
     (apply hash-map)))
 
-(defprotocol TraceOperator
+(defprotocol+ TraceOperator
   (periodic? [_])
   (endpoint? [_])
   (intra-split? [_])

@@ -240,64 +240,88 @@
 
 ;;;
 
-(defrecord LazyDelay [delay]
-  clojure.lang.IDeref
-  (deref [_] @delay))
-
-(defmacro delay* [& body]
-  `(LazyDelay. (delay ~@body)))
-
-(def-custom-map LazyMap
-  :get
-  (fn [_ data _ key default-value]
-    `(if-not (contains? ~data ~key)
-       ~default-value
-       (let [val# (get ~data ~key)]
-         (if (instance? LazyDelay val#)
-           @val#
-           val#)))))
-
-(defn lazy-map [& {:as m}]
-  (LazyMap. m))
+(def-map-type RequestMap [^HttpRequest netty-request ^Channel netty-channel headers body]
+  (get [_ k default-value]
+    (case k
+      :scheme :http
+      :keep-alive? (HttpHeaders/isKeepAlive netty-request)
+      :remote-addr (netty/channel-remote-host-address netty-channel)
+      :server-name (netty/channel-local-host-address netty-channel)
+      :server-port (netty/channel-local-port netty-channel)
+      :request-method (request-method netty-request)
+      :headers @headers
+      :content-type (http-content-type netty-request)
+      :character-encoding (http-character-encoding netty-request)
+      :uri (request-uri netty-request)
+      :query-string (request-query-string netty-request)
+      :content-length (http-content-length netty-request)
+      :body body
+      default-value))
+  (assoc [this k v]
+    (assoc (into {} this) k v))
+  (dissoc [this k]
+    (dissoc (into {} this) k))
+  (keys [this]
+    [:scheme
+     :keep-alive? 
+     :remote-addr 
+     :server-name 
+     :server-port 
+     :request-method 
+     :headers 
+     :content-type 
+     :character-encoding 
+     :uri
+     :query-string 
+     :content-length
+     :body]))
 
 (defn netty-request->ring-map [{netty-request :msg, chunks :chunks}]
-  (let [netty-channel (netty/current-channel)
-        request (lazy-map
-                  :scheme :http
-                  :keep-alive? (HttpHeaders/isKeepAlive netty-request)
-                  :remote-addr (delay* (netty/channel-remote-host-address netty-channel))
-                  :server-name (delay* (netty/channel-local-host-address netty-channel))
-                  :server-port (delay* (netty/channel-local-port netty-channel))
-                  :request-method (delay* (request-method netty-request))
-                  :headers (delay* (http-headers netty-request))
-                  :content-type (delay* (http-content-type netty-request))
-                  :character-encoding (delay* (http-character-encoding netty-request))
-                  :uri (delay* (request-uri netty-request))
-                  :query-string (delay* (request-query-string netty-request))
-                  :content-length (delay* (http-content-length netty-request)))]
+  (RequestMap.
+    netty-request
+    (netty/current-channel)
+    (delay (http-headers netty-request))
     (if chunks
-      (assoc request
-        :body (map* #(.getContent ^HttpChunk %) chunks))
-      (assoc request
-        :body (let [content (.getContent ^HttpMessage netty-request)]
-                (when (pos? (.readableBytes content))
-                  content))))))
+      (map* #(.getContent ^HttpChunk %) chunks)
+      (let [content (.getContent ^HttpMessage netty-request)]
+        (when (pos? (.readableBytes content))
+          content)))))
+
+;;;
+
+(def-map-type ResponseMap [^HttpRequest netty-response headers body]
+  (get [_ k default-value]
+    (case k
+      :keep-alive? (HttpHeaders/isKeepAlive netty-response)
+      :headers @headers
+      :character-encoding (http-character-encoding netty-response)
+      :content-type (http-content-type netty-response)
+      :content-length (http-content-length netty-response)
+      :status (response-code netty-response)
+      :body body
+      default-value))
+  (assoc [this k v]
+    (assoc (into {} this) k v))
+  (dissoc [this k]
+    (dissoc (into {} this) k))
+  (keys [this]
+    [:keep-alive? 
+     :headers 
+     :character-encoding 
+     :content-type 
+     :content-length 
+     :status 
+     :body]))
 
 (defn netty-response->ring-map [{netty-response :msg, chunks :chunks}]
-  (let [response (lazy-map
-                   :keep-alive? (HttpHeaders/isKeepAlive netty-response)
-                   :headers (delay* (http-headers netty-response))
-                   :character-encoding (delay* (http-character-encoding netty-response))
-                   :content-type (delay* (http-content-type netty-response))
-                   :content-length (delay* (http-content-length netty-response))
-                   :status (delay* (response-code netty-response)))]
+  (ResponseMap.
+    netty-response
+    (delay (http-headers netty-response))
     (if chunks
-      (assoc response
-        :body (map* #(.getContent ^HttpChunk %) chunks))
-      (assoc response
-        :body (let [content (.getContent ^HttpMessage netty-response)]
-                (when (pos? (.readableBytes content))
-                  content))))))
+      (map* #(.getContent ^HttpChunk %) chunks)
+      (let [content (.getContent ^HttpMessage netty-response)]
+        (when (pos? (.readableBytes content))
+          content)))))
 
 (defn populate-netty-msg [m ^HttpMessage msg]
   (let [body (:body m)]

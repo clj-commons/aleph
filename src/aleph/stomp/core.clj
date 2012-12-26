@@ -29,7 +29,7 @@
   {:command :unsubscribe
    :headers {"id" id}})
 
-(defprotocol-once SubscriptionCache
+(defprotocol+ SubscriptionCache
   (get-or-create [_ destination])
   (release [_ destination])
   (subscriptions [_]))

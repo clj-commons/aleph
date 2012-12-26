@@ -26,4 +26,5 @@
                    :integration :redis
                    :benchmark :benchmark
                    :all (constantly true)}
-  :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"])
+  :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC"]
+  :warn-on-reflection true)

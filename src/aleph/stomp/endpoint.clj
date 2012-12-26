@@ -15,7 +15,7 @@
     [clojure.tools.logging :as log]
     [lamina.cache :as c]))
 
-(defprotocol-once Endpoint
+(defprotocol+ Endpoint
   (subscribe [_ destination])
   (publish [_ msg]))
 
