@@ -16,6 +16,7 @@
     [clojure.tools.logging :as log]
     [aleph.trace.operators :as ops]
     [aleph.stomp :as stomp]
+    [aleph.stomp.router :as router]
     [aleph.formats :as formats]))
 
 ;;; endpoint
@@ -60,7 +61,14 @@
                     (post-aggregator destination))
                   ch))})
 
+(defn local-aggregator [endpoint {:strs [operators] :as destination}]
+  {:destination (assoc-in destination ["operators"] nil)
+   :transform #(ops/local-chain-transform operators %)})
+
 ;;;
+
+(def local-router-options
+  {:aggregator local-aggregator})
 
 (def router-options
   {:aggregator

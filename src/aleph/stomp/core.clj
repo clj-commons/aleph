@@ -92,5 +92,5 @@
      :body body}))
 
 (defn error-message [destination val]
-  (assoc-in (stomp-message :error)
+  (assoc-in (stomp-message :error val)
     [:headers "destination"] destination))

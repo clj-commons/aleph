@@ -10,6 +10,7 @@
   (:use
     [potemkin])
   (:require
+    [aleph.stomp.router :as stomp-router]
     [aleph.trace.router :as router]
     [aleph.stomp :as stomp]))
 

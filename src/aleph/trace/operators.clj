@@ -116,6 +116,16 @@
         (rest ops)))
     ch))
 
+(defn local-chain-transform [ops ch]
+  (assert-valid-operators ops)
+  (if-let [{:strs [name] :as op} (first ops)]
+    (reduce
+      (fn [ch {:strs [name] :as desc}]
+        (aggregator (operator name) desc ch))
+      ch
+      ops)
+    ch))
+
 (defn periodic-chain? [ops]
   (->> ops
     operator-seq
