@@ -100,7 +100,7 @@
                  (post-split [_ desc# ch#]
                    (if post-split#
                      (post-split# desc# ch#)
-                     (aggregator# desc# ch#)))
+                     ch#))
                  (aggregator [_ desc# ch#]
                    (aggregator# desc# ch#)))]
        

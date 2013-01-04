@@ -98,7 +98,8 @@
             filtered-sum*** (subscribe c "abc.x.y.where(_ < 4).sum()")
             avg (subscribe c "abc.x.y.moving-average()")
             rate (subscribe c "abc.rate(period: 1000)")
-            sum-avg (subscribe c "abc.x.y.sum().moving-average(period: 1000)")]
+            sum-avg (subscribe c "abc.x.y.sum().moving-average(period: 1000)")
+            lookup (subscribe c "abc.x.y")]
 
         (Thread/sleep 500)
 
@@ -112,6 +113,7 @@
         (is (= 4 (next-non-zero-msg rate)))
         (is (= 2.5 (next-non-zero-msg avg)))
         (is (= 10.0 (next-non-zero-msg sum-avg)))
+        (is (= (range 1 5) (take 4 (repeatedly #(next-non-zero-msg lookup)))))
 
         (Thread/sleep 1000)
 

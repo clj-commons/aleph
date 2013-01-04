@@ -219,7 +219,7 @@
 
 (defoperator where
   :periodic? false
-
+  
   (:endpoint :aggregator)
   (fn [{:strs [options]} ch]
     (filter* (filters (->> options vals (map comparison-filter))) ch)))
@@ -272,26 +272,25 @@
 
 (defoperator sum
   :periodic? true
-  (:endpoint :aggregator :intra-split) sum-op)
+  (:endpoint :aggregator :intra-split :post-split) sum-op)
 
 (defn rate-op [{:strs [options]} ch]
   (lamina.stats/rate (keywordize options) ch))
 
 (defoperator rate
   :periodic? true
-  (:endpoint :aggregator :intra-split) rate-op
-  :post-split sum-op)
+  (:endpoint :aggregator) rate-op
+  (:intra-split :post-split) sum-op)
 
 (defoperator moving-average
   :periodic? true
-  :aggregator (fn [{:strs [options]} ch]
-                (lamina.stats/moving-average (keywordize options) ch)))
+  (:post-split :aggregator) (fn [{:strs [options]} ch]
+                              (lamina.stats/moving-average (keywordize options) ch)))
 
 ;;;
 
 (defoperator sample
   :periodic? true
-  :post-split (fn [_ ch] ch)
   (:endpoint :aggregator) (fn [{:strs [options]} ch]
                             (let [period (or
                                            (get options "period")
@@ -301,7 +300,6 @@
 
 (defoperator partition-every
   :periodic? true
-  :post-split (fn [_ ch] ch)
   (:endpoint :aggregator) (fn [{:strs [options]} ch]
                             (let [period (or
                                            (get options "period")
