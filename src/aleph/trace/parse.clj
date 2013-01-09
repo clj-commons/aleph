@@ -42,7 +42,7 @@
        (let [s (if (string? x)
                 x
                 (.pattern ^Pattern x))
-             p (Pattern/compile (str "^" s))]
+             p (Pattern/compile (str "^(?:" s ")"))]
          (fn [^String s]
            (when-let [match (first (re-seq p s))]
              [(parser match) (.substring s (count match))]))))))
@@ -139,7 +139,7 @@
 
 (deftoken pattern #"[a-zA-Z0-9:_\-\*]+")
 (deftoken id #"[_a-zA-Z][a-zA-Z0-9\-_]*")
-(deftoken comparison #"[<|>|=|~=]")
+(deftoken comparison #"<|>|=|~=")
 (deftoken field #"[_a-zA-Z][a-zA-Z0-9\-_\.]*")
 (deftoken number #"[0-9\.]+" read-string)
 (deftoken string #"[a-zA-Z0-9\-\*_]")
