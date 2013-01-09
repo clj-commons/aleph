@@ -27,12 +27,10 @@
 
 (defn operator-seq [ops]
   (->> ops
-    (map
-      (fn [{:strs [operators] :as op}]
-        (if (group-by? op)
-          (cons op (operator-seq operators))
-          [op])))
-    (apply concat)))
+       (mapcat (fn [{:strs [operators] :as op}]
+                 (if (group-by? op)
+                   (cons op (operator-seq operators))
+                   [op])))))
 
 (defn last-operation [ops]
   (let [op (last ops)]
