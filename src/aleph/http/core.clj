@@ -176,7 +176,7 @@
   (let [ch* (channel)
         default-charset (options/charset)]
     
-    (bridge-join ch "aleph.http.core/expand-writes"
+    (bridge-join ch ch* "aleph.http.core/expand-writes"
       (fn [m]
         (let [{:keys [msg chunks write-callback]} (f m)
               result (enqueue ch* msg)
@@ -212,15 +212,14 @@
                 (fn [_]
                   (cancel-callback ch callback)
                   (enqueue ch* HttpChunk/LAST_CHUNK))
-                final-stage)))))
-      ch*)
+                final-stage))))))
     ch*))
 
 (defn collapse-reads [ch]
   (let [executor (options/executor)
         ch* (channel)
         current-stream (atom nil)]
-    (bridge-join ch "aleph.http.core/collapse-reads"
+    (bridge-join ch ch* "aleph.http.core/collapse-reads"
       (fn [msg]
         (if (instance? HttpMessage msg)
 
@@ -234,8 +233,7 @@
           ;; chunk
           (if (.isLast ^HttpChunk msg)
             (close @current-stream)
-            (enqueue @current-stream msg))))
-      ch*)
+            (enqueue @current-stream msg)))))
     ch*))
 
 ;;;
