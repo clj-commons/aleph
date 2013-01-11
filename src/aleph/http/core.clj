@@ -244,7 +244,7 @@
       :scheme :http
       :keep-alive? (HttpHeaders/isKeepAlive netty-request)
       :remote-addr (netty/channel-remote-host-address netty-channel)
-      :server-name (netty/channel-local-host-address netty-channel)
+      :server-name (netty/channel-local-host-name netty-channel)
       :server-port (netty/channel-local-port netty-channel)
       :request-method (request-method netty-request)
       :headers @headers
