@@ -11,12 +11,17 @@
     [potemkin]
     [lamina.core])
   (:require
+    [clojure.string :as str]
+    [aleph.tcp :as tcp]
+    [aleph.stomp.codec :as codec]
     [lamina.cache :as c]))
 
-(defn destination [msg]
+;;;
+
+(defn message-destination [msg]
   (get-in msg [:headers "destination"]))
 
-(defn id [msg]
+(defn message-id [msg]
   (get-in msg [:headers "id"]))
 
 (defn subscription [destination id]
@@ -29,63 +34,8 @@
   {:command :unsubscribe
    :headers {"id" id}})
 
-(defprotocol+ SubscriptionCache
-  (get-or-create [_ destination])
-  (release [_ destination])
-  (subscriptions [_]))
-
-;; a channel cache that correlates destination and ids
-(defn subscription-cache
-  [{:keys [generator
-           on-subscribe
-           on-unsubscribe]}]
-  (let [n (atom 0)
-        gen-id #(swap! n inc)
-        active-subscriptions (atom {})
-        cache (c/channel-cache generator)]
-    (reify SubscriptionCache
-
-      (get-or-create [_ destination]
-        (c/get-or-create cache destination
-          (fn [ch]
-            (let [id (gen-id)]
-              
-              ;; add to active subscription list
-              (swap! active-subscriptions
-                assoc id destination)
-              
-              ;; broadcast subscription
-              (when on-subscribe
-                (on-subscribe destination id))
-
-              ;; hook up unsubscription
-              (on-closed ch 
-                (fn []
-                  (swap! active-subscriptions
-                    dissoc id)
-                  (when on-unsubscribe
-                    (on-unsubscribe id))))))))
-
-      (release [_ destination]
-        (c/release cache destination))
-
-      (subscriptions [_]
-        @active-subscriptions))))
-
-(defn send-messages [ch]
-  (filter* #(= :send (:command %)) ch))
-
-(defn error-messages [ch]
-  (filter* #(= :error (:command %)) ch))
-
-(defn query-messages [ch]
-  (filter* #(= :query (:command %)) ch))
-
-(defn response-messages [ch]
-  (filter* #(= :response (:command %)) ch))
-
 (defn stomp-message [command val]
-  (let [body (pr-str val)]
+  (let [body (when val (pr-str val))]
     {:command command
      :headers {:content-type "application/clojure"
                :content-length (count body)}
@@ -94,3 +44,83 @@
 (defn error-message [destination val]
   (assoc-in (stomp-message :error val)
     [:headers "destination"] destination))
+
+(defn send-message [destination val]
+  (assoc-in (stomp-message :send val)
+    [:headers "destination"] destination))
+
+;;;
+
+(defprotocol+ IStompRouter
+  (register-producer [_ ch router?])
+  (register-consumer [_ ch]))
+
+(defn id->topic [router]
+  (let [inner-cache (c/inner-cache router)
+        ids (c/ids inner-cache)]
+    (zipmap ids (map #(c/id->topic inner-cache %) ids))))
+
+(defn stomp-router [router-generator]
+  (let [message-channels (c/channel-cache #(channel* :description %, :grounded? true))
+        subscription-broadcast (channel* :permanent? true, :grounded? true)
+        cnt (atom 0)
+        inner-router (c/router
+                       {:topic->id
+                        (fn [_] (swap! cnt inc))
+
+                        :on-subscribe
+                        (fn [_ topic id]
+                          (enqueue subscription-broadcast (subscription topic id)))
+
+                        :on-unsubscribe
+                        (fn [_ topic id]
+                          (enqueue subscription-broadcast (unsubscription id)))
+
+                        :generator
+                        #(c/get-or-create message-channels % nil)})
+        outer-router (router-generator inner-router)]
+
+    (reify
+      IStompRouter
+
+      (register-producer [this ch router?]
+
+        (when router?
+          (siphon subscription-broadcast ch)
+          (doseq [[id topic] (id->topic this)]
+            (enqueue ch (subscription topic id))))
+
+        (receive-all ch
+          (fn [{:keys [command] :as msg}]
+            (case command
+              (:send :error)
+              (enqueue
+                (c/get-or-create message-channels (message-destination msg) nil)
+                msg)
+
+              nil))))
+
+      (register-consumer [_ ch]
+        (let [bridges (c/channel-cache (fn [_] (channel)))]
+          (receive-all ch
+            (fn [{:keys [command] :as msg}]
+              (case command
+
+                :subscribe
+                (siphon
+                  (c/subscribe outer-router (message-destination msg))
+                  (c/get-or-create bridges (message-id msg) nil)
+                  ch)
+
+                :unsubscribe
+                (close (c/get-or-create bridges (message-id msg) nil))
+
+                nil)))))
+
+      c/IRouter
+      (inner-cache [_]
+        (c/inner-cache inner-router))
+      (subscribe- [_ topic args]
+        (c/subscribe- outer-router topic args)))))
+
+;;;
