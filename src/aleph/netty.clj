@@ -16,7 +16,7 @@
     [aleph.netty.client :as client]))
 
 (import-fn core/channel-remote-host-address)
-(import-fn core/channel-local-host-address)
+(import-fn core/channel-local-host-name)
 (import-fn core/channel-local-port)
 (import-fn core/wrap-netty-channel-future)
 (import-fn core/event-message)

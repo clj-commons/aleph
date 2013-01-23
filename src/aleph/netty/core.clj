@@ -98,10 +98,10 @@
     (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
       (.getHostAddress ^InetAddress inet-address))))
 
-(defn channel-local-host-address [^Channel channel]
+(defn channel-local-host-name [^Channel channel]
   (when-let [socket-address (.getLocalAddress channel)]
     (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]
-      (.getHostAddress ^InetAddress inet-address))))
+      (.getHostName ^InetAddress inet-address))))
 
 (defn channel-local-port [^Channel channel]
   (when-let [socket-address (.getLocalAddress channel)]
