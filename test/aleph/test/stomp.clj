@@ -25,15 +25,8 @@
 (defn basic-echo-handler [ch _]
   (siphon ch ch))
 
-(defmacro with-stomp-connection [[c] port & body]
-  `(let [~c (pipelined-client #(deref (stomp-connection {:host "localhost", :port ~port})))]
-     (try
-       ~@body
-       (finally
-         (close-connection ~c)))))
-
 (defmacro with-stomp-client [[c] port & body]
-  `(let [~c @(stomp-client {:host "localhost", :port ~port})]
+  `(let [~c (pipelined-client #(deref (stomp-connection {:host "localhost", :port ~port})))]
      (try
        ~@body
        (finally
@@ -54,6 +47,13 @@
        :body (pr-str msg)})
     (probe-channel id)))
 
+(defmacro with-endpoint [[e] port & body]
+  `(let [~e (stomp-endpoint {:producer probe-producer :client-options {:host "localhost", :port ~port}})]
+     (try
+       ~@body
+       (finally
+         (close-connection ~e)))))
+
 ;;;
 
 (def messages
@@ -68,7 +68,7 @@
 
 (deftest test-basic-echo
   (with-server basic-echo-handler 10000
-    (with-stomp-connection [c] 10000
+    (with-stomp-client [c] 10000
       (doseq [m (->> messages
                   (repeat 10)
                   (apply concat))]
@@ -78,46 +78,46 @@
 
 (deftest test-basic-router
   (with-router 10000
-    (with-stomp-client [c1] 10000
+    (with-endpoint [c1] 10000
       (let [{a :messages} (subscribe c1 "abc")
             {b :messages} (subscribe c1 "def")
             consume #(-> % read-channel (wait-for-result 2500) :body read-string)]
 
         ;; wait for subscriptions to propagate
-        (Thread/sleep 250)
+        (Thread/sleep 500)
 
-        (publish c1 "abc" 1)
-        (publish c1 "def" 2)
+        (is (= true (trace :abc 1)))
+        (is (= true (trace :def 2)))
         (is (= 1 (consume a)))
         (is (= 2 (consume b)))
 
         ;; unsubscribe, and wait to propagate
         (close a)
+        (Thread/sleep 500)
         
-        (publish c1 "def" 4)
+        (is (= false (trace :abc 3)))
+        (is (= true (trace :def 4)))
         (is (= 4 (consume b)))
 
-        (with-stomp-client [c2] 10000
+        (with-endpoint [c2] 10000
 
-          (publish c2 "def" 5)
+          ;; wait for existing subscriptions to propagate
+          (Thread/sleep 500)
+
+          ;; this should double broadcast
+          (is (= true (trace :def 5)))
           (is (= 5 (consume b)))
-          
-          (let [{c :messages} (subscribe c2 "def")]
-            
-            (Thread/sleep 250)
-
-            ;; block on this publish, so there's a strict ordering
-            @(publish c1 "def" 6)
-            (publish c2 "def" 7)
-            (is (= [6 7] [(consume b) (consume b)]))
-            (is (= [6 7] [(consume c) (consume c)]))))))))
+          (is (= 5 (consume b))))))
+    
+    (Thread/sleep 500)
+    (is (= false (trace :def 6)))))
 
 ;;;
 
 (deftest ^:benchmark test-stomp-roundtrip
   (let [msg (first messages)]
     (with-server basic-echo-handler 10000
-      (with-stomp-connection [c] 10000
+      (with-stomp-client [c] 10000
         (bench "simple stomp roundtrip"
           @(c msg))
         (bench "1e3 stomp roundtrips"
@@ -125,16 +125,16 @@
 
 (deftest ^:benchmark test-router-roundtrip
   (with-router 10000
-    (with-stomp-client [c] 10000
-      (let [{ch :messages} (subscribe c "abc")]
+    (with-endpoint [c] 10000
+      (let [ch (subscribe c "abc")]
         (Thread/sleep 500)
         (bench "stomp router roundtrip"
-          (publish c "abc" 1)
+          (trace :abc 1)
           @(read-channel ch))
         (bench "1e3 stomp router roundtrip"
           (let [f (task
                     (dotimes [_ 1e3]
                       @(read-channel ch)))]
             (dotimes [_ 1e3]
-              (publish c "abc" 1))
+              (trace :abc 1))
             @f))))))
