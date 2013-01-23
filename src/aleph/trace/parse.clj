@@ -161,11 +161,12 @@
     (chain
       (ignore whitespace)
       (ignore #"\[")
-      (chain field (many (second* whitespace field)))
+      field
+      (many (second* whitespace field))
       (ignore whitespace)
       (expect #"\]"))
-    (fn [[[a b]]]
-      (vec (list* a b)))))
+    (fn [[a bs]]
+      (into [a] bs))))
 
 (let [t (delay (token (chain colon stream) second))]
   (defn substream [s]
