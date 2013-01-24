@@ -23,7 +23,10 @@
      File
      ByteArrayInputStream
      StringReader
-     PushbackReader]))
+     PushbackReader]
+    [org.jboss.netty.handler.execution
+     ExecutionHandler
+     OrderedMemoryAwareThreadPoolExecutor]))
 
 ;;;
 
@@ -166,6 +169,13 @@
                       {:port 8008
                        :websocket true
                        :server {:executor http-executor}
+                       :probes {:error (sink (fn [& _#]))}})
+         ~@body))
+     (testing "w/ execution-handler"
+       (with-server (start-http-server ~handler
+                      {:port 8008
+                       :websocket true
+                       :server {:execution-handler (ExecutionHandler. (OrderedMemoryAwareThreadPoolExecutor. 42 1048576 1048576))}
                        :probes {:error (sink (fn [& _#]))}})
          ~@body))))
 
