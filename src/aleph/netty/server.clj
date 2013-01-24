@@ -24,7 +24,9 @@
     [org.jboss.netty.bootstrap
      ServerBootstrap]
     [java.net
-     InetSocketAddress]))
+     InetSocketAddress]
+    [org.jboss.netty.handler.execution
+     ExecutionHandler]))
 
 (set! *warn-on-reflection* true)
 
@@ -67,7 +69,7 @@
           (.awaitUninterruptibly close-future)
           (.releaseExternalResources server)
           (when execution-handler
-            (.releaseExternalResources execution-handler))
+            (.releaseExternalResources ^ExecutionHandler execution-handler))
           (success close-result true))))))
 
 ;;;
