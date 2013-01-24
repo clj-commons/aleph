@@ -46,7 +46,8 @@
                           (cached-thread-executor options))
         channel-group (DefaultChannelGroup.)
         server (ServerBootstrap. channel-factory)
-        close-result (result-channel)]
+        close-result (result-channel)
+        execution-handler (-> options :server :execution-handler)]
 
     (doseq [[k v] (:probes options)]
       (run-pipeline close-result (fn [_] (close v)))
@@ -65,6 +66,8 @@
         (future
           (.awaitUninterruptibly close-future)
           (.releaseExternalResources server)
+          (when execution-handler
+            (.releaseExternalResources execution-handler))
           (success close-result true))))))
 
 ;;;

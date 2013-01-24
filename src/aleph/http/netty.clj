@@ -35,7 +35,9 @@
      HttpContentDecompressor
      HttpClientCodec]
     [java.nio.channels
-     ClosedChannelException]))
+     ClosedChannelException]
+    [org.jboss.netty.handler.execution
+     ExecutionHandler]))
 
 ;;;
 
@@ -58,7 +60,8 @@
           (splice requests responses))))
 
 (defn start-http-server [handler options]
-  (let [server-name (or
+  (let [execution-handler (-> options :server :execution-handler)
+        server-name (or
                       (:name options)
                       (-> options :server :name)
                       "http-server")
@@ -68,7 +71,7 @@
                           (fn [ch req]
 
                             ;; set local options
-                            (.set local-options options)
+                            (.set local-options (update-in options [:server] dissoc :execution-handler)) ;; replace with dissoc-in when available
 
                             (let [ch* (result-channel)]
 
@@ -107,6 +110,10 @@
                                       (->> ch
                                         (wrap-http-server-channel options)
                                         channel-handler))))]
+          (when execution-handler
+            (assert (instance? ExecutionHandler execution-handler))
+            (.addBefore pipeline "handler" "execution-handler"
+              execution-handler))
           (when (options/websocket? options)
             (.addBefore pipeline "handler" "websocket"
               (ws/server-handshake-stage handler)))
