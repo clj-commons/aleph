@@ -54,7 +54,7 @@
 
 (def netty-method->keyword
   (zipmap
-    (map #(HttpMethod/valueOf (name %)) request-methods)
+    (map #(HttpMethod/valueOf (str/upper-case (name %))) request-methods)
     request-methods))
 
 (def keyword->netty-method
