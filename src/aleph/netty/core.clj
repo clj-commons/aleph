@@ -194,6 +194,12 @@
                  :connections (+ offset (count channel-group))}))))
         (.sendUpstream ctx evt)))))
 
+(defn socket-address->map [^InetSocketAddress socket-address]
+  (when (instance? InetSocketAddress socket-address)
+    {:host (.getHostName socket-address)
+     :canonical-host (-> socket-address .getAddress .getCanonicalHostName)
+     :port (.getPort socket-address)}))
+
 (defn upstream-traffic-handler [pipeline-name]
   (let [traffic-probe (probe-channel [pipeline-name :traffic :in])]
     (reify ChannelUpstreamHandler
@@ -201,7 +207,7 @@
         (when-let [^ChannelBuffer msg (event-message evt)]
           (enqueue traffic-probe
             {:name pipeline-name
-             :address (event-remote-address evt)
+             :address (socket-address->map (event-remote-address evt))
              :bytes (.readableBytes msg)}))
         (.sendUpstream ctx evt)))))
 
@@ -212,7 +218,7 @@
         (when-let [^ChannelBuffer msg (event-message evt)]
           (enqueue traffic-probe
             {:name pipeline-name
-             :address (event-remote-address evt)
+             :address (socket-address->map (event-remote-address evt))
              :bytes (.readableBytes msg)}))
         (.sendDownstream ctx evt)))))
 
