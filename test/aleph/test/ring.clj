@@ -85,7 +85,8 @@
 		   "/a?a=b&c=d" "a=b&c=d"}]
       (is (= v (request :url (create-url k)))))))
 
-(deftest test-server-name
+;; this isn't always true, depending on the environment
+#_(deftest test-server-name
   (with-server [:server-name]
     (is (= "localhost" (request)))))
 
