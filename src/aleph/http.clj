@@ -29,7 +29,10 @@
   ([request]
      (sync-http-request request nil))
   ([request timeout]
-     @(http-request request timeout)))
+     (try
+       @(http-request request timeout)
+       (catch Exception e
+         (throw (Exception. "HTTP request failed" e))))))
 
 (defn wrap-ring-handler [f]
   (fn [ch request]

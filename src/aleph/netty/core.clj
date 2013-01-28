@@ -117,31 +117,52 @@
 (def-event-accessor event-exception ExceptionEvent .getCause)
 
 (defn wrap-netty-channel-future
-  [^ChannelFuture netty-future]
-  (let [ch (result-channel)]
-    (.addListener netty-future
-      (reify ChannelFutureListener
-	(operationComplete [_ netty-future]
-	  (if (.isSuccess netty-future)
-	    (success ch (.getChannel netty-future))
-	    (error ch (.getCause netty-future)))
-	  nil)))
-    ch))
+  ([netty-future]
+     (wrap-netty-channel-future netty-future nil))
+  ([^ChannelFuture netty-future timeout]
+     (let [ch (expiring-result timeout)
+           latch (atom false)]
+
+       (.addListener netty-future
+         (reify ChannelFutureListener
+           (operationComplete [_ netty-future]
+             (when (compare-and-set! latch false true)
+               (if (.isSuccess netty-future)
+                 (success ch (.getChannel netty-future))
+                 (error ch (.getCause netty-future))))
+             nil)))
+
+       (let [callback (fn [_]
+                        (when (compare-and-set! latch false true)
+                          (.cancel netty-future)))]
+         (on-realized ch callback callback))
+    
+       ch)))
 
 (defn wrap-netty-channel-group-future
-  [^ChannelFuture netty-future]
-  (let [ch (result-channel)]
-    (.addListener netty-future
-      (reify ChannelGroupFutureListener
-	(operationComplete [_ netty-future]
-	  (if (.isCompleteSuccess netty-future)
-	    (success ch (.getGroup netty-future))
-            (error ch
-              (->> netty-future
-                iterator-seq
-                (some #(.getCause ^ChannelFuture %)))))
-	  nil)))
-    ch))
+  ([netty-future]
+     (wrap-netty-channel-group-future netty-future nil))
+  ([^ChannelFuture netty-future timeout]
+     (let [ch (expiring-result timeout)
+           latch (atom false)]
+       (.addListener netty-future
+         (reify ChannelGroupFutureListener
+           (operationComplete [_ netty-future]
+             (when (compare-and-set! latch false true)
+               (if (.isCompleteSuccess netty-future)
+                 (success ch (.getGroup netty-future))
+                 (error ch
+                   (->> netty-future
+                     iterator-seq
+                     (some #(.getCause ^ChannelFuture %))))))
+             nil)))
+
+       (let [callback (fn [_]
+                        (when (compare-and-set! latch false true)
+                          (.cancel netty-future)))]
+         (on-realized ch callback callback))
+    
+       ch)))
 
 ;;;
 

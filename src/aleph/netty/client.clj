@@ -153,9 +153,9 @@
 ;;;
 
 (defn create-client
-  [client-name pipeline-generator options]
+  [client-name pipeline-generator {:keys [scheme timeout] :as options}]
   (let [options (expand-client-options options)
-        ssl? (= "https" (:scheme options))]
+        ssl? (= "https" scheme)]
 
     (let [[a b] (channel-pair)
           channel-group (DefaultChannelGroup.)
@@ -182,7 +182,7 @@
 
       (run-pipeline (.connect client (InetSocketAddress. host port))
         {:error-handler (fn [_])}
-        wrap-netty-channel-future
+        #(wrap-netty-channel-future % timeout)
         (fn [netty-channel]
           (.add channel-group netty-channel)
           b)))))

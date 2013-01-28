@@ -153,13 +153,18 @@
                       responses)]
       (splice responses requests))))
 
-(defn http-connection [options]
+(defn-instrumented http-connection-
+  {:name "aleph:http-connection"}
+  [options timeout]
   (let [client-name (or
                       (:name options)
                       (-> options :client :name)
-                      "http-client")]
+                      "http-client")
+        options (assoc options
+                  :timeout timeout)]
     (run-pipeline nil
-      {:error-handler (fn [_])}
+      {:error-handler (fn [_])
+       :timeout timeout}
       (fn [_]
         (create-client
           client-name
@@ -172,6 +177,13 @@
         (let [ch (wrap-http-client-channel options connection)]
           ch)))))
 
+(defn http-connection
+  "Returns a channel representing an HTTP connection."
+  ([options]
+     (http-connection- options nil))
+  ([options timeout]
+     (http-connection- options timeout)))
+
 (defn http-client [options]
   (client #(http-connection options)))
 
@@ -182,25 +194,32 @@
   {:name "aleph:http-request"}
   [request timeout]
   (let [request (assoc request :keep-alive? false)
-        start (System/currentTimeMillis)]
+        start (System/currentTimeMillis)
+        elapsed (atom nil)]
     (run-pipeline request
-      {:error-handler (fn [_])}
+      {:error-handler (fn [ex]
+                        (when (= :lamina/timeout! ex)
+                          (if-let [elapsed @elapsed]
+                            (complete (TimeoutException. (str "HTTP request timed out, took " elapsed "ms to connect")))
+                            (complete (TimeoutException. "HTTP request timed out trying to establish connection")))))}
       http-connection
       (fn [ch]
-        (let [elapsed (- (System/currentTimeMillis) start)]
-          (run-pipeline ch
-            {:timeout (when timeout (- timeout elapsed))
-             :error-handler (fn [ex] (close ch))}
-            (fn [ch]
-              (enqueue ch request)
-              (read-channel ch))
-            (fn [rsp]
-              (if (channel? (:body rsp))
-                (on-closed (:body rsp) #(close ch))
-                (close ch))
-              rsp)))))))
+        (reset! elapsed (- (System/currentTimeMillis) start))
+        (run-pipeline ch
+          {:timeout (when timeout (- timeout @elapsed))
+           :error-handler (fn [ex] (close ch))}
+          (fn [ch]
+            (enqueue ch request)
+            (read-channel ch))
+          (fn [rsp]
+            (if (channel? (:body rsp))
+              (on-closed (:body rsp) #(close ch))
+              (close ch))
+            rsp))))))
 
 (defn http-request
+  "Takes an HTTP request, formatted per the Ring spec, and returns an async-result
+   representing the server's response."
   ([request]
      (http-request- request nil))
   ([request timeout]
