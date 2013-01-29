@@ -24,7 +24,9 @@
     [org.jboss.netty.bootstrap
      ServerBootstrap]
     [java.net
-     InetSocketAddress]))
+     InetSocketAddress]
+    [org.jboss.netty.handler.execution
+     ExecutionHandler]))
 
 (set! *warn-on-reflection* true)
 
@@ -46,7 +48,8 @@
                           (cached-thread-executor options))
         channel-group (DefaultChannelGroup.)
         server (ServerBootstrap. channel-factory)
-        close-result (result-channel)]
+        close-result (result-channel)
+        execution-handler (-> options :server :execution-handler)]
 
     (doseq [[k v] (:probes options)]
       (run-pipeline close-result (fn [_] (close v)))
@@ -65,6 +68,8 @@
         (future
           (.awaitUninterruptibly close-future)
           (.releaseExternalResources server)
+          (when execution-handler
+            (.releaseExternalResources ^ExecutionHandler execution-handler))
           (success close-result true))))))
 
 ;;;
