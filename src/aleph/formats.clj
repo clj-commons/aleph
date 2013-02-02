@@ -418,7 +418,7 @@
            bytes (map* #(bytes->byte-array % charset) ch)]
 
        (run-pipeline nil
-         {:finally #(.close out)}
+         {:finally #(task (.close out))}
          (fn [_]
            (receive-in-order bytes
              #(task
@@ -459,7 +459,7 @@
            bytes (map* bytes->byte-array ch)]
 
        (run-pipeline nil
-         {:finally #(.close compressor)}
+         {:finally #(task (.close compressor))}
          (fn [_]
            (receive-in-order bytes
              #(task
