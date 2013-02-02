@@ -10,6 +10,7 @@
   aleph.formats
   (:use
     [lamina core]
+    [lamina.executor :only [task]]
     [clojure.data.xml :only [sexp-as-element emit]])
   (:require
     [cheshire.core :as json]
@@ -415,10 +416,12 @@
      (let [out (PipedOutputStream.)
            in (PipedInputStream. out 16384)
            bytes (map* #(bytes->byte-array % charset) ch)]
-       ;; if there are already bytes in there, the resulting flush might
-       ;; block on the write
-       (future (receive-all bytes #(.write out %)))
-       (on-drained bytes #(.close out))
+
+       (run-pipeline nil
+         {:finally #(.close out)}
+         (fn [_]
+           (receive-in-order bytes
+             #(task (.write out %)))))
               
        in)))
 
@@ -448,13 +451,11 @@
            in (PipedInputStream. out)
            compressor (GzipCompressorOutputStream. out)
            ch (bytes->channel bytes charset)]
-       
-       (future
-         (receive-all ch
-           #(.write compressor (bytes->byte-array %)))
 
-         (on-drained ch
-           #(.close compressor)))
+       (run-pipeline nil
+         {:finally #(.close compressor)}
+         (receive-in-order (map* bytes->byte-array %)
+           #(task (.write compressor %))))
 
        in)))
 

@@ -228,7 +228,9 @@
             (enqueue ch* {:msg msg})
             (let [chunks (channel)]
               (reset! current-stream chunks)
-              (enqueue ch* {:msg msg, :chunks chunks})))
+              (enqueue ch*
+                {:msg msg,
+                 :chunks chunks})))
 
           ;; chunk
           (if (.isLast ^HttpChunk msg)
