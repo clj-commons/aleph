@@ -14,10 +14,10 @@
     [clojure.data.xml :only [sexp-as-element emit]])
   (:require
     [cheshire.core :as json]
-    [clojure.xml :as xml])
-  (:require
+    [clojure.xml :as xml]
     [gloss.io :as gloss-io]
-    [gloss.core :as gloss])
+    [gloss.core :as gloss]
+    [clojure.tools.logging :as log])
   (:import
     [java.util.zip
      Deflater
@@ -421,7 +421,12 @@
          {:finally #(.close out)}
          (fn [_]
            (receive-in-order bytes
-             #(task (.write out %)))))
+             #(task
+                (try
+                  (.write out %)
+                  (catch Exception e
+                    (log/error e "error writing to InputStream")
+                    (close bytes)))))))
               
        in)))
 
@@ -450,13 +455,19 @@
      (let [out (PipedOutputStream.)
            in (PipedInputStream. out)
            compressor (GzipCompressorOutputStream. out)
-           ch (bytes->channel bytes charset)]
+           ch (bytes->channel bytes charset)
+           bytes (map* bytes->byte-array ch)]
 
        (run-pipeline nil
          {:finally #(.close compressor)}
          (fn [_]
-           (receive-in-order (map* bytes->byte-array ch)
-             #(task (.write compressor %)))))
+           (receive-in-order bytes
+             #(task
+                (try
+                  (.write compressor %)
+                  (catch Exception e
+                    (log/error e "error gzipping bytes")
+                    (close bytes)))))))
 
        in)))
 
