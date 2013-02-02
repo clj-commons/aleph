@@ -454,8 +454,9 @@
 
        (run-pipeline nil
          {:finally #(.close compressor)}
-         (receive-in-order (map* bytes->byte-array %)
-           #(task (.write compressor %))))
+         (fn [_]
+           (receive-in-order (map* bytes->byte-array ch)
+             #(task (.write compressor %)))))
 
        in)))
 
