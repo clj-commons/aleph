@@ -23,29 +23,33 @@
 
 (defn start-tcp-server [handler options]
   (let [server-name (or
-                      (:name options)
-                      (-> options :server :name)
-                      "tcp-server")]
+                     (:name options)
+                     (-> options :server :name)
+                     "tcp-server")
+        netty-options (:netty-options options)]
     (start-server
-      server-name
-      (fn [channel-group]
+     server-name
+     (fn [channel-group]
+       ((get netty-options :pipeline-transform identity)
         (create-netty-pipeline server-name true channel-group
-          :handler (server-message-handler
-                     (fn [ch x]
-                       (handler (wrap-tcp-channel options ch) x)))))
-      options)))
+                               :handler (server-message-handler
+                                         (fn [ch x]
+                                           (handler (wrap-tcp-channel options ch) x))))))
+     options)))
 
 (defn tcp-client [options]
   (let [client-name (or
                       (:name options)
                       (-> options :client :name)
-                      "tcp-client")]
+                      "tcp-client")
+        netty-options (:netty-options options)]
     (run-pipeline nil
       {:error-handler (fn [_])}
       (fn [_]
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name false channel-group))
+            ((get netty-options :pipeline-transform identity)
+             (create-netty-pipeline client-name false channel-group)))
           options))
       (partial wrap-tcp-channel options))))
