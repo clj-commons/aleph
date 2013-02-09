@@ -73,7 +73,7 @@
                             (let [ch* (result-channel)]
 
                               ;; run the handler
-                              (run-pipeline (dissoc req :keep-alive?)
+                              (run-pipeline req
                                 {:error-handler #(error ch* %)}
                                 #(handler ch* %))
 
