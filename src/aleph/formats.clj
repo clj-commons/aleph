@@ -256,7 +256,7 @@
   ([data ^Boolean url-safe?]
      (when data
        (let [encoder (Base64. -1 (byte-array 0) url-safe?)]
-         (->> data bytes->byte-array (.encode encoder) String.)))))
+         (->> data bytes->byte-array ^bytes (.encode encoder) String.)))))
 
 (defn base64-decode
   "Decodes a base64 encoded string into bytes."
@@ -383,7 +383,7 @@
 		(close ch)
 		(enqueue-and-close ch (ByteBuffer/wrap ary 0 offset)))
 
-	      (recur ary (+ offset byte-count)))))))))
+	      (recur ary (long (+ offset byte-count))))))))))
 
 (defn input-stream->channel
   "Converts an InputStream to a channel that emits bytes. Spawns a separate thread to read
@@ -405,11 +405,7 @@
 	 ch))))
 
 (defn channel->input-stream
-  "Consumes messages from a channel that emits bytes, and feeds them into an InputStream.
-
-   This does not create any threads.  If a blocking read on the InputStream is performed on
-   a thread which is responsible for feeding messages into the channel, this will cause a
-   deadlock."
+  "Consumes messages from a channel that emits bytes, and feeds them into an InputStream."
   ([ch]
      (channel->input-stream ch "utf-8"))
   ([ch charset]
@@ -417,16 +413,14 @@
            in (PipedInputStream. out 16384)
            bytes (map* #(bytes->byte-array % charset) ch)]
 
-       (run-pipeline nil
-         {:finally #(task (.close out))}
-         (fn [_]
-           (receive-in-order bytes
-             #(task
-                (try
-                  (.write out %)
-                  (catch Exception e
-                    (log/error e "error writing to InputStream")
-                    (close bytes)))))))
+       (task
+         (try
+           (loop []
+             (when-let [msg @(read-channel* bytes :on-drained nil)]
+               (.write out ^bytes msg)
+               (recur)))
+           (finally
+             (.close out))))
               
        in)))
 
@@ -464,7 +458,7 @@
            (receive-in-order bytes
              #(task
                 (try
-                  (.write compressor %)
+                  (.write compressor ^bytes %)
                   (catch Exception e
                     (log/error e "error gzipping bytes")
                     (close bytes)))))))

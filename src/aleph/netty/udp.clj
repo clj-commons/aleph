@@ -69,7 +69,7 @@
                       (if auto-encode?
                         (formats/bytes->channel-buffer message)
                         message)
-                      (InetSocketAddress. host port))))))
+                      (InetSocketAddress. ^String host (int port)))))))
             
             ;; lamina -> netty
             (on-drained ch
@@ -83,7 +83,7 @@
         
         ;; handle messages
         (if-let [msg (netty/event-message evt)]
-          (let [origin (netty/event-remote-address evt)
+          (let [^InetSocketAddress origin (netty/event-remote-address evt)
                 host (.getHostAddress (.getAddress origin))
                 port (.getPort origin)
                 msg (if decoder

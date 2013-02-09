@@ -46,7 +46,10 @@
                           (cached-thread-executor options))
         channel-group (DefaultChannelGroup.)
         server (ServerBootstrap. channel-factory)
-        close-result (result-channel)]
+        close-result (result-channel)
+        pipeline-generator (if-let [transform (-> options :netty :pipeline-transform)]
+                             (comp transform pipeline-generator)
+                             pipeline-generator)]
 
     (doseq [[k v] (:probes options)]
       (run-pipeline close-result (fn [_] (close v)))

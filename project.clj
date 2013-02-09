@@ -6,11 +6,11 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"
             :distribution :repo}
   :dependencies [[org.clojure/tools.logging "0.2.3"]
-                 [org.clojure/data.xml "0.0.6"]
+                 [org.clojure/data.xml "0.0.7"]
                  [io.netty/netty "3.6.2.Final"]
                  [lamina "0.5.0-SNAPSHOT"]
                  [gloss "0.2.2-beta5"]
-                 [cheshire "4.0.1"]
+                 [cheshire "5.0.1"]
                  [commons-codec/commons-codec "1.7"]
                  [org.apache.commons/commons-compress "1.4.1"]]
   :exclusions [org.clojure/contrib

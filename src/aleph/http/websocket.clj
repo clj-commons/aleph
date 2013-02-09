@@ -105,7 +105,7 @@
                          (create-server-handshaker msg))]
               (do
                 (reset! handshaker h)
-                (run-pipeline (.handshake @handshaker netty-channel msg)
+                (run-pipeline (.handshake ^WebSocketServerHandshaker @handshaker netty-channel msg)
                   netty/wrap-netty-channel-future
                   (fn [_]
                     (-> ctx

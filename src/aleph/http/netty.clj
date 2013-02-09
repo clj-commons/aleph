@@ -110,7 +110,6 @@
           (when (options/websocket? options)
             (.addBefore pipeline "handler" "websocket"
               (ws/server-handshake-stage handler)))
-          ((get netty-options "pipeline-transform" identity) pipeline)
           pipeline))
       options)))
 
