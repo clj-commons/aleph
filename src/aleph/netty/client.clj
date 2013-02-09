@@ -176,9 +176,13 @@
           (fn [channel-group]
             (let [^ChannelPipeline pipeline (pipeline-generator channel-group)]
               (.addLast pipeline "handler" (client-message-handler a options))
+
               (when ssl?
                 (.addAfter pipeline "incoming-traffic" "ssl" (create-ssl-handler options)))
-              pipeline))))
+
+              (if-let [transform (-> options :netty :pipeline-transform)]
+                (transform pipeline)
+                pipeline)))))
 
       (run-pipeline (.connect client (InetSocketAddress. host port))
         {:error-handler (fn [_])}
