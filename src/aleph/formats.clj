@@ -452,16 +452,14 @@
            ch (bytes->channel bytes charset)
            bytes (map* bytes->byte-array ch)]
 
-       (run-pipeline nil
-         {:finally #(task (.close compressor))}
-         (fn [_]
-           (receive-in-order bytes
-             #(task
-                (try
-                  (.write compressor ^bytes %)
-                  (catch Exception e
-                    (log/error e "error gzipping bytes")
-                    (close bytes)))))))
+       (task
+         (try
+           (loop []
+             (when-let [msg @(read-channel* bytes :on-drained nil)]
+               (.write compressor ^bytes msg)
+               (recur)))
+           (finally
+             (.close compressor))))
 
        in)))
 
