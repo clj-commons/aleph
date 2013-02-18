@@ -9,7 +9,7 @@
 (ns aleph.stomp
   (:use
     [potemkin]
-    [lamina core connections trace])
+    [lamina core connections])
   (:require
     [clojure.string :as str]
     [lamina.cache :as cache]

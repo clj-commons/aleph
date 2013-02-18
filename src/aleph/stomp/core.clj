@@ -108,7 +108,7 @@
 
                 :subscribe
                 (siphon
-                  (c/subscribe outer-router (message-destination msg))
+                  (c/subscribe outer-router (message-destination msg) {})
                   (c/get-or-create bridges (message-id msg) nil)
                   ch)
 
@@ -120,7 +120,7 @@
       c/IRouter
       (inner-cache [_]
         (c/inner-cache inner-router))
-      (subscribe- [_ topic args]
-        (c/subscribe- outer-router topic args)))))
+      (subscribe [_ topic options]
+        (c/subscribe outer-router topic options)))))
 
 ;;;

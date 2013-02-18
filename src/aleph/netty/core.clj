@@ -202,23 +202,25 @@
                 (compare-and-set! open? false channel-open?))
               (do
                 (.add channel-group (.getChannel ^ChannelEvent evt))
-                (enqueue connection-probe
-                  {:name pipeline-name
-                   :connections (+ offset (count channel-group))}))
+                (when (probe-enabled? connection-probe)
+                  (enqueue connection-probe
+                    {:name pipeline-name
+                     :connections (+ offset (count channel-group))})))
 
               (and
                 (not channel-open?)
                 @open? 
                 (compare-and-set! closed? true channel-open?))
-              (enqueue connection-probe
-                {:name pipeline-name
-                 :connections (+ offset (count channel-group))}))))
+              (when (probe-enabled? connection-probe)
+                (enqueue connection-probe
+                  {:name pipeline-name
+                   :connections (+ offset (count channel-group))})))))
         (.sendUpstream ctx evt)))))
 
 (defn socket-address->map [^InetSocketAddress socket-address]
   (when (instance? InetSocketAddress socket-address)
     {:host (.getHostName socket-address)
-     :canonical-host (-> socket-address .getAddress .getCanonicalHostName)
+     ;:canonical-host (-> socket-address .getAddress .getCanonicalHostName)
      :port (.getPort socket-address)}))
 
 (defn upstream-traffic-handler [pipeline-name]
@@ -226,10 +228,11 @@
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
         (when-let [^ChannelBuffer msg (event-message evt)]
-          (enqueue traffic-probe
-            {:name pipeline-name
-             :address (socket-address->map (event-remote-address evt))
-             :bytes (.readableBytes msg)}))
+          (when (probe-enabled? traffic-probe)
+            (enqueue traffic-probe
+              {:name pipeline-name
+               :address (socket-address->map (event-remote-address evt))
+               :bytes (.readableBytes msg)})))
         (.sendUpstream ctx evt)))))
 
 (defn downstream-traffic-handler [pipeline-name]
@@ -237,10 +240,11 @@
     (reify ChannelDownstreamHandler
       (handleDownstream [_ ctx evt]
         (when-let [^ChannelBuffer msg (event-message evt)]
-          (enqueue traffic-probe
-            {:name pipeline-name
-             :address (socket-address->map (event-remote-address evt))
-             :bytes (.readableBytes msg)}))
+          (when (probe-enabled? traffic-probe)
+            (enqueue traffic-probe
+              {:name pipeline-name
+               :address (socket-address->map (event-remote-address evt))
+               :bytes (.readableBytes msg)})))
         (.sendDownstream ctx evt)))))
 
 

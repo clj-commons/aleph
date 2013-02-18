@@ -11,7 +11,7 @@
     [clojure test]
     [aleph stomp tcp]
     [aleph.test utils]
-    [lamina core connections trace executor]))
+    [lamina core connections executor]))
 
 ;;;
 
@@ -45,14 +45,6 @@
        ~@body
        (finally
          (stop-server#)))))
-
-(defn probe-producer [id]
-  (map*
-    (fn [msg]
-      {:command :send
-       :headers {"destination" id}
-       :body (pr-str msg)})
-    (probe-channel id)))
 
 ;;;
 
