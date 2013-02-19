@@ -98,11 +98,10 @@
             
             (Thread/sleep 250)
 
-            ;; block on this publish, so there's a strict ordering
-            @(publish c1 "def" 6)
+            (publish c1 "def" 6)
             (publish c2 "def" 7)
-            (is (= [6 7] [(consume b) (consume b)]))
-            (is (= [6 7] [(consume c) (consume c)]))))))))
+            (is (= #{6 7} (set [(consume b) (consume b)])))
+            (is (= #{6 7} (set [(consume c) (consume c)])))))))))
 
 ;;;
 
