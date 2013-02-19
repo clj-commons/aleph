@@ -240,6 +240,21 @@
 
 ;;;
 
+(def request-keys
+  #{:scheme
+    :keep-alive? 
+    :remote-addr 
+    :server-name 
+    :server-port 
+    :request-method 
+    :headers 
+    :content-type 
+    :character-encoding 
+    :uri
+    :query-string 
+    :content-length
+    :body})
+
 (def-map-type RequestMap
   [^HttpRequest netty-request
    ^Channel netty-channel
@@ -249,7 +264,7 @@
   (get [_ k default-value]
     (if (and ext
           (contains? ext k))
-      (get ext k default-value)
+      (ext k default-value)
       (case k
         :scheme :http
         :keep-alive? (HttpHeaders/isKeepAlive netty-request)
@@ -284,19 +299,9 @@
         body)
       (dissoc (into {} this) k)))
   (keys [this]
-    #{:scheme
-      :keep-alive? 
-      :remote-addr 
-      :server-name 
-      :server-port 
-      :request-method 
-      :headers 
-      :content-type 
-      :character-encoding 
-      :uri
-      :query-string 
-      :content-length
-      :body}))
+    (concat
+      request-keys
+      (keys ext))))
 
 (defn netty-request->ring-map [{netty-request :msg, chunks :chunks}]
   (RequestMap.
