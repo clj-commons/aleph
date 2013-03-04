@@ -290,7 +290,7 @@
   (dissoc [this k]
     (if (and ext
           (contains? ext k)
-          (not (contains? (keys this) k)))
+          (not (contains? request-keys k)))
       (RequestMap.
         netty-request
         netty-channel
