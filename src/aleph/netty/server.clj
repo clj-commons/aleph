@@ -40,7 +40,7 @@
    "child.tcpNoDelay" true})
 
 (defn start-server [server-name pipeline-generator options]
-  (let [port (:port options)
+  (let [{:keys [port host]} options
         channel-factory (NioServerSocketChannelFactory.
                           (cached-thread-executor options)
                           (cached-thread-executor options))
@@ -61,7 +61,7 @@
     (doseq [[k v] (merge default-server-options (-> options :netty :options))]
       (.setOption server k v))
 
-    (.add channel-group (.bind server (InetSocketAddress. port)))
+    (.add channel-group (.bind server (if host (InetSocketAddress. host port) (InetSocketAddress. port))))
 
     (fn []
       (let [close-future (.close channel-group)]

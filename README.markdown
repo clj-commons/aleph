@@ -11,8 +11,8 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 
 ```clj
 (defproject my-project "1.0.0"
-  :dependencies [[org.clojure/clojure "1.4.0"]
-                 [aleph "0.3.0-beta7"]])
+  :dependencies [[org.clojure/clojure "1.5.0"]
+                 [aleph "0.3.0-beta14"]])
 ```
 
 ## Code examples ##
