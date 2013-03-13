@@ -8,7 +8,7 @@
   :dependencies [[org.clojure/tools.logging "0.2.3"]
                  [org.clojure/data.xml "0.0.7"]
                  [io.netty/netty "3.6.2.Final"]
-                 [lamina "0.5.0-beta13"]
+                 [lamina "0.5.0-SNAPSHOT"]
                  [gloss "0.2.2-beta5"]
                  [cheshire "5.0.1"]
                  [commons-codec/commons-codec "1.7"]
