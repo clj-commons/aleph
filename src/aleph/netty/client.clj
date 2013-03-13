@@ -189,4 +189,4 @@
         #(wrap-netty-channel-future % timeout)
         (fn [netty-channel]
           (.add channel-group netty-channel)
-          b)))))
+          (wrap-network-channel netty-channel b))))))

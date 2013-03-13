@@ -21,6 +21,10 @@
 (import-fn core/wrap-netty-channel-future)
 (import-fn core/event-message)
 
+(import-fn core/wrap-network-channel)
+(import-fn core/set-channel-readable)
+(import-fn core/network-channel->netty-channel)
+
 (import-macro core/create-netty-pipeline)
 
 (import-fn core/current-options)

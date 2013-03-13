@@ -215,7 +215,7 @@
                 final-stage))))))
     ch*))
 
-(defn collapse-reads [ch]
+(defn collapse-reads [netty-channel ch]
   (let [executor (options/executor)
         ch* (channel)
         current-stream (atom nil)]
@@ -226,7 +226,7 @@
           ;; headers
           (if-not (.isChunked ^HttpMessage msg)
             (enqueue ch* {:msg msg})
-            (let [chunks (channel)]
+            (let [chunks (netty/wrap-network-channel netty-channel (channel))]
               (reset! current-stream chunks)
               (enqueue ch*
                 {:msg msg,

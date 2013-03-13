@@ -93,6 +93,22 @@
 
 ;;;
 
+(defn network-channel->netty-channel [ch]
+  (-> ch meta :aleph/netty-channel))
+
+(defn set-channel-readable [ch readable?]
+  (if-let [^Channel netty-channel (network-channel->netty-channel ch)]
+    (do
+      (.setReadable netty-channel readable?)
+      true)
+    false))
+
+(defn wrap-network-channel [^Channel netty-channel channel]
+  (with-meta channel
+    (merge
+      (meta channel)
+      {:aleph/netty-channel netty-channel})))
+
 (defn channel-remote-host-address [^Channel channel]
   (when-let [socket-address (.getRemoteAddress channel)]
     (when-let [inet-address (.getAddress ^InetSocketAddress socket-address)]

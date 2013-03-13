@@ -61,7 +61,11 @@
     (doseq [[k v] (merge default-server-options (-> options :netty :options))]
       (.setOption server k v))
 
-    (.add channel-group (.bind server (if host (InetSocketAddress. host port) (InetSocketAddress. port))))
+    (.add channel-group
+      (.bind server
+        (if host
+          (InetSocketAddress. ^String host (long port))
+          (InetSocketAddress. (long port)))))
 
     (fn []
       (let [close-future (.close channel-group)]
@@ -102,7 +106,9 @@
 
                            ;; call handler
                            (let [remote-address (channel-remote-host-address netty-channel)]
-                             (handler b {:address remote-address}))))]
+                             (handler
+                               (wrap-network-channel netty-channel b)
+                               {:address remote-address}))))]
 
        (when netty-channel (initializer netty-channel))
 

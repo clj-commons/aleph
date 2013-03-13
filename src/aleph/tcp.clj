@@ -15,11 +15,13 @@
      ClosedChannelException]))
 
 (defn- wrap-tcp-channel [options ch]
-  (wrap-socket-channel
-    options
-    (let [ch* (channel)]
-      (join (map* bytes->channel-buffer ch*) ch)
-      (splice ch ch*))))
+  (with-meta
+    (wrap-socket-channel
+      options
+      (let [ch* (channel)]
+        (join (map* bytes->channel-buffer ch*) ch)
+        (splice ch ch*)))
+    (meta ch)))
 
 (defn start-tcp-server [handler options]
   (let [server-name (or

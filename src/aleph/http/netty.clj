@@ -40,7 +40,8 @@
 ;;;
 
 (defn wrap-http-server-channel [options ch]
-  (let [responses (channel)
+  (let [netty-channel (netty/network-channel->netty-channel ch)
+        responses (channel)
         auto-decode? (options/auto-decode?)]
 
     ;; transform responses
@@ -50,7 +51,7 @@
 
     ;; transform requests
     (let [requests (->> ch
-                     http/collapse-reads
+                     (http/collapse-reads netty-channel)
                      (map* http/netty-request->ring-map))
           requests (if auto-decode?
                      (map* http/decode-message requests)
@@ -116,7 +117,8 @@
 ;;;
 
 (defn wrap-http-client-channel [options ch]
-  (let [requests (channel)
+  (let [netty-channel (netty/network-channel->netty-channel ch)
+        requests (channel)
         options (client/expand-client-options options)
         auto-decode? (options/auto-decode? options)]
 
@@ -134,7 +136,7 @@
 
     ;; transform responses
     (let [responses (->> ch
-                      http/collapse-reads
+                      (http/collapse-reads netty-channel)
                       (map* http/netty-response->ring-map)
                       (map* #(dissoc % :keep-alive?)))
           responses (if auto-decode?
@@ -168,7 +170,7 @@
         (create-client
           client-name
           (fn [channel-group]
-            (create-netty-pipeline client-name false channel-group
+           (create-netty-pipeline client-name false channel-group
               :codec (HttpClientCodec.)
               :inflater (HttpContentDecompressor.)))
           options))
