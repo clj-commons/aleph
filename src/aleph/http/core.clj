@@ -240,74 +240,30 @@
 
 ;;;
 
-(def request-keys
-  #{:scheme
-    :keep-alive? 
-    :remote-addr 
-    :server-name 
-    :server-port 
-    :request-method 
-    :headers 
-    :content-type 
-    :character-encoding 
-    :uri
-    :query-string 
-    :content-length
-    :body})
-
-(def-map-type RequestMap
+(def-derived-map RequestMap
   [^HttpRequest netty-request
    ^Channel netty-channel
-   ext
    headers
    body]
-  (get [_ k default-value]
-    (if (and ext
-          (contains? ext k))
-      (ext k default-value)
-      (case k
-        :scheme :http
-        :keep-alive? (HttpHeaders/isKeepAlive netty-request)
-        :remote-addr (netty/channel-remote-host-address netty-channel)
-        :server-name (netty/channel-local-host-name netty-channel)
-        :server-port (netty/channel-local-port netty-channel)
-        :request-method (request-method netty-request)
-        :headers @headers
-        :content-type (http-content-type netty-request)
-        :character-encoding (http-character-encoding netty-request)
-        :uri (request-uri netty-request)
-        :query-string (request-query-string netty-request)
-        :content-length (http-content-length netty-request)
-        :body body
-        default-value)))
-  (assoc [this k v]
-    (RequestMap.
-      netty-request
-      netty-channel
-      (assoc ext k v)
-      headers
-      body))
-  (dissoc [this k]
-    (if (and ext
-          (contains? ext k)
-          (not (contains? request-keys k)))
-      (RequestMap.
-        netty-request
-        netty-channel
-        (dissoc ext k)
-        headers
-        body)
-      (dissoc (into {} this) k)))
-  (keys [this]
-    (concat
-      request-keys
-      (keys ext))))
+  
+  :scheme :http
+  :keep-alive? (HttpHeaders/isKeepAlive netty-request)
+  :remote-addr (netty/channel-remote-host-address netty-channel)
+  :server-name (netty/channel-local-host-name netty-channel)
+  :server-port (netty/channel-local-port netty-channel)
+  :request-method (request-method netty-request)
+  :headers @headers
+  :content-type (http-content-type netty-request)
+  :character-encoding (http-character-encoding netty-request)
+  :uri (request-uri netty-request)
+  :query-string (request-query-string netty-request)
+  :content-length (http-content-length netty-request)
+  :body body)
 
 (defn netty-request->ring-map [{netty-request :msg, chunks :chunks}]
-  (RequestMap.
+  (->RequestMap
     netty-request
     (netty/current-channel)
-    nil
     (delay (http-headers netty-request))
     (if chunks
       (map* #(.getContent ^HttpChunk %) chunks)
@@ -317,32 +273,21 @@
 
 ;;;
 
-(def-map-type ResponseMap [^HttpRequest netty-response headers body]
-  (get [_ k default-value]
-    (case k
-      :keep-alive? (HttpHeaders/isKeepAlive netty-response)
-      :headers @headers
-      :character-encoding (http-character-encoding netty-response)
-      :content-type (http-content-type netty-response)
-      :content-length (http-content-length netty-response)
-      :status (response-code netty-response)
-      :body body
-      default-value))
-  (assoc [this k v]
-    (assoc (into {} this) k v))
-  (dissoc [this k]
-    (dissoc (into {} this) k))
-  (keys [this]
-    [:keep-alive? 
-     :headers 
-     :character-encoding 
-     :content-type 
-     :content-length 
-     :status 
-     :body]))
+(def-derived-map ResponseMap
+  [^HttpRequest netty-response
+   headers
+   body]
+  
+  :keep-alive? (HttpHeaders/isKeepAlive netty-response)
+  :headers @headers
+  :character-encoding (http-character-encoding netty-response)
+  :content-type (http-content-type netty-response)
+  :content-length (http-content-length netty-response)
+  :status (response-code netty-response)
+  :body body)
 
 (defn netty-response->ring-map [{netty-response :msg, chunks :chunks}]
-  (ResponseMap.
+  (->ResponseMap
     netty-response
     (delay (http-headers netty-response))
     (if chunks

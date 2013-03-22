@@ -14,7 +14,9 @@
     [clojure.string :as str]
     [aleph.tcp :as tcp]
     [aleph.stomp.codec :as codec]
-    [lamina.cache :as c]))
+    [lamina.cache :as c])
+  (:import
+    [lamina.cache IRouter]))
 
 ;;;
 
@@ -117,7 +119,7 @@
 
                 nil)))))
 
-      c/IRouter
+      IRouter
       (inner-cache [_]
         (c/inner-cache inner-router))
       (subscribe [_ topic options]
