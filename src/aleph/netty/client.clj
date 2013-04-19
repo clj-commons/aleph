@@ -14,7 +14,8 @@
     [clojure.tools.logging :as log])
   (:import
     [java.util.concurrent
-     Executors]
+     Executors
+     ThreadFactory]
     [org.jboss.netty.channel
      ChannelPipeline
      ChannelUpstreamHandler
@@ -83,11 +84,23 @@
    "readWriteFair" true,
    "connectTimeoutMillis" 3000})
 
+(def thread-factory
+  (reify ThreadFactory
+    (newThread [_ runnable]
+      (doto
+        (Thread.
+          (fn []
+            (try
+              (.run ^Runnable runnable)
+              (catch Throwable e
+                (log/error e (str "error in I/O thread"))))))
+        (.setDaemon true)))))
+
 (def channel-factory
   (delay
     (NioClientSocketChannelFactory. 
-      (Executors/newCachedThreadPool)
-      (Executors/newCachedThreadPool))))
+      (Executors/newCachedThreadPool thread-factory)
+      (Executors/newCachedThreadPool thread-factory))))
 
 (defn client-message-handler [ch options]
   (let [latch (atom false)]
