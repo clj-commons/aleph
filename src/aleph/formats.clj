@@ -10,7 +10,6 @@
   aleph.formats
   (:use
     [lamina core]
-    [lamina.executor :only [task]]
     [clojure.data.xml :only [sexp-as-element emit]])
   (:require
     [cheshire.core :as json]
@@ -413,7 +412,7 @@
            in (PipedInputStream. out 16384)
            bytes (map* #(bytes->byte-array % charset) ch)]
 
-       (task
+       (future
          (try
            (loop []
              (when-let [msg @(read-channel* bytes :on-drained nil)]
@@ -452,7 +451,7 @@
            ch (bytes->channel bytes charset)
            bytes (map* bytes->byte-array ch)]
 
-       (task
+       (future
          (try
            (loop []
              (when-let [msg @(read-channel* bytes :on-drained nil)]

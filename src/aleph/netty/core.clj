@@ -239,7 +239,7 @@
      ;:canonical-host (-> socket-address .getAddress .getCanonicalHostName)
      :port (.getPort socket-address)}))
 
-(defn upstream-traffic-handler [pipeline-name]
+(defn upstream-traffic-handler ^ChannelUpstreamHandler [pipeline-name]
   (let [traffic-probe (probe-channel [pipeline-name :traffic :in])]
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
@@ -251,7 +251,7 @@
                :bytes (.readableBytes msg)})))
         (.sendUpstream ctx evt)))))
 
-(defn downstream-traffic-handler [pipeline-name]
+(defn downstream-traffic-handler ^ChannelDownstreamHandler [pipeline-name]
   (let [traffic-probe (probe-channel [pipeline-name :traffic :out])]
     (reify ChannelDownstreamHandler
       (handleDownstream [_ ctx evt]

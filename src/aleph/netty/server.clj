@@ -108,19 +108,33 @@
                            (let [remote-address (channel-remote-host-address netty-channel)]
                              (handler
                                (wrap-network-channel netty-channel b)
-                               {:address remote-address}))))]
+                               {:address remote-address}))))
 
-       (when netty-channel (initializer netty-channel))
+           ;; if we already have the channel, just initialize it now
+           initializer (if netty-channel
+                         (do
+                           (initializer netty-channel)
+                           nil)
+                         initializer)]
 
        (reify ChannelUpstreamHandler
          (handleUpstream [_ ctx evt]
 
            (let [netty-channel (.getChannel ctx)]
+
              (.set local-channel netty-channel)
-             (initializer netty-channel))
+
+             (try
+
+               (when initializer
+                 (initializer netty-channel))
         
-           ;; handle messages
-           (if-let [msg (event-message evt)]
-             (enqueue a msg)
-             (.sendUpstream ctx evt)))))))
+               ;; handle messages
+               (if-let [msg (event-message evt)]
+                 (enqueue a msg)
+                 (.sendUpstream ctx evt))
+
+               ;; don't hold onto channel
+               (finally
+                 (.set local-channel nil)))))))))
 
