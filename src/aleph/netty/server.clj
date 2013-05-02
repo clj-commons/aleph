@@ -136,5 +136,5 @@
 
                ;; don't hold onto channel
                (finally
-                 (.set local-channel nil)))))))))
+                 #_(.set local-channel nil)))))))))
 
