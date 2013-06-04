@@ -20,6 +20,7 @@
         c @(udp-socket {:frame (string :utf-8) :port 2223})
         d @(udp-socket {:frame (string :utf-8)})
         e @(udp-socket)
+        g @(udp-socket {:broadcast true})
         object-msg [{:a 1} "asdf" 23.3]
 	text-msg (->> "a" (repeat 1e3) (apply str))] 
     (try
@@ -29,10 +30,13 @@
       (is (= text-msg (:message (wait-for-message c 2000))))
       (enqueue e {:message text-msg :host "localhost" :port 2223})
       (is (= text-msg (:message (wait-for-message c 2000))))
+      (enqueue g {:message text-msg :host "255.255.255.255" :port 2223})
+      (is (= text-msg (:message (wait-for-message c 2000))))
       (finally
         (close b)
         (close d)
         (close e)
+        (close g)
         (close a)
         (close c)))))
 
