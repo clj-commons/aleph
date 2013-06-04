@@ -348,8 +348,16 @@
           (HttpHeaders/setContentLength msg (.readableBytes (.getContent msg))))
         {:msg msg}))))
 
+(defn valid-ring-response? [rsp]
+  (contains? rsp :status))
+
 (defn ring-map->netty-response [m]
-  (let [m (normalize-ring-map m)
+  (let [m (if-not (valid-ring-response? m)
+            (do
+              (log/error "Invalid HTTP response:" (pr-str m))
+              {:status 500})
+            m)
+        m (normalize-ring-map m)
         m (update-in m [:body] #(if (nil? %) "" %))
         response (DefaultHttpResponse.
                    HttpVersion/HTTP_1_1
@@ -366,9 +374,13 @@
       (and (= "http" scheme) (= 80 port))
       (and (= "https" scheme) (= 443 port)))))
 
+(defn valid-ring-request? [rsp]
+  (contains? rsp :request-method))
+
 (defn ring-map->netty-request [m]
-  (let [m (-> m
-            normalize-ring-map)
+  (when-not (valid-ring-request? m)
+    (throw (IllegalArgumentException. (str "Invalid HTTP request: " (pr-str m)))))
+  (let [m (normalize-ring-map m)
         request (DefaultHttpRequest.
                   HttpVersion/HTTP_1_1
                   (-> m :request-method keyword->netty-method)

@@ -174,7 +174,7 @@
 (defn create-client
   [client-name pipeline-generator options]
   (let [{:keys [scheme timeout] :as options} (expand-client-options options)
-        ssl? (= "https" scheme)]
+        ssl? (or (:ssl? options) (#{"https" "wss"} scheme))]
 
     (let [[a b] (channel-pair)
           channel-group (DefaultChannelGroup.)
