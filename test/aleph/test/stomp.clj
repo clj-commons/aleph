@@ -59,8 +59,8 @@
    {:command :heartbeat}])
 
 (deftest test-basic-echo
-  (with-server basic-echo-handler 10000
-    (with-stomp-connection [c] 10000
+  (with-server basic-echo-handler 10001
+    (with-stomp-connection [c] 10001
       (doseq [m (->> messages
                   (repeat 10)
                   (apply concat))]
@@ -69,8 +69,8 @@
 ;;;
 
 (deftest test-basic-router
-  (with-router 10000
-    (with-stomp-client [c1] 10000
+  (with-router 10001
+    (with-stomp-client [c1] 10001
       (let [{a :messages} (subscribe c1 "abc")
             {b :messages} (subscribe c1 "def")
             consume #(-> % read-channel (wait-for-result 2500) :body read-string)]
@@ -89,7 +89,7 @@
         (publish c1 "def" 4)
         (is (= 4 (consume b)))
 
-        (with-stomp-client [c2] 10000
+        (with-stomp-client [c2] 10001
 
           (publish c2 "def" 5)
           (is (= 5 (consume b)))
@@ -107,16 +107,16 @@
 
 (deftest ^:benchmark test-stomp-roundtrip
   (let [msg (first messages)]
-    (with-server basic-echo-handler 10000
-      (with-stomp-connection [c] 10000
+    (with-server basic-echo-handler 10001
+      (with-stomp-connection [c] 10001
         (bench "simple stomp roundtrip"
           @(c msg))
         (bench "1e3 stomp roundtrips"
           @(apply merge-results (repeatedly 1e3 #(c msg))))))))
 
 (deftest ^:benchmark test-router-roundtrip
-  (with-router 10000
-    (with-stomp-client [c] 10000
+  (with-router 10001
+    (with-stomp-client [c] 10001
       (let [{ch :messages} (subscribe c "abc")]
         (Thread/sleep 500)
         (bench "stomp router roundtrip"
