@@ -93,6 +93,12 @@
 
 ;;;
 
+(defn close-channel [^Channel netty-channel]
+  (try
+    (.close netty-channel)
+    (catch Throwable _
+      )))
+
 (defn network-channel->netty-channel [ch]
   (-> ch meta :aleph/netty-channel))
 

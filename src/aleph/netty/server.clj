@@ -88,14 +88,15 @@
                            (on-error a
                              (fn [ex]
                                (log/error ex "Error in server handler, closing connection.")
-                               (.close netty-channel)))
+                               (close-channel netty-channel)))
                            
                            ;; set up write handling
                            (receive-all a
                              #(wrap-netty-channel-future (.write netty-channel %)))
                            
                            ;; lamina -> netty
-                           (on-drained a #(.close netty-channel))
+                           (on-drained a
+                             #(close-channel netty-channel))
                            
                            ;; netty -> lamina
                            (run-pipeline (.getCloseFuture netty-channel)

@@ -120,7 +120,7 @@
              (on-error ch
                (fn [ex]
                  (log/error ex)
-                 (.close netty-channel)))
+                 (close-channel netty-channel)))
 
              ;; set up write handling
              (receive-all ch
@@ -128,7 +128,7 @@
             
              ;; lamina -> netty
              (on-drained ch
-               #(.close netty-channel))
+               #(close-channel netty-channel))
             
              ;; netty -> lamina
              (run-pipeline (.getCloseFuture netty-channel)
