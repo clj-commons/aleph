@@ -113,11 +113,11 @@
 
 (def transform-request
   (-> identity
-    wrap-nested-params
     wrap-form-params
     wrap-method
     wrap-basic-auth
     wrap-user-info
-    wrap-query-params))
+    wrap-query-params
+    wrap-nested-params))
 
 
