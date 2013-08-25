@@ -42,6 +42,12 @@
   ([options]
      (boolean (or (:websocket options) (:websocket? options)))))
 
+(defn websocket-handshake-handler
+  ([]
+     (websocket-handshake-handler (current-options)))
+  ([options]
+     (:websocket-handshake-handler options)))
+
 (defn executor
   ([]
      (executor (current-options)))

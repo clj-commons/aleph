@@ -27,6 +27,14 @@
 		   })
      ~@body))
 
+(defmacro with-rejecting-handler [handler & body]
+  `(with-server (start-http-server ~handler
+		  {:port 8008
+                   :websocket true
+                   :websocket-handshake-handler (fn [ch# _#] (enqueue ch# {:status 404}))
+		   })
+     ~@body))
+
 (defn echo-handler [ch req]
   (siphon ch ch))
 
@@ -40,6 +48,10 @@
         (enqueue ch "a")
         (is (= "a" (wait-for-result (read-channel ch) 500))))
       (close ch))))
+
+(deftest test-handshake-handler
+  (with-rejecting-handler echo-handler
+    (is (thrown? Exception (wait-for-result (ws-client) 1000)))))
 
 ;;;
 

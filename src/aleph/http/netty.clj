@@ -110,7 +110,7 @@
                                         channel-handler))))]
           (when (options/websocket? options)
             (.addBefore pipeline "handler" "websocket"
-              (ws/server-handshake-stage handler)))
+              (ws/server-handshake-stage (options/websocket-handshake-handler) handler)))
           pipeline))
       options)))
 

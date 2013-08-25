@@ -88,7 +88,7 @@
     :else
     false))
 
-(defn server-handshake-stage [handler]
+(defn server-handshake-stage [handshake-handler handler]
   (let [latch (atom false)
         handshaker (atom nil)]
     (reify ChannelUpstreamHandler
@@ -103,22 +103,39 @@
             (if-let [h (and
                          (compare-and-set! latch false true)
                          (create-server-handshaker msg))]
-              (do
-                (reset! handshaker h)
-                (run-pipeline (.handshake ^WebSocketServerHandshaker @handshaker netty-channel msg)
-                  netty/wrap-netty-channel-future
-                  (fn [_]
-                    (-> ctx
-                      .getPipeline
-                      (.replace "handler" "handler"
-                        (netty/server-message-handler
-                          (fn [ch _]
-                            (handler
-                              (wrap-websocket-channel ch)
-                              (assoc (http/netty-request->ring-map {:msg msg})
-                                :websocket true ;; deprecated
-                                :websocket? true)))
-                          netty-channel))))))
+              (let [req (assoc (http/netty-request->ring-map {:msg msg})
+                          :websocket true ;; deprecated
+                          :websocket? true)]
+                (run-pipeline (if handshake-handler
+                                (let [ch (result-channel)]
+                                  (handshake-handler ch req)
+                                  ch)
+                                {:status 101})
+                  (fn [{:keys [status] :as rsp}]
+                    (if-not (= 101 status)
+
+                      ;; we've rejected the request, send the response and close the connection
+                      (run-pipeline (.write netty-channel (:msg (http/ring-map->netty-response rsp)))
+                        {:error-handler (fn [_])}
+                        netty/wrap-netty-channel-future
+                        (fn [_]
+                          (.close netty-channel)))
+
+                      ;; proceed with the handshake
+                      (do
+                        (reset! handshaker h)
+                        (run-pipeline (.handshake ^WebSocketServerHandshaker @handshaker netty-channel msg)
+                          netty/wrap-netty-channel-future
+                          (fn [_]
+                            (-> ctx
+                              .getPipeline
+                              (.replace "handler" "handler"
+                                (netty/server-message-handler
+                                  (fn [ch _]
+                                    (handler
+                                      (wrap-websocket-channel ch)
+                                      req))
+                                  netty-channel))))))))))
               
               (when-not (and
                           @handshaker
@@ -153,12 +170,15 @@
           ;; handle response
           (let [msg (netty/event-message evt)]
             (if (and msg (compare-and-set! response-latch false true))
-              (do
-                (.finishHandshake handshaker netty-channel msg)
-                (-> ctx
-                  .getPipeline
-                  (.remove "handshaker"))
-                (success result true))
+              (run-pipeline nil
+                {:result result
+                 :error-handler (fn [_])}
+                (fn [_]
+                  (.finishHandshake handshaker netty-channel msg)
+                  (-> ctx
+                    .getPipeline
+                    (.remove "handshaker"))
+                  true))
               (.sendUpstream ctx evt))))))))
 
 (defn websocket-client [options]

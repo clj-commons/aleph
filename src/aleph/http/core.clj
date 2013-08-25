@@ -130,6 +130,7 @@
 (defn normalize-ring-map [m]
   (let [[type encoding] (guess-body-format m)]
     (-> m
+      (update-in [:status] #(or % 200))
       (update-in [:headers] normalize-headers)
       (update-in [:headers "Connection"]
         #(or %
