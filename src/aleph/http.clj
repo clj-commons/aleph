@@ -6,121 +6,91 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any other, from this software.
 
-(ns ^{:author "Zachary Tellman"}
-  aleph.http
-  (:use
-    [aleph formats]
-    [lamina.core]
-    [potemkin])
+(ns aleph.http
   (:require
-    [aleph.http.server :as server]
-    [aleph.http.client :as client]
-    [aleph.http.utils :as utils])
-  (:import
-    [java.io InputStream]))
+    [aleph.http.websocket :as ws]
+    [aleph.http.netty :as http]
+    [aleph.formats :as formats]
+    [aleph.http.options :as options])
+  (:use
+    [lamina core executor]
+    [potemkin]))
 
-(import-fn server/start-http-server)
-(import-fn client/http-client)
-(import-fn client/pipelined-http-client)
-(import-fn client/http-request)
+(import-fn ws/websocket-client)
+
+(import-fn http/start-http-server)
+
+(import-fn http/http-connection)
+(import-fn http/http-client)
+(import-fn http/pipelined-http-client)
+(import-fn http/http-request)
 
 (defn sync-http-request
-  "A synchronous version of http-request.  Halts the thread until the response has returned,
-   and throws an exception if the timeout elapsed or another error occurred."
+  "Issues a synchronous HTTP request, with the request object based upon the Ring spec,
+   with the augmentations used by clj-http."
   ([request]
-     (sync-http-request request -1))
+     (sync-http-request request nil))
   ([request timeout]
-     @(http-request request timeout)))
+     (try
+       @(http-request request timeout)
+       (catch Exception e
+         (throw (Exception. "HTTP request failed" e))))))
+
+(defn wrap-ring-handler
+  "Takes a normal Ring handler, and turns it into a handler that can be consumed by Aleph's
+   start-http-server.  If the Ring handler returns an async-promise, this will be handled properly
+   and sent along as a long-poll response whenever it is realized.
+
+   This should be the outermost middleware around your function.  To use an Aleph handler at a
+   particular endpoint within the scope of this middleware, use wrap-aleph-handler."
+  [f]
+  (fn [ch request]
+    (run-pipeline request
+      {:error-handler (fn [ex] (error ch ex))} 
+
+      ;; call into handler
+      (fn [{:keys [body content-type character-encoding] :as request}]
+        (if (channel? body) 
+
+          (if (options/channel-ring-requests? request)
+
+            ;; leave channels as is
+            (f (assoc request ::channel ch))
+
+            ;; move onto another thread, since there will be blocking reads
+            (task "input-stream-reader"
+              (f (assoc request
+                   ::channel ch
+                   :body (formats/channel->input-stream body character-encoding)))))
+
+          (f (assoc request
+               ::channel ch
+               :body (formats/bytes->input-stream body character-encoding)))))
+
+      ;; send response
+      (fn [response]
+        (when-not (::ignore response)
+          (enqueue ch response))))))
 
 (defn wrap-aleph-handler
-  "Allows for an asynchronous handler to be used within a largely synchronous application.
-   Assuming the top-level handler has been wrapped in wrap-ring-handler, this function can be
-   used to wrap handler functions for asynchronous routes."
+  "Allows a 2-arity Aleph handler to be used within the scope of wrap-ring-handler."
   [f]
   (fn [request]
-    (f (:channel request) (dissoc request :channel))
+    (f (::channel request) (dissoc request ::channel))
     {:status 200
      ::ignore true}))
 
-(defn request-params
-  "Returns a result-channel representing the merged query and body parameters in the request.
-
-   The result-channel will be immediately realized if the request is not chunked, but if the
-   request is chunked then synchronously waiting on the result inside the handler will cause
-   issues.  You may synchrously wait on the result in a different thread, but the recommended
-   approach is do something like:
-
-   (run-pipeline (request-params request)
-     (fn [params]
-       ... handle request here ...))
-
-   or to wrap your code in the (async ...) macro."
-  ([request]
-     (request-params request nil))
-  ([request options]
-     (run-pipeline (utils/body-params request options)
-       #(merge (utils/query-params request options) %))))
-
-(defn request-cookie
-  "Returns a hash of the values within the request's cookie."
-  [request]
-  (utils/cookie->hash (get-in request [:headers "cookie"])))
-
-(defn request-client-info
-  "Returns information about the client, based on the 'User-Agent' header in the request."
-  [request]
-  (utils/parse-user-agent (get-in request [:headers "user-agent"])))
-
-(defn request-body->input-stream
-  "Returns a result-channel which will emit the request with an InputStream or nil as the
-   body.
-
-   The result-channel will be immediately realized if the request is not chunked, but if
-   the request is chunked then synchronously waiting on the result inside the handler will
-   cause issues.  You may synchronously wait on the result in a different thread, but the
-   recommended approach is to structure your handler like:
-
-   (defn handler [ch request]
-     (run-pipeline (request-body->input-stream request)
-       (fn [request]
-         ... middleware and routing goes here ...)))
-
-   or to use the (async ...) macro."
-  [request]
-  (let [body (:body request)]
-    (cond
-      (instance? InputStream body)
-      (run-pipeline request)
-      
-      (or (nil? body) (and (sequential? body) (empty? body)))
-      (run-pipeline request)
-      
-      (bytes? body)
-      (run-pipeline
-	(assoc request :body (-> body bytes->input-stream)))
-
-      (channel? body)
-      (run-pipeline (reduce* conj [] body)
-	#(assoc request :body (-> % bytes->input-stream)))
-
-      :else
-      (run-pipeline request))))
-
-(defn wrap-ring-handler
-  "Wraps a synchronous Ring handler, such that it can be used in start-http-server.  If certain
-   routes within the application are asynchronous, wrap those handler functions in
-   wrap-aleph-handler."
+(defn wrap-websocket-handler
+  "Allows a 2-arity Aleph handler for websocket connections to be used within the scope of wrap-ring-handler."
   [f]
-  (fn [channel request]
-    (run-pipeline (request-body->input-stream request)
-      :error-handler (fn [_])
-      (fn [request]
-	(f (assoc request :channel channel)))
-      (fn [response]
-	(when (and
-		response
-		(not (:websocket request))
-		(not (::ignore response))
-		(not (result-channel? response)))
-	  (enqueue channel response))))))
+  (fn [request]
+    (if-not (:websocket? request)
+      {:status 400
+       :headers {:content-type "text/plain"}
+       :body "This endpoint is only for WebSocket connections."}
+      (do
+        (f (::channel request) (dissoc request ::channel))
+        {:status 200
+         ::ignore true}))))
+
 

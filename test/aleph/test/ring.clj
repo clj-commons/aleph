@@ -9,13 +9,13 @@
 (ns aleph.test.ring
   (:use
     [lamina.core]
-    [aleph http])
+    [aleph http formats])
   (:use [clojure test pprint])
   (:import [java.io StringReader PushbackReader]))
 
 (defn create-url
   ([path]
-     (create-url 8080 path))
+     (create-url 8008 path))
   ([port path]
      (create-url "http" "localhost" port path))
   ([scheme host port path]
@@ -47,13 +47,15 @@
   (wrap-ring-handler
     (fn [request]
       {:status 200
-       :headers {"content-type" "text/plan"}
-       :body (with-out-str
-	       (write
-		 (get-request-value request keys)))})))
+       :headers {"content-type" "text/plain"}
+       :body (let [value (get-request-value request keys)
+                   value (if (bytes? value)
+                           (bytes->string value)
+                           value)]
+               (pr-str value))})))
 
 (defmacro with-server [keys & body]
-  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8080, :thread-pool {}})]
+  `(let [kill-fn# (start-http-server (request-callback ~keys) {:port 8008, :thread-pool {}})]
      (try
        ~@body
        (finally
@@ -83,13 +85,14 @@
 		   "/a?a=b&c=d" "a=b&c=d"}]
       (is (= v (request :url (create-url k)))))))
 
-(deftest test-server-name
+;; this isn't always true, depending on the environment
+#_(deftest test-server-name
   (with-server [:server-name]
-    (is (= "127.0.0.1" (request)))))
+    (is (= "localhost" (request)))))
 
 (deftest test-server-port
   (with-server [:server-port]
-    (is (= 8080 (request)))))
+    (is (= 8008 (request)))))
 
 (deftest test-remote-addr
   (with-server [:remote-addr]
@@ -98,6 +101,10 @@
 (deftest test-content-length
   (with-server [:content-length]
     (is (= 5 (request :body "hello")))))
+
+(deftest test-body
+  (with-server [:body]
+    (is (= "hello" (request :method :post, :body "hello")))))
 
 (deftest test-content-type
   (with-server [:content-type]

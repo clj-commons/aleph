@@ -9,10 +9,11 @@
 (ns aleph.test.http
   (:use
     [aleph http]
-    [aleph.http.client :only (http-connection)]
-    [lamina core connections trace api]
-    [clojure.test])
+    [lamina core connections trace api executor]
+    [clojure.test]
+    [aleph.test.utils])
   (:require
+    [aleph.formats :as formats]
     [clojure.string :as str]
     [clojure.tools.logging :as log])
   (:import
@@ -29,7 +30,7 @@
 (def string-response "String!")
 (def seq-response ["sequence: " 1 " two " 3.0])
 (def file-response (File. (str (System/getProperty "user.dir")
-                               "/test/starry_night.jpg")))
+                               "/test/file.txt")))
 (def stream-response "Stream!")
 
 (defn string-handler [request]
@@ -44,12 +45,15 @@
 
 (defn file-handler [request]
   {:status 200
+   :content-type "text/plain"
    :body file-response})
 
 (defn stream-handler [request]
   {:status 200
    :content-type "text/html"
    :body (ByteArrayInputStream. (.getBytes stream-response))})
+
+
 
 (def latch (promise))
 (def browser-server (atom nil))
@@ -66,10 +70,6 @@
 	       (catch Exception e
 		 )))})
 
-(defn print-vals [& args]
-  (apply prn args)
-  (last args))
-
 (defn basic-handler [ch request]
   (when-let [handler (route-map (:uri request))]
     (enqueue ch (handler request))))
@@ -78,7 +78,8 @@
   (->>
     ["string" string-response
      "stream" stream-response
-     "seq" (apply str seq-response)]
+     "seq" (apply str seq-response)
+     "file" "this is a file"]
     (repeat 10)
     (apply concat)
     (partition 2)))
@@ -89,13 +90,18 @@
   (enqueue ch
     {:status 200
      :content-type (:content-type request)
-     :body (->> request :body (map str) (apply closed-channel))}))
+     :body (:body request)}))
+
+(defn ring-streaming-request-handler [request]
+  {:status 200
+   :content-type (:content-type request)
+   :body (:body request)})
 
 (defn json-response-handler [ch request]
   (enqueue ch
     {:status 200
-     :content-type "application/json"
-     :body {:foo 1 :bar 2}}))
+     :content-type "application/json; charset=UTF-8"
+     :body (formats/encode-json->string {:foo 1 :bar 2})}))
 
 (defn error-aleph-handler [ch request]
   (throw (Exception. "boom!")))
@@ -121,16 +127,20 @@
 (defn async-timeout-ring-handler [request]
   (error-result (TimeoutException.)))
 
-(defn default-http-client []
-  (http-client
-    {:url "http://localhost:8080"
-     :auto-transform true
-     :probes {:errors nil-channel}}))
+(defn default-http-client
+  ([]
+     (default-http-client nil))
+  ([options]
+     (http-client
+       (merge
+         {:url "http://localhost:8008"
+          :auto-decode? true}
+         options))))
 
 ;;;
 
 (defn wait-for-request [client path]
-  (-> (client {:method :get, :url (str "http://localhost:8080/" path), :auto-transform true})
+  (-> (client {:method :get, :url (str "http://localhost:8008/" path), :auto-transform true})
     (wait-for-result 500)
     :body))
 
@@ -141,38 +151,46 @@
        (finally
 	 (kill-fn#)))))
 
-(defmacro with-handler [handler & body]
-  `(with-server (start-http-server ~handler
-		  {:port 8080
-		   :probes {;;:calls log-info
-			    ;;:results log-info
-			    :errors nil-channel
-			    }
-                   :websocket true
-		   :auto-transform true
-		   })
-     ~@body))
+(defexecutor http-executor {})
 
-(defmacro with-handlers [aleph-handler ring-handler & body]
+(defmacro with-handler [handler & body]
   `(do
-     (with-handler ~aleph-handler
-       ~@body)
-     (with-handler (wrap-ring-handler ~ring-handler)
-       ~@body)))
+     (testing "w/o executor"
+       (with-server (start-http-server ~handler
+                      {:port 8008
+                       :websocket true
+                       :probes {:error (sink (fn [& _#]))}})
+         ~@body))
+     (testing "w/ executor"
+       (with-server (start-http-server ~handler
+                      {:port 8008
+                       :websocket true
+                       :server {:executor http-executor}
+                       :probes {:error (sink (fn [& _#]))}})
+         ~@body))))
+
+(defmacro with-handlers [[aleph-handler ring-handler] & body]
+  `(do
+     (testing "aleph handler"
+       (with-handler ~aleph-handler
+         ~@body))
+     (testing "ring handler"
+       (with-handler (wrap-ring-handler ~ring-handler)
+         ~@body))))
 
 (defn is-closed? [handler & requests]
   (with-handler handler
-    (let [connection @(http-connection {:url "http://localhost:8080" :probes {:errors nil-channel}})]
+    (let [connection @(http-connection {:url "http://localhost:8008"})]
       (apply enqueue connection requests)
       (try
-	(doall (lazy-channel-seq connection 1000))
+	(doall (channel->lazy-seq connection 1000))
 	(catch Exception e))
       (is (closed? connection)))))
 
 (defn test-handler-response [expected aleph-handler ring-handler]
-  (with-handlers aleph-handler ring-handler
-    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080"} 500))))
-    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8080", :keep-alive? true} 500))))))
+  (with-handlers [aleph-handler ring-handler]
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8008"} 1000))))
+    (is (= expected (:status (sync-http-request {:method :get, :url "http://localhost:8008", :keep-alive? true} 1000))))))
 
 ;;;
 
@@ -184,7 +202,7 @@
 
 #_(deftest test-browser-http-response
     (println "waiting for browser test")
-    (reset! browser-server (start-http-server basic-handler {:port 8080}))
+    (reset! browser-server (start-http-server basic-handler {:port 8008}))
     (is @latch))
 
 (deftest test-single-requests
@@ -204,42 +222,65 @@
       (close-connection client))))
 
 (deftest test-streaming-response
-  (with-handler streaming-request-handler
+  (with-handlers [streaming-request-handler ring-streaming-request-handler]
     (let [content "abcdefghi"
-	  client (default-http-client)]
+	  client (default-http-client
+                   {:delimiters ["\n"]
+                    :auto-decode? false})]
       (try
 	(dotimes [_ 3]
-	  (is
-	    (= content
-	      (:body
-		(wait-for-result
-		  (client {:url "http://localhost:8080"
-			   :method :post
-			   :auto-transform true
-			   :headers {"content-type" "text/plain"}
-			   :body (apply closed-channel (map str content))})
-		  1000)))))
+	  (let [response (wait-for-result
+                           (client {:url "http://localhost:8008"
+                                    :method :post
+                                    :headers {"content-type" "text/plain"}
+                                    :body (->> content
+                                            (map str)
+                                            (map #(str % "\n"))
+                                            (apply closed-channel))})
+                           2000)]
+            (is (= content (->> response
+                             :body
+                             channel->lazy-seq
+                             (map formats/bytes->string)
+                             (apply str))))))
 	(finally
 	  (close-connection client))))))
 
 (deftest test-auto-transform
   (with-handler json-response-handler
-    (let [result (sync-http-request {:url "http://localhost:8080", :method :get, :auto-transform true} 1000)]
+    (let [result (sync-http-request
+                   {:url "http://localhost:8008", :method :get, :auto-transform true}
+                   1000)]
       (is (= {:foo 1, :bar 2} (:body result))))))
 
 (deftest test-single-response-close
   (is-closed? basic-handler
-    {:method :get, :url "http://localhost:8080/string", :keep-alive? false}))
+    {:method :get, :url "http://localhost:8008/string", :keep-alive? false}))
 
 (deftest test-streaming-request-close
   (is-closed? streaming-request-handler
     {:method :post
-     :url "http://localhost:8080/"
+     :url "http://localhost:8008/"
      :content-encoding "text/plain"
      :body (closed-channel "a" "b" "c")
      :keep-alive? false}))
 
 (deftest test-multiple-response-close
   (is-closed? basic-handler
-    {:method :get, :url "http://localhost:8080/string", :keep-alive? true}
-    {:method :get, :url "http://localhost:8080/string", :keep-alive? false}))
+    {:method :get, :url "http://localhost:8008/string", :keep-alive? true}
+    {:method :get, :url "http://localhost:8008/string", :keep-alive? false}))
+
+;;;
+
+(defn hello-world-handler [ch request]
+  (enqueue ch {:status 200, :body "hello"}))
+
+(deftest ^:benchmark run-http-benchmark
+  (with-handler hello-world-handler
+    (let [create-conn #(deref (http-connection {:url "http://localhost:8008"}))]
+
+      (let [ch (create-conn)]
+        (bench "http hello-world"
+          (enqueue ch {:method :get})
+          @(read-channel ch))
+        (close ch)))))

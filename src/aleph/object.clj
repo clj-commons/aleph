@@ -7,51 +7,40 @@
 ;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.object
-  (:use 
-    [aleph netty]
-    [lamina.core])
-  (:require [aleph.tcp :as tcp])
+  (:use
+    [aleph.netty]
+    [lamina core])
   (:import
-    [org.jboss.netty.channel
-     ChannelPipeline]
     [org.jboss.netty.handler.codec.serialization
      ObjectEncoder
      ObjectDecoder]))
 
-(defn- server-pipeline [handler options]
-  (let [pipeline ^ChannelPipeline (tcp/basic-server-pipeline handler identity identity options)]
-    (.addFirst pipeline "encoder" (ObjectEncoder.))
-    (.addFirst pipeline "decoder" (ObjectDecoder.))
-    pipeline))
-
-(defn- client-pipeline [ch options]
-  (let [pipeline ^ChannelPipeline (tcp/basic-client-pipeline ch identity options)]
-    (.addFirst pipeline "encoder" (ObjectEncoder.))
-    (.addFirst pipeline "decoder" (ObjectDecoder.))
-    pipeline))
-
-(defn start-object-server
-  "Identical to start-tcp-server, except that the channel accepts any serializable Java
-   object, including the standard Clojure data structures."
-  [handler options]
-  (let [options (merge
-		  {:name (str "object-server:" (:port options))}
-		  options)]
+(defn start-object-server [handler options]
+  (let [server-name (or
+                      (:name options)
+                      (-> options :server :name)
+                      "object-server")]
     (start-server
-      (fn [options]
-        #(server-pipeline handler options))
+      server-name
+      (fn [channel-group]
+        (create-netty-pipeline server-name true channel-group
+          :encoder (ObjectEncoder.)
+          :decoder (ObjectDecoder.)
+          :handler (server-message-handler handler)))
       options)))
 
-(defn object-client
-  "Identical to tcp-client, except that the channel accepts any serializable Java object,
-   including the standard Clojure data structures."
-  [options]
-  (let [options (merge
-		  {:name (str "object-client:" (:host options) ":" (:port options) ":" (gensym ""))}
-		  options)]
-    (create-client
-      #(client-pipeline % options)
-      identity
-      options)))
-
-
+(defn object-client [options]
+  (let [client-name (or
+                      (:name options)
+                      (-> options :client :name)
+                      "object-client")]
+    (run-pipeline nil
+      {:error-handler (fn [_])}
+      (fn [_]
+        (create-client
+          client-name
+          (fn [channel-group]
+            (create-netty-pipeline client-name false channel-group
+              :encoder (ObjectEncoder.)
+              :decoder (ObjectDecoder.)))
+          options)))))

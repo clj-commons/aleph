@@ -8,89 +8,133 @@
 
 (ns aleph.test.tcp
   (:use
-    [lamina.core]
-    [gloss.core]
-    [aleph tcp formats]
+    [aleph.test.utils]
     [clojure.test]
-    [clojure.set :only (difference)]))
+    [lamina core connections time]
+    [aleph tcp formats]
+    [gloss core])
+  (:require
+    [aleph.netty :as netty])
+  (:import
+    [org.jboss.netty.channel ChannelException]))
 
-(def server-messages (atom []))
-(def server-write-results (atom []))
-(def client-write-results (atom []))
+(defmacro with-server [handler options & body]
+  `(let [stop-server# (start-tcp-server ~handler ~options)]
+     (try
+       ~@body
+       (finally
+         (stop-server#)))))
 
-(defn append-to-server [msg]
-  (swap! server-messages conj (when msg (str msg))))
+(defn basic-echo-handler [ch _]
+  (siphon ch ch))
 
-(defmacro tcp-test [& body]
-  `(do
-     (reset! server-messages [])
-     (reset! server-write-results [])
-     (reset! client-write-results [])
-     ~@body))
+(defn server-echo-handler [ch _]
+  (server (fn [ch x] (enqueue ch x)) ch {}))
 
-(deftest echo-server
-  (tcp-test
-    (let [server (start-tcp-server
-		   (fn [ch _]
-		     (receive-all ch
-		       (fn [x]
-			 (when x
-			   (append-to-server x)
-			   (swap! server-write-results conj (enqueue ch x))))))
-		   {:frame (string :utf-8 :delimiters ["\0"])
-		    :port 8888})]
-      (try
-	(let [ch (wait-for-result
-		   (tcp-client {:host "localhost"
-				:port 8888
-				:frame (string :utf-8 :delimiters ["\0"])})
-		   1000)]
-	  (doseq [[i j] (partition 2 (range 1000))]
-	    (swap! client-write-results conj (enqueue ch (str i) (str j))))
-	  (let [s (doall (map str (take 1000 (lazy-channel-seq ch 1000))))]
-	    (is (= s (map str @server-messages)))
-	    (is (every? true? (map deref @server-write-results)))
-	    (is (every? true? (map deref @client-write-results)))))
-	(finally
-	  (server))))))
+(defn pause-then-echo-handler [ch _]
+  (netty/set-channel-readable ch false)
+  (server-echo-handler ch nil)
+  (run-pipeline nil
+    (wait-stage 1000)
+    (fn [_] (netty/set-channel-readable ch true))))
 
-(deftest client-enqueue-and-close
-  (tcp-test
-    (let [server (start-tcp-server
-		   (fn [ch _]
-		     (receive-all ch
-		       (fn [x]
-			 (append-to-server x))))
-		   {:port 8888
-		    :frame (string :utf-8)
-		    :delimiters ["x"]})]
-      (try
-	(let [ch (wait-for-result
-		   (tcp-client {:host "localhost"
-				:port 8888
-				:frame (string :utf-8)
-				:delimiters ["x"]})
-		   1000)]
-	  (enqueue ch "a")
-	  (enqueue ch "b")
-	  (enqueue-and-close ch "c")
-	  (Thread/sleep 500)
-	  (is (= ["a" "b" "c" nil] @server-messages)))
-	(finally
-	  (server))))))
+;;;
 
-(deftest server-enqueue-and-close
-  (let [server (start-tcp-server
-		 (fn [ch _]
-		   (enqueue-and-close ch "a"))
-		 {:frame (string :utf-8)
-		  :port 8888})]
-    (try
-      (let [ch (wait-for-result
-		 (tcp-client {:host "localhost" :port 8888 :frame (string :utf-8)})
-		 1000)]
-	(is (= ["a"] (doall (map str (channel-seq ch 1000)))))
-	(is (drained? ch)))
-      (finally
-	(server)))))
+(def n 10)
+(def port 10000)
+(def default-options {:port port})
 
+
+(defn test-echo-server [client-fn]
+  (let [c (client-fn #(deref (tcp-client {:host "localhost", :port port, :frame (string :utf-8 :delimiters ["\n"])})))]
+    (dotimes [_ n]
+      (is (= "a" @(c "a" 5e3))))
+    (dotimes [_ n]
+      (is (= (repeat n "a") @(apply merge-results (repeatedly n #(c "a" 5e3))))))
+    (close-connection c)))
+
+(deftest test-start-server-with-invalid-host
+  (is (thrown-with-msg?
+        ChannelException
+        #"Failed to bind.*github.com"
+        (with-server basic-echo-handler {:host "github.com", :port port}))))
+
+(deftest test-echo-servers
+  (with-server basic-echo-handler default-options
+    (test-echo-server client)
+    (test-echo-server pipelined-client))
+  (with-server server-echo-handler default-options
+    (test-echo-server client)
+    (test-echo-server pipelined-client))
+  (with-server basic-echo-handler {:host "localhost" :port port}
+    (test-echo-server client)))
+
+(deftest test-backpressure
+  (with-server pause-then-echo-handler default-options
+    (let [start (now)
+          _  (test-echo-server pipelined-client)
+          end (now)]
+      (is (< 1000 (- end start))))))
+
+;;;
+
+
+(defn run-echo-benchmark [frame?]
+  (let [create-conn #(deref (tcp-client {:host "localhost", :port port, :frame (when % (string :utf-8 :delimiters ["\n"]))}))]
+
+    (let [ch (create-conn frame?)]
+      (bench "tcp echo request"
+        (enqueue ch "a")
+        @(read-channel ch))
+      (close ch))
+      
+    (let [c (client (constantly (create-conn frame?)))]
+      (bench "tcp echo request w/ lamina.connections/client"
+        @(c "a"))
+      (close-connection c))
+      
+    (let [c (pipelined-client (constantly (create-conn frame?)))]
+      (bench "tcp echo request w/ lamina.connections/pipelined-client"
+        @(c "a"))
+      (close-connection c))
+
+    (when frame?
+      (let [c (pipelined-client (constantly (create-conn true)))]
+        (bench "batched echo requests"
+          @(apply merge-results (repeatedly 1e3 #(c "a"))))
+        (close-connection c)))))
+
+#_(deftest ^:benchmark benchmark-connect-and-query
+  (with-server basic-echo-handler default-options
+
+    (println "priming JIT for client connection")
+    
+    ;; we can't do a full benchmark run, since that exhausts ephemeral
+    ;; ports.  Instead, do a manual warm-up before doing quick-benches.
+    (dotimes [_ 20]
+      (dotimes [_ 1e3]
+        (let [ch @(tcp-client {:host "localhost", :port port})]
+          (enqueue ch "a")
+          @(read-channel ch)
+          (close ch)))
+      (Thread/sleep 2000))
+    
+    (quick-bench "tcp connect + echo request"
+      (let [ch @(tcp-client {:host "localhost", :port port, :frame (string :utf-8)})]
+        (enqueue ch "a")
+        @(read-channel ch)
+        (close ch)))))
+
+(deftest ^:benchmark benchmark-echo-server
+  (with-server basic-echo-handler default-options
+
+    (println "\n=== basic with :frame")
+    (run-echo-benchmark true)
+    (println "\n=== basic without :frame")
+    (run-echo-benchmark false)
+
+    )
+
+  (with-server server-echo-handler default-options
+    (println "\n=== lamina.connections/server without :frame")
+    (run-echo-benchmark false)))

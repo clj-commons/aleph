@@ -11,8 +11,8 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 
 ```clj
 (defproject my-project "1.0.0"
-  :dependencies [[org.clojure/clojure "1.2.1"]
-				 [aleph "0.2.2"]])
+  :dependencies [[org.clojure/clojure "1.5.1"]
+                 [aleph "0.3.0"]])
 ```
 
 ## Code examples ##
@@ -31,7 +31,7 @@ Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/r
      :headers {"content-type" "text/html"}
      :body "Hello World!"}))
 
-(start-http-server hello-world {:port 8080})
+(start-http-server hello-world {:port 8008})
 ```
 
 For more on HTTP functionality, read the [wiki](https://github.com/ztellman/aleph/wiki/HTTP).
@@ -72,7 +72,7 @@ Making a simple chat client is trivial.  In this, we assume that the first messa
       (siphon (map* #(str name ": " %) ch) broadcast-channel)
       (siphon broadcast-channel ch))))
 
-(start-http-server chat-handler {:port 8080 :websocket true})
+(start-http-server chat-handler {:port 8008 :websocket true})
 ```
 
 
@@ -94,7 +94,5 @@ For more on TCP functionality, visit the [wiki](https://github.com/ztellman/alep
 --
 
 Other protocols are supported, and still more are forthcoming.
-
-Aleph is meant to be a sandbox for exploring how Clojure can be used effectively in this context.  Contributions and ideas are welcome.
 
 For more information, visit the [wiki](https://github.com/ztellman/aleph/wiki) or the [API documentation](http://ztellman.github.com/aleph/index.html).  If you have questions, please visit the [mailing list](http://groups.google.com/group/aleph-lib).

@@ -9,33 +9,18 @@
 (ns aleph.test.object
   (:use
     [aleph object]
-    [clojure.test]
-    [lamina.core]))
+    [clojure test]
+    [lamina core]))
 
-(def server-messages (atom []))
+(defn echo-handler [ch _]
+  (siphon ch ch))
 
-(defn append-to-server [msg]
-  (swap! server-messages conj msg))
-
-(deftest echo-server
-  (reset! server-messages [])
-  (let [server (start-object-server
-		 (fn [ch _]
-		   (receive-all ch
-		     (fn [x]
-		       (when x
-			 (enqueue ch x)
-			 (append-to-server x)))))
-		 {:port 8888})]
+(deftest test-echo-server
+  (let [stop-fn (start-object-server echo-handler {:port 8888})]
     (try
-      (let [ch (wait-for-result (object-client
-				  {:host "localhost"
-				   :port 8888
-				   :probes {:errors nil-channel}}))]
-	(dotimes [i 1000]
-	  (enqueue ch [i]))
-	(let [s (doall (lazy-channel-seq ch 1000))]
-	  (is (= s @server-messages)))
-	(close ch))
+      (let [ch @(object-client {:host "localhost", :port 8888})
+            messages (map vector (range 1e2))]
+        (apply enqueue ch messages)
+        (= messages (->> ch (take* (count messages)) channel->lazy-seq)))
       (finally
-	(server)))))
+        (stop-fn)))))
