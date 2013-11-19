@@ -261,16 +261,19 @@
   :content-length (http-content-length netty-request)
   :body body)
 
-(defn netty-request->ring-map [{netty-request :msg, chunks :chunks}]
-  (->RequestMap
-    netty-request
-    (netty/current-channel)
-    (delay (http-headers netty-request))
-    (if chunks
-      (map* #(.getContent ^HttpChunk %) chunks)
-      (let [content (.getContent ^HttpMessage netty-request)]
-        (when (pos? (.readableBytes content))
-          content)))))
+(defn netty-request->ring-map
+  ([req]
+     (netty-request->ring-map req (netty/current-channel)))
+  ([{netty-request :msg, chunks :chunks} netty-channel]
+     (->RequestMap
+       netty-request
+       netty-channel
+       (delay (http-headers netty-request))
+       (if chunks
+         (map* #(.getContent ^HttpChunk %) chunks)
+         (let [content (.getContent ^HttpMessage netty-request)]
+           (when (pos? (.readableBytes content))
+             content))))))
 
 ;;;
 

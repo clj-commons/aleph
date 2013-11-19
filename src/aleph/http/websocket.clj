@@ -103,7 +103,7 @@
             (if-let [h (and
                          (compare-and-set! latch false true)
                          (create-server-handshaker msg))]
-              (let [req (assoc (http/netty-request->ring-map {:msg msg})
+              (let [req (assoc (http/netty-request->ring-map {:msg msg} netty-channel)
                           :websocket true ;; deprecated
                           :websocket? true)]
                 (run-pipeline (if handshake-handler
