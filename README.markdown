@@ -1,3 +1,6 @@
+[![Dependency Status](https://www.versioneye.com/clojure/aleph:aleph/0.3.1/badge.png)](https://www.versioneye.com/clojure/aleph:aleph/0.3.1)
+
+
 Aleph is a Clojure framework for asynchronous communication, built on top of [Netty](http://www.jboss.org/netty) and [Lamina](http://github.com/ztellman/lamina).
 
 
@@ -12,7 +15,7 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 ```clj
 (defproject my-project "1.0.0"
   :dependencies [[org.clojure/clojure "1.5.1"]
-                 [aleph "0.3.0"]])
+                 [aleph "0.3.1"]])
 ```
 
 ## Code examples ##
