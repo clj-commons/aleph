@@ -514,3 +514,10 @@
         (decode-channel decoder ch)
         ch)
       ch*)))
+
+(defn keyword-map->string-map
+  [headers]
+  (apply hash-map
+         (flatten
+          (map (fn [[k v]] [(name k) (str v)]) (apply list headers)))))
+
