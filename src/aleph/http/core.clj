@@ -176,7 +176,7 @@
 (defn expand-writes [f honor-keep-alive? ch]
   (let [ch* (channel)
         default-charset (options/charset)]
-    
+
     (bridge-join ch ch* "aleph.http.core/expand-writes"
       (fn [m]
         (let [{:keys [msg chunks write-callback]} (f m)
@@ -192,6 +192,7 @@
 
             ;; non-streaming response
             (run-pipeline result
+              {:error-handler (fn [_])}
               final-stage)
 
             ;; streaming response
@@ -249,7 +250,7 @@
    ^Channel netty-channel
    headers
    body]
-  
+
   :scheme :http
   :keep-alive? (HttpHeaders/isKeepAlive netty-request)
   :remote-addr (netty/channel-remote-host-address netty-channel)
@@ -284,7 +285,7 @@
   [^HttpRequest netty-response
    headers
    body]
-  
+
   :keep-alive? (HttpHeaders/isKeepAlive netty-response)
   :headers @headers
   :character-encoding (http-character-encoding netty-response)

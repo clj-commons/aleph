@@ -9,3 +9,4 @@ doc
 .lein*
 dump.rdb
 target/**
+.nrepl*
