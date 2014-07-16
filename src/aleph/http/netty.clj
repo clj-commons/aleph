@@ -82,7 +82,7 @@
                               (run-pipeline ch*
                                 {:error-handler (fn [_])}
                                 #(enqueue ch (assoc % :keep-alive? (:keep-alive? req))))))
-                          
+
                           (merge
                             {:error-response (fn [ex]
                                                (enqueue error-probe ex)
@@ -193,8 +193,10 @@
 
 (defn-instrumented http-request-
   {:name "aleph:http-request"}
-  [request timeout]
-  (let [request (assoc request :keep-alive? false)
+  [request timeout keep-alive?]
+  (let [request (if keep-alive?
+                  (assoc request :keep-alive? true)
+                  (assoc request :keep-alive? false))
         start (System/currentTimeMillis)
         elapsed (atom nil)]
     (run-pipeline request
@@ -222,6 +224,8 @@
   "Takes an HTTP request, formatted per the Ring spec, and returns an async-result
    representing the server's response."
   ([request]
-     (http-request- request nil))
+     (http-request- request nil false))
   ([request timeout]
-     (http-request- request timeout)))
+     (http-request- request timeout false))
+  ([request timeout keep-alive?]
+     (http-request- request timeout keep-alive?)))
