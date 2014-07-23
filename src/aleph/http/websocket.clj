@@ -147,7 +147,7 @@
 
 ;;;
 
-(defn client-handshake-stage [result url]
+(defn client-handshake-stage [result url custom-headers]
   (let [handshake-latch (atom false)
         response-latch (atom false)
         handshaker (.newHandshaker
@@ -156,7 +156,7 @@
                      WebSocketVersion/V13
                      nil
                      false
-                     nil)]
+                     (java.util.HashMap. (formats/keyword-map->string-map custom-headers)))]
     (reify ChannelUpstreamHandler
       (handleUpstream [_ ctx evt]
         (let [netty-channel (.getChannel evt)]
@@ -199,7 +199,8 @@
               :decoder (HttpResponseDecoder.)
               :handshaker (client-handshake-stage
                             result
-                            (java.net.URI. (client/options->url options)))))
+                            (java.net.URI. (client/options->url options))
+                            (:custom-headers options))))
           options))
       #(merge-results result %)
       second
