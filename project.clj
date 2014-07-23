@@ -5,7 +5,7 @@
   :license {:name "Eclipse Public License - v 1.0"
             :url "http://www.eclipse.org/legal/epl-v10.html"
             :distribution :repo}
-  :dependencies [[org.clojure/tools.logging "0.2.3"]
+  :dependencies [[org.clojure/tools.logging "0.3.0"]
                  [org.clojure/data.xml "0.0.7"]
                  [io.netty/netty "3.9.0.Final"]
                  [lamina "0.5.2"]
@@ -13,7 +13,7 @@
                  [potemkin "0.3.4"]
                  [cheshire "5.3.1"]
                  [commons-codec/commons-codec "1.9"]
-                 [org.apache.commons/commons-compress "1.4.1"]]
+                 [org.apache.commons/commons-compress "1.8.1"]]
   :exclusions [org.clojure/contrib
                org.clojure/clojure-contrib]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.4.0"]
