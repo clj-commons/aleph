@@ -353,7 +353,9 @@
                          encode)
                        (encode body))]
             (.setContent msg body))
-          (HttpHeaders/setContentLength msg (.readableBytes (.getContent msg))))
+          (HttpHeaders/setContentLength msg
+           (or (http-content-length msg)
+               (.readableBytes (.getContent msg)))))
         {:msg msg}))))
 
 (defn valid-ring-response? [rsp]
