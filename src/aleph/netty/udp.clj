@@ -97,14 +97,14 @@
 
   (let [[a b] (channel-pair)
         client (ConnectionlessBootstrap. @channel-factory)
-        {:keys [port broadcast? buf-size]
+        {:keys [port broadcast buf-size]
          :or {port 0
               buf-size 16384}} options
         netty-options (-> options
                         :netty
                         :options
                         (update-in ["broadcast"]
-                          #(or % broadcast?))
+                          #(or % broadcast))
                         (update-in ["receiveBufferSize"]
                           #(or % buf-size))
                         (update-in ["sendBufferSize"]
