@@ -20,7 +20,7 @@ In the project.clj file at the top level of your project, add Aleph as a depende
 
 ### HTTP Server ###
 
-Aleph conforms to the interface described by [Ring](http://github.com/mmcgrana/ring), with one small difference: the request and response are decoupled.
+Aleph conforms to the interface described by [Ring](https://github.com/ring-clojure/ring), with one small difference: the request and response are decoupled.
 
 ```clj
 (use 'lamina.core 'aleph.http)
