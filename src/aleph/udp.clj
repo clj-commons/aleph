@@ -4,7 +4,7 @@
 ;;   which can be found in the file epl-v10.html at the root of this distribution.
 ;;   By using this software in any fashion, you are agreeing to be bound by
 ;;   the terms of this license.
-;;   You must not remove this notice, or any other, from this software. 
+;;   You must not remove this notice, or any other, from this software.
 
 (ns aleph.udp
   (:require
@@ -24,12 +24,12 @@
   the channel returned.
 
   Optional parameters include:
-    :frame          ; a Gloss frame for encoding and decoding UDP packets
-    :decoder        ; a Gloss frame for decoding packets - overrides :frame
-    :encoder        ; a Gloss frame for encoding packets - overrides :frame
-    :port <int>     ; to listen on a specific local port and
-    :broadcast true ; to broadcast from this socket
-    :buf-size <int> ; to set the receive buffer size
+    :frame           ; a Gloss frame for encoding and decoding UDP packets
+    :decoder         ; a Gloss frame for decoding packets - overrides :frame
+    :encoder         ; a Gloss frame for encoding packets - overrides :frame
+    :port <int>      ; to listen on a specific local port and
+    :broadcast? true ; to broadcast from this socket
+    :buf-size <int>  ; to set the receive buffer size
   "
   ([]
      (udp-socket nil))
@@ -52,4 +52,3 @@
              :encoder (ObjectEncoder.)
              :decoder (ObjectDecoder.)))
          (assoc options :auto-encode? false)))))
-
