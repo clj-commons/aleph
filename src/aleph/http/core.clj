@@ -121,11 +121,9 @@
 (defn ring-response->netty-response [m]
   (let [status (get m :status 200)
         headers (get m :headers)
-        body (get m :body)
-        rsp (DefaultFullHttpResponse.
+        rsp (DefaultHttpResponse.
               HttpVersion/HTTP_1_1
               (HttpResponseStatus/valueOf status)
-              (when body (netty/to-byte-buf body))
               false)]
     (when headers
       (map->headers! m (.headers rsp)))

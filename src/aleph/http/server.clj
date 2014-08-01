@@ -3,37 +3,64 @@
     [clojure.tools.logging :as log]
     [byte-streams :as bs]
     [manifold.deferred :as d]
+    [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.netty :as netty])
   (:import
+    [java.io
+     File
+     RandomAccessFile]
     [io.netty.buffer
-     ByteBuf]
+     ByteBuf
+     Unpooled]
     [io.netty.channel
      ChannelPipeline
      ChannelHandlerContext
      ChannelFutureListener
      ChannelFuture
-     ChannelHandler]
+     ChannelHandler
+     DefaultFileRegion]
     [io.netty.handler.codec.http
      HttpMessage
      HttpServerCodec
      HttpHeaders
      HttpRequest
      HttpResponse
-     FullHttpResponse
-     DefaultFullHttpResponse
+     DefaultLastHttpContent
      HttpVersion
      HttpResponseStatus]))
 
+(defn send-file-body [^ChannelHandlerContext ctx ^HttpResponse rsp ^File file]
+  (let [raf (RandomAccessFile. file "r")
+        len (.length raf)
+        fc (.getChannel raf)
+        fr (DefaultFileRegion. fc 0 len)]
+    (-> rsp .headers (.set "Content-Length" (str len)))
+    (.write ctx rsp)
+    (let [f (.writeAndFlush ctx (DefaultLastHttpContent. fr))]
+      (-> f
+        (d/chain (fn [_] (.close fc)))
+        (d/catch Throwable (fn [_])))
+      f)))
+
+(defn send-contiguous-body [^ChannelHandlerContext ctx ^HttpResponse rsp body]
+  (let [body (if body
+               (netty/to-byte-buf body)
+               Unpooled/EMPTY_BUFFER)]
+    (-> rsp .headers (.set "Content-Length" (-> body .readableBytes str)))
+    (.write ctx rsp)
+    (.writeAndFlush ctx (DefaultLastHttpContent. body))))
+
 (defn send-response
   [^ChannelHandlerContext ctx keep-alive? rsp]
-  (let [^FullHttpResponse rsp' (http/ring-response->netty-response rsp)
-        ^HttpHeaders headers (.headers rsp')]
+  (let [body (get rsp :body)
+        ^HttpResponse rsp (http/ring-response->netty-response rsp)
+        ^HttpHeaders headers (.headers rsp)]
 
+    (.set headers "Server" "Aleph/0.4.0")
     (.set headers "Connection" (if keep-alive? "Keep-Alive" "Close"))
-    (.set headers "Content-Length" (-> rsp' .content .readableBytes str))
 
-    (let [f (.writeAndFlush ctx rsp')]
+    (let [f (send-contiguous-body ctx rsp body)]
       (when-not keep-alive?
         (.addListener ^ChannelFuture f ChannelFutureListener/CLOSE)))))
 

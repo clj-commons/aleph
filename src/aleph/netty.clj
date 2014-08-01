@@ -55,7 +55,7 @@
   [buf options]
   (Unpooled/wrappedBuffer buf))
 
-(defn to-byte-buf [x]
+(defn ^ByteBuf to-byte-buf [x]
   (bs/convert x ByteBuf))
 
 (extend-type ChannelFuture
