@@ -126,7 +126,7 @@
               (HttpResponseStatus/valueOf status)
               false)]
     (when headers
-      (map->headers! m (.headers rsp)))
+      (map->headers! headers (.headers rsp)))
     rsp))
 
 (p/def-derived-map NettyRequest [^HttpRequest req ^Channel ch body]
@@ -135,10 +135,14 @@
   :request-method (-> req .getMethod .name str/lower-case keyword)
   :headers (-> req .headers headers->map)
   :uri (-> req .getUri)
-  ;:query-string (-> req .getQueryString)
+  :query-string (let [uri (.getUri req)
+                      idx (.indexOf uri (int \?))]
+                  (if (neg? idx)
+                    nil
+                    (.substring uri (unchecked-inc idx))))
   :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .toString)
+  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
   :body body)
 
 (defn netty-request->ring-request [req ch body]

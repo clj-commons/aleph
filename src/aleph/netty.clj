@@ -2,7 +2,8 @@
   (:require
     [clojure.tools.logging :as log]
     [byte-streams :as bs]
-    [manifold.deferred :as d])
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
     [java.nio
      ByteBuffer]
@@ -13,6 +14,7 @@
     [io.netty.channel
      Channel
      ChannelFuture
+     ChannelPromise
      ChannelPipeline
      ChannelHandler
      ChannelOption
@@ -47,6 +49,14 @@
   [buf options]
   (seq (.nioBuffers buf)))
 
+(bs/def-conversion ^{:cost 1} [ByteBuf ByteBuffer]
+  [buf options]
+  (.nioBuffer buf))
+
+(bs/def-conversion ^{:cost 0} [(seq-of ByteBuf) ByteBuf]
+  [bufs options]
+  (Unpooled/wrappedBuffer ^"[Lio.netty.buffer.ByteBuf;" (into-array ByteBuf bufs)))
+
 (bs/def-conversion ^{:cost 0} [(seq-of ByteBuffer) ByteBuf]
   [bufs options]
   (Unpooled/wrappedBuffer ^{:tag "[Ljava.nio.HeapByteBuffer;"} (into-array ByteBuffer bufs)))
@@ -58,19 +68,67 @@
 (defn ^ByteBuf to-byte-buf [x]
   (bs/convert x ByteBuf))
 
-(extend-type ChannelFuture
-  d/Deferrable
-  (to-deferred [f]
-    (let [^ChannelFuture f f
-          d (d/deferred)]
+(defn to-byte-buf-stream [x chunk-size]
+  (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
+
+(defn wrap-channel-future [^ChannelFuture f]
+  (when f
+    (let [d (d/deferred)]
       (.addListener f
         (reify GenericFutureListener
           (operationComplete [_ _]
-            (try
-              (d/success! d (.get f))
-              (catch Throwable e
-                (d/error! d e))))))
+            (d/success! d (.isSuccess f)))))
       d)))
+
+;;;
+
+(defn write [^Channel ch msg]
+  (.write ch msg (.voidPromise ch)))
+
+(defn write-and-flush [^Channel ch msg]
+  (.writeAndFlush ch msg))
+
+(defn put! [^Channel ch s msg]
+  (let [d (s/put! s msg)]
+    (if (d/realized? d)
+      true
+      (do
+        (-> ch .config (.setAutoRead false))
+        (d/chain d (fn [_] (-> ch .config (.setAutoRead true))))
+        d))))
+
+;;;
+
+(s/def-sink ChannelSink [coerce-fn ^Channel ch]
+  (close [this]
+    (.close ch)
+    (.markClosed this)
+    true)
+  (description [_]
+    {:type "netty"
+     :sink? true
+     :closed? (not (.isOpen ch))
+     })
+  (isSynchronous [_]
+    false)
+  (put [this msg blocking?]
+    (let [^ChannelFuture f (.writeAndFlush ch (coerce-fn msg))
+          d (wrap-channel-future f)]
+      (if blocking?
+        @d
+        d)))
+  (put [this msg blocking? timeout timeout-value]
+    (.put this msg blocking?)))
+
+(defn sink
+  ([ch]
+     (sink ch identity))
+  ([^Channel ch coerce-fn]
+     (let [sink (->ChannelSink coerce-fn ch)]
+       (d/chain' (.closeFuture ch)
+         wrap-channel-future
+         (fn [_] (s/close! sink)))
+       sink)))
 
 ;;;
 
