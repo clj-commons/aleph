@@ -10,6 +10,7 @@
   (:use
     [clojure test])
   (:require
+    [byte-streams :as bs]
     [aleph.http :as http]
     [clj-http.client :as client])
   (:import
@@ -39,7 +40,7 @@
 (defn stream-handler [request]
   {:status 200
    :content-type "text/html"
-   :body (ByteArrayInputStream. (.getBytes stream-response))})
+   :body (bs/to-input-stream stream-response)})
 
 (def latch (promise))
 (def browser-server (atom nil))
@@ -52,7 +53,7 @@
    "/stop" (fn [_]
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
-               (.close @browser-server)
+               (.close ^java.io.Closeable @browser-server)
                (catch Exception e
                  )))})
 
@@ -68,7 +69,8 @@
     ["string" string-response
      "stream" stream-response
      "file" "this is a file"
-     "seq" (apply str seq-response)]
+     "seq" (apply str seq-response)
+     ]
     (repeat 10)
     (apply concat)
     (partition 2)))
@@ -89,5 +91,7 @@
 (deftest test-response-formats
   (with-handler basic-handler
     (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
-      (prn index path result)
-      (is (= result (:body (client/get (str "http://localhost:8080/" path))))))))
+      (= result
+        (:body
+          (client/get (str "http://localhost:8080/" path)
+            {:socket-timeout 1000}))))))

@@ -16,5 +16,4 @@
                    :benchmark :benchmark
                    :all (constantly true)}
   :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC" "-Xmx4g"]
-  :main aleph.http.server
   :global-vars {*warn-on-reflection* true})
