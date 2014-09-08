@@ -53,11 +53,11 @@
   [buf options]
   (.nioBuffer buf))
 
-(bs/def-conversion ^{:cost 0} [(seq-of ByteBuf) ByteBuf]
+#_(bs/def-conversion ^{:cost 0} [(seq-of ByteBuf) ByteBuf]
   [bufs options]
   (Unpooled/wrappedBuffer ^"[Lio.netty.buffer.ByteBuf;" (into-array ByteBuf bufs)))
 
-(bs/def-conversion ^{:cost 0} [(seq-of ByteBuffer) ByteBuf]
+#_(bs/def-conversion ^{:cost 0} [(seq-of ByteBuffer) ByteBuf]
   [bufs options]
   (Unpooled/wrappedBuffer ^{:tag "[Ljava.nio.HeapByteBuffer;"} (into-array ByteBuffer bufs)))
 
@@ -94,7 +94,11 @@
       true
       (do
         (-> ch .config (.setAutoRead false))
-        (d/chain d (fn [_] (-> ch .config (.setAutoRead true))))
+        (prn 'backpressure)
+        (d/chain d
+          (fn [_]
+            (-> ch .config (.setAutoRead true))
+            (prn 'backpressure-off)))
         d))))
 
 ;;;

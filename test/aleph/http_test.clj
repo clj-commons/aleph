@@ -25,12 +25,10 @@
 
 (defn string-handler [request]
   {:status 200
-   :content-type "text/html"
    :body string-response})
 
 (defn seq-handler [request]
   {:status 200
-   :content-type "text/html"
    :body seq-response})
 
 (defn file-handler [request]
@@ -39,8 +37,11 @@
 
 (defn stream-handler [request]
   {:status 200
-   :content-type "text/html"
    :body (bs/to-input-stream stream-response)})
+
+(defn echo-handler [request]
+  {:status 200
+   :body (:body request)})
 
 (def latch (promise))
 (def browser-server (atom nil))
@@ -50,6 +51,7 @@
    "/file" file-handler
    "/seq" seq-handler
    "/string" string-handler
+   "/echo" echo-handler
    "/stop" (fn [_]
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
@@ -95,3 +97,14 @@
         (:body
           (client/get (str "http://localhost:8080/" path)
             {:socket-timeout 1000}))))))
+
+(def words (slurp "/usr/share/dict/words"))
+
+(deftest test-echo
+  (with-handler basic-handler
+    (= words
+      (bs/to-string
+        (:body
+          (client/put "http://localhost:8080/echo"
+            {:body words
+             :socket-timeout 10000}))))))

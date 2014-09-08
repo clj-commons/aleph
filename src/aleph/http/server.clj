@@ -9,6 +9,7 @@
   (:import
     [java.io
      File
+     InputStream
      RandomAccessFile
      Closeable]
     [java.nio
@@ -196,8 +197,13 @@
 (defn ring-handler
   [f]
   (let [request (atom nil)
-        chunks (atom nil)
-        previous-response (atom nil)]
+        body (atom nil)
+        previous-response (atom nil)
+
+        handle-request
+        (fn [^Channel ch req body]
+          (reset! previous-response
+            (handle-request ch f req @previous-response body (HttpHeaders/isKeepAlive req))))]
     (netty/channel-handler
 
       :exception-handler
@@ -218,27 +224,31 @@
                    HttpResponseStatus/CONTINUE)))
 
              (if (HttpHeaders/isTransferEncodingChunked req)
-               (let [s (s/stream)]
-                 (reset! chunks s)
-                 (reset! previous-response
-                   (handle-request (.channel ctx) f req @previous-response s (HttpHeaders/isKeepAlive req))))
+               (let [s (s/stream 3)]
+                 (reset! body s)
+                 (handle-request (.channel ctx) req s))
                (reset! request req)))
 
            (instance? HttpContent msg)
-           (let [body (.content ^HttpContent msg)
-                 keep-alive? (HttpHeaders/isKeepAlive @request)]
+           (let [content (.content ^HttpContent msg)]
              (if (instance? LastHttpContent msg)
                (do
-                 (if-let [chunks @chunks]
-                   (s/close! chunks)
-                   (reset! previous-response
-                     (handle-request (.channel ctx) f @request @previous-response  body keep-alive?)))
-                 (when keep-alive?
-                   (reset! chunks nil)
-                   (reset! request nil)))
-               (netty/put! (.channel ctx) @chunks keep-alive?)))
 
-           )))))
+                 (if-let [s @body]
+                   (do
+                     (s/put! s content)
+                     (s/close! s))
+                   (handle-request (.channel ctx) @request content))
+
+                 (reset! body nil)
+                 (reset! request nil))
+
+               (if-let [s @body]
+                 (netty/put! (.channel ctx) s content)
+                 (let [s (doto (s/stream 3)
+                           (s/put! content))]
+                   (reset! body s)
+                   (handle-request (.channel ctx) @request s))))))))))
 
 (defn pipeline-builder
   ([handler]
@@ -272,7 +282,7 @@
       (f
         (assoc req :body
           (when body
-            (bs/to-input-stream body)))))))
+            (bs/convert body InputStream {:source-type (bs/stream-of ByteBuf)})))))))
 
 (defn start-server
   [handler
