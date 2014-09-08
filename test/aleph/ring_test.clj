@@ -80,7 +80,7 @@
 
 (deftest test-server-name
   (with-server [:server-name]
-    (is (= "localhost" (request)))))
+    (is (.startsWith ^String (request) "localhost"))))
 
 (deftest test-server-port
   (with-server [:server-port]
