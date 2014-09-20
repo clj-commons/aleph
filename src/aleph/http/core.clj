@@ -25,14 +25,19 @@
      DefaultHttpResponse]))
 
 (def non-standard-keys
-  {"content-md5" "Content-MD5"
-   "etag" "ETag"
-   "www-authenticate" "WWW-Authenticate"
-   "x-xss-protection" "X-XSS-Protection"
-   "x-webkit-csp" "X-WebKit-CSP"
-   "x-ua-compatible" "X-UA-Compatible"
-   "x-att-deviceid" "X-ATT-DeviceId"
-   "dnt" "DNT"})
+  (let [ks ["Content-MD5"
+            "ETag"
+            "WWW-Authenticate"
+            "X-XSS-Protection"
+            "X-WebKit-CSP"
+            "X-UA-Compatible"
+            "X-ATT-DeviceId"
+            "DNT"
+            "P3P"
+            "TE"]]
+    (zipmap
+      (map str/lower-case ks)
+      ks)))
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 

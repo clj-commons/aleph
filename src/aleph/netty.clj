@@ -1,5 +1,6 @@
 (ns aleph.netty
   (:require
+    [primitive-math :as p]
     [clojure.tools.logging :as log]
     [byte-streams :as bs]
     [manifold.deferred :as d]
@@ -23,6 +24,7 @@
      ChannelFutureListener
      EventLoopGroup]
     [io.netty.util
+     ReferenceCountUtil
      ResourceLeakDetector
      ResourceLeakDetector$Level]
     [io.netty.channel.socket
@@ -45,21 +47,45 @@
 
 ;;;
 
-(bs/def-conversion ^{:cost 0} [ByteBuf (seq-of ByteBuffers)]
+(definline release [x]
+  `(io.netty.util.ReferenceCountUtil/release ~x))
+
+(definline acquire [x]
+  `(io.netty.util.ReferenceCountUtil/retain ~x))
+
+(defn leak-detector-level! [level]
+  (ResourceLeakDetector/setLevel
+    (case level
+      :disabled ResourceLeakDetector$Level/DISABLED
+      :simple ResourceLeakDetector$Level/SIMPLE
+      :advanced ResourceLeakDetector$Level/ADVANCED
+      :paranoid ResourceLeakDetector$Level/PARANOID)))
+
+;;;
+
+(def ^:const array-class (class (clojure.core/byte-array 0)))
+
+(defn buf->array [^ByteBuf buf]
+  (let [dst (ByteBuffer/allocate (.readableBytes buf))]
+    (doseq [^ByteBuffer buf (.nioBuffers buf)]
+      (.put dst buf))
+    (.array dst)))
+
+(defn bufs->array [bufs]
+  (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
+        dst (ByteBuffer/allocate (loop [cnt 0, s bufs']
+                                   (if (empty? s)
+                                     cnt
+                                     (recur (p/+ cnt (.remaining ^ByteBuffer (first s))) (rest s)))))]
+    (doseq [^ByteBuffer buf bufs']
+      (.put dst buf))
+    (.array dst)))
+
+(bs/def-conversion ^{:cost 1} [ByteBuf array-class]
   [buf options]
-  (seq (.nioBuffers buf)))
-
-(bs/def-conversion ^{:cost 1} [ByteBuf ByteBuffer]
-  [buf options]
-  (.nioBuffer buf))
-
-#_(bs/def-conversion ^{:cost 0} [(seq-of ByteBuf) ByteBuf]
-  [bufs options]
-  (Unpooled/wrappedBuffer ^"[Lio.netty.buffer.ByteBuf;" (into-array ByteBuf bufs)))
-
-#_(bs/def-conversion ^{:cost 0} [(seq-of ByteBuffer) ByteBuf]
-  [bufs options]
-  (Unpooled/wrappedBuffer ^{:tag "[Ljava.nio.HeapByteBuffer;"} (into-array ByteBuffer bufs)))
+  (let [ary (buf->array buf)]
+    (release buf)
+    ary))
 
 (bs/def-conversion ^{:cost 0} [ByteBuffer ByteBuf]
   [buf options]
@@ -94,18 +120,19 @@
       true
       (do
         (-> ch .config (.setAutoRead false))
-        (prn 'backpressure)
+        #_(prn 'backpressure)
         (d/chain d
           (fn [_]
             (-> ch .config (.setAutoRead true))
-            (prn 'backpressure-off)))
+            #_(prn 'backpressure-off)))
         d))))
 
 ;;;
 
-(s/def-sink ChannelSink [coerce-fn ^Channel ch]
+(s/def-sink ChannelSink [coerce-fn downstream? ^Channel ch]
   (close [this]
-    (.close ch)
+    (when downstream?
+      (.close ch))
     (.markClosed this)
     true)
   (description [_]
@@ -126,9 +153,9 @@
 
 (defn sink
   ([ch]
-     (sink ch identity))
-  ([^Channel ch coerce-fn]
-     (let [sink (->ChannelSink coerce-fn ch)]
+     (sink ch true identity))
+  ([^Channel ch downstream? coerce-fn]
+     (let [sink (->ChannelSink coerce-fn downstream? ch)]
        (d/chain' (.closeFuture ch)
          wrap-channel-future
          (fn [_] (s/close! sink)))

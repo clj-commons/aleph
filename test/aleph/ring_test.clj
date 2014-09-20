@@ -10,8 +10,16 @@
   (:use
     [clojure test])
   (:require
+    [aleph.netty :as netty]
     [aleph.http :as http]
-    [clj-http.client :as client]))
+    [clj-http.client :as client])
+  (:import
+    [java.util.concurrent
+     Executors]))
+
+(netty/leak-detector-level! :paranoid)
+
+(def ex (Executors/newFixedThreadPool 8))
 
 (defn create-url
   ([path]
@@ -48,7 +56,7 @@
      :body (prn-str (get-request-value request keys))}))
 
 (defmacro with-server [keys & body]
-  `(let [server# (http/start-server (request-callback ~keys) {:port 8080})]
+  `(let [server# (http/start-server (request-callback ~keys) {:port 8080, :executor ex})]
      (try
        ~@body
        (finally

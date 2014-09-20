@@ -10,13 +10,20 @@
   (:use
     [clojure test])
   (:require
+    [aleph.netty :as netty]
     [byte-streams :as bs]
     [aleph.http :as http]
     [clj-http.client :as client])
   (:import
+    [java.util.concurrent
+     Executors]
     [java.io
      File
      ByteArrayInputStream]))
+
+(def ex (Executors/newFixedThreadPool 16))
+
+(netty/leak-detector-level! :paranoid)
 
 (def string-response "String!")
 (def seq-response ["sequence: " 1 " two " 3.0])
@@ -42,6 +49,10 @@
 (defn echo-handler [request]
   {:status 200
    :body (:body request)})
+
+(defn hello-handler [request]
+  {:status 200
+   :body "hello"})
 
 (def latch (promise))
 (def browser-server (atom nil))
@@ -85,8 +96,17 @@
          (.close ^java.io.Closeable server#)))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080})
+  `(with-server (http/start-server ~handler {:port 8080, :executor ex})
      ~@body))
+
+(defmacro with-raw-handler [handler & body]
+  `(with-server (http/start-server ~handler {:port 8080, :executor ex, :raw-stream? true})
+     ~@body))
+
+(defmacro with-both-handlers [handler & body]
+  `(do
+     (with-handler ~handler ~@body)
+     (with-raw-handler ~handler ~@body)))
 
 ;;;
 
@@ -101,10 +121,23 @@
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-echo
-  (with-handler basic-handler
-    (= words
-      (bs/to-string
-        (:body
-          (client/put "http://localhost:8080/echo"
-            {:body words
-             :socket-timeout 10000}))))))
+  (with-both-handlers basic-handler
+    (doseq [len [1e3 1e4 1e5 1e6 1e7]]
+      (let [words (->> words (take len) (apply str))]
+        (is
+          (= words
+            (bs/to-string
+              (:body
+                (client/put "http://localhost:8080/echo"
+                  {:body words
+                   :socket-timeout 1000})))))))))
+
+;;;
+
+(deftest ^:benchmark benchmark-http
+  (println "starting HTTP benchmark server on 8080")
+  (netty/leak-detector-level! :disabled)
+  (let [server (http/start-server hello-handler {:port 8080 :executor ex})]
+    (Thread/sleep (* 1000 120))
+    (println "stopping server")
+    (.close server)))

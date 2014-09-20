@@ -25,6 +25,10 @@
      ChannelFuture
      ChannelHandler
      DefaultFileRegion]
+    [java.util.concurrent
+     RejectedExecutionException]
+    [java.util.concurrent.atomic
+     AtomicInteger]
     [io.netty.handler.codec.http
      HttpMessage
      HttpServerCodec
@@ -73,19 +77,27 @@
                            (recur (rest s)))
                          body)))
 
-                   body)]
+                   (do
+                     (.flush ch)
+                     body))]
 
-    (let [src (netty/to-byte-buf-stream body' 8192)]
+    (let [src (if (or (sequential? body') (s/stream? body'))
+                (->> body'
+                  s/->source
+                  (s/map (fn [x]
+                           (try
+                             (netty/to-byte-buf x)
+                             (catch Throwable e
+                               (log/error e "error converting " (.getName (class x)) " to ByteBuf")
+                               (.close ch))))))
+                (netty/to-byte-buf-stream body' 8192))
 
-      (.flush ch)
+          sink (netty/sink ch false #(DefaultHttpContent. %))]
 
-      (s/connect
-        src
-        (netty/sink ch #(DefaultHttpContent. %))
-        {:downstream? false})
+      (s/connect src sink)
 
       (let [d (d/deferred)]
-        (s/on-drained src #(d/success! d true))
+        (s/on-closed sink #(d/success! d true))
         (d/chain' d
           (fn [_]
             (when (instance? Closeable body)
@@ -135,7 +147,11 @@
                 (send-file-body ch rsp body)
 
                 :else
-                (send-streaming-body ch rsp body))]
+                (let [class-name (.getName (class body))]
+                  (try
+                    (send-streaming-body ch rsp body)
+                    (catch Throwable e
+                      (log/error e "error sending body of type " class-name)))))]
 
         (when-not keep-alive?
           (-> f
@@ -165,50 +181,65 @@
 (defn handle-request
   [ch
    handler
+   executor
    req
    previous-response
    body
    keep-alive?]
-  (let [req (http/netty-request->ring-request req ch body)
+  (let [req' (http/netty-request->ring-request req ch body)
         rsp (try
-              (handler req)
-              (catch Throwable e
-                (error-response e)))]
+              (d/future-with executor
+                (handler req'))
+              (catch RejectedExecutionException e
+                {:status 503
+                 :headers {"content-type" "text/plain"}
+                 :body "503 Service Unavailable"}))]
     (-> previous-response
       (d/chain'
         netty/wrap-channel-future
         (fn [_]
-          (if (map? rsp)
-            (send-response ch keep-alive? rsp)
-            (let [d (d/->deferred rsp ::none)]
-              (if (identical? ::none d)
-
-                (send-response ch keep-alive? (invalid-value-response rsp))
-
-                (-> d
-                  (d/catch error-response)
-                  (d/chain'
-                    (fn [rsp]
-                      (send-response ch keep-alive?
-                        (if (map? rsp)
-                          rsp
-                          (invalid-value-response rsp))))))))))))))
+          (netty/release req)
+          (netty/release body)
+          (-> rsp
+            (d/catch' error-response)
+            (d/chain'
+              (fn [rsp]
+                (send-response ch keep-alive?
+                  (if (map? rsp)
+                    rsp
+                    (invalid-value-response rsp)))))))))))
 
 (defn ring-handler
-  [f]
+  [f executor buffer-capacity]
   (let [request (atom nil)
-        body (atom nil)
+        buffer (atom [])
+        buffer-size (AtomicInteger. 0)
+        stream (atom nil)
         previous-response (atom nil)
 
         handle-request
         (fn [^Channel ch req body]
           (reset! previous-response
-            (handle-request ch f req @previous-response body (HttpHeaders/isKeepAlive req))))]
+            (handle-request
+              ch
+              f
+              executor
+              req
+              @previous-response
+              body
+              (HttpHeaders/isKeepAlive req))))]
     (netty/channel-handler
 
       :exception-handler
       ([_ ctx ex]
          (log/warn ex "error in HTTP server"))
+
+      :channel-inactive
+      ([_ ctx]
+         (when-let [s @stream]
+           (s/close! s))
+         (doseq [b @buffer]
+           (netty/release b)))
 
       :channel-read
       ([_ ctx msg]
@@ -224,8 +255,8 @@
                    HttpResponseStatus/CONTINUE)))
 
              (if (HttpHeaders/isTransferEncodingChunked req)
-               (let [s (s/stream 3)]
-                 (reset! body s)
+               (let [s (s/buffered-stream #(alength ^bytes %) 65536)]
+                 (reset! stream s)
                  (handle-request (.channel ctx) req s))
                (reset! request req)))
 
@@ -234,62 +265,152 @@
              (if (instance? LastHttpContent msg)
                (do
 
-                 (if-let [s @body]
-                   (do
-                     (s/put! s content)
-                     (s/close! s))
-                   (handle-request (.channel ctx) @request content))
+                 (if-let [s @stream]
 
-                 (reset! body nil)
+                   (do
+                     (s/put! s (netty/buf->array content))
+                     (netty/release content)
+                     (s/close! s))
+
+                   (let [bufs (conj @buffer content)
+                         bytes (netty/bufs->array bufs)]
+                     (doseq [b bufs]
+                       (netty/release b))
+                     (handle-request (.channel ctx) @request bytes)))
+
+                 (.set buffer-size 0)
+                 (reset! stream nil)
+                 (reset! buffer [])
                  (reset! request nil))
 
-               (if-let [s @body]
-                 (netty/put! (.channel ctx) s content)
-                 (let [s (doto (s/stream 3)
-                           (s/put! content))]
-                   (reset! body s)
-                   (handle-request (.channel ctx) @request s))))))))))
+               (if-let [s @stream]
+
+                 ;; already have a stream going
+                 (do
+                   (netty/put! (.channel ctx) s (netty/buf->array content))
+                   (netty/release content))
+
+                 (do
+
+                   (swap! buffer conj content)
+
+                   (let [size (.addAndGet buffer-size (.readableBytes ^ByteBuf content))]
+
+                     ;; buffer size exceeded, flush it as a stream
+                     (when (< buffer-capacity size)
+                       (let [bufs @buffer
+                             s (doto (s/buffered-stream #(alength ^bytes %) 16384)
+                                 (s/put! (netty/bufs->array bufs)))]
+
+                         (doseq [b bufs]
+                           (netty/release b))
+
+                         (reset! buffer [])
+                         (reset! stream s)
+
+                         (handle-request (.channel ctx) @request s)))))))))))))
+
+(defn raw-ring-handler
+  [f executor buffer-capacity]
+  (let [stream (atom nil)
+        previous-response (atom nil)
+
+        handle-request
+        (fn [^Channel ch req body]
+          (reset! previous-response
+            (handle-request
+              ch
+              f
+              executor
+              req
+              @previous-response
+              body
+              (HttpHeaders/isKeepAlive req))))]
+    (netty/channel-handler
+
+      :exception-handler
+      ([_ ctx ex]
+         (log/warn ex "error in HTTP server"))
+
+      :channel-inactive
+      ([_ ctx]
+         (when-let [s @stream]
+           (s/close! s)))
+
+      :channel-read
+      ([_ ctx msg]
+         (cond
+
+           (instance? HttpRequest msg)
+           (let [req msg]
+
+             (when (HttpHeaders/is100ContinueExpected req)
+               (.writeAndFlush ctx
+                 (DefaultFullHttpResponse.
+                   HttpVersion/HTTP_1_1
+                   HttpResponseStatus/CONTINUE)))
+
+             (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)]
+               (reset! stream s)
+               (handle-request (.channel ctx) req s)))
+
+           (instance? HttpContent msg)
+           (let [content (.content ^HttpContent msg)]
+             (s/put! @stream content)
+             (when (instance? LastHttpContent msg)
+               (s/close! @stream))))))))
 
 (defn pipeline-builder
-  ([handler]
-     (pipeline-builder
-       handler
-       4098
-       8196
-       8196))
-  ([handler
-    max-initial-line-length
-    max-header-size
-    max-chunk-size]
-     (fn [^ChannelPipeline pipeline]
-       (doto pipeline
-         (.addLast "http-server"
-           (HttpServerCodec.
-             max-initial-line-length
-             max-header-size
-             max-chunk-size
-             false))
-         (.addLast "handler"
-           ^ChannelHandler
-           (ring-handler handler))))))
+  [handler
+   {:keys
+    [executor
+     request-buffer-size
+     max-initial-line-length
+     max-header-size
+     max-chunk-size
+     raw-stream?]
+    :or
+    {request-buffer-size 16384
+     max-initial-line-length 4098
+     max-header-size 8196
+     max-chunk-size 8196}}]
+  (assert executor "must define executor for HTTP server")
+  (fn [^ChannelPipeline pipeline]
+    (let [handler (if raw-stream?
+                    (raw-ring-handler handler executor request-buffer-size)
+                    (ring-handler handler executor request-buffer-size))]
+      (doto pipeline
+        (.addLast "http-server"
+          (HttpServerCodec.
+            max-initial-line-length
+            max-header-size
+            max-chunk-size
+            false))
+        (.addLast "handler" ^ChannelHandler handler)))))
 
 ;;;
 
 (defn wrap-stream->input-stream
-  [f]
+  [f
+   {:keys [request-buffer-size]
+    :or {request-buffer-size 16384}}]
   (fn [req]
     (let [body (:body req)]
       (f
         (assoc req :body
           (when body
-            (bs/convert body InputStream {:source-type (bs/stream-of ByteBuf)})))))))
+            (bs/convert body InputStream
+              {:buffer-size request-buffer-size
+               :source-type (bs/stream-of netty/array-class)})))))))
 
 (defn start-server
   [handler
-   {:keys [port]}]
+   {:keys [port executor raw-stream? bootstrap-transform] :as options}]
   (netty/start-server
-    (-> handler
-      wrap-stream->input-stream
-      pipeline-builder)
-    identity
+    (pipeline-builder
+      (if raw-stream?
+        handler
+        (wrap-stream->input-stream handler options))
+      options)
+    bootstrap-transform
     port))
