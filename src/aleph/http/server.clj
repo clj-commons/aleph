@@ -405,7 +405,9 @@
 
 (defn start-server
   [handler
-   {:keys [port executor raw-stream? bootstrap-transform] :as options}]
+   {:keys [port executor raw-stream? bootstrap-transform]
+    :or {bootstrap-transform identity}
+    :as options}]
   (netty/start-server
     (pipeline-builder
       (if raw-stream?
