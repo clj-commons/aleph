@@ -1,16 +1,14 @@
-(ns clj-http.client
-  "Batteries-included HTTP client."
-  (:require
-    [clojure.stacktrace :refer [root-cause]]
-    [clojure.string :as str]
-    [clojure.walk :refer [prewalk]])
-  (:import
-    [java.io
-     InputStream
-     File]
-    [java.net
-     URL
-     UnknownHostException]))
+(ns aleph.http.client-middleware
+  "This middleware is adapted from clj-http, whose license is amendable to this sort of
+   copy/pastery"
+  (:require [clojure.stacktrace :refer [root-cause]]
+            [clojure.string :as str]
+            [clojure.walk :refer [prewalk]]
+            [manifold.deferred :as d])
+  (:import (java.io InputStream)
+           (java.net URL URLEncoder UnknownHostException)))
+
+;;;
 
 (defn update [m k f & args]
   (assoc m k (apply f (m k) args)))
@@ -32,6 +30,27 @@
       m)
     (dissoc m k)))
 
+(defn url-encode [s]
+  (URLEncoder/encode s "UTF-8"))
+
+(defn opt
+  "Check the request parameters for a keyword  boolean option, with or without
+  the ?
+
+  Returns false if either of the values are false, or the value of
+  (or key1 key2) otherwise (truthy)"
+  [req param]
+  (let [param-? (keyword (str (name param) "?"))
+        v1 (clojure.core/get req param)
+        v2 (clojure.core/get req param-?)]
+    (if (false? v1)
+      false
+      (if (false? v2)
+        false
+        (or v1 v2)))))
+
+;;;
+
 (defn url-encode-illegal-characters
   "Takes a raw url path or query and url-encodes any illegal characters.
   Minimizes ambiguity by encoding space to %20."
@@ -39,8 +58,9 @@
   (when path-or-query
     (-> path-or-query
         (str/replace " " "%20")
-        (str/replace #"[^a-zA-Z0-9\.\-\_\~\!\$\&\'\(\)\*\+\,\;\=\:\@\/\%\?]"
-                     util/url-encode))))
+        (str/replace
+          #"[^a-zA-Z0-9\.\-\_\~\!\$\&\'\(\)\*\+\,\;\=\:\@\/\%\?]"
+          url-encode))))
 
 (defn parse-url
   "Parse a URL string into a map of interesting parts."
@@ -88,14 +108,13 @@
   response is used as the message, instead of just the status number."
   [client]
   (fn [req]
-    (let [{:keys [status] :as resp} (client req)]
-      (if (unexceptional-status? status)
-        resp
-        (if (false? (opt req :throw-exceptions))
+    (d/chain (client req)
+      (fn [{:keys [status] :as resp}]
+        (if (unexceptional-status? status)
           resp
-          (if (opt req :throw-entire-message)
-            (throw+ resp "clj-http: status %d %s" (:status %) resp)
-            (throw+ resp "clj-http: status %s" (:status %))))))))
+          (if (false? (opt req :throw-exceptions))
+            resp
+            (d/error-deferred (ex-info (str "status " status) resp))))))))
 
 (declare wrap-redirects)
 
@@ -148,7 +167,7 @@
        resp-r
        (and max-redirects (> redirects-count max-redirects))
        (if (opt req :throw-exceptions)
-         (throw+ resp-r "Too many redirects: %s" redirects-count)
+         (throw (IllegalStateException. (str "Too many redirects: " redirects-count)))
          resp-r)
        (= 303 status)
        (follow-redirect client (assoc req :request-method :get
@@ -174,43 +193,6 @@
          resp-r)
        :else
        resp-r))))
-
-(defn wrap-input-coercion
-  "Middleware coercing the :body of a request from a number of formats into an
-  Apache Entity. Currently supports Strings, Files, InputStreams
-  and byte-arrays."
-  [client]
-  (fn [{:keys [body body-encoding length]
-        :or {^String body-encoding "UTF-8"} :as req}]
-    (if body
-      (cond
-       (string? body)
-       (client (-> req (assoc :body (maybe-wrap-entity
-                                     req (StringEntity. ^String body
-                                                        ^String body-encoding))
-                              :character-encoding (or body-encoding
-                                                      "UTF-8"))))
-       (instance? File body)
-       (client (-> req (assoc :body (maybe-wrap-entity
-                                     req (FileEntity. ^File body
-                                                      ^String body-encoding)))))
-
-       ;; A length of -1 instructs HttpClient to use chunked encoding.
-       (instance? InputStream body)
-       (client (-> req (assoc :body
-                         (if length
-                           (InputStreamEntity. ^InputStream body (long length))
-                           (maybe-wrap-entity
-                            req
-                            (InputStreamEntity. ^InputStream body -1))))))
-
-       (instance? (Class/forName "[B") body)
-       (client (-> req (assoc :body (maybe-wrap-entity
-                                     req (ByteArrayEntity. body)))))
-
-       :else
-       (client req))
-      (client req))))
 
 (defn content-type-value [type]
   (if (keyword? type)
@@ -268,13 +250,13 @@
     (str/join "&"
               (mapcat (fn [[k v]]
                         (if (sequential? v)
-                          (map #(str (util/url-encode (name %1) encoding)
+                          (map #(str (url-encode (name %1) encoding)
                                      "="
-                                     (util/url-encode (str %2) encoding))
+                                     (url-encode (str %2) encoding))
                                (repeat k) v)
-                          [(str (util/url-encode (name k) encoding)
+                          [(str (url-encode (name k) encoding)
                                 "="
-                                (util/url-encode (str v) encoding))]))
+                                (url-encode (str v) encoding))]))
                       params))))
 
 (defn wrap-query-params
@@ -299,8 +281,12 @@
 (defn basic-auth-value [basic-auth]
   (let [basic-auth (if (string? basic-auth)
                      basic-auth
-                     (str (first basic-auth) ":" (second basic-auth)))]
-    (str "Basic " (util/base64-encode (util/utf8-bytes basic-auth)))))
+                     (str (first basic-auth) ":" (second basic-auth)))
+        bytes (.getBytes ^String basic-auth "UTF-8")]
+    (str "Basic "
+      (-> ^String basic-auth
+        (.getBytes "UTF-8")
+        javax.xml.bind.DatatypeConverter/printBase64Binary))))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
@@ -321,7 +307,6 @@
                   (assoc-in [:headers "authorization"]
                             (str "Bearer " oauth-token))))
       (client req))))
-
 
 (defn parse-user-info [user-info]
   (when user-info
@@ -354,7 +339,7 @@
       (client (-> req
                   (dissoc :form-params)
                   (assoc :content-type (content-type-value content-type)
-                         :body (coerce-form-params req))))
+                         :body (generate-query-string form-params (content-type-value content-type)))))
       (client req))))
 
 (defn- nest-params
@@ -405,26 +390,14 @@
             (throw (root-cause e)))
           (throw (root-cause e)))))))
 
-(defn wrap-lower-case-headers
-  "Middleware lowercasing all headers, as per RFC (case-insensitive) and
-  Ring spec."
-  [client]
-  (let [lower-case-headers
-        #(if-let [headers (:headers %1)]
-           (assoc %1 :headers (util/lower-case-keys headers))
-           %1)]
-    (fn [req]
-      (-> (client (lower-case-headers req))
-          (lower-case-headers)))))
-
 (defn wrap-request-timing
   "Middleware that times the request, putting the total time (in milliseconds)
   of the request into the :request-time key in the response."
   [client]
   (fn [req]
-    (let [start (System/currentTimeMillis)
-          resp (client req)]
-      (assoc resp :request-time (- (System/currentTimeMillis) start)))))
+    (let [start (System/currentTimeMillis)]
+      (d/chain (client req)
+        #(assoc % :request-time (- (System/currentTimeMillis) start))))))
 
 (def default-middleware
   "The default list of middleware clj-http uses for wrapping requests."
@@ -434,8 +407,8 @@
    wrap-oauth
    wrap-user-info
    wrap-url
-   wrap-redirects
-   wrap-exceptions
+   ;; wrap-redirects
+   ;; wrap-exceptions
    wrap-accept
    wrap-accept-encoding
    wrap-content-type
@@ -449,7 +422,8 @@
   core client. See default-middleware for the middleware wrappers that are used
   by default"
   [request]
-  (reduce (fn wrap-request* [request middleware]
-            (middleware request))
-          request
-          default-middleware))
+  (reduce
+    (fn wrap-request* [request middleware]
+      (middleware request))
+    request
+    default-middleware))

@@ -1,49 +1,29 @@
 (ns aleph.netty
-  (:require
-    [primitive-math :as p]
-    [clojure.tools.logging :as log]
-    [byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s])
-  (:import
-    [java.nio
-     ByteBuffer]
-    [io.netty.buffer
-     Unpooled
-     PooledByteBufAllocator
-     ByteBuf]
-    [io.netty.channel
-     Channel
-     ChannelFuture
-     ChannelPromise
-     ChannelPipeline
-     ChannelHandler
-     ChannelOption
-     ChannelInboundHandler
-     ChannelOutboundHandler
-     ChannelFutureListener
-     EventLoopGroup]
-    [io.netty.util
-     ReferenceCountUtil
-     ResourceLeakDetector
-     ResourceLeakDetector$Level]
-    [io.netty.channel.socket
-     ServerSocketChannel]
-    [io.netty.util.concurrent
-     GenericFutureListener]
-    [io.netty.channel.epoll
-     Epoll
-     EpollEventLoopGroup
-     EpollSocketChannel
-     EpollServerSocketChannel]
-    [io.netty.channel.nio
-     NioEventLoopGroup]
-    [io.netty.channel.socket.nio
-     NioSocketChannel
-     NioServerSocketChannel]
-    [io.netty.bootstrap
-     Bootstrap
-     ServerBootstrap]))
+  (:require [byte-streams :as bs]
+            [clojure.tools.logging :as log]
+            [manifold.deferred :as d]
+            [manifold.stream :as s]
+            [primitive-math :as p])
+  (:import (io.netty.bootstrap Bootstrap ServerBootstrap)
+           (io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled)
+           (io.netty.channel Channel ChannelFuture ChannelOption
+             ChannelPipeline EventLoopGroup
+             ChannelHandler
+             ChannelInboundHandler
+             ChannelOutboundHandler)
+           (io.netty.channel.epoll Epoll EpollEventLoopGroup
+                                   EpollServerSocketChannel
+                                   EpollSocketChannel)
+           (io.netty.channel.nio NioEventLoopGroup)
+           (io.netty.channel.socket ServerSocketChannel)
+           (io.netty.channel.socket.nio NioServerSocketChannel
+                                        NioSocketChannel)
+           (io.netty.handler.ssl SslContext)
+           (io.netty.handler.ssl.util SelfSignedCertificate)
+           (io.netty.util ResourceLeakDetector
+                          ResourceLeakDetector$Level)
+           (io.netty.util.concurrent GenericFutureListener)
+           (java.nio ByteBuffer)))
 
 ;;;
 
@@ -99,12 +79,14 @@
 
 (defn wrap-channel-future [^ChannelFuture f]
   (when f
-    (let [d (d/deferred)]
-      (.addListener f
-        (reify GenericFutureListener
-          (operationComplete [_ _]
-            (d/success! d (.isSuccess f)))))
-      d)))
+    (if (.isSuccess f)
+      (d/success-deferred true)
+      (let [d (d/deferred)]
+        (.addListener f
+          (reify GenericFutureListener
+            (operationComplete [_ _]
+              (d/success! d (.isSuccess f)))))
+        d))))
 
 ;;;
 
@@ -117,14 +99,21 @@
 (defn put! [^Channel ch s msg]
   (let [d (s/put! s msg)]
     (if (d/realized? d)
-      true
+      (if @d
+        true
+        (do
+          (.close ch)
+          false))
       (do
         (-> ch .config (.setAutoRead false))
-        #_(prn 'backpressure)
+        (prn 'backpressure)
         (d/chain d
-          (fn [_]
-            (-> ch .config (.setAutoRead true))
-            #_(prn 'backpressure-off)))
+          (fn [result]
+
+            (when-not result
+              (.close ch))
+            (prn 'backpressure-off)
+            (-> ch .config (.setAutoRead true))))
         d))))
 
 ;;;
@@ -255,6 +244,12 @@
 
 ;;;
 
+(defn self-signed-ssl-context []
+  (let [cert (SelfSignedCertificate.)]
+    (SslContext/newServerContext (.certificate cert) (.privateKey cert))))
+
+;;;
+
 (defprotocol AlephServer
   (port [_] "Returns the port the server is listening on."))
 
@@ -262,7 +257,7 @@
   (Epoll/isAvailable))
 
 (defn create-client
-  [pipeline-builder bootstrap-transform host port]
+  [pipeline-builder ssl-context bootstrap-transform host port]
   (let [^EventLoopGroup
         group (if (epoll?)
                 (EpollEventLoopGroup.)
@@ -271,21 +266,34 @@
         ^Class
         channel (if (epoll?)
                   EpollSocketChannel
-                  NioSocketChannel)]
+                  NioSocketChannel)
+
+        pipeline-builder (if ssl-context
+                           (fn [^ChannelPipeline p]
+                             (.addLast p
+                               (.newHandler ^SslContext ssl-context
+                                 (-> p .channel .alloc)
+                                 host
+                                 port))
+                             (pipeline-builder p))
+                           pipeline-builder)]
     (try
       (let [b (doto (Bootstrap.)
-                (.option ChannelOption/SO_BACKLOG (int 1024))
                 (.option ChannelOption/SO_REUSEADDR true)
                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                 (.group group)
                 (.channel channel)
                 (.handler (pipeline-initializer pipeline-builder))
-                bootstrap-transform)]
+                bootstrap-transform)
 
-        (d/->deferred (.connect b ^String host (int port)))))))
+            f (.connect b ^String host (int port))]
+
+        (d/chain (wrap-channel-future f)
+          (fn [_]
+            (.channel ^ChannelFuture f)))))))
 
 (defn start-server
-  [pipeline-builder bootstrap-transform port]
+  [pipeline-builder ssl-context bootstrap-transform port]
   (let [^EventLoopGroup
         group (if (epoll?)
                 (EpollEventLoopGroup.)
@@ -294,7 +302,15 @@
         ^Class
         channel (if (epoll?)
                   EpollServerSocketChannel
-                  NioServerSocketChannel)]
+                  NioServerSocketChannel)
+
+        pipeline-builder (if ssl-context
+                           (fn [^ChannelPipeline p]
+                             (.addLast p
+                               (.newHandler ^SslContext ssl-context
+                                 (-> p .channel .alloc)))
+                             (pipeline-builder p))
+                           pipeline-builder)]
 
     (let [b (doto (ServerBootstrap.)
               (.option ChannelOption/SO_BACKLOG (int 1024))

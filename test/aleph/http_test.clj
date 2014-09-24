@@ -122,15 +122,13 @@
 
 (deftest test-echo
   (with-both-handlers basic-handler
-    (doseq [len [1e3 1e4 1e5 1e6 1e7]]
-      (let [words (->> words (take len) (apply str))]
-        (is
-          (= words
-            (bs/to-string
-              (:body
-                (client/put "http://localhost:8080/echo"
-                  {:body words
-                   :socket-timeout 1000})))))))))
+    (doseq [len [1e3 1e4 1e5 1e6]]
+      (let [words (->> words (take len) (apply str))
+            body (:body
+                   (client/put "http://localhost:8080/echo"
+                     {:body words
+                      :socket-timeout 2000}))]
+        (is (= words (bs/to-string body)))))))
 
 ;;;
 

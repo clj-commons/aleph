@@ -1,166 +1,48 @@
 (ns aleph.http.server
   (:require
-    [clojure.tools.logging :as log]
-    [byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
     [aleph.http.core :as http]
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [byte-streams :as bs]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
+    [io.netty.buffer
+     ByteBuf Unpooled]
+    [io.netty.channel
+     Channel ChannelFuture
+     ChannelFutureListener ChannelHandler
+     ChannelPipeline DefaultFileRegion]
+    [io.netty.handler.codec.http
+     DefaultFullHttpResponse
+     DefaultHttpContent
+     DefaultLastHttpContent
+     HttpContent HttpHeaders
+     HttpRequest HttpResponse
+     HttpResponseStatus
+     HttpServerCodec HttpVersion
+     LastHttpContent]
     [java.io
-     File
-     InputStream
-     RandomAccessFile
-     Closeable]
+     Closeable File InputStream RandomAccessFile]
     [java.nio
      ByteBuffer]
-    [io.netty.buffer
-     ByteBuf
-     Unpooled]
-    [io.netty.channel
-     Channel
-     ChannelPipeline
-     ChannelHandlerContext
-     ChannelFutureListener
-     ChannelFuture
-     ChannelHandler
-     DefaultFileRegion]
     [java.util.concurrent
      RejectedExecutionException]
     [java.util.concurrent.atomic
-     AtomicInteger]
-    [io.netty.handler.codec.http
-     HttpMessage
-     HttpServerCodec
-     HttpHeaders
-     HttpRequest
-     HttpResponse
-     HttpContent
-     LastHttpContent
-     DefaultLastHttpContent
-     DefaultHttpContent
-     DefaultFullHttpResponse
-     HttpVersion
-     HttpResponseStatus]))
+     AtomicInteger]))
 
 ;;;
 
-(def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
+(defn send-response
+  [^Channel ch keep-alive? rsp]
+  (let [body (get rsp :body)
+        ^HttpResponse rsp (http/ring-response->netty-response rsp)]
 
-(let [ary-class (class (byte-array 0))]
-  (defn coerce-element [x]
-    (if (or
-          (instance? String x)
-          (instance? ary-class x)
-          (instance? ByteBuffer x)
-          (instance? ByteBuf x))
-      (netty/to-byte-buf x)
-      (netty/to-byte-buf (str x)))))
+    (doto (.headers rsp)
+      (.set "Server" "Aleph/0.4.0")
+      (.set "Connection" (if keep-alive? "Keep-Alive" "Close")))
 
-(defn send-streaming-body [^Channel ch ^HttpResponse rsp body]
-
-  (HttpHeaders/setTransferEncodingChunked rsp)
-  (netty/write ch rsp)
-
-  (if-let [body' (if (sequential? body)
-
-                   ;; just unroll the seq, if we can
-                   (loop [s (map coerce-element body)]
-                     (if (empty? s)
-                       (do
-                         (.flush ch)
-                         nil)
-                       (if (or (not (instance? clojure.lang.IPending s))
-                             (realized? s))
-                         (let [x (first s)]
-                           (netty/write ch (netty/to-byte-buf x))
-                           (recur (rest s)))
-                         body)))
-
-                   (do
-                     (.flush ch)
-                     body))]
-
-    (let [src (if (or (sequential? body') (s/stream? body'))
-                (->> body'
-                  s/->source
-                  (s/map (fn [x]
-                           (try
-                             (netty/to-byte-buf x)
-                             (catch Throwable e
-                               (log/error e "error converting " (.getName (class x)) " to ByteBuf")
-                               (.close ch))))))
-                (netty/to-byte-buf-stream body' 8192))
-
-          sink (netty/sink ch false #(DefaultHttpContent. %))]
-
-      (s/connect src sink)
-
-      (let [d (d/deferred)]
-        (s/on-closed sink #(d/success! d true))
-        (d/chain' d
-          (fn [_]
-            (when (instance? Closeable body)
-              (.close ^Closeable body))
-            (netty/write-and-flush ch empty-last-content)))))
-
-    (netty/write-and-flush ch empty-last-content)))
-
-(defn send-file-body [^Channel ch ^HttpResponse rsp ^File file]
-  (let [raf (RandomAccessFile. file "r")
-        len (.length raf)
-        fc (.getChannel raf)
-        fr (DefaultFileRegion. fc 0 len)]
-    (HttpHeaders/setContentLength rsp len)
-    (netty/write ch rsp)
-    (netty/write ch fr)
-    (netty/write-and-flush ch empty-last-content)))
-
-(defn send-contiguous-body [^Channel ch ^HttpResponse rsp body]
-  (let [body (if body
-               (netty/to-byte-buf body)
-               Unpooled/EMPTY_BUFFER)]
-    (HttpHeaders/setContentLength rsp (.readableBytes body))
-    (netty/write ch rsp)
-    (netty/write-and-flush ch (DefaultLastHttpContent. body))))
-
-(let [ary-class (class (byte-array 0))]
-  (defn send-response
-    [^Channel ch keep-alive? rsp]
-    (let [body (get rsp :body)
-          ^HttpResponse rsp (http/ring-response->netty-response rsp)
-          ^HttpHeaders headers (.headers rsp)]
-
-      (.set headers "Server" "Aleph/0.4.0")
-      (.set headers "Connection" (if keep-alive? "Keep-Alive" "Close"))
-
-      (let [f (cond
-
-                (or
-                  (instance? String body)
-                  (instance? ary-class body)
-                  (instance? ByteBuffer body)
-                  (instance? ByteBuf body))
-                (send-contiguous-body ch rsp body)
-
-                (instance? File body)
-                (send-file-body ch rsp body)
-
-                :else
-                (let [class-name (.getName (class body))]
-                  (try
-                    (send-streaming-body ch rsp body)
-                    (catch Throwable e
-                      (log/error e "error sending body of type " class-name)))))]
-
-        (when-not keep-alive?
-          (-> f
-            (d/chain'
-              (fn [^ChannelFuture f]
-                (.addListener f ChannelFutureListener/CLOSE)))
-            (d/catch Throwable #(log/error % "err"))))
-
-        f))))
+    (http/send-message ch keep-alive? rsp body)))
 
 ;;;
 
@@ -255,7 +137,7 @@
                    HttpResponseStatus/CONTINUE)))
 
              (if (HttpHeaders/isTransferEncodingChunked req)
-               (let [s (s/buffered-stream #(alength ^bytes %) 65536)]
+               (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
                  (reset! stream s)
                  (handle-request (.channel ctx) req s))
                (reset! request req)))
@@ -288,6 +170,7 @@
                  ;; already have a stream going
                  (do
                    (netty/put! (.channel ctx) s (netty/buf->array content))
+                   #_(s/put! s (netty/buf->array content))
                    (netty/release content))
 
                  (do
@@ -299,7 +182,7 @@
                      ;; buffer size exceeded, flush it as a stream
                      (when (< buffer-capacity size)
                        (let [bufs @buffer
-                             s (doto (s/buffered-stream #(alength ^bytes %) 16384)
+                             s (doto (s/buffered-stream #(alength ^bytes %) buffer-capacity)
                                  (s/put! (netty/bufs->array bufs)))]
 
                          (doseq [b bufs]
@@ -356,7 +239,7 @@
 
            (instance? HttpContent msg)
            (let [content (.content ^HttpContent msg)]
-             (s/put! @stream content)
+             (netty/put! (.channel ctx) @stream content)
              (when (instance? LastHttpContent msg)
                (s/close! @stream))))))))
 
@@ -379,6 +262,7 @@
     (let [handler (if raw-stream?
                     (raw-ring-handler handler executor request-buffer-size)
                     (ring-handler handler executor request-buffer-size))]
+
       (doto pipeline
         (.addLast "http-server"
           (HttpServerCodec.
@@ -405,7 +289,7 @@
 
 (defn start-server
   [handler
-   {:keys [port executor raw-stream? bootstrap-transform]
+   {:keys [port executor raw-stream? bootstrap-transform ssl-context]
     :or {bootstrap-transform identity}
     :as options}]
   (netty/start-server
@@ -414,5 +298,6 @@
         handler
         (wrap-stream->input-stream handler options))
       options)
+    ssl-context
     bootstrap-transform
     port))
