@@ -109,6 +109,7 @@
 
       :channel-read
       ([_ ctx msg]
+         (prn msg)
          (cond
 
            (instance? HttpResponse msg)
@@ -184,7 +185,6 @@
      max-header-size 8196
      max-chunk-size 8196}}]
   (fn [^ChannelPipeline pipeline]
-    (prn 'pipeline pipeline)
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
                     (client-handler response-stream response-buffer-size))]
@@ -200,7 +200,10 @@
         (.addLast "handler" ^ChannelHandler handler)))))
 
 (defn close-connection [f]
-  (f ::close))
+  (f
+    {:method :get
+     :url "http://example.com"
+     ::close true}))
 
 (defn http-connection
   [host
@@ -216,14 +219,19 @@
             (pipeline-builder
               responses
               options)
-            nil
+            (when ssl?
+              (if insecure?
+                (netty/insecure-ssl-client-context)
+                (netty/ssl-client-context)))
             bootstrap-transform
             host
             port)]
     (d/chain c
       (fn [^Channel ch]
+
         (s/consume
           (fn [req]
+            (prn req)
             (let [^HttpRequest req' (http/ring-request->netty-request req)]
               (HttpHeaders/setHost req' ^String host)
               (HttpHeaders/setKeepAlive req' keep-alive?)
@@ -233,7 +241,8 @@
         (s/on-closed responses #(s/close! requests))
 
         (fn [req]
-          (if (identical? ::close req)
+          (prn req)
+          (if (contains? req ::close)
             (netty/wrap-channel-future (.close ch))
             (locking ch
               (s/put! requests req)

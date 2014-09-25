@@ -102,98 +102,6 @@
   [{:keys [status]}]
   (<= 500 status 599))
 
-(defn wrap-exceptions
-  "Middleware that throws a slingshot exception if the response is not a
-  regular response. If :throw-entire-message? is set to true, the entire
-  response is used as the message, instead of just the status number."
-  [client]
-  (fn [req]
-    (d/chain (client req)
-      (fn [{:keys [status] :as resp}]
-        (if (unexceptional-status? status)
-          resp
-          (if (false? (opt req :throw-exceptions))
-            resp
-            (d/error-deferred (ex-info (str "status " status) resp))))))))
-
-(declare wrap-redirects)
-
-(defn follow-redirect
-  "Attempts to follow the redirects from the \"location\" header, if no such
-  header exists (bad server!), returns the response without following the
-  request."
-  [client {:keys [uri url scheme server-name server-port] :as req}
-   {:keys [trace-redirects ^InputStream body] :as resp}]
-  (let [url (or url (str (name scheme) "://" server-name
-                         (when server-port (str ":" server-port)) uri))]
-    (if-let [raw-redirect (get-in resp [:headers "location"])]
-      (let [redirect (str (URL. (URL. url) raw-redirect))]
-        (try (.close body) (catch Exception _))
-        ((wrap-redirects client) (-> req
-                                     (merge (parse-url redirect))
-                                     (dissoc :query-params)
-                                     (assoc :url redirect)
-                                     (assoc :trace-redirects trace-redirects))))
-      ;; Oh well, we tried, but if no location is set, return the response
-      resp)))
-
-(defn wrap-redirects
-  "Middleware that follows redirects in the response. A slingshot exception is
-  thrown if too many redirects occur. Options
-
-  :follow-redirects - default:true, whether to follow redirects
-  :max-redirects - default:20, maximum number of redirects to follow
-  :force-redirects - default:false, force redirecting methods to GET requests
-
-  In the response:
-
-  :redirects-count - number of redirects
-  :trace-redirects - vector of sites the request was redirected from"
-  [client]
-  (fn [{:keys [request-method max-redirects redirects-count trace-redirects url]
-        :or {redirects-count 1 trace-redirects []
-             ;; max-redirects default taken from Firefox
-             max-redirects 20}
-        :as req}]
-    (let [{:keys [status] :as resp} (client req)
-          resp-r (assoc resp :trace-redirects
-                        (if url
-                          (conj trace-redirects url)
-                          trace-redirects))]
-      (cond
-       (false? (opt req :follow-redirects))
-       resp
-       (not (redirect? resp-r))
-       resp-r
-       (and max-redirects (> redirects-count max-redirects))
-       (if (opt req :throw-exceptions)
-         (throw (IllegalStateException. (str "Too many redirects: " redirects-count)))
-         resp-r)
-       (= 303 status)
-       (follow-redirect client (assoc req :request-method :get
-                                      :redirects-count (inc redirects-count))
-                        resp-r)
-       (#{301 302} status)
-       (cond
-        (#{:get :head} request-method)
-        (follow-redirect client (assoc req :redirects-count
-                                       (inc redirects-count)) resp-r)
-        (opt req :force-redirects)
-        (follow-redirect client (assoc req
-                                  :request-method :get
-                                  :redirects-count (inc redirects-count))
-                         resp-r)
-        :else
-        resp-r)
-       (= 307 status)
-       (if (or (#{:get :head} request-method)
-               (opt req :force-redirects))
-         (follow-redirect client (assoc req :redirects-count
-                                        (inc redirects-count)) resp-r)
-         resp-r)
-       :else
-       resp-r))))
-
 (defn content-type-value [type]
   (if (keyword? type)
     (str "application/" (name type))
@@ -407,8 +315,6 @@
    wrap-oauth
    wrap-user-info
    wrap-url
-   ;; wrap-redirects
-   ;; wrap-exceptions
    wrap-accept
    wrap-accept-encoding
    wrap-content-type

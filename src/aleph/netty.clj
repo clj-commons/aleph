@@ -19,7 +19,8 @@
            (io.netty.channel.socket.nio NioServerSocketChannel
                                         NioSocketChannel)
            (io.netty.handler.ssl SslContext)
-           (io.netty.handler.ssl.util SelfSignedCertificate)
+           (io.netty.handler.ssl.util
+             SelfSignedCertificate InsecureTrustManagerFactory)
            (io.netty.util ResourceLeakDetector
                           ResourceLeakDetector$Level)
            (io.netty.util.concurrent GenericFutureListener)
@@ -106,13 +107,12 @@
           false))
       (do
         (-> ch .config (.setAutoRead false))
-        (prn 'backpressure)
+        #_(prn 'backpressure)
         (d/chain d
           (fn [result]
-
             (when-not result
               (.close ch))
-            (prn 'backpressure-off)
+            #_(prn 'backpressure-off)
             (-> ch .config (.setAutoRead true))))
         d))))
 
@@ -247,6 +247,12 @@
 (defn self-signed-ssl-context []
   (let [cert (SelfSignedCertificate.)]
     (SslContext/newServerContext (.certificate cert) (.privateKey cert))))
+
+(defn insecure-ssl-client-context []
+  (SslContext/newClientContext InsecureTrustManagerFactory/INSTANCE))
+
+(defn ssl-client-context []
+  (SslContext/newClientContext))
 
 ;;;
 
