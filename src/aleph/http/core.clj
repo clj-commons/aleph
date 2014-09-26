@@ -151,7 +151,9 @@
         req (DefaultHttpRequest.
               HttpVersion/HTTP_1_1
               (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (get m :uri))]
+              (str (get m :uri)
+                (when-let [q (get m :query-string)]
+                  (str "?" q))))]
     (when headers
       (map->headers! headers (.headers req)))
     req))

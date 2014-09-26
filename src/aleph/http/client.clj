@@ -109,7 +109,6 @@
 
       :channel-read
       ([_ ctx msg]
-         (prn msg)
          (cond
 
            (instance? HttpResponse msg)
@@ -209,9 +208,10 @@
   [host
    port
    ssl?
-   {:keys [raw-stream? bootstrap-transform keep-alive? insecure?]
+   {:keys [raw-stream? bootstrap-transform keep-alive? insecure? response-buffer-size]
     :or {bootstrap-transform identity
-         keep-alive? true}
+         keep-alive? true
+         response-buffer-size 65536}
     :as options}]
   (let [responses (s/stream 1024)
         requests (s/stream 1024)
@@ -231,7 +231,6 @@
 
         (s/consume
           (fn [req]
-            (prn req)
             (let [^HttpRequest req' (http/ring-request->netty-request req)]
               (HttpHeaders/setHost req' ^String host)
               (HttpHeaders/setKeepAlive req' keep-alive?)
@@ -241,12 +240,15 @@
         (s/on-closed responses #(s/close! requests))
 
         (fn [req]
-          (prn req)
           (if (contains? req ::close)
             (netty/wrap-channel-future (.close ch))
             (locking ch
               (s/put! requests req)
-              (s/take! responses))))))))
+              (let [rsp (s/take! responses)]
+                (if raw-stream?
+                  rsp
+                  (d/chain rsp
+                    #(update-in % [:body] netty/to-input-stream response-buffer-size)))))))))))
 
 ;;;
 

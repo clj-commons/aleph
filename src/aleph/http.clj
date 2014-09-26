@@ -34,25 +34,28 @@
         options)
       middleware/wrap-request)))
 
-(defn http-request
+(defn request
   [req]
   (d/chain (http-connection req)
     #(% (assoc req :keep-alive? false))))
 
-(defn- req [method url & {:keys [connection] :as options}]
-  (let [start (System/currentTimeMillis)
-        req (assoc options
-              :request-method method
-              :url url)]
-    (d/chain
-      (if connection
-        (if (d/deferred? connection)
-          (d/chain connection #(% req))
-          (connection req))
-        (http-request req))
-      (fn [rsp]
-        (assoc rsp
-          :connection-time (- (System/currentTimeMillis) start))))))
+(defn- req
+  ([method url]
+     (req method url nil))
+  ([method url {:keys [connection] :as options}]
+     (let [start (System/currentTimeMillis)
+           req (assoc options
+                 :request-method method
+                 :url url)]
+       (d/chain
+         (if connection
+           (if (d/deferred? connection)
+             (d/chain connection #(% req))
+             (connection req))
+           (request req))
+         (fn [rsp]
+           (assoc rsp
+             :connection-time (- (System/currentTimeMillis) start)))))))
 
 (def get
   "Makes a GET request, returns a deferred representing the response."

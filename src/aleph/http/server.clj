@@ -278,14 +278,11 @@
   [f
    {:keys [request-buffer-size]
     :or {request-buffer-size 16384}}]
-  (fn [req]
-    (let [body (:body req)]
-      (f
-        (assoc req :body
-          (when body
-            (bs/convert body InputStream
-              {:buffer-size request-buffer-size
-               :source-type (bs/stream-of netty/array-class)})))))))
+  (fn [{:keys [body] :as req}]
+    (f
+      (assoc req :body
+        (when body
+          (netty/to-input-stream body request-buffer-size))))))
 
 (defn start-server
   [handler

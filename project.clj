@@ -10,8 +10,7 @@
                  [byte-streams "0.2.0-SNAPSHOT"]
                  [potemkin "0.3.8"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.6.0"]
-                                  [criterium "0.4.3"]
-                                  [clj-http "1.0.0"]]}}
+                                  [criterium "0.4.3"]]}}
   :plugins [[codox "0.6.2"]]
   :test-selectors {:default (complement :benchmark)
                    :benchmark :benchmark

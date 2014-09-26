@@ -12,8 +12,7 @@
   (:require
     [aleph.netty :as netty]
     [byte-streams :as bs]
-    [aleph.http :as http]
-    [clj-http.client :as client])
+    [aleph.http :as http])
   (:import
     [java.util.concurrent
      Executors]
@@ -113,21 +112,23 @@
 (deftest test-response-formats
   (with-handler basic-handler
     (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
-      (= result
-        (:body
-          (client/get (str "http://localhost:8080/" path)
-            {:socket-timeout 1000}))))))
+      (is
+        (= result
+          (bs/to-string
+            (:body
+              @(http/get (str "http://localhost:8080/" path)
+                 {:socket-timeout 1000}))))))))
 
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-echo
   (with-both-handlers basic-handler
-    (doseq [len [1e3 1e4 1e5 1e6]]
+    (doseq [len [1e3 1e4 1e5 1e6 1e7]]
       (let [words (->> words (take len) (apply str))
             body (:body
-                   (client/put "http://localhost:8080/echo"
-                     {:body words
-                      :socket-timeout 2000}))]
+                   @(http/put "http://localhost:8080/echo"
+                      {:body words
+                       :socket-timeout 2000}))]
         (is (= words (bs/to-string body)))))))
 
 ;;;

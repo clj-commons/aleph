@@ -10,9 +10,9 @@
   (:use
     [clojure test])
   (:require
+    [byte-streams :as bs]
     [aleph.netty :as netty]
-    [aleph.http :as http]
-    [clj-http.client :as client])
+    [aleph.http :as http])
   (:import
     [java.util.concurrent
      Executors]))
@@ -35,12 +35,13 @@
                      {:url (create-url "/")
                       :method :get}
                      options)]
-       (->> (client/request
-              {:request-method (:method options)
-               :url (:url options)
-               :headers (:headers options)
-               :body (:body options)})
+       (->> @(http/request
+               {:method (:method options)
+                :url (:url options)
+                :headers (:headers options)
+                :body (:body options)})
          :body
+         bs/to-string
          read-string))))
 
 (defn get-request-value [request keys]
@@ -66,7 +67,7 @@
 
 (deftest test-request-method
   (with-server [:request-method]
-    (doseq [method [:get :post :put :delete]]
+    (doseq [method [:get :post :put :delete :trace :options]]
       (is (= method (request :method method))))))
 
 (deftest test-scheme
