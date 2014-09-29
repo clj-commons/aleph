@@ -78,7 +78,7 @@
                  :body "503 Service Unavailable"}))]
     (-> previous-response
       (d/chain'
-        netty/wrap-channel-future
+        netty/wrap-future
         (fn [_]
           (netty/release req)
           (netty/release body)

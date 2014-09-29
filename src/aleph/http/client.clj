@@ -8,30 +8,37 @@
     [aleph.http.client-middleware :as middleware]
     [aleph.netty :as netty])
   (:import
+    [java.net
+     URI]
     [io.netty.buffer
      ByteBuf
      Unpooled]
     [io.netty.handler.codec.http
      HttpMessage
      HttpClientCodec
+     DefaultHttpHeaders
      HttpHeaders
      HttpRequest
      HttpResponse
      HttpContent
      LastHttpContent
+     FullHttpResponse
      DefaultLastHttpContent
      DefaultHttpContent
      DefaultFullHttpResponse
      HttpVersion
-     HttpResponseStatus]
+     HttpResponseStatus
+     HttpObjectAggregator]
     [io.netty.channel
      Channel ChannelFuture
      ChannelFutureListener ChannelHandler
      ChannelPipeline]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
-     PingWebSocketFrame
+     PongWebSocketFrame
      TextWebSocketFrame
+     BinaryWebSocketFrame
+     WebSocketClientHandshaker
      WebSocketClientHandshakerFactory
      WebSocketFrame
      WebSocketVersion]
@@ -241,54 +248,126 @@
 
         (fn [req]
           (if (contains? req ::close)
-            (netty/wrap-channel-future (.close ch))
-            (locking ch
-              (s/put! requests req)
-              (let [rsp (s/take! responses)]
-                (if raw-stream?
-                  rsp
-                  (d/chain rsp
-                    #(update-in % [:body] netty/to-input-stream response-buffer-size)))))))))))
+            (netty/wrap-future (.close ch))
+            (let [rsp (locking ch
+                        (s/put! requests req)
+                        (s/take! responses))]
+              (if raw-stream?
+                rsp
+                (d/chain rsp
+                  #(update-in % [:body] netty/to-input-stream response-buffer-size))))))))))
 
 ;;;
 
 (defn websocket-frame-size [^WebSocketFrame frame]
   (-> frame .content .readableBytes))
 
-#_(defn websocket-handshaker [uri]
-  (WebSocketClientHandshaker. url nil false))
+(defn ^WebSocketClientHandshaker websocket-handshaker [uri headers]
+  (WebSocketClientHandshakerFactory/newHandshaker
+    uri
+    WebSocketVersion/V13
+    nil
+    false
+    (doto (DefaultHttpHeaders.) (http/map->headers! headers))))
 
-(defn weboscket-client-handler []
-  (let [d (d/deferred)]))
+(defn websocket-client-handler [uri headers]
+  (let [d (d/deferred)
+        in (s/stream 16)
+        handshaker (websocket-handshaker uri headers)]
+
+    [d
+
+     (netty/channel-handler
+
+       :exception-handler
+       ([_ ctx ex]
+          (when-not (d/error! d ex)
+            (log/warn ex "error in websocket client"))
+          (s/close s)
+          (.close ctx))
+
+       :channel-inactive
+       ([_ ctx]
+          (when (realized? d)
+            (s/close! @d)))
+
+       :channel-active
+       ([_ ctx]
+          (let [ch (.channel ctx)]
+            (.handshake handshaker ch)))
+
+       :channel-read
+       ([_ ctx msg]
+          (try
+            (let [ch (.channel ctx)]
+              (cond
+
+                (not (.isHandshakeComplete handshaker))
+                (do
+                  (.finishHandshake handshaker ch msg)
+                  (let [out (netty/sink ch false
+                              #(if (instance? CharSequence %)
+                                 (TextWebSocketFrame. (bs/to-string %))
+                                 (BinaryWebSocketFrame. (netty/to-byte-buf %))))]
+
+                    (d/success! d (s/splice out in))
+
+                    (s/on-drained out
+                      #(d/chain (.writeAndFlush ch (CloseWebSocketFrame.))
+                         netty/wrap-future
+                         (fn [_] (.close ctx))))))
+
+                (instance? FullHttpResponse msg)
+                (let [rsp ^FullHttpResponse msg]
+                  (throw
+                    (IllegalStateException.
+                      (str "unexpected HTTP response, status: "
+                        (.getStatus rsp)
+                        ", body: '"
+                        (bs/to-string (.content rsp))
+                        "'"))))
+
+                (instance? TextWebSocketFrame msg)
+                (netty/put! ch in (.text ^TextWebSocketFrame msg))
+
+                (instance? BinaryWebSocketFrame msg)
+                (netty/put! ch in (.content ^BinaryWebSocketFrame msg))
+
+                (instance? PongWebSocketFrame msg)
+                nil
+
+                (instance? CloseWebSocketFrame msg)
+                (.close ctx)))
+            (finally
+              (netty/release msg)))))]))
 
 (defn websocket-connection
-  [host
-   port
-   ssl?
-   {:keys [raw-stream? bootstrap-transform keep-alive? insecure? buffer-capacity]
+  [uri
+   {:keys [raw-stream? bootstrap-transform insecure? headers]
     :or {bootstrap-transform identity
          keep-alive? true}
     :as options}]
-  (let [[in out] (repeatedly 2 #(s/buffered-stream websocket-frame-size buffer-capacity))
-        c (netty/create-client
-            (fn [^ChannelPipeline pipeline]
-              #_(builder pipeline))
-            nil
-            bootstrap-transform
-            host
-            port)]
-    (d/chain c
-      (fn [^Channel ch]
-        #_(s/consume
-          (fn [req]
-            )
-          )
+  (let [uri (URI. uri)
+        ssl? (= "wss" (.getScheme uri))
+        [s handler] (websocket-client-handler uri headers)]
 
-        #_(s/on-closed responses #(s/close! requests))
+    (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
-        #_(fn [req]
-          (if (identical? ::close req)
-            (netty/wrap-channel-future (.close ch))
-            (locking ch
-              (s/put! requests req)
-              (s/take! responses))))))))
+    (d/chain
+      (netty/create-client
+        (fn [^ChannelPipeline pipeline]
+          (doto pipeline
+            (.addLast "http-client" (HttpClientCodec.))
+            (.addLast "aggregator" (HttpObjectAggregator. 16384))
+            (.addLast "handler" ^ChannelHandler handler)))
+        (when ssl?
+          (if insecure?
+            (netty/insecure-ssl-client-context)
+            (netty/ssl-client-context)))
+        bootstrap-transform
+        (.getHost uri)
+        (if (neg? (.getPort uri))
+          (if ssl? 443 80)
+          (.getPort uri)))
+      (fn [_]
+        s))))

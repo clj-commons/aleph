@@ -17,13 +17,13 @@
            (io.netty.channel.nio NioEventLoopGroup)
            (io.netty.channel.socket ServerSocketChannel)
            (io.netty.channel.socket.nio NioServerSocketChannel
-                                        NioSocketChannel)
+             NioSocketChannel)
            (io.netty.handler.ssl SslContext)
            (io.netty.handler.ssl.util
              SelfSignedCertificate InsecureTrustManagerFactory)
            (io.netty.util ResourceLeakDetector
                           ResourceLeakDetector$Level)
-           (io.netty.util.concurrent GenericFutureListener)
+           (io.netty.util.concurrent GenericFutureListener Future)
            (java.io InputStream)
            (java.nio ByteBuffer)))
 
@@ -87,7 +87,7 @@
       {:buffer-size chunk-size
        :source-type (bs/stream-of array-class)})))
 
-(defn wrap-channel-future [^ChannelFuture f]
+(defn wrap-future [^Future f]
   (when f
     (if (.isSuccess f)
       (d/success-deferred true)
@@ -142,7 +142,7 @@
     false)
   (put [this msg blocking?]
     (let [^ChannelFuture f (.writeAndFlush ch (coerce-fn msg))
-          d (wrap-channel-future f)]
+          d (wrap-future f)]
       (if blocking?
         @d
         d)))
@@ -155,7 +155,7 @@
   ([^Channel ch downstream? coerce-fn]
      (let [sink (->ChannelSink coerce-fn downstream? ch)]
        (d/chain' (.closeFuture ch)
-         wrap-channel-future
+         wrap-future
          (fn [_] (s/close! sink)))
        sink)))
 
@@ -303,7 +303,7 @@
 
             f (.connect b ^String host (int port))]
 
-        (d/chain (wrap-channel-future f)
+        (d/chain (wrap-future f)
           (fn [_]
             (.channel ^ChannelFuture f)))))))
 
@@ -345,7 +345,7 @@
         java.io.Closeable
         (close [_]
           (-> ch .close .sync)
-          (-> group .shutdownGracefully .sync))
+          (-> group .shutdownGracefully wrap-future))
         AlephServer
         (port [_]
           (-> ch .localAddress .getPort))))))

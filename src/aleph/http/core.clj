@@ -127,7 +127,7 @@
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
-(defn map->headers! [m ^HttpHeaders h]
+(defn map->headers! [^HttpHeaders h m]
   (doseq [e m]
     (let [k (normalize-header-key (key e))
           v (val e)]
@@ -143,7 +143,7 @@
               (HttpResponseStatus/valueOf status)
               false)]
     (when headers
-      (map->headers! headers (.headers rsp)))
+      (map->headers! (.headers rsp) headers))
     rsp))
 
 (defn ring-request->netty-request [m]
@@ -155,7 +155,7 @@
                 (when-let [q (get m :query-string)]
                   (str "?" q))))]
     (when headers
-      (map->headers! headers (.headers req)))
+      (map->headers! (.headers req) headers))
     req))
 
 (p/def-derived-map NettyRequest [^HttpRequest req ^Channel ch body]

@@ -34,10 +34,16 @@
         options)
       middleware/wrap-request)))
 
+(defn websocket-connection
+  ([url]
+     (websocket-connection url nil))
+  ([url options]
+     (client/websocket-connection url options)))
+
 (defn request
   [req]
-  (d/chain (http-connection req)
-    #(% (assoc req :keep-alive? false))))
+  (d/chain (http-connection (assoc req :keep-alive? false))
+    #(% req)))
 
 (defn- req
   ([method url]

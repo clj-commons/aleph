@@ -5,3 +5,9 @@ This is a ground-up rewrite of Aleph.  Currently only HTTP server functionality 
 ```clj
 [aleph "0.4.0-SNAPSHOT"]
 ```
+
+### license
+
+Copyright © 2014 Zachary Tellman
+
+Distributed under the MIT License
