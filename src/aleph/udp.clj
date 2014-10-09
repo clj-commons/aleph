@@ -25,6 +25,8 @@
   :message (.content packet))
 
 (defn socket
+  "Returns a deferred which yields a duplex stream that can be used to send UDP packets
+   and, if a port is defined, to receive them as well."
   [{:keys [port broadcast?]}]
   (let [in (s/stream)
         d (d/deferred)
@@ -56,5 +58,8 @@
                 :channel-read
                 ([_ ctx msg]
                    (netty/put! (.channel ctx) in msg)))))]
-    (-> b (.bind (int (or port 0))))
-    d))
+    (try
+      (-> b (.bind (int (or port 0))))
+      d
+      (catch Throwable e
+        (d/error-deferred e)))))

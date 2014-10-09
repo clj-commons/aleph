@@ -7,6 +7,8 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
+    [aleph.http.core
+     NettyRequest]
     [io.netty.buffer
      ByteBuf Unpooled]
     [io.netty.channel
@@ -19,9 +21,18 @@
      DefaultLastHttpContent
      HttpContent HttpHeaders
      HttpRequest HttpResponse
-     HttpResponseStatus
+     HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion
      LastHttpContent]
+    [io.netty.handler.codec.http.websocketx
+     WebSocketServerHandshakerFactory
+     WebSocketServerHandshaker
+     PingWebSocketFrame
+     PongWebSocketFrame
+     TextWebSocketFrame
+     BinaryWebSocketFrame
+     CloseWebSocketFrame
+     WebSocketFrame]
     [java.io
      Closeable File InputStream RandomAccessFile]
     [java.nio
@@ -62,13 +73,14 @@
 
 (defn handle-request
   [ch
+   ssl?
    handler
    executor
    req
    previous-response
    body
    keep-alive?]
-  (let [req' (http/netty-request->ring-request req ch body)
+  (let [req' (http/netty-request->ring-request req ssl? ch body)
         rsp (try
               (d/future-with executor
                 (handler req'))
@@ -92,7 +104,7 @@
                     (invalid-value-response rsp)))))))))))
 
 (defn ring-handler
-  [f executor buffer-capacity]
+  [ssl? f executor buffer-capacity]
   (let [request (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
@@ -104,6 +116,7 @@
           (reset! previous-response
             (handle-request
               ch
+              ssl?
               f
               executor
               req
@@ -194,7 +207,7 @@
                          (handle-request (.channel ctx) @request s)))))))))))))
 
 (defn raw-ring-handler
-  [f executor buffer-capacity]
+  [ssl? f executor buffer-capacity]
   (let [stream (atom nil)
         previous-response (atom nil)
 
@@ -203,6 +216,7 @@
           (reset! previous-response
             (handle-request
               ch
+              ssl?
               f
               executor
               req
@@ -251,7 +265,8 @@
      max-initial-line-length
      max-header-size
      max-chunk-size
-     raw-stream?]
+     raw-stream?
+     ssl?]
     :or
     {request-buffer-size 16384
      max-initial-line-length 4098
@@ -260,8 +275,8 @@
   (assert executor "must define executor for HTTP server")
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
-                    (raw-ring-handler handler executor request-buffer-size)
-                    (ring-handler handler executor request-buffer-size))]
+                    (raw-ring-handler ssl? handler executor request-buffer-size)
+                    (ring-handler ssl? handler executor request-buffer-size))]
 
       (doto pipeline
         (.addLast "http-server"
@@ -270,7 +285,7 @@
             max-header-size
             max-chunk-size
             false))
-        (.addLast "handler" ^ChannelHandler handler)))))
+        (.addLast "request-handler" ^ChannelHandler handler)))))
 
 ;;;
 
@@ -294,7 +309,96 @@
       (if raw-stream?
         handler
         (wrap-stream->input-stream handler options))
-      options)
+      (assoc options :ssl? (boolean ssl-context)))
     ssl-context
     bootstrap-transform
     port))
+
+;;;
+
+(defn websocket-server-handler [raw-stream? ^Channel ch ^WebSocketServerHandshaker handshaker]
+  (let [d (d/deferred)
+        out (netty/sink ch false
+              #(if (instance? CharSequence %)
+                 (TextWebSocketFrame. (bs/to-string %))
+                 (BinaryWebSocketFrame. (netty/to-byte-buf %))))
+        in (s/stream 16)]
+
+    (s/on-drained in
+      #(d/chain (.close handshaker ch (CloseWebSocketFrame.))
+         netty/wrap-future
+         (fn [_] (.close ch))))
+
+    [(s/splice out in)
+
+     (netty/channel-handler
+
+       :exception-handler
+       ([_ ctx ex]
+          (log/warn ex "error in websocket handler")
+          (s/close s)
+          (.close ctx))
+
+       :channel-inactive
+       ([_ ctx]
+          (s/close! out)
+          (s/close! in))
+
+       :channel-read
+       ([_ ctx msg]
+          (try
+            (let [ch (.channel ctx)]
+              (when (instance? WebSocketFrame msg)
+                (let [^WebSocketFrame msg msg]
+                  (cond
+
+                    (instance? TextWebSocketFrame msg)
+                    (netty/put! ch in (.text ^TextWebSocketFrame msg))
+
+                    (instance? BinaryWebSocketFrame msg)
+                    (let [body (.content ^BinaryWebSocketFrame (netty/acquire msg))]
+                      (netty/put! ch in
+                        (if raw-stream?
+                          body
+                          (netty/buf->array body))))
+
+                    (instance? PingWebSocketFrame msg)
+                    (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
+
+                    (instance? CloseWebSocketFrame msg)
+                    (.close handshaker ch (netty/acquire msg))))))
+            (finally
+              (netty/release msg)))))]))
+
+(defn initialize-websocket-handler
+  [^NettyRequest req
+   {:keys [raw-stream? headers]
+    :or {raw-stream? false}
+    :as options}]
+  (let [^Channel ch (.ch req)
+        url (str
+              (if (identical? :https (:scheme req))
+                "wss://"
+                "ws://")
+              (get-in req [:headers "host"])
+              (:uri req))
+        req (http/ring-request->full-netty-request req)
+        factory (WebSocketServerHandshakerFactory. url nil false)]
+    (if-let [handshaker (.newHandshaker factory req)]
+      (try
+        (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
+              p (.newPromise ch)
+              h (DefaultHttpHeaders.)]
+          (http/map->headers! h headers)
+          (.handshake handshaker ch req h p)
+          (.addLast (.pipeline ch) "websocket-handler" handler)
+          (d/chain' (netty/wrap-future p)
+            (fn [x]
+              (if x
+                s
+                (.await p)))))
+        (catch Throwable e
+          (d/error-deferred e)))
+      (do
+        (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
+        (d/error-deferred (IllegalStateException. "unsupported version"))))))

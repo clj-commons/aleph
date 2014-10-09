@@ -10,16 +10,21 @@
     [java.net URI]))
 
 (defn start-server
+  "Starts an HTTP server using the provided Ring `handler`."
   [handler
    {:keys [port executor raw-stream? bootstrap-transform ssl-context]
     :as options}]
   (server/start-server handler options))
 
-(defn close-connection
+(defn close-http-connection
+  "Given a function returned by `http-connection`, closes it."
   [conn]
   (client/close-connection conn))
 
 (defn http-connection
+  "Returns a deferred that yields a function which, given an HTTP request, returns
+   a deferred representing the HTTP response.  If the server disconnects, all responses
+   will be errors, and a new connection must be created."
   [{:keys [url host port scheme] :as options}]
   (let [^URI uri (when url (URI. url))
         scheme (or scheme (when uri (.getScheme uri)) "http")
@@ -34,13 +39,26 @@
         options)
       middleware/wrap-request)))
 
-(defn websocket-connection
+(defn websocket-client
+  "Given a url, returns a deferred which yields a duplex stream that can be used to
+   communicate with a server over the WebSocket protocol."
   ([url]
-     (websocket-connection url nil))
-  ([url options]
+     (websocket-client url nil))
+  ([url {:keys [raw-stream? insecure? headers] :as options}]
      (client/websocket-connection url options)))
 
+(defn websocket-connection
+  "Given an HTTP request that can be upgraded to a WebSocket connection, returns a
+   deferred which yields a duplex stream that can be used to communicate with the
+   client over the WebSocket protocol."
+  ([req]
+     (websocket-connection req nil))
+  ([req {:keys [raw-stream? headers] :as options}]
+     (server/initialize-websocket-handler req options)))
+
 (defn request
+  "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
+   by `clj-http`, and returns a deferred representing the HTTP response."
   [req]
   (d/chain (http-connection (assoc req :keep-alive? false))
     #(% req)))

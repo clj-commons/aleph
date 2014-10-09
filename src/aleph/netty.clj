@@ -74,7 +74,9 @@
   (Unpooled/wrappedBuffer buf))
 
 (defn ^ByteBuf to-byte-buf [x]
-  (bs/convert x ByteBuf))
+  (if (nil? x)
+    Unpooled/EMPTY_BUFFER
+    (bs/convert x ByteBuf)))
 
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))

@@ -19,7 +19,8 @@
      ByteBuffer]
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
-     DefaultHttpResponse HttpHeaders HttpContent
+     DefaultHttpResponse DefaultFullHttpRequest
+     HttpHeaders HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
      DefaultHttpContent
@@ -158,8 +159,22 @@
       (map->headers! (.headers req) headers))
     req))
 
-(p/def-derived-map NettyRequest [^HttpRequest req ^Channel ch body]
-  :scheme :http
+(defn ring-request->full-netty-request [m]
+  (prn m)
+  (let [headers (get m :headers)
+        req (DefaultFullHttpRequest.
+              HttpVersion/HTTP_1_1
+              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
+              (str (get m :uri)
+                (when-let [q (get m :query-string)]
+                  (str "?" q)))
+              (netty/to-byte-buf (:body m)))]
+    (when headers
+      (map->headers! (.headers req) headers))
+    req))
+
+(p/def-derived-map NettyRequest [^HttpRequest req ssl? ^Channel ch body]
+  :scheme (if ssl? :https :http)
   :keep-alive? (HttpHeaders/isKeepAlive req)
   :request-method (-> req .getMethod .name str/lower-case keyword)
   :headers (-> req .headers headers->map)
@@ -180,8 +195,8 @@
   :headers (-> rsp .headers headers->map)
   :body body)
 
-(defn netty-request->ring-request [req ch body]
-  (->NettyRequest req ch body))
+(defn netty-request->ring-request [req ssl? ch body]
+  (->NettyRequest req ssl? ch body))
 
 (defn netty-response->ring-response [rsp body]
   (->NettyResponse rsp body))

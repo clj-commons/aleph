@@ -270,7 +270,7 @@
     false
     (doto (DefaultHttpHeaders.) (http/map->headers! headers))))
 
-(defn websocket-client-handler [uri headers]
+(defn websocket-client-handler [raw-stream? uri headers]
   (let [d (d/deferred)
         in (s/stream 16)
         handshaker (websocket-handshaker uri headers)]
@@ -312,7 +312,7 @@
 
                     (d/success! d (s/splice out in))
 
-                    (s/on-drained out
+                    (s/on-drained in
                       #(d/chain (.writeAndFlush ch (CloseWebSocketFrame.))
                          netty/wrap-future
                          (fn [_] (.close ctx))))))
@@ -331,7 +331,11 @@
                 (netty/put! ch in (.text ^TextWebSocketFrame msg))
 
                 (instance? BinaryWebSocketFrame msg)
-                (netty/put! ch in (.content ^BinaryWebSocketFrame msg))
+                (let [frame (netty/acquire (.content ^BinaryWebSocketFrame msg))]
+                  (netty/put! ch in
+                    (if raw-stream?
+                      frame
+                      (netty/buf->array frame))))
 
                 (instance? PongWebSocketFrame msg)
                 nil
@@ -345,11 +349,12 @@
   [uri
    {:keys [raw-stream? bootstrap-transform insecure? headers]
     :or {bootstrap-transform identity
-         keep-alive? true}
+         keep-alive? true
+         raw-stream? false}
     :as options}]
   (let [uri (URI. uri)
         ssl? (= "wss" (.getScheme uri))
-        [s handler] (websocket-client-handler uri headers)]
+        [s handler] (websocket-client-handler raw-stream? uri headers)]
 
     (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
