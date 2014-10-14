@@ -160,7 +160,6 @@
     req))
 
 (defn ring-request->full-netty-request [m]
-  (prn m)
   (let [headers (get m :headers)
         req (DefaultFullHttpRequest.
               HttpVersion/HTTP_1_1

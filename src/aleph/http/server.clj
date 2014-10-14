@@ -2,6 +2,7 @@
   (:require
     [aleph.http.core :as http]
     [aleph.netty :as netty]
+    [aleph.flow :as flow]
     [byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -38,6 +39,8 @@
     [java.nio
      ByteBuffer]
     [java.util.concurrent
+     Executor
+     ExecutorService
      RejectedExecutionException]
     [java.util.concurrent.atomic
      AtomicInteger]))
@@ -72,7 +75,7 @@
       (str "cannot treat " (pr-str x) "as HTTP response"))))
 
 (defn handle-request
-  [ch
+  [^Channel ch
    ssl?
    handler
    executor
@@ -81,13 +84,20 @@
    body
    keep-alive?]
   (let [req' (http/netty-request->ring-request req ssl? ch body)
-        rsp (try
-              (d/future-with executor
-                (handler req'))
-              (catch RejectedExecutionException e
-                {:status 503
-                 :headers {"content-type" "text/plain"}
-                 :body "503 Service Unavailable"}))]
+        rsp (if executor
+
+              ;; handle request on a separate thread
+              (try
+                (d/future-with executor
+                  (handler req'))
+                (catch RejectedExecutionException e
+                  {:status 503
+                   :headers {"content-type" "text/plain"}
+                   :body "503 Service Unavailable"}))
+
+              ;; handle it inline (hope you know what you're doing)
+              (handler req'))]
+
     (-> previous-response
       (d/chain'
         netty/wrap-future
@@ -98,10 +108,11 @@
             (d/catch' error-response)
             (d/chain'
               (fn [rsp]
-                (send-response ch keep-alive?
-                  (if (map? rsp)
-                    rsp
-                    (invalid-value-response rsp)))))))))))
+                (when (.get (.pipeline ch) HttpServerCodec)
+                  (send-response ch keep-alive?
+                    (if (map? rsp)
+                      rsp
+                      (invalid-value-response rsp))))))))))))
 
 (defn ring-handler
   [ssl? f executor buffer-capacity]
@@ -183,7 +194,6 @@
                  ;; already have a stream going
                  (do
                    (netty/put! (.channel ctx) s (netty/buf->array content))
-                   #_(s/put! s (netty/buf->array content))
                    (netty/release content))
 
                  (do
@@ -272,7 +282,6 @@
      max-initial-line-length 4098
      max-header-size 8196
      max-chunk-size 8196}}]
-  (assert executor "must define executor for HTTP server")
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler executor request-buffer-size)
@@ -304,15 +313,34 @@
    {:keys [port executor raw-stream? bootstrap-transform ssl-context]
     :or {bootstrap-transform identity}
     :as options}]
-  (netty/start-server
-    (pipeline-builder
-      (if raw-stream?
-        handler
-        (wrap-stream->input-stream handler options))
-      (assoc options :ssl? (boolean ssl-context)))
-    ssl-context
-    bootstrap-transform
-    port))
+  (let [executor' (cond
+                    (instance? Executor executor)
+                    executor
+
+                    (nil? executor)
+                    (flow/executor nil)
+
+                    (map? executor)
+                    (flow/executor executor)
+
+                    (= :none executor)
+                    nil
+
+                    :else
+                    (throw
+                      (IllegalArgumentException.
+                        (str "invalid executor specification: " (pr-str executor)))))]
+    (netty/start-server
+      (pipeline-builder
+        (if raw-stream?
+          handler
+          (wrap-stream->input-stream handler options))
+        (assoc options :executor executor' :ssl? (boolean ssl-context)))
+      ssl-context
+      bootstrap-transform
+      (when-not (instance? Executor executor)
+        #(when executor' (.shutdown ^ExecutorService executor')))
+      port)))
 
 ;;;
 
@@ -391,12 +419,14 @@
               h (DefaultHttpHeaders.)]
           (http/map->headers! h headers)
           (.handshake handshaker ch req h p)
-          (.addLast (.pipeline ch) "websocket-handler" handler)
           (d/chain' (netty/wrap-future p)
             (fn [x]
-              (if x
-                s
-                (.await p)))))
+              (let [pipeline (.pipeline ch)]
+                (.remove pipeline "request-handler")
+                (.addLast pipeline "websocket-handler" handler)
+                (if x
+                  s
+                  (.await p))))))
         (catch Throwable e
           (d/error-deferred e)))
       (do

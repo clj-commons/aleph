@@ -55,6 +55,7 @@
       (.addLast pipeline "handler" (server-channel-handler handler options)))
     ssl-context
     bootstrap-transform
+    nil
     port))
 
 (defn- ^ChannelHandler client-channel-handler

@@ -310,7 +310,7 @@
             (.channel ^ChannelFuture f)))))))
 
 (defn start-server
-  [pipeline-builder ssl-context bootstrap-transform port]
+  [pipeline-builder ssl-context bootstrap-transform on-close port]
   (let [^EventLoopGroup
         group (if (epoll?)
                 (EpollEventLoopGroup.)
@@ -346,6 +346,7 @@
       (reify
         java.io.Closeable
         (close [_]
+          (when on-close (on-close))
           (-> ch .close .sync)
           (-> group .shutdownGracefully wrap-future))
         AlephServer

@@ -12,8 +12,6 @@
      File
      ByteArrayInputStream]))
 
-(def ex (Executors/newFixedThreadPool 16))
-
 (netty/leak-detector-level! :paranoid)
 
 (def string-response "String!")
@@ -87,11 +85,11 @@
          (.close ^java.io.Closeable server#)))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080, :executor ex})
+  `(with-server (http/start-server ~handler {:port 8080})
      ~@body))
 
 (defmacro with-raw-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080, :executor ex, :raw-stream? true})
+  `(with-server (http/start-server ~handler {:port 8080, :raw-stream? true})
      ~@body))
 
 (defmacro with-both-handlers [handler & body]
@@ -128,7 +126,7 @@
 (deftest ^:benchmark benchmark-http
   (println "starting HTTP benchmark server on 8080")
   (netty/leak-detector-level! :disabled)
-  (let [server (http/start-server hello-handler {:port 8080 :executor ex})]
+  (let [server (http/start-server hello-handler {:port 8080 :executor :none})]
     (Thread/sleep (* 1000 120))
     (println "stopping server")
-    (.close server)))
+    (.close ^java.io.Closeable server)))
