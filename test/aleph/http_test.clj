@@ -126,7 +126,7 @@
 (deftest ^:benchmark benchmark-http
   (println "starting HTTP benchmark server on 8080")
   (netty/leak-detector-level! :disabled)
-  (let [server (http/start-server hello-handler {:port 8080 :executor :none})]
+  (let [server (http/start-server hello-handler {:port 8080})]
     (Thread/sleep (* 1000 120))
     (println "stopping server")
     (.close ^java.io.Closeable server)))

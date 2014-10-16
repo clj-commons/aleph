@@ -44,26 +44,30 @@
           threads (atom 0)]
       (reify ThreadFactory
         (newThread [_ r]
-          (Thread. r (str "aleph-pool-" factory "-" (swap! threads inc))))))))
+          (doto
+            (Thread. r (str "aleph-pool-" factory "-" (swap! threads inc)))
+            (.setDaemon true)))))))
 
-(defn executor
+(defn instrumented-executor
+  "Returns a `java.util.concurrent.ExecutorService`, using Dirigiste.  A Dirigiste
+   `controller` may be specified, as well as a `stats-callback` which will be invoked
+   with a map of sampled metrics."
   [{:keys
     [thread-factory
-     queue-size
-     max-threads
-     target-utilization
+     queue-length
      stats-callback
      sample-period
-     control-period]
-    :or {utilization 0.9
-         max-threads 256
-         sample-period 25
-         control-period 10000}}]
-  (let [c (Controllers/utilization 0.9 max-threads)]
+     control-period
+     controller
+     metrics]
+    :or {sample-period 25
+         control-period 10000
+         metrics (EnumSet/allOf Executor$Metric)}}]
+  (let [^Controller c controller]
     (Executor.
       (or thread-factory (create-thread-factory))
-      (if queue-size
-        (ArrayBlockingQueue. queue-size)
+      (if queue-length
+        (ArrayBlockingQueue. queue-length)
         (SynchronousQueue.))
       (if stats-callback
         (reify Controller
@@ -73,7 +77,32 @@
             (stats-callback (stats->map s))
             (.adjustment c s)))
         c)
-      (EnumSet/allOf Executor$Metric)
+      metrics
       sample-period
       control-period
       TimeUnit/MILLISECONDS)))
+
+(defn fixed-thread-executor
+  "Returns an executor which has a fixed number of threads."
+  ([num-threads]
+     (fixed-thread-executor num-threads nil))
+  ([num-threads options]
+     (instrumented-executor
+       (assoc options
+         :max-threads num-threads
+         :controller (reify Controller
+                       (shouldIncrement [_ n]
+                         (< n num-threads))
+                       (adjustment [_ s]
+                         (- num-threads (.getNumWorkers s))))))))
+
+(defn utilization-executor
+  "Returns an executor which sizes the thread pool according to target utilization, within
+   `[0,1]`, up to `max-threads`."
+  ([utilization max-threads]
+     (utilization-executor utilization max-threads nil))
+  ([utilization max-threads options]
+     (instrumented-executor
+       (assoc options
+         :max-threads max-threads
+         :controller (Controllers/utilization utilization max-threads)))))

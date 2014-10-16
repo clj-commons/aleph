@@ -11,8 +11,6 @@
 
 (netty/leak-detector-level! :paranoid)
 
-(def ex (Executors/newFixedThreadPool 8))
-
 (defn create-url
   ([path]
      (create-url 8080 path))
@@ -49,7 +47,7 @@
      :body (prn-str (get-request-value request keys))}))
 
 (defmacro with-server [keys & body]
-  `(let [server# (http/start-server (request-callback ~keys) {:port 8080, :executor ex})]
+  `(let [server# (http/start-server (request-callback ~keys) {:port 8080})]
      (try
        ~@body
        (finally

@@ -36,4 +36,5 @@
   (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (s/put! c "hello")
-      (is (= "hello" @(s/take! c))))))
+      (is (= "hello" @(s/take! c))))
+    (is (= 400 (:status @(http/get "http://localhost:8080"))))))

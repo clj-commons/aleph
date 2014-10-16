@@ -35,7 +35,9 @@
     [java.util
      Map$Entry]
     [java.util.concurrent
-     ConcurrentHashMap]))
+     ConcurrentHashMap]
+    [java.util.concurrent.atomic
+     AtomicBoolean]))
 
 (def non-standard-keys
   (let [ks ["Content-MD5"
@@ -172,7 +174,12 @@
       (map->headers! (.headers req) headers))
     req))
 
-(p/def-derived-map NettyRequest [^HttpRequest req ssl? ^Channel ch body]
+(p/def-derived-map NettyRequest
+  [^HttpRequest req
+   ssl?
+   ^Channel ch
+   ^AtomicBoolean websocket?
+   body]
   :scheme (if ssl? :https :http)
   :keep-alive? (HttpHeaders/isKeepAlive req)
   :request-method (-> req .getMethod .name str/lower-case keyword)
@@ -195,7 +202,7 @@
   :body body)
 
 (defn netty-request->ring-request [req ssl? ch body]
-  (->NettyRequest req ssl? ch body))
+  (->NettyRequest req ssl? ch (AtomicBoolean. false) body))
 
 (defn netty-response->ring-response [rsp body]
   (->NettyResponse rsp body))
