@@ -10,3 +10,4 @@ doc
 dump.rdb
 target/**
 .nrepl*
+/doc

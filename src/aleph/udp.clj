@@ -24,6 +24,8 @@
   :port (-> packet ^InetSocketAddress (.sender) .getPort)
   :message (.content packet))
 
+(alter-meta! #'->UdpPacket assoc :private true)
+
 (defn socket
   "Returns a deferred which yields a duplex stream that can be used to send UDP packets
    and, if a port is defined, to receive them as well."

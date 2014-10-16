@@ -17,6 +17,8 @@
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
   :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
+(alter-meta! #'->TcpConnection assoc :private true)
+
 (defn- ^ChannelHandler server-channel-handler
   [handler options]
   (let [in (s/stream)]
