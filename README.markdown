@@ -3,7 +3,7 @@ Aleph is a Clojure framework for asynchronous communication, built on top of [Ne
 This is a ground-up rewrite of Aleph.  Currently HTTP, TCP, and UDP are all implemented, but not yet documented.
 
 ```clj
-[aleph "0.4.0-alpha1"]
+[aleph "0.4.0-alpha2"]
 ```
 
 ### license
