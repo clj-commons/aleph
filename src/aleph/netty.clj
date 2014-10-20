@@ -143,7 +143,13 @@
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
-    (let [^ChannelFuture f (.writeAndFlush ch (coerce-fn msg))
+    (let [msg (try
+                (coerce-fn msg)
+                (catch Exception e
+                  (log/error e
+                    (str "cannot coerce " (.getName (class msg)) " into binary representation"))
+                  (.close ch)))
+          ^ChannelFuture f (.writeAndFlush ch msg)
           d (wrap-future f)]
       (if blocking?
         @d

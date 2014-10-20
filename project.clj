@@ -1,4 +1,4 @@
-(defproject aleph "0.4.0-alpha2"
+(defproject aleph "0.4.0-SNAPSHOT"
   :description "a library for asynchronous network communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -9,7 +9,7 @@
                  [manifold "0.1.0-beta1"]
                  [byte-streams "0.2.0-alpha1"]
                  [potemkin "0.3.10"]]
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.6.0"]
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha2"]
                                   [criterium "0.4.3"]
                                   [leinjacker "0.4.1"]]}}
   :codox {;:writer codox-md.writer/write-docs

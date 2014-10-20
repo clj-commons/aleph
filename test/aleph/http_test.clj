@@ -15,7 +15,7 @@
 (netty/leak-detector-level! :paranoid)
 
 (def string-response "String!")
-(def seq-response ["sequence: " 1 " two " 3.0])
+(def seq-response (map identity ["sequence: " 1 " two " 3.0]))
 (def file-response (File. (str (System/getProperty "user.dir") "/test/file.txt")))
 (def stream-response "Stream!")
 

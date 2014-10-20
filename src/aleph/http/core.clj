@@ -179,14 +179,18 @@
    ssl?
    ^Channel ch
    ^AtomicBoolean websocket?
+   question-mark-index
    body]
   :scheme (if ssl? :https :http)
   :keep-alive? (HttpHeaders/isKeepAlive req)
   :request-method (-> req .getMethod .name str/lower-case keyword)
   :headers (-> req .headers headers->map)
-  :uri (-> req .getUri)
-  :query-string (let [uri (.getUri req)
-                      idx (.indexOf uri (int \?))]
+  :uri (let [idx (long question-mark-index)]
+         (if (neg? idx)
+           (.getUri req)
+           (.substring (.getUri req) 0 idx)))
+  :query-string (let [idx (long question-mark-index)
+                      uri (.getUri req)]
                   (if (neg? idx)
                     nil
                     (.substring uri (unchecked-inc idx))))
@@ -201,8 +205,13 @@
   :headers (-> rsp .headers headers->map)
   :body body)
 
-(defn netty-request->ring-request [req ssl? ch body]
-  (->NettyRequest req ssl? ch (AtomicBoolean. false) body))
+(defn netty-request->ring-request [^HttpRequest req ssl? ch body]
+  (->NettyRequest
+    req
+    ssl?
+    ch
+    (AtomicBoolean. false)
+    (-> req .getUri (.indexOf (int 63))) body))
 
 (defn netty-response->ring-response [rsp body]
   (->NettyResponse rsp body))

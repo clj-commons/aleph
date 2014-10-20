@@ -8,6 +8,10 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
+    [java.util
+     EnumSet]
+    [io.aleph.dirigiste
+     Executor$Metric]
     [aleph.http.core
      NettyRequest]
     [io.netty.buffer
@@ -338,7 +342,8 @@
                    executor
 
                    (nil? executor)
-                   (flow/utilization-executor 0.9 512)
+                   (flow/utilization-executor 0.9 512
+                     {:metrics (EnumSet/of Executor$Metric/UTILIZATION)})
 
                    (= :none executor)
                    nil
@@ -460,7 +465,7 @@
                     {:status 400
                      :headers {"content-type" "text/plain"}})
                   "expected websocket request")
-                e))))
+                (d/error-deferred e)))))
         (catch Throwable e
           (d/error-deferred e)))
       (do

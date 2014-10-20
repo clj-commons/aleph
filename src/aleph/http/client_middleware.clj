@@ -1,12 +1,15 @@
 (ns aleph.http.client-middleware
   "This middleware is adapted from clj-http, whose license is amendable to this sort of
    copy/pastery"
-  (:require [clojure.stacktrace :refer [root-cause]]
-            [clojure.string :as str]
-            [clojure.walk :refer [prewalk]]
-            [manifold.deferred :as d])
-  (:import (java.io InputStream)
-           (java.net URL URLEncoder UnknownHostException)))
+  (:refer-clojure :exclude [update])
+  (:require
+    [clojure.stacktrace :refer [root-cause]]
+    [clojure.string :as str]
+    [clojure.walk :refer [prewalk]]
+    [manifold.deferred :as d])
+  (:import
+    [java.io InputStream]
+    [java.net URL URLEncoder UnknownHostException]))
 
 ;;;
 
@@ -30,8 +33,11 @@
       m)
     (dissoc m k)))
 
-(defn url-encode [s]
-  (URLEncoder/encode s "UTF-8"))
+(defn url-encode
+  ([s]
+     (url-encode s "UTF-8"))
+  ([s encoding]
+     (URLEncoder/encode s encoding)))
 
 (defn opt
   "Check the request parameters for a keyword  boolean option, with or without
