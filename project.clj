@@ -1,4 +1,4 @@
-(defproject aleph "0.4.0-alpha3"
+(defproject aleph "0.4.0-alpha4"
   :description "a library for asynchronous network communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -6,9 +6,9 @@
   :dependencies [[org.clojure/tools.logging "0.3.1"]
                  [io.netty/netty-all "4.0.23.Final"]
                  [io.aleph/dirigiste "0.1.0-alpha3"]
-                 [manifold "0.1.0-beta1"]
-                 [byte-streams "0.2.0-alpha1"]
-                 [potemkin "0.3.10"]]
+                 [manifold "0.1.0-beta2"]
+                 [byte-streams "0.2.0-alpha3"]
+                 [potemkin "0.3.11"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha2"]
                                   [criterium "0.4.3"]
                                   [leinjacker "0.4.1"]]}}
