@@ -1,31 +1,38 @@
 (ns aleph.netty
-  (:require [byte-streams :as bs]
-            [clojure.tools.logging :as log]
-            [manifold.deferred :as d]
-            [manifold.stream :as s]
-            [primitive-math :as p])
-  (:import (io.netty.bootstrap Bootstrap ServerBootstrap)
-           (io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled)
-           (io.netty.channel Channel ChannelFuture ChannelOption
-             ChannelPipeline EventLoopGroup
-             ChannelHandler
-             ChannelInboundHandler
-             ChannelOutboundHandler)
-           (io.netty.channel.epoll Epoll EpollEventLoopGroup
-                                   EpollServerSocketChannel
-                                   EpollSocketChannel)
-           (io.netty.channel.nio NioEventLoopGroup)
-           (io.netty.channel.socket ServerSocketChannel)
-           (io.netty.channel.socket.nio NioServerSocketChannel
-             NioSocketChannel)
-           (io.netty.handler.ssl SslContext)
-           (io.netty.handler.ssl.util
-             SelfSignedCertificate InsecureTrustManagerFactory)
-           (io.netty.util ResourceLeakDetector
-                          ResourceLeakDetector$Level)
-           (io.netty.util.concurrent GenericFutureListener Future)
-           (java.io InputStream)
-           (java.nio ByteBuffer)))
+  (:require
+    [byte-streams :as bs]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s]
+    [primitive-math :as p])
+  (:import
+    [io.netty.bootstrap Bootstrap ServerBootstrap]
+    [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
+    [io.netty.channel Channel ChannelFuture ChannelOption
+     ChannelPipeline EventLoopGroup
+     ChannelHandler
+     ChannelInboundHandler
+     ChannelOutboundHandler]
+    [io.netty.channel.epoll Epoll EpollEventLoopGroup
+     EpollServerSocketChannel
+     EpollSocketChannel]
+    [io.netty.channel.nio NioEventLoopGroup]
+    [io.netty.channel.socket ServerSocketChannel]
+    [io.netty.channel.socket.nio NioServerSocketChannel
+     NioSocketChannel]
+    [io.netty.handler.ssl SslContext]
+    [io.netty.handler.ssl.util
+     SelfSignedCertificate InsecureTrustManagerFactory]
+    [io.netty.util ResourceLeakDetector
+     ResourceLeakDetector$Level]
+    [io.netty.util.concurrent GenericFutureListener Future]
+    [java.io InputStream]
+    [java.nio ByteBuffer]
+    [io.netty.util.internal.logging
+     InternalLoggerFactory
+     Log4JLoggerFactory
+     Slf4JLoggerFactory
+     JdkLoggerFactory]))
 
 ;;;
 
@@ -42,6 +49,13 @@
       :simple ResourceLeakDetector$Level/SIMPLE
       :advanced ResourceLeakDetector$Level/ADVANCED
       :paranoid ResourceLeakDetector$Level/PARANOID)))
+
+(defn set-logger! [logger]
+  (InternalLoggerFactory/setDefaultFactory
+    (case
+      :log4j (Log4JLoggerFactory.)
+      :slf4j (Slf4JLoggerFactory.)
+      :jdk   (JdkLoggerFactory.))))
 
 ;;;
 

@@ -20,7 +20,7 @@
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders HttpContent
+     HttpHeaders DefaultHttpHeaders HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
      DefaultHttpContent
@@ -113,19 +113,13 @@
       (if-let [e (find added k)]
         (val e)
         (let [k' (str/lower-case (name k))
-              vals (->> headers
-                     .entries
-                     (filter #(= k' (str/lower-case (.getKey ^Map$Entry %))))
-                     (mapv #(.getValue ^Map$Entry %)))]
-          (cond
-            (= 0 (count vals))
-            default-value
-
-            (= 1 (count vals))
-            (nth vals 0)
-
-            :else
-            vals))))))
+              entry (->> headers
+                      .entries
+                      (filter #(= k' (str/lower-case (.getKey ^Map$Entry %))))
+                      first)]
+          (if entry
+            (.getValue ^Map$Entry entry)
+            default-value))))))
 
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
