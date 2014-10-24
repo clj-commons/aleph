@@ -216,14 +216,14 @@
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
 (let [ary-class (class (byte-array 0))]
-  (defn coerce-element [x]
+  (defn coerce-element [ch x]
     (if (or
           (instance? String x)
           (instance? ary-class x)
           (instance? ByteBuffer x)
           (instance? ByteBuf x))
-      (netty/to-byte-buf x)
-      (netty/to-byte-buf (str x)))))
+      (netty/to-byte-buf ch x)
+      (netty/to-byte-buf ch (str x)))))
 
 (defn send-streaming-body [ch ^HttpMessage msg body]
 
@@ -233,7 +233,7 @@
   (if-let [body' (if (sequential? body)
 
                    ;; just unroll the seq, if we can
-                   (loop [s (map coerce-element body)]
+                   (loop [s (map (partial coerce-element ch) body)]
                      (if (empty? s)
                        (do
                          (netty/flush ch)
@@ -254,7 +254,7 @@
                   s/->source
                   (s/map (fn [x]
                            (try
-                             (netty/to-byte-buf x)
+                             (netty/to-byte-buf ch x)
                              (catch Throwable e
                                (log/error e "error converting " (.getName (class x)) " to ByteBuf")
                                (netty/close ch))))))
@@ -284,9 +284,9 @@
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-contiguous-body [^ChannelHandlerContext ch ^HttpMessage msg body]
+(defn send-contiguous-body [ch ^HttpMessage msg body]
   (let [body (if body
-               (DefaultLastHttpContent. (netty/to-byte-buf body))
+               (DefaultLastHttpContent. (netty/to-byte-buf ch body))
                empty-last-content)]
     (HttpHeaders/setContentLength msg (-> ^HttpContent body .content .readableBytes))
     (netty/write ch msg)

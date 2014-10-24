@@ -90,23 +90,43 @@
   [buf options]
   (Unpooled/wrappedBuffer buf))
 
+(declare allocate)
+
 (let [charset (java.nio.charset.Charset/forName "UTF-8")]
-  (defn ^ByteBuf to-byte-buf [x]
-    (cond
-      (nil? x)
-      Unpooled/EMPTY_BUFFER
+  (defn ^ByteBuf to-byte-buf
+    ([x]
+       (cond
+         (nil? x)
+         Unpooled/EMPTY_BUFFER
 
-      (instance? array-class x)
-      (Unpooled/copiedBuffer ^bytes x)
+         (instance? array-class x)
+         (Unpooled/copiedBuffer ^bytes x)
 
-      (instance? String x)
-      (Unpooled/copiedBuffer ^CharSequence x charset)
+         (instance? String x)
+         (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
 
-      (instance? ByteBuffer x)
-      (Unpooled/wrappedBuffer ^ByteBuffer x)
+         (instance? ByteBuffer x)
+         (Unpooled/wrappedBuffer ^ByteBuffer x)
 
-      :else
-      (bs/convert x ByteBuf))))
+         :else
+         (bs/convert x ByteBuf)))
+    ([ch x]
+       (if (nil? x)
+         Unpooled/EMPTY_BUFFER
+
+         (let [^ByteBuf buf (allocate ch)]
+           (cond
+             (instance? array-class x)
+             (doto buf (.writeBytes ^bytes x))
+
+             (instance? String x)
+             (doto buf (.writeBytes (.getBytes ^String x charset)))
+
+             (instance? ByteBuffer x)
+             (doto buf (.writeBytes ^ByteBuffer x))
+
+             :else
+             (doto buf (.writeBytes (bs/to-byte-buffer x)))))))))
 
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
@@ -131,6 +151,11 @@
         d))))
 
 ;;;
+
+(defn allocate [x]
+  (if (instance? Channel x)
+    (-> ^Channel x .alloc .buffer)
+    (-> ^ChannelHandlerContext x .alloc .buffer)))
 
 (defn write [x msg]
   (if (instance? Channel x)
