@@ -17,7 +17,7 @@
     [io.netty.buffer
      ByteBuf Unpooled]
     [io.netty.channel
-     Channel ChannelFuture
+     Channel ChannelFuture ChannelHandlerContext
      ChannelFutureListener ChannelHandler
      ChannelPipeline DefaultFileRegion]
     [io.netty.handler.codec.http
@@ -53,7 +53,7 @@
 ;;;
 
 (defn send-response
-  [^Channel ch keep-alive? rsp]
+  [^ChannelHandlerContext ctx keep-alive? rsp]
   (let [body (get rsp :body)
         ^HttpResponse rsp (http/ring-response->netty-response rsp)]
 
@@ -61,7 +61,7 @@
       (.set "Server" "Aleph/0.4.0")
       (.set "Connection" (if keep-alive? "Keep-Alive" "Close")))
 
-    (http/send-message ch keep-alive? rsp body)))
+    (http/send-message ctx keep-alive? rsp body)))
 
 ;;;
 
@@ -80,7 +80,7 @@
       (str "cannot treat " (pr-str x) "as HTTP response"))))
 
 (defn handle-request
-  [^Channel ch
+  [^ChannelHandlerContext ctx
    ssl?
    handler
    rejected-handler
@@ -89,7 +89,7 @@
    previous-response
    body
    keep-alive?]
-  (let [^NettyRequest req' (http/netty-request->ring-request req ssl? ch body)
+  (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
         rsp (if executor
 
               ;; handle request on a separate thread
@@ -123,7 +123,7 @@
             (d/chain'
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
-                  (send-response ch keep-alive?
+                  (send-response ctx keep-alive?
                     (if (map? rsp)
                       rsp
                       (invalid-value-response rsp))))))))))))
@@ -137,10 +137,10 @@
         previous-response (atom nil)
 
         handle-request
-        (fn [^Channel ch req body]
+        (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
             (handle-request
-              ch
+              ctx
               ssl?
               handler
               rejected-handler
@@ -178,7 +178,7 @@
              (if (HttpHeaders/isTransferEncodingChunked req)
                (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
                  (reset! stream s)
-                 (handle-request (.channel ctx) req s))
+                 (handle-request ctx req s))
                (reset! request req)))
 
            (instance? HttpContent msg)
@@ -193,11 +193,14 @@
                      (netty/release content)
                      (s/close! s))
 
-                   (let [bufs (conj @buffer content)
-                         bytes (netty/bufs->array bufs)]
-                     (doseq [b bufs]
-                       (netty/release b))
-                     (handle-request (.channel ctx) @request bytes)))
+                   (if (and (zero? (.get buffer-size))
+                         (zero? (.readableBytes content)))
+                     (handle-request ctx @request nil)
+                     (let [bufs (conj @buffer content)
+                           bytes (netty/bufs->array bufs)]
+                       (doseq [b bufs]
+                         (netty/release b))
+                       (handle-request ctx @request bytes))))
 
                  (.set buffer-size 0)
                  (reset! stream nil)
@@ -229,7 +232,7 @@
                          (reset! buffer [])
                          (reset! stream s)
 
-                         (handle-request (.channel ctx) @request s)))))))))))))
+                         (handle-request ctx @request s)))))))))))))
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
@@ -237,10 +240,10 @@
         previous-response (atom nil)
 
         handle-request
-        (fn [^Channel ch req body]
+        (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
             (handle-request
-              ch
+              ctx
               ssl?
               handler
               rejected-handler
@@ -275,7 +278,7 @@
 
              (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)]
                (reset! stream s)
-               (handle-request (.channel ctx) req s)))
+               (handle-request ctx req s)))
 
            (instance? HttpContent msg)
            (let [content (.content ^HttpContent msg)]

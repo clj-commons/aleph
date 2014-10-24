@@ -12,7 +12,8 @@
      Channel
      DefaultFileRegion
      ChannelFuture
-     ChannelFutureListener]
+     ChannelFutureListener
+     ChannelHandlerContext]
     [io.netty.buffer
      ByteBuf Unpooled]
     [java.nio
@@ -224,7 +225,7 @@
       (netty/to-byte-buf x)
       (netty/to-byte-buf (str x)))))
 
-(defn send-streaming-body [^Channel ch ^HttpMessage msg body]
+(defn send-streaming-body [ch ^HttpMessage msg body]
 
   (HttpHeaders/setTransferEncodingChunked msg)
   (netty/write ch msg)
@@ -235,7 +236,7 @@
                    (loop [s (map coerce-element body)]
                      (if (empty? s)
                        (do
-                         (.flush ch)
+                         (netty/flush ch)
                          nil)
                        (if (or (not (instance? clojure.lang.IPending s))
                              (realized? s))
@@ -245,7 +246,7 @@
                          body)))
 
                    (do
-                     (.flush ch)
+                     (netty/flush ch)
                      body))]
 
     (let [src (if (or (sequential? body') (s/stream? body'))
@@ -256,7 +257,7 @@
                              (netty/to-byte-buf x)
                              (catch Throwable e
                                (log/error e "error converting " (.getName (class x)) " to ByteBuf")
-                               (.close ch))))))
+                               (netty/close ch))))))
                 (netty/to-byte-buf-stream body' 8192))
 
           sink (netty/sink ch false #(DefaultHttpContent. %))]
@@ -273,7 +274,7 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-file-body [^Channel ch ^HttpMessage msg ^File file]
+(defn send-file-body [ch ^HttpMessage msg ^File file]
   (let [raf (RandomAccessFile. file "r")
         len (.length raf)
         fc (.getChannel raf)
@@ -283,7 +284,7 @@
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-contiguous-body [^Channel ch ^HttpMessage msg body]
+(defn send-contiguous-body [^ChannelHandlerContext ch ^HttpMessage msg body]
   (let [body (if body
                (DefaultLastHttpContent. (netty/to-byte-buf body))
                empty-last-content)]
@@ -293,7 +294,7 @@
 
 (let [ary-class (class (byte-array 0))]
   (defn send-message
-    [^Channel ch keep-alive? ^HttpMessage msg body]
+    [ch keep-alive? ^HttpMessage msg body]
 
     (let [^HttpHeaders headers (.headers msg)]
 

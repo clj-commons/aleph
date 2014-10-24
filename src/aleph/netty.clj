@@ -1,4 +1,5 @@
 (ns aleph.netty
+  (:refer-clojure :exclude [flush])
   (:require
     [byte-streams :as bs]
     [clojure.tools.logging :as log]
@@ -8,11 +9,13 @@
   (:import
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
-    [io.netty.channel Channel ChannelFuture ChannelOption
+    [io.netty.channel
+     Channel ChannelFuture ChannelOption
      ChannelPipeline EventLoopGroup
      ChannelHandler
      ChannelInboundHandler
-     ChannelOutboundHandler]
+     ChannelOutboundHandler
+     ChannelHandlerContext]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
@@ -87,10 +90,23 @@
   [buf options]
   (Unpooled/wrappedBuffer buf))
 
-(defn ^ByteBuf to-byte-buf [x]
-  (if (nil? x)
-    Unpooled/EMPTY_BUFFER
-    (bs/convert x ByteBuf)))
+(let [charset (java.nio.charset.Charset/forName "UTF-8")]
+  (defn ^ByteBuf to-byte-buf [x]
+    (cond
+      (nil? x)
+      Unpooled/EMPTY_BUFFER
+
+      (instance? array-class x)
+      (Unpooled/copiedBuffer ^bytes x)
+
+      (instance? String x)
+      (Unpooled/copiedBuffer ^CharSequence x charset)
+
+      (instance? ByteBuffer x)
+      (Unpooled/wrappedBuffer ^ByteBuffer x)
+
+      :else
+      (bs/convert x ByteBuf))))
 
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
@@ -116,11 +132,30 @@
 
 ;;;
 
-(defn write [^Channel ch msg]
-  (.write ch msg (.voidPromise ch)))
+(defn write [x msg]
+  (if (instance? Channel x)
+    (.write ^Channel x msg (.voidPromise ^Channel x))
+    (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x))))
 
-(defn write-and-flush [^Channel ch msg]
-  (.writeAndFlush ch msg))
+(defn write-and-flush [x msg]
+  (if (instance? Channel x)
+    (.writeAndFlush ^Channel x msg)
+    (.writeAndFlush ^ChannelHandlerContext x msg)))
+
+(defn flush [x]
+  (if (instance? Channel x)
+    (.flush ^Channel x)
+    (.flush ^ChannelHandlerContext x)))
+
+(defn close [x]
+  (if (instance? Channel x)
+    (.close ^Channel x)
+    (.close ^ChannelHandlerContext x)))
+
+(defn ^Channel channel [x]
+  (if (instance? Channel x)
+    x
+    (.channel ^ChannelHandlerContext x)))
 
 (defn put! [^Channel ch s msg]
   (let [d (s/put! s msg)]
@@ -143,16 +178,16 @@
 
 ;;;
 
-(s/def-sink ChannelSink [coerce-fn downstream? ^Channel ch]
+(s/def-sink ChannelSink [coerce-fn downstream? ch]
   (close [this]
     (when downstream?
-      (.close ch))
+      (close ch))
     (.markClosed this)
     true)
   (description [_]
     {:type "netty"
      :sink? true
-     :closed? (not (.isOpen ch))
+     :closed? (not (.isOpen (channel ch)))
      })
   (isSynchronous [_]
     false)
@@ -161,9 +196,11 @@
                 (coerce-fn msg)
                 (catch Exception e
                   (log/error e
-                    (str "cannot coerce " (.getName (class msg)) " into binary representation"))
-                  (.close ch)))
-          ^ChannelFuture f (.writeAndFlush ch msg)
+                    (str "cannot coerce "
+                      (.getName (class msg))
+                      " into binary representation"))
+                  (close ch)))
+          ^ChannelFuture f (write-and-flush ch msg)
           d (wrap-future f)]
       (if blocking?
         @d
@@ -174,9 +211,9 @@
 (defn sink
   ([ch]
      (sink ch true identity))
-  ([^Channel ch downstream? coerce-fn]
+  ([ch downstream? coerce-fn]
      (let [sink (->ChannelSink coerce-fn downstream? ch)]
-       (d/chain' (.closeFuture ch)
+       (d/chain' (.closeFuture (channel ch))
          wrap-future
          (fn [_] (s/close! sink)))
        sink)))
