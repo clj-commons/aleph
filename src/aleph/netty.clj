@@ -189,6 +189,20 @@
     x
     (.channel ^ChannelHandlerContext x)))
 
+(defmacro safe-execute [ch & body]
+  `(let [f# (fn [] ~@body)
+         event-loop# (-> ~ch aleph.netty/channel .eventLoop)]
+     (if (.inEventLoop event-loop#)
+       (f#)
+       (let [d# (d/deferred)]
+         (.execute event-loop#
+           (fn []
+             (try
+               (d/success! d# (f#))
+               (catch Throwable e#
+                 (d/error! d# e#)))))
+         d#))))
+
 (defn put! [^Channel ch s msg]
   (let [d (s/put! s msg)]
     (if (d/realized? d)

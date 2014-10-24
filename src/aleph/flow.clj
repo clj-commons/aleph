@@ -63,7 +63,10 @@
     :or {sample-period 25
          control-period 10000
          metrics (EnumSet/allOf Executor$Metric)}}]
-  (let [^Controller c controller]
+  (let [^Controller c controller
+        metrics (if (identical? :none metrics)
+                  (EnumSet/noneOf Executor$Metric)
+                  metrics)]
     (Executor.
       (or thread-factory (create-thread-factory))
       (if queue-length

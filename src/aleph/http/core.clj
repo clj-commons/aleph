@@ -113,13 +113,18 @@
       default-value
       (if-let [e (find added k)]
         (val e)
-        (let [k' (str/lower-case (name k))
-              entry (->> headers
-                      .entries
-                      (filter #(= k' (str/lower-case (.getKey ^Map$Entry %))))
-                      first)]
-          (if entry
-            (.getValue ^Map$Entry entry)
+        (let [k' (str/lower-case (name k))]
+          (if-let [v (->> headers
+                       .entries
+                       (reduce
+                        (fn [v ^Map$Entry e]
+                          (if (= k' (str/lower-case (.getKey e)))
+                            (if v
+                              (str v "," (.getValue e))
+                              (.getValue e))
+                            v))
+                        nil))]
+            v
             default-value))))))
 
 (defn headers->map [^HttpHeaders h]
@@ -302,9 +307,9 @@
   (defn send-message
     [ch keep-alive? ^HttpMessage msg body]
 
-    (let [^HttpHeaders headers (.headers msg)]
-
-      (let [f (cond
+    (netty/safe-execute ch
+      (let [^HttpHeaders headers (.headers msg)
+            f (cond
 
                 (or
                   (nil? body)
