@@ -45,6 +45,8 @@
     [java.util.concurrent.atomic
      AtomicInteger]))
 
+(set! *unchecked-math* true)
+
 ;;;
 
 (defn raw-client-handler
@@ -89,7 +91,7 @@
                (s/close! @stream))))))))
 
 (defn client-handler
-  [response-stream buffer-capacity]
+  [response-stream ^long buffer-capacity]
   (let [response (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
@@ -157,11 +159,12 @@
                    (netty/put! (.channel ctx) s (netty/buf->array content))
                    (netty/release content))
 
-                 (do
+                 (let [len (.readableBytes ^ByteBuf content)]
 
-                   (swap! buffer conj content)
+                   (when-not (zero? len)
+                     (swap! buffer conj content))
 
-                   (let [size (.addAndGet buffer-size (.readableBytes ^ByteBuf content))]
+                   (let [size (.addAndGet buffer-size len)]
 
                      ;; buffer size exceeded, flush it as a stream
                      (when (< buffer-capacity size)
@@ -308,7 +311,7 @@
                   (let [out (netty/sink ch false
                               #(if (instance? CharSequence %)
                                  (TextWebSocketFrame. (bs/to-string %))
-                                 (BinaryWebSocketFrame. (netty/to-byte-buf %))))]
+                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx %))))]
 
                     (d/success! d (s/splice out in))
 

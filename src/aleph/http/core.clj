@@ -222,8 +222,8 @@
           (instance? ary-class x)
           (instance? ByteBuffer x)
           (instance? ByteBuf x))
-      (netty/to-byte-buf ch x)
-      (netty/to-byte-buf ch (str x)))))
+      x
+      (str x))))
 
 (defn send-streaming-body [ch ^HttpMessage msg body]
 
@@ -232,18 +232,24 @@
 
   (if-let [body' (if (sequential? body)
 
-                   ;; just unroll the seq, if we can
-                   (loop [s (map (partial coerce-element ch) body)]
-                     (if (empty? s)
-                       (do
-                         (netty/flush ch)
-                         nil)
-                       (if (or (not (instance? clojure.lang.IPending s))
-                             (realized? s))
+                   (let [buf (netty/allocate ch)]
+                     (loop [s (map (partial coerce-element ch) body)]
+                       (cond
+
+                         (empty? s)
+                         (do
+                           (netty/write-and-flush ch buf)
+                           nil)
+
+                         (or (not (instance? clojure.lang.IPending s)) (realized? s))
                          (let [x (first s)]
-                           (netty/write ch (netty/to-byte-buf x))
+                           (netty/append-to-buf! buf x)
                            (recur (rest s)))
-                         body)))
+
+                         :else
+                         (do
+                           (netty/write-and-flush ch buf)
+                           s))))
 
                    (do
                      (netty/flush ch)
@@ -254,7 +260,7 @@
                   s/->source
                   (s/map (fn [x]
                            (try
-                             (netty/to-byte-buf ch x)
+                             (netty/to-byte-buf x)
                              (catch Throwable e
                                (log/error e "error converting " (.getName (class x)) " to ByteBuf")
                                (netty/close ch))))))

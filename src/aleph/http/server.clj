@@ -50,6 +50,8 @@
      AtomicInteger
      AtomicBoolean]))
 
+(set! *unchecked-math* true)
+
 ;;;
 
 (defn send-response
@@ -130,7 +132,8 @@
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
-  (let [request (atom nil)
+  (let [buffer-capacity (long buffer-capacity)
+        request (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
         stream (atom nil)
@@ -195,7 +198,12 @@
 
                    (if (and (zero? (.get buffer-size))
                          (zero? (.readableBytes content)))
-                     (handle-request ctx @request nil)
+
+                     ;; there was never any body
+                     (do
+                       (netty/release content)
+                       (handle-request ctx @request nil))
+
                      (let [bufs (conj @buffer content)
                            bytes (netty/bufs->array bufs)]
                        (doseq [b bufs]
@@ -214,11 +222,12 @@
                    (netty/put! (.channel ctx) s (netty/buf->array content))
                    (netty/release content))
 
-                 (do
+                 (let [len (.readableBytes ^ByteBuf content)]
 
-                   (swap! buffer conj content)
+                   (when-not (zero? len)
+                     (swap! buffer conj content))
 
-                   (let [size (.addAndGet buffer-size (.readableBytes ^ByteBuf content))]
+                   (let [size (.addAndGet buffer-size len)]
 
                      ;; buffer size exceeded, flush it as a stream
                      (when (< buffer-capacity size)
@@ -236,7 +245,8 @@
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
-  (let [stream (atom nil)
+  (let [buffer-capacity (long buffer-capacity)
+        stream (atom nil)
         previous-response (atom nil)
 
         handle-request
@@ -374,7 +384,7 @@
         out (netty/sink ch false
               #(if (instance? CharSequence %)
                  (TextWebSocketFrame. (bs/to-string %))
-                 (BinaryWebSocketFrame. (netty/to-byte-buf %))))
+                 (BinaryWebSocketFrame. (netty/to-byte-buf ch %))))
         in (s/stream 16)]
 
     (s/on-drained in
