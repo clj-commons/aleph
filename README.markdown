@@ -6,7 +6,7 @@ Aleph exposes data from the network as a [Manifold](https://github.com/ztellman/
 
 ### HTTP
 
-Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also allows for the handler function to return a [Manifold deferred](https;//github.com/ztellman/manifold) to represent an eventual response.  This feature may not play nicely with Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/ztellman/manifold/blob/master/docs/deferred.md#let-flow) operator.
+Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also allows for the handler function to return a [Manifold deferred](https://github.com/ztellman/manifold) to represent an eventual response.  This feature may not play nicely with Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/ztellman/manifold/blob/master/docs/deferred.md#let-flow) operator.
 
 ```clj
 (require '[aleph.http :as http])
