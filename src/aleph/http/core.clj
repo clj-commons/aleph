@@ -53,7 +53,7 @@
             "TE"]]
     (zipmap
       (map str/lower-case ks)
-      ks)))
+      (map #(HttpHeaders/newNameEntity %) ks))))
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 
@@ -67,7 +67,8 @@
                (non-standard-keys s')
                (->> (str/split s' #"-")
                  (map str/capitalize)
-                 (str/join "-")))]
+                 (str/join "-")
+                 HttpHeaders/newNameEntity))]
 
       ;; in practice this should never happen, so we
       ;; can be stupid about cache expiration
@@ -135,8 +136,8 @@
     (let [k (normalize-header-key (key e))
           v (val e)]
       (if (sequential? v)
-        (.add h ^String k ^Iterable v)
-        (.add h ^String k ^Object v)))))
+        (.add h ^CharSequence k ^Iterable v)
+        (.add h ^CharSequence k ^Object v)))))
 
 (defn ring-response->netty-response [m]
   (let [status (get m :status 200)
@@ -307,33 +308,32 @@
   (defn send-message
     [ch keep-alive? ^HttpMessage msg body]
 
-    (netty/safe-execute ch
-      (let [^HttpHeaders headers (.headers msg)
-            f (cond
+    (let [^HttpHeaders headers (.headers msg)
+          f (cond
 
-                (or
-                  (nil? body)
-                  (instance? String body)
-                  (instance? ary-class body)
-                  (instance? ByteBuffer body)
-                  (instance? ByteBuf body))
-                (send-contiguous-body ch msg body)
+              (or
+                (nil? body)
+                (instance? String body)
+                (instance? ary-class body)
+                (instance? ByteBuffer body)
+                (instance? ByteBuf body))
+              (send-contiguous-body ch msg body)
 
-                (instance? File body)
-                (send-file-body ch msg body)
+              (instance? File body)
+              (send-file-body ch msg body)
 
-                :else
-                (let [class-name (.getName (class body))]
-                  (try
-                    (send-streaming-body ch msg body)
-                    (catch Throwable e
-                      (log/error e "error sending body of type " class-name)))))]
+              :else
+              (let [class-name (.getName (class body))]
+                (try
+                  (send-streaming-body ch msg body)
+                  (catch Throwable e
+                    (log/error e "error sending body of type " class-name)))))]
 
-        (when-not keep-alive?
-          (-> f
-            (d/chain'
-              (fn [^ChannelFuture f]
-                (.addListener f ChannelFutureListener/CLOSE)))
-            (d/catch Throwable #(log/error % "err"))))
+      (when-not keep-alive?
+        (-> f
+          (d/chain'
+            (fn [^ChannelFuture f]
+              (.addListener f ChannelFutureListener/CLOSE)))
+          (d/catch Throwable #(log/error % "err"))))
 
-        f))))
+      f)))

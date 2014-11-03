@@ -9,7 +9,12 @@
     [manifold.stream :as s])
   (:import
     [java.util
-     EnumSet]
+     EnumSet
+     TimeZone
+     Date]
+    [java.text
+     DateFormat
+     SimpleDateFormat]
     [io.aleph.dirigiste
      Executor$Metric]
     [aleph.http.core
@@ -42,11 +47,15 @@
      Closeable File InputStream RandomAccessFile]
     [java.nio
      ByteBuffer]
+    [io.netty.util.concurrent
+     FastThreadLocal]
     [java.util.concurrent
+     TimeUnit
      Executor
      ExecutorService
      RejectedExecutionException]
     [java.util.concurrent.atomic
+     AtomicReference
      AtomicInteger
      AtomicBoolean]))
 
@@ -54,16 +63,48 @@
 
 ;;;
 
-(defn send-response
-  [^ChannelHandlerContext ctx keep-alive? rsp]
-  (let [body (get rsp :body)
-        ^HttpResponse rsp (http/ring-response->netty-response rsp)]
+(def ^FastThreadLocal date-format (FastThreadLocal.))
+(def ^FastThreadLocal date-value (FastThreadLocal.))
 
-    (doto (.headers rsp)
-      (.set "Server" "Aleph/0.4.0")
-      (.set "Connection" (if keep-alive? "Keep-Alive" "Close")))
+(defn rfc-1123-date-string []
+  (let [^DateFormat format
+        (or
+          (.get date-format)
+          (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z")]
+            (.setTimeZone format (TimeZone/getTimeZone "GMT"))
+            (.set date-format format)
+            format))]
+    (.format format (Date.))))
 
-    (http/send-message ctx keep-alive? rsp body)))
+(defn ^CharSequence date-header-value [^ChannelHandlerContext ctx]
+  (if-let [^AtomicReference ref (.get date-value)]
+    (.get ref)
+    (let [ref (AtomicReference. (HttpHeaders/newValueEntity (rfc-1123-date-string)))]
+      (.set date-value ref)
+      (.scheduleWithFixedDelay (.executor ctx)
+        #(.set ref (HttpHeaders/newValueEntity (rfc-1123-date-string)))
+        1000
+        1000
+        TimeUnit/MILLISECONDS)
+      (.get ref))))
+
+(let [[server-name connection-name date-name]
+      (map #(HttpHeaders/newNameEntity %) ["Server" "Connection" "Date"])
+      [server-value keep-alive-value close-value]
+      (map #(HttpHeaders/newValueEntity %) ["Aleph/0.4.0" "Keep-Alive" "Close"])]
+  (defn send-response
+    [^ChannelHandlerContext ctx keep-alive? rsp]
+    (let [body (get rsp :body)
+          ^HttpResponse rsp (http/ring-response->netty-response rsp)]
+
+      (netty/safe-execute ctx
+
+        (doto (.headers rsp)
+          (.set ^CharSequence server-name server-value)
+          (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+          (.set ^CharSequence date-name (date-header-value ctx)))
+
+        (http/send-message ctx keep-alive? rsp body)))))
 
 ;;;
 

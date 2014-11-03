@@ -244,7 +244,8 @@
             (let [^HttpRequest req' (http/ring-request->netty-request req)]
               (HttpHeaders/setHost req' ^String host)
               (HttpHeaders/setKeepAlive req' keep-alive?)
-              (http/send-message ch true req' (get req :body))))
+              (netty/safe-execute ch
+                (http/send-message ch true req' (get req :body)))))
           requests)
 
         (s/on-closed responses #(s/close! requests))
