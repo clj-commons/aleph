@@ -238,16 +238,22 @@
 
   (if-let [body' (if (sequential? body)
 
-                   (let [buf (netty/allocate ch)]
+                   (let [buf (netty/allocate ch)
+                         pending? (instance? clojure.lang.IPending body)]
                      (loop [s (map (partial coerce-element ch) body)]
                        (cond
+
+                         (and pending? (not (realized? s)))
+                         (do
+                           (netty/write-and-flush ch buf)
+                           s)
 
                          (empty? s)
                          (do
                            (netty/write-and-flush ch buf)
                            nil)
 
-                         (or (not (instance? clojure.lang.IPending s)) (realized? s))
+                         (or (not pending?) (realized? s))
                          (let [x (first s)]
                            (netty/append-to-buf! buf x)
                            (recur (rest s)))

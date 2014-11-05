@@ -2,6 +2,7 @@
   (:use
     [clojure test])
   (:require
+    [clojure.java.io :as io]
     [aleph.netty :as netty]
     [byte-streams :as bs]
     [aleph.http :as http])
@@ -39,6 +40,10 @@
   {:status 200
    :body (:body request)})
 
+(defn line-echo-handler [request]
+  {:status 200
+   :body (->> request :body bs/to-line-seq)})
+
 (defn hello-handler [request]
   {:status 200
    :body "hello"})
@@ -52,6 +57,7 @@
    "/seq" seq-handler
    "/string" string-handler
    "/echo" echo-handler
+   "/line_echo" line-echo-handler
    "/stop" (fn [_]
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
@@ -120,6 +126,16 @@
                       {:body words
                        :socket-timeout 2000}))]
         (is (= words (bs/to-string body)))))))
+
+(deftest test-line-echo
+  (with-handler basic-handler
+    (doseq [len [1e3 1e4 1e5]]
+      (let [words (->> words (take len) (apply str))
+            body (:body
+                   @(http/put "http://localhost:8080/line_echo"
+                      {:body words
+                       :socket-timeout 2000}))]
+        (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
 
 ;;;
 

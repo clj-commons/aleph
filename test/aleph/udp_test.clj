@@ -1,4 +1,4 @@
-(ns aleph.tcp-test
+(ns aleph.udp-test
   (:use
     [clojure test])
   (:require

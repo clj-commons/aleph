@@ -161,8 +161,8 @@
 
 (defn allocate [x]
   (if (instance? Channel x)
-    (-> ^Channel x .alloc .buffer)
-    (-> ^ChannelHandlerContext x .alloc .buffer)))
+    (-> ^Channel x .alloc .ioBuffer)
+    (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
 (defn write [x msg]
   (if (instance? Channel x)
