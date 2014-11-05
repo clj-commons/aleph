@@ -259,7 +259,8 @@
               (if raw-stream?
                 rsp
                 (d/chain rsp
-                  #(update-in % [:body] netty/to-input-stream response-buffer-size))))))))))
+                  #(update-in % [:body] bs/to-input-stream
+                     {:buffer-size response-buffer-size}))))))))))
 
 ;;;
 

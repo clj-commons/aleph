@@ -138,14 +138,6 @@
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
 
-(defn to-input-stream [x chunk-size]
-  (if (instance? array-class x)
-    (when-not (zero? (alength ^bytes x))
-      (bs/to-input-stream x))
-    (bs/convert x InputStream
-      {:buffer-size chunk-size
-       :source-type (bs/stream-of array-class)})))
-
 (defn wrap-future [^Future f]
   (when f
     (if (.isSuccess f)
