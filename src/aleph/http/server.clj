@@ -44,7 +44,7 @@
      CloseWebSocketFrame
      WebSocketFrame]
     [java.io
-     Closeable File InputStream RandomAccessFile]
+     Closeable File InputStream RandomAccessFile IOException]
     [java.nio
      ByteBuffer]
     [io.netty.util.concurrent
@@ -438,10 +438,11 @@
 
      (netty/channel-handler
 
-       :exception-handler
+       :exception-caught
        ([_ ctx ex]
-          (log/warn ex "error in websocket handler")
-          (s/close s)
+          (when-not (instance? IOException ex)
+            (log/warn ex "error in websocket handler"))
+          (s/close! out)
           (.close ctx))
 
        :channel-inactive

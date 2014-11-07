@@ -3,8 +3,11 @@
     [potemkin :as p]
     [manifold.stream :as s]
     [manifold.deferred :as d]
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [clojure.tools.logging :as log])
   (:import
+    [java.io
+     IOException]
     [java.net
      InetSocketAddress]
     [io.netty.channel
@@ -24,9 +27,10 @@
   (let [in (s/stream)]
     (netty/channel-handler
 
-      :exception-handler
+      :exception-caught
       ([_ ctx ex]
-         (log/warn ex "error in TCP server"))
+         (when-not (instance? IOException ex)
+           (log/warn ex "error in TCP server")))
 
       :channel-inactive
       ([_ ctx]
