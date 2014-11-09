@@ -5,6 +5,7 @@
     [clojure.java.io :as io]
     [aleph.netty :as netty]
     [byte-streams :as bs]
+    [manifold.deferred :as d]
     [aleph.http :as http])
   (:import
     [java.util.concurrent
@@ -116,6 +117,20 @@
                  {:socket-timeout 1000}))))))))
 
 (def words (slurp "/usr/share/dict/words"))
+
+(deftest test-bulk-requests
+  (with-handler basic-handler
+    (let [conn (http/http-connection {:url "http://localhost:8080/"})]
+      (->> (range 1e3)
+        (map (fn [_] (http/get "http://localhost:8080/string" {:connection conn})))
+        (apply d/zip)
+        deref)
+      (http/close-http-connection conn))
+    (dotimes [_ 1e2]
+      (->> (range 1e2)
+        (map (fn [_] (http/get "http://localhost:8080/string")))
+        (apply d/zip)
+        deref))))
 
 (deftest test-echo
   (with-both-handlers basic-handler

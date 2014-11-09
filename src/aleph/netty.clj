@@ -368,12 +368,14 @@
 (defn epoll? []
   (Epoll/isAvailable))
 
+(def client-group
+  (if (epoll?)
+    (EpollEventLoopGroup.)
+    (NioEventLoopGroup.)))
+
 (defn create-client
   [pipeline-builder ssl-context bootstrap-transform host port]
   (let [^EventLoopGroup
-        group (if (epoll?)
-                (EpollEventLoopGroup.)
-                (NioEventLoopGroup.))
 
         ^Class
         channel (if (epoll?)
@@ -393,7 +395,7 @@
       (let [b (doto (Bootstrap.)
                 (.option ChannelOption/SO_REUSEADDR true)
                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group group)
+                (.group client-group)
                 (.channel channel)
                 (.handler (pipeline-initializer pipeline-builder))
                 bootstrap-transform)
@@ -403,12 +405,6 @@
         (d/chain (wrap-future f)
           (fn [_]
             (let [ch (.channel ^ChannelFuture f)]
-              (-> ch
-                .closeFuture
-                wrap-future
-                (d/chain
-                  (fn [_]
-                    (.shutdownGracefully group))))
               ch)))))))
 
 (defn start-server
