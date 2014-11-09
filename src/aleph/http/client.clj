@@ -260,12 +260,11 @@
                 rsp
                 (d/chain rsp
                   (fn [rsp]
-                    (prn keep-alive? rsp)
                     (let [body (:body rsp)]
                       (when-not keep-alive?
                         (if (s/stream? body)
-                          (s/on-closed body #(do (prn 'closing!) (.close ch)))
-                          (do (prn 'closing!) (.close ch))))
+                          (s/on-closed body #(.close ch))
+                          (.close ch)))
                       (assoc rsp :body
                         (bs/to-input-stream body
                           {:buffer-size response-buffer-size})))))))))))))
