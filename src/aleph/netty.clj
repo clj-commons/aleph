@@ -402,7 +402,14 @@
 
         (d/chain (wrap-future f)
           (fn [_]
-            (.channel ^ChannelFuture f)))))))
+            (let [ch (.channel ^ChannelFuture f)]
+              (-> ch
+                .closeFuture
+                wrap-future
+                (d/chain
+                  (fn [_]
+                    (.shutdownGracefully group))))
+              ch)))))))
 
 (defn start-server
   [pipeline-builder ssl-context bootstrap-transform on-close port]

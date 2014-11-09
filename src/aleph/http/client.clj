@@ -259,8 +259,16 @@
               (if raw-stream?
                 rsp
                 (d/chain rsp
-                  #(update-in % [:body] bs/to-input-stream
-                     {:buffer-size response-buffer-size}))))))))))
+                  (fn [rsp]
+                    (prn keep-alive? rsp)
+                    (let [body (:body rsp)]
+                      (when-not keep-alive?
+                        (if (s/stream? body)
+                          (s/on-closed body #(do (prn 'closing!) (.close ch)))
+                          (do (prn 'closing!) (.close ch))))
+                      (assoc rsp :body
+                        (bs/to-input-stream body
+                          {:buffer-size response-buffer-size})))))))))))))
 
 ;;;
 
