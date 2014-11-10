@@ -13,8 +13,8 @@ Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also a
 
 (defn handler [req]
   {:status 200
-   :headers {"content-type" "text/plain"}}
-   :body "hello!")
+   :headers {"content-type" "text/plain"}
+   :body "hello!"})
 
 (http/start-server handler {:port 8080})
 ```
