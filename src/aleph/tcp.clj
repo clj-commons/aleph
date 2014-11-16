@@ -98,13 +98,15 @@
 (defn client
   "Given a host and port, returns a deferred which yields a duplex stream that can be used
    to communicate with the server."
-  [{:keys [host port ssl? insecure? bootstrap-transform]
+  [{:keys [host port ssl? insecure? pipeline-transform bootstrap-transform]
     :or {bootstrap-transform identity}
     :as options}]
   (let [[s handler] (client-channel-handler options)]
     (netty/create-client
       (fn [^ChannelPipeline pipeline]
-        (.addLast pipeline "handler" ^ChannelHandler handler))
+        (.addLast pipeline "handler" ^ChannelHandler handler)
+        (when pipeline-transform
+          (pipeline-transform pipeline)))
       (when ssl?
         (if insecure?
           (netty/insecure-ssl-client-context)

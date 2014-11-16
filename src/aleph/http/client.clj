@@ -183,13 +183,15 @@
 (defn pipeline-builder
   [response-stream
    {:keys
-    [response-buffer-size
+    [pipeline-transform
+     response-buffer-size
      max-initial-line-length
      max-header-size
      max-chunk-size
      raw-stream?]
     :or
-    {response-buffer-size 65536
+    {pipeline-transform identity
+     response-buffer-size 65536
      max-initial-line-length 4098
      max-header-size 8196
      max-chunk-size 8196}}]
@@ -206,7 +208,8 @@
             max-chunk-size
             false
             false))
-        (.addLast "handler" ^ChannelHandler handler)))))
+        (.addLast "handler" ^ChannelHandler handler)
+        pipeline-transform))))
 
 (defn close-connection [f]
   (f
@@ -218,7 +221,12 @@
   [host
    port
    ssl?
-   {:keys [raw-stream? bootstrap-transform keep-alive? insecure? response-buffer-size]
+   {:keys [raw-stream?
+           bootstrap-transform
+           pipeline-transform
+           keep-alive?
+           insecure?
+           response-buffer-size]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536}
@@ -228,7 +236,9 @@
         c (netty/create-client
             (pipeline-builder
               responses
-              options)
+              (if pipeline-transform
+                (assoc options :pipeline-transform pipeline-transform)
+                options))
             (when ssl?
               (if insecure?
                 (netty/insecure-ssl-client-context)
