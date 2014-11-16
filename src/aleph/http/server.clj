@@ -339,6 +339,7 @@
 
 (defn pipeline-builder
   [handler
+   pipeline-transform
    {:keys
     [executor
      rejected-handler
@@ -365,7 +366,8 @@
             max-header-size
             max-chunk-size
             false))
-        (.addLast "request-handler" ^ChannelHandler handler)))))
+        (.addLast "request-handler" ^ChannelHandler handler)
+        pipeline-transform))))
 
 ;;;
 
@@ -386,10 +388,12 @@
            executor
            raw-stream?
            bootstrap-transform
+           pipeline-transform
            ssl-context
            shutdown-executor?
            rejected-handler]
     :or {bootstrap-transform identity
+         pipeline-transform identity
          shutdown-executor? true}
     :as options}]
   (let [executor (cond
@@ -412,6 +416,7 @@
         (if raw-stream?
           handler
           (wrap-stream->input-stream handler options))
+        pipeline-transform
         (assoc options :executor executor :ssl? (boolean ssl-context)))
       ssl-context
       bootstrap-transform

@@ -408,7 +408,11 @@
               ch)))))))
 
 (defn start-server
-  [pipeline-builder ssl-context bootstrap-transform on-close port]
+  [pipeline-builder
+   ssl-context
+   bootstrap-transform
+   on-close
+   port]
   (let [^EventLoopGroup
         group (if (epoll?)
                 (EpollEventLoopGroup.)

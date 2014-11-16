@@ -25,7 +25,9 @@
   "Returns a deferred that yields a function which, given an HTTP request, returns
    a deferred representing the HTTP response.  If the server disconnects, all responses
    will be errors, and a new connection must be created."
-  [{:keys [url host port scheme] :as options}]
+  [{:keys [url host port scheme middleware]
+    :or {middleware identity}
+    :as options}]
   (let [^URI uri (when url (URI. url))
         scheme (or scheme (when uri (.getScheme uri)) "http")
         ssl? (= "https" scheme)]
@@ -37,7 +39,8 @@
           (if ssl? 443 80))
         ssl?
         options)
-      middleware/wrap-request)))
+      middleware/wrap-request
+      middleware)))
 
 (defn websocket-client
   "Given a url, returns a deferred which yields a duplex stream that can be used to

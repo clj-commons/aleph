@@ -53,12 +53,14 @@
   "Takes a two-arg handler function which for each connection will be called with a duplex
    stream and a map containing information about the client."
   [handler
-   {:keys [port ssl-context bootstrap-transform]
-    :or {bootstrap-transform identity}
+   {:keys [port ssl-context bootstrap-transform pipeline-transform]
+    :or {bootstrap-transform identity
+         pipeline-transform identity}
     :as options}]
   (netty/start-server
     (fn [^ChannelPipeline pipeline]
-      (.addLast pipeline "handler" (server-channel-handler handler options)))
+      (.addLast pipeline "handler" (server-channel-handler handler options))
+      (pipeline-transform pipeline))
     ssl-context
     bootstrap-transform
     nil
