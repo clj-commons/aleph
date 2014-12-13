@@ -19,6 +19,8 @@ Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also a
 (http/start-server handler {:port 8080})
 ```
 
+The body of the repsonse may also be a Manifold stream, where each message from the stream is sent as a chunk, allowing for precise control over streamed responses for [server-sent events](http://en.wikipedia.org/wiki/Server-sent_events) and other purposes.
+
 For HTTP client requests, Aleph models itself after [clj-http](https://github.com/dakrone/clj-http), except that every request immediately returns a Manifold deferred representing the response.
 
 ```clj
