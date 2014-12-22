@@ -88,14 +88,28 @@
         TimeUnit/MILLISECONDS)
       (.get ref))))
 
+(defn error-response [^Throwable e]
+  (log/error e "error in HTTP handler")
+  {:status 500
+   :headers {"content-type" "text/plain"}
+   :body (let [w (java.io.StringWriter.)]
+           (.printStackTrace e (java.io.PrintWriter. w))
+           (str w))})
+
 (let [[server-name connection-name date-name]
       (map #(HttpHeaders/newNameEntity %) ["Server" "Connection" "Date"])
       [server-value keep-alive-value close-value]
       (map #(HttpHeaders/newValueEntity %) ["Aleph/0.4.0" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? rsp]
-    (let [body (get rsp :body)
-          ^HttpResponse rsp (http/ring-response->netty-response rsp)]
+    (let [[^HttpResponse rsp body]
+          (try
+            [(http/ring-response->netty-response rsp)
+             (get rsp :body)]
+            (catch Throwable e
+              (let [rsp (error-response e)]
+                [(http/ring-response->netty-response rsp)
+                 (get rsp :body)])))]
 
       (netty/safe-execute ctx
 
@@ -107,15 +121,6 @@
         (http/send-message ctx keep-alive? rsp body)))))
 
 ;;;
-
-(defn error-response [^Throwable e]
-  (log/error e "error in HTTP handler")
-  {:status 500
-   :headers {"content-type" "text/plain"}
-   :body (let [w (java.io.StringWriter.)]
-           (binding [*err* w]
-             (.printStackTrace e)
-             (str w)))})
 
 (defn invalid-value-response [x]
   (error-response

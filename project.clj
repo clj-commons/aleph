@@ -5,12 +5,13 @@
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1"]
                  [io.netty/netty-all "4.0.23.Final"]
-                 [io.aleph/dirigiste "0.1.0-alpha3"]
+                 [io.aleph/dirigiste "0.1.0-alpha4"]
                  [manifold "0.1.0-beta5"]
                  [byte-streams "0.2.0-alpha4"]
                  [potemkin "0.3.11"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha2"]
                                   [criterium "0.4.3"]
+                                  [gloss "0.2.4-SNAPSHOT"]
                                   #_[codox-md "0.2.0" :exclusions [org.clojure/clojure]]]}}
   :codox {;:writer codox-md.writer/write-docs
           :include [aleph.tcp
