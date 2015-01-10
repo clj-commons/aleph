@@ -84,6 +84,10 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
 
 Where incoming packets will have a `:message` that is a Netty `ByteBuf` that can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
 
+### Client Shutdown
+
+All aleph clients use a shared Netty `EventLoopGroup`. If any aleph client is used, this resource must be shutdown via `(aleph.netty/shutdown-client-resources)` before the host application will be able to exit.
+
 ### license
 
 Copyright © 2014 Zachary Tellman
