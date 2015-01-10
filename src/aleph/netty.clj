@@ -375,9 +375,7 @@
 
 (defn create-client
   [pipeline-builder ssl-context bootstrap-transform host port]
-  (let [^EventLoopGroup
-
-        ^Class
+  (let [^Class
         channel (if (epoll?)
                   EpollSocketChannel
                   NioSocketChannel)
