@@ -70,7 +70,7 @@ An echo TCP server is very similar to the above WebSocket example:
 (tcp/start-server echo-handler {:port 10001})
 ```
 
-A TCP client can be created via `(aleph.http/tcp-client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
+A TCP client can be created via `(aleph.tcp/client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
 ### UDP
 
