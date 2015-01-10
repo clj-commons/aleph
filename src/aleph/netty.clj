@@ -407,6 +407,9 @@
             (let [ch (.channel ^ChannelFuture f)]
               ch)))))))
 
+(defn shutdown-client-resources []
+  (-> client-group .shutdownGracefully wrap-future))
+
 (defn start-server
   [pipeline-builder
    ssl-context
