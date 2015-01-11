@@ -152,6 +152,43 @@
                        :socket-timeout 2000}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
 
+(defn get-netty-client-event-threads []
+  (let [all-threads (->> (Thread/getAllStackTraces) .keySet vec)]
+    (filter #(.startsWith ^String (.getName ^Thread %) netty/client-event-thread-pool-name)
+            all-threads)))
+
+(deftest test-client-events-daemon-thread
+  (with-handler basic-handler
+    (is
+     (= string-response
+        (bs/to-string
+         (:body
+          @(http/get "http://localhost:8080/string")))))
+    (let [client-threads (get-netty-client-event-threads)]
+      (is (> (count client-threads) 0))
+      (is (every? #(.isDaemon ^Thread %) client-threads)))))
+
+(def ^String netty-threads-property-name "io.netty.eventLoopThreads")
+
+(deftest test-default-event-loop-threads
+  (let [initial-threads-property (System/getProperty netty-threads-property-name)]
+    (testing "Default event thread count is even."
+      (System/clearProperty netty-threads-property-name)
+      (let [default-threads (netty/get-default-event-loop-threads)]
+        (is (even? default-threads))
+        (testing "Netty eventLoopThreads property overrides default thread count"
+          (let [property-threads (inc default-threads)]
+            (System/setProperty netty-threads-property-name (str property-threads))
+            (is (= property-threads (netty/get-default-event-loop-threads)))
+            (System/clearProperty netty-threads-property-name)))))
+    (testing "Event thread count minimum is 1."
+      (System/setProperty netty-threads-property-name "0")
+      (is (= 1 (netty/get-default-event-loop-threads)))
+      (System/clearProperty netty-threads-property-name))
+    (if initial-threads-property
+      (System/setProperty netty-threads-property-name initial-threads-property)
+      (System/clearProperty netty-threads-property-name))))
+
 ;;;
 
 (deftest ^:benchmark benchmark-http
