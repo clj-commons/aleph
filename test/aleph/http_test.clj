@@ -172,10 +172,10 @@
 
 (deftest test-default-event-loop-threads
   (let [initial-threads-property (System/getProperty netty-threads-property-name)]
-    (testing "Default event thread count is even."
+    (testing "Default event thread count is twice the cpu count."
       (System/clearProperty netty-threads-property-name)
       (let [default-threads (netty/get-default-event-loop-threads)]
-        (is (even? default-threads))
+        (is (= default-threads (->> (Runtime/getRuntime) (.availableProcessors) (* 2))))
         (testing "Netty eventLoopThreads property overrides default thread count"
           (let [property-threads (inc default-threads)]
             (System/setProperty netty-threads-property-name (str property-threads))
