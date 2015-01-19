@@ -37,11 +37,25 @@
           options))
       middleware/wrap-request)))
 
+(def ^:private connection-stats-callbacks (atom #{}))
+
+(defn register-connection-stats-callback
+  "Registers a callback which will be called with connection-pool stats."
+  [c]
+  (swap! connection-stats-callbacks conj c))
+
+(defn unregister-connection-stats-callback
+  "Unregisters a previous connection-pool stats callback."
+  [c]
+  (swap! connection-stats-callbacks disj c))
+
 (defn connection-pool
+  "Returns a connection pool which can be sued "
   [{:keys [connections-per-host
            total-connections
            target-utilization
-           options]
+           options
+           stats-callback]
     :or {connections-per-host 8
          total-connections 1024
          middleware identity
@@ -58,11 +72,16 @@
                              first
                              client/close-connection))
                 :controller (Pools/utilizationController target-utilization connections-per-host total-connections)
-                ;:stats-callback prn
+                :stats-callback stats-callback
                 })]
     @(deliver p pool)))
 
-(def default-connection-pool (connection-pool nil))
+(def default-connection-pool
+  (connection-pool
+    {:stats-callback
+     (fn [s]
+       (doseq [c @connection-stats-callbacks]
+         (c s)))}))
 
 (defn websocket-client
   "Given a url, returns a deferred which yields a duplex stream that can be used to
