@@ -120,12 +120,10 @@
 
 (deftest test-bulk-requests
   (with-handler basic-handler
-    (let [conn (http/http-connection {:url "http://localhost:8080/"})]
-      (->> (range 1e3)
-        (map (fn [_] (http/get "http://localhost:8080/string" {:connection conn})))
-        (apply d/zip)
-        deref)
-      (http/close-http-connection conn))
+    (->> (range 1e3)
+      (map (fn [_] (http/get "http://localhost:8080/string")))
+      (apply d/zip)
+      deref)
     (dotimes [_ 1e2]
       (->> (range 1e2)
         (map (fn [_] (http/get "http://localhost:8080/string")))

@@ -49,6 +49,26 @@
 
 ;;;
 
+(defn req->domain [req]
+  (if-let [url (:url req)]
+    (let [^URI uri (URI. url)]
+      (URI.
+        (.getScheme uri)
+        nil
+        (.getHost uri)
+        (.getPort uri)
+        nil
+        nil
+        nil))
+    (URI.
+      (or (:scheme req) "http")
+      "nil"
+      (:host req)
+      (or (:port req) -1)
+      nil
+      nil
+      nil)))
+
 (defn raw-client-handler
   [response-stream buffer-capacity]
   (let [stream (atom nil)
@@ -226,7 +246,8 @@
            pipeline-transform
            keep-alive?
            insecure?
-           response-buffer-size]
+           response-buffer-size
+           on-closed]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536}
@@ -258,26 +279,37 @@
                 (http/send-message ch true req' (get req :body)))))
           requests)
 
-        (s/on-closed responses #(s/close! requests))
+        (s/on-closed responses
+          (fn []
+            (when on-closed (on-closed))
+            (s/close! requests)))
 
         (fn [req]
           (if (contains? req ::close)
             (netty/wrap-future (.close ch))
             (let [rsp (locking ch
                         (s/put! requests req)
-                        (s/take! responses))]
-              (if raw-stream?
-                rsp
-                (d/chain rsp
-                  (fn [rsp]
-                    (let [body (:body rsp)]
-                      (when-not keep-alive?
-                        (if (s/stream? body)
-                          (s/on-closed body #(.close ch))
-                          (.close ch)))
-                      (assoc rsp :body
-                        (bs/to-input-stream body
-                          {:buffer-size response-buffer-size})))))))))))))
+                        (s/take! responses ::closed))]
+              (d/chain rsp
+                (fn [rsp]
+                  (cond
+                    (identical? ::closed rsp)
+                    (d/error-deferred (ex-info "connection was closed" {:request req}))
+
+                    raw-stream?
+                    rsp
+
+                    :else
+                    (d/chain rsp
+                      (fn [rsp]
+                        (let [body (:body rsp)]
+                          (when-not keep-alive?
+                            (if (s/stream? body)
+                              (s/on-closed body #(.close ch))
+                              (.close ch)))
+                          (assoc rsp :body
+                            (bs/to-input-stream body
+                              {:buffer-size response-buffer-size})))))))))))))))
 
 ;;;
 

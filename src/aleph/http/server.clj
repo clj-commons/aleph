@@ -16,7 +16,7 @@
      DateFormat
      SimpleDateFormat]
     [io.aleph.dirigiste
-     Executor$Metric]
+     Stats$Metric]
     [aleph.http.core
      NettyRequest]
     [io.netty.buffer
@@ -407,7 +407,7 @@
 
                    (nil? executor)
                    (flow/utilization-executor 0.9 512
-                     {:metrics (EnumSet/of Executor$Metric/UTILIZATION)})
+                     {:metrics (EnumSet/of Stats$Metric/UTILIZATION)})
 
                    (= :none executor)
                    nil
@@ -522,7 +522,7 @@
                     (.addLast pipeline "websocket-handler" handler)
                     s)
                   (.await p))))
-            (d/catch' Throwable
+            (d/catch'
               (fn [e]
                 (http/send-message
                   ch

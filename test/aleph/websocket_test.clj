@@ -29,8 +29,9 @@
      (with-raw-handler ~handler ~@body)))
 
 (defn echo-handler [req]
-  (d/chain (http/websocket-connection req)
-    #(s/connect % %)))
+  (-> (http/websocket-connection req)
+    (d/chain #(s/connect % %))
+    (d/catch (fn [_] {}))))
 
 (deftest test-echo-handler
   (with-handler echo-handler
