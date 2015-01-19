@@ -202,7 +202,7 @@
               (HttpHeaders/isKeepAlive req))))]
     (netty/channel-handler
 
-      :exception-handler
+      :exception-caught
       ([_ ctx ex]
          (log/warn ex "error in HTTP server"))
 
@@ -312,7 +312,7 @@
               (HttpHeaders/isKeepAlive req))))]
     (netty/channel-handler
 
-      :exception-handler
+      :exception-caught
       ([_ ctx ex]
          (log/warn ex "error in HTTP server"))
 

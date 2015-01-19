@@ -44,7 +44,7 @@
             (.option ChannelOption/SO_BROADCAST (boolean broadcast?))
             (.handler
               (netty/channel-handler
-                :exception-handler
+                :exception-caught
                 ([_ ctx ex]
                    (when-not (d/error! d ex)
                      (log/warn ex "error in UDP socket")))

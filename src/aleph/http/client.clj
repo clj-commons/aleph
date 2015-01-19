@@ -84,7 +84,7 @@
 
     (netty/channel-handler
 
-      :exception-handler
+      :exception-caught
       ([_ ctx ex]
          (log/warn ex "error in HTTP client"))
 
@@ -125,7 +125,7 @@
 
     (netty/channel-handler
 
-      :exception-handler
+      :exception-caught
       ([_ ctx ex]
          (log/warn ex "error in HTTP server"))
 
@@ -335,11 +335,11 @@
 
      (netty/channel-handler
 
-       :exception-handler
+       :exception-caught
        ([_ ctx ex]
           (when-not (d/error! d ex)
             (log/warn ex "error in websocket client"))
-          (s/close s)
+          (s/close! in)
           (.close ctx))
 
        :channel-inactive
