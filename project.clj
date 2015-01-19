@@ -11,9 +11,10 @@
                  [potemkin "0.3.11"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha2"]
                                   [criterium "0.4.3"]
-                                  [gloss "0.2.4-SNAPSHOT"]
                                   #_[codox-md "0.2.0" :exclusions [org.clojure/clojure]]]}}
-  :codox {;:writer codox-md.writer/write-docs
+  :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/0.4.0/"
+          :src-linenum-anchor-prefix "L"
+          :defaults {:doc/format :markdown}
           :include [aleph.tcp
                     aleph.udp
                     aleph.http

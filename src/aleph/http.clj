@@ -1,6 +1,7 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
+    [clojure.string :as str]
     [manifold.deferred :as d]
     [aleph.flow :as flow]
     [aleph.http
@@ -9,12 +10,28 @@
      [client-middleware :as middleware]])
   (:import
     [io.aleph.dirigiste Pools]
-    [java.net URI]))
+    [java.net
+     URI
+     InetSocketAddress]))
 
 (defn start-server
-  "Starts an HTTP server using the provided Ring `handler`."
+  "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
+   via `java.io.Closeable.close()`, and whose port can be discovered with `aleph.netty/port`.
+
+
+   |:---------|:-------------
+   | `port` | the port the server will bind to.  If `-1`, the server will bind to a random port.
+   | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
+   | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
+   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `executor` | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
+   | `shutdown-executor?` | if `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true`.
+   | `request-buffer-size` | the maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384`.  This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance.
+   | `raw-stream?` | if `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `rejected-handler` | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response."
   [handler
-   {:keys [port executor raw-stream? bootstrap-transform ssl-context]
+   {:keys [port socket-address executor raw-stream? bootstrap-transform pipeline-transform ssl-context request-buffer-size shutdown-executor? rejected-handler]
     :as options}]
   (server/start-server handler options))
 
@@ -27,10 +44,12 @@
         ssl? (= "https" scheme)]
     (d/chain
       (client/http-connection
-        (.getHost uri)
-        (or
-          (when (pos? (.getPort uri)) (.getPort uri))
-          (if ssl? 443 80))
+        (InetSocketAddress.
+          (.getHost uri)
+          (int
+            (or
+              (when (pos? (.getPort uri)) (.getPort uri))
+              (if ssl? 443 80))))
         ssl?
         (if on-closed
           (assoc options :on-closed on-closed)
@@ -50,21 +69,37 @@
   (swap! connection-stats-callbacks disj c))
 
 (defn connection-pool
-  "Returns a connection pool which can be sued "
+  "Returns a connection pool which can be used as an argument in `request`.
+
+   |:---|:---
+   | `connections-per-host` | the maximum number of simultaneous connections to any host
+   | `total-connections` | the maximum number of connections across all hosts
+   | `target-utilization` | the target utilization of connections per host, within `[0,1]`, defaults to `0.9`
+   | `stats-callback` | an optional callback which is invoked with a map of hosts onto usage statistics every ten seconds
+
+   the `connection-options` are a map describing behavior across all connections:
+
+   |:---|:---
+   | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
+   | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
+   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `insecure?` | if `true`, ignores the certificate for any `https://` domains
+   | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
+   | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
+   | `raw-stream?` | if `true`, bodies of respnoses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [{:keys [connections-per-host
            total-connections
            target-utilization
-           options
+           connection-options
            stats-callback]
     :or {connections-per-host 8
          total-connections 1024
-         middleware identity
          target-utilization 0.9}}]
   (let [p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
                             (let [c (promise)
-                                  conn (create-connection host options #(flow/dispose @p host [@c]))]
+                                  conn (create-connection host connection-options #(flow/dispose @p host [@c]))]
                               (deliver c conn)
                               [conn]))
                 :destroy (fn [_ c]
@@ -85,7 +120,12 @@
 
 (defn websocket-client
   "Given a url, returns a deferred which yields a duplex stream that can be used to
-   communicate with a server over the WebSocket protocol."
+   communicate with a server over the WebSocket protocol.
+
+   |:---|:---
+   | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `insecure?` | if `true`, the certificates for `wss://` will be ignored.
+   | `headers` | the headers that should be included in the handshake"
   ([url]
      (websocket-client url nil))
   ([url {:keys [raw-stream? insecure? headers] :as options}]
@@ -94,7 +134,11 @@
 (defn websocket-connection
   "Given an HTTP request that can be upgraded to a WebSocket connection, returns a
    deferred which yields a duplex stream that can be used to communicate with the
-   client over the WebSocket protocol."
+   client over the WebSocket protocol.
+
+   |:---|:---
+   | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `headers` | the headers that should be included in the handshake"
   ([req]
      (websocket-connection req nil))
   ([req {:keys [raw-stream? headers] :as options}]
@@ -102,69 +146,69 @@
 
 (defn request
   "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
-   by `clj-http`, and returns a deferred representing the HTTP response."
-  ([req]
-     (request default-connection-pool req identity))
-  ([req middleware]
-     (request default-connection-pool req middleware))
-  ([connection-pool req middleware]
-     (let [k (client/req->domain req)
-           start (System/currentTimeMillis)]
-       (d/chain (flow/acquire connection-pool k)
-         (fn [conn]
-           (let [end (System/currentTimeMillis)]
-             (-> (first conn)
-               (d/chain
-                 (fn [conn']
-                   (let [end (System/currentTimeMillis)]
-                     (-> (middleware conn')
-                       (d/chain
-                         #(% req)
-                         #(assoc % :connection-time (- end start)))))))
-               (d/finally #(flow/release connection-pool k conn)))))))))
+   by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined."
+  [{:keys [pool middleware]
+    :or {pool default-connection-pool
+         middleware identity}
+    :as req}]
+  (let [k (client/req->domain req)
+        start (System/currentTimeMillis)
+        timeout (clojure.core/get req :socket-timeout)
+        conn (flow/acquire pool k)]
+    (d/chain (if timeout
+               (d/timeout! conn timeout)
+               conn)
+      (fn [conn]
+        (let [end (System/currentTimeMillis)]
+          (-> (first conn)
+            (d/chain
+              (fn [conn']
+                (let [end (System/currentTimeMillis)]
+                  (-> (middleware conn')
+                    (d/chain
+                      #(% req)
+                      #(assoc % :connection-time (- end start)))))))
+            (d/finally #(flow/release pool k conn))))))))
 
 (defn- req
   ([method url]
      (req method url nil))
-  ([method url
-    {:keys [pool middleware]
-     :or {pool default-connection-pool
-          middleware identity}
-     :as options}]
-     (let [start (System/currentTimeMillis)
-           req (assoc options
+  ([method url options]
+     (let [req (assoc options
                  :request-method method
                  :url url)]
-       (request pool req middleware))))
+       (request
+         (merge
+           {:url url
+            :request-method method}
+           options)))))
 
-(def get
-  "Makes a GET request, returns a deferred representing the response."
-  (partial req :get))
+(def ^:private arglists
+  '[[url]
+    [url
+     {:keys [pool middleware headers body]
+      :or {pool default-connection-pool middleware identity}
+      :as options}]])
 
-(def post
-  "Makes a POST request, returns a deferred representing the response."
-  (partial req :post))
+(defmacro ^:private def-http-method [method]
+  `(do
+     (def ~method (partial req ~(keyword method)))
+     (alter-meta! (resolve '~method) assoc
+       :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
+   the response.
 
-(def put
-  "Makes a PUT request, returns a deferred representing the response."
-  (partial req :put))
+   |:---|:---
+   | `pool` | the `connection-pool` that should be used, defaults to the `default-connection-pool`
+   | `middleware` | any additional middleware that should be used for handling requests and responses
+   | `headers` | the HTTP headers for the request
+   | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)")
+       :arglists arglists)))
 
-(def options
-  "Makes a OPTIONS request, returns a deferred representing the response."
-  (partial req :options))
-
-(def trace
-  "Makes a TRACE request, returns a deferred representing the response."
-  (partial req :trace))
-
-(def head
-  "Makes a GET request, returns a deferred representing the response."
-  (partial req :head))
-
-(def delete
-  "Makes a DELETE request, returns a deferred representing the response."
-  (partial req :delete))
-
-(def connect
-  "Makes a CONNECT request, returns a deferred representing the response."
-  (partial req :connect))
+(def-http-method get)
+(def-http-method post)
+(def-http-method put)
+(def-http-method options)
+(def-http-method trace)
+(def-http-method head)
+(def-http-method delete)
+(def-http-method connect)

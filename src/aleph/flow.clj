@@ -56,6 +56,17 @@
             (.setDaemon true)))))))
 
 (defn instrumented-pool
+  "Returns a [Dirigiste](https://github.com/ztellman/dirigiste) object pool, which can be interacted
+   with via `acquire`, `release`, and `dispose`.
+
+   |:---|:----
+   | `generate` | a single-arg funcion which takes a key, and returns an object which should be non-equal to any other generated object |
+   | `destroy` | an optional two-arg function which takes a key and object, and releases any associated resources |
+   | `stats-callback` | a function which will be invoked every `control-period` with a map of keys onto associated statistics |
+   | `max-queue-size` | the maximum number of pending acquires per key that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`.
+   | `sample-period` | the interval, in milliseconds, between sampling the state of the pool for resizing and gathering statistics, defaults to `10`.
+   | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `10000`.
+   | `controller` | a Dirigiste controller that is used to gide the pool's size."
   [{:keys
     [generate
      destroy
@@ -70,7 +81,6 @@
   (let [^Pool$Controller c controller]
     (assert controller "must specify :controller")
     (assert generate   "must specify :generate")
-    (assert destroy    "must specify :destroy")
     (Pool.
       (reify Pool$Generator
         (generate [_ k]
@@ -95,23 +105,9 @@
       control-period
       TimeUnit/MILLISECONDS)))
 
-(defn fixed-pool
-  "Returns a "
-  [generate destroy max-objects-per-key max-objects]
-  (instrumented-pool
-    {:generate generate
-     :destroy destroy
-     :controller (Pools/fixedController max-objects-per-key max-objects)}))
-
-(defn utilization-pool
-  [generate destroy target-utilization max-objects-per-key max-objects]
-  (instrumented-pool
-    {:generate generate
-     :destroy destroy
-     :controller (Pools/utilizationController target-utilization max-objects-per-key max-objects)}))
-
 (defn acquire
-  "Acquires an object from the pool for key `k`, returning a deferred containing the object."
+  "Acquires an object from the pool for key `k`, returning a deferred containing the object.  May
+   throw a `java.util.concurrent.RejectedExecutionException` if there are too many pending acquires."
   [^Pool p k]
   (let [d (d/deferred)]
     (try
@@ -135,9 +131,17 @@
   (.dispose p k obj))
 
 (defn instrumented-executor
-  "Returns a `java.util.concurrent.ExecutorService`, using Dirigiste.  A Dirigiste
-   `controller` may be specified, as well as a `stats-callback` which will be invoked
-   with a map of sampled metrics."
+  "Returns a `java.util.concurrent.ExecutorService`, using [Dirigiste](https://github.com/ztellman/dirigiste).
+
+   |:---|:----
+   | `thread-factory` | an optional `java.util.concurrent.ThreadFactory` that creates the executor's thrreads. |
+   | `queue-length` | the maximum number of pending tasks before `.execute()` begins throwing `java.util.concurrent.RejectedExecutionException`, defaults to `0`.
+   | `stats-callback` | a function that will be invoked every `control-period` with the relevant statistics for the executor.
+   | `sample-period` | the interval, in milliseconds, between sampling the state of the executor for resizing and gathering statistics, defaults to `25`.
+   | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the executor, defaults to `10000`.
+   | `controller` | the Dirigiste controller that is used to guide the pool's size.
+   | `metrics` | an `EnumSet` of the metrics that should be gathered for the controller, defaults to all.
+   | `initial-thread-count` | the number of threads that the pool should begin with."
   [{:keys
     [thread-factory
      queue-length

@@ -9,7 +9,8 @@
     [aleph.netty :as netty])
   (:import
     [java.net
-     URI]
+     URI
+     InetSocketAddress]
     [io.netty.buffer
      ByteBuf
      Unpooled]
@@ -238,10 +239,10 @@
      ::close true}))
 
 (defn http-connection
-  [host
-   port
+  [remote-address
    ssl?
-   {:keys [raw-stream?
+   {:keys [local-address
+           raw-stream?
            bootstrap-transform
            pipeline-transform
            keep-alive?
@@ -254,6 +255,7 @@
     :as options}]
   (let [responses (s/stream 1024)
         requests (s/stream 1024)
+        host (.getHostName ^InetSocketAddress remote-address)
         c (netty/create-client
             (pipeline-builder
               responses
@@ -265,8 +267,8 @@
                 (netty/insecure-ssl-client-context)
                 (netty/ssl-client-context)))
             bootstrap-transform
-            host
-            port)]
+            remote-address
+            local-address)]
     (d/chain c
       (fn [^Channel ch]
 
@@ -401,7 +403,7 @@
 
 (defn websocket-connection
   [uri
-   {:keys [raw-stream? bootstrap-transform insecure? headers]
+   {:keys [raw-stream? bootstrap-transform insecure? headers local-address]
     :or {bootstrap-transform identity
          keep-alive? true
          raw-stream? false}
@@ -424,9 +426,12 @@
             (netty/insecure-ssl-client-context)
             (netty/ssl-client-context)))
         bootstrap-transform
-        (.getHost uri)
-        (if (neg? (.getPort uri))
-          (if ssl? 443 80)
-          (.getPort uri)))
+        (InetSocketAddress.
+          (.getHost uri)
+          (int
+            (if (neg? (.getPort uri))
+              (if ssl? 443 80)
+              (.getPort uri))))
+        local-address)
       (fn [_]
         s))))

@@ -29,6 +29,7 @@
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
     [io.netty.util.concurrent GenericFutureListener Future]
+    [java.net SocketAddress InetSocketAddress]
     [java.io InputStream]
     [java.nio ByteBuffer]
     [io.netty.util.internal.logging
@@ -350,7 +351,9 @@
 
 ;;;
 
-(defn self-signed-ssl-context []
+(defn self-signed-ssl-context
+  "A self-signed SSL context for servers."
+  []
   (let [cert (SelfSignedCertificate.)]
     (SslContext/newServerContext (.certificate cert) (.privateKey cert))))
 
@@ -374,7 +377,11 @@
     (NioEventLoopGroup.)))
 
 (defn create-client
-  [pipeline-builder ssl-context bootstrap-transform host port]
+  [pipeline-builder
+   ^SslContext ssl-context
+   bootstrap-transform
+   ^SocketAddress remote-address
+   ^SocketAddress local-address]
   (let [^EventLoopGroup
 
         ^Class
@@ -387,8 +394,8 @@
                              (.addLast p "ssl-handler"
                                (.newHandler ^SslContext ssl-context
                                  (-> p .channel .alloc)
-                                 host
-                                 port))
+                                 (.getHostName ^InetSocketAddress remote-address)
+                                 (.getPort ^InetSocketAddress remote-address)))
                              (pipeline-builder p))
                            pipeline-builder)]
     (try
@@ -400,7 +407,9 @@
                 (.handler (pipeline-initializer pipeline-builder))
                 bootstrap-transform)
 
-            f (.connect b ^String host (int port))]
+            f (if local-address
+                (.connect b remote-address local-address)
+                (.connect b remote-address))]
 
         (d/chain (wrap-future f)
           (fn [_]
@@ -409,10 +418,10 @@
 
 (defn start-server
   [pipeline-builder
-   ssl-context
+   ^SslContext ssl-context
    bootstrap-transform
    on-close
-   port]
+   ^SocketAddress socket-address]
   (let [^EventLoopGroup
         group (if (epoll?)
                 (EpollEventLoopGroup.)
@@ -426,7 +435,7 @@
         pipeline-builder (if ssl-context
                            (fn [^ChannelPipeline p]
                              (.addLast p "ssl-handler"
-                               (.newHandler ^SslContext ssl-context
+                               (.newHandler ssl-context
                                  (-> p .channel .alloc)))
                              (pipeline-builder p))
                            pipeline-builder)]
@@ -444,7 +453,7 @@
               bootstrap-transform)
 
           ^ServerSocketChannel
-          ch (-> b (.bind (int port)) .sync .channel)]
+          ch (-> b (.bind socket-address) .sync .channel)]
       (reify
         java.io.Closeable
         (close [_]

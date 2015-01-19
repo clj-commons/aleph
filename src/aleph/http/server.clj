@@ -47,6 +47,8 @@
      Closeable File InputStream RandomAccessFile IOException]
     [java.nio
      ByteBuffer]
+    [java.net
+     InetSocketAddress]
     [io.netty.util.concurrent
      FastThreadLocal]
     [java.util.concurrent
@@ -390,6 +392,7 @@
 (defn start-server
   [handler
    {:keys [port
+           socket-address
            executor
            raw-stream?
            bootstrap-transform
@@ -427,7 +430,7 @@
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
-      port)))
+      (if socket-address socket-address (InetSocketAddress. port)))))
 
 ;;;
 

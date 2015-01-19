@@ -7,6 +7,7 @@
     [manifold.stream :as s])
   (:import
     [java.net
+     SocketAddress
      InetSocketAddress]
     [io.netty.channel
      ChannelOption]
@@ -27,9 +28,13 @@
 (alter-meta! #'->UdpPacket assoc :private true)
 
 (defn socket
-  "Returns a deferred which yields a duplex stream that can be used to send UDP packets
-   and, if a port is defined, to receive them as well."
-  [{:keys [port broadcast?]}]
+  "Returns a deferred which yields a duplex stream that can be used to send and receive UDP datagrams.
+
+   |:---|:---
+   | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
+   | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `broadcast?` | if true, all UDP datagrams are broadcast."
+  [{:keys [socket-address port broadcast?]}]
   (let [in (s/stream)
         d (d/deferred)
         g (NioEventLoopGroup.)
@@ -49,19 +54,21 @@
                    (let [ch (.channel ctx)
                          out (netty/sink ch true
                                (fn [msg]
-                                 (let [{:keys [host port message]} msg]
+                                 (let [{:keys [host port message socket-address]} msg]
                                    (DatagramPacket.
                                      (netty/to-byte-buf message)
-                                     (InetSocketAddress. ^String host (int port))))))
+                                     (or socket-address
+                                       (InetSocketAddress. ^String host (int port)))))))
                          in (s/map ->UdpPacket in)]
                      (d/success! d
                        (s/splice out in))))
 
                 :channel-read
                 ([_ ctx msg]
-                   (netty/put! (.channel ctx) in msg)))))]
+                   (netty/put! (.channel ctx) in msg)))))
+        socket-address (or socket-address (InetSocketAddress. (or port 0)))]
     (try
-      (-> b (.bind (int (or port 0))))
+      (-> b (.bind ^SocketAddress socket-address))
       d
       (catch Throwable e
         (d/error-deferred e)))))
