@@ -37,6 +37,8 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
   prn)
 ```
 
+To learn more about HTTP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
+
 ### WebSockets
 
 On any HTTP request which has the proper `Upgrade` headers, you may call `(aleph.http/websocket-connection req)`, which returns a deferred which yields a **duplex stream**.  Messages from the client can be received via `take!`, and sent to the client via `put!`.  An echo WebSocket handler, then, would just consist of:
@@ -52,6 +54,8 @@ On any HTTP request which has the proper `Upgrade` headers, you may call `(aleph
 This takes all messages from the client, and feeds them back into the duplex socket, returning them to the client.  WebSocket text messages will be emitted as strings, and binary messages as byte arrays.
 
 WebSocket clients can be created via `(aleph.http/websocket-client url)`, which returns a deferred which yields a duplex stream that can send and receive messages from the server.
+
+To learn more about WebSockets in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
 
 ### TCP
 
@@ -70,6 +74,8 @@ An echo TCP server is very similar to the above WebSocket example:
 
 A TCP client can be created via `(aleph.http/tcp-client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
+To learn more about TCP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.tcp.html).
+
 ### UDP
 
 A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast? false})`.  If the `:port` is specified, it will yield a duplex socket which can be used to send and receive messages, which are structured as maps with the following data:
@@ -81,6 +87,8 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
 ```
 
 Where incoming packets will have a `:message` that is a Netty `ByteBuf` that can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
+
+To learn more about UDP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.udp.html).
 
 ### license
 
