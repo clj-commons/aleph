@@ -6,7 +6,7 @@ Aleph exposes data from the network as a [Manifold](https://github.com/ztellman/
 
 ### HTTP
 
-Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also allows for the handler function to return a [Manifold deferred](https;//github.com/ztellman/manifold) to represent an eventual response.  This feature may not play nicely with Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/ztellman/manifold/blob/master/docs/deferred.md#let-flow) operator.
+Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also allows for the handler function to return a [Manifold deferred](https://github.com/ztellman/manifold) to represent an eventual response.  This feature may not play nicely with Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/ztellman/manifold/blob/master/docs/deferred.md#let-flow) operator.
 
 ```clj
 (require '[aleph.http :as http])
@@ -18,6 +18,8 @@ Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, but also a
 
 (http/start-server handler {:port 8080})
 ```
+
+The body of the repsonse may also be a Manifold stream, where each message from the stream is sent as a chunk, allowing for precise control over streamed responses for [server-sent events](http://en.wikipedia.org/wiki/Server-sent_events) and other purposes.
 
 For HTTP client requests, Aleph models itself after [clj-http](https://github.com/dakrone/clj-http), except that every request immediately returns a Manifold deferred representing the response.
 
@@ -72,7 +74,7 @@ An echo TCP server is very similar to the above WebSocket example:
 (tcp/start-server echo-handler {:port 10001})
 ```
 
-A TCP client can be created via `(aleph.http/tcp-client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
+A TCP client can be created via `(aleph.tcp/client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
 To learn more about TCP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.tcp.html).
 
