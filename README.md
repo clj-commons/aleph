@@ -39,7 +39,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
   prn)
 ```
 
-To learn more about HTTP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
+To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
 
 ### WebSockets
 
@@ -57,7 +57,7 @@ This takes all messages from the client, and feeds them back into the duplex soc
 
 WebSocket clients can be created via `(aleph.http/websocket-client url)`, which returns a deferred which yields a duplex stream that can send and receive messages from the server.
 
-To learn more about WebSockets in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
+To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
 
 ### TCP
 
@@ -76,7 +76,7 @@ An echo TCP server is very similar to the above WebSocket example:
 
 A TCP client can be created via `(aleph.tcp/client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
-To learn more about TCP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.tcp.html).
+To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.tcp.html).
 
 ### UDP
 
@@ -90,7 +90,7 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
 
 Where incoming packets will have a `:message` that is a Netty `ByteBuf` that can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
 
-To learn more about UDP in Aleph, [read the documentation](http://ideolalia.com/aleph/aleph.udp.html).
+To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.udp.html).
 
 ### license
 

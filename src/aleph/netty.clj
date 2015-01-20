@@ -5,6 +5,7 @@
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s]
+    [manifold.stream.core :as manifold]
     [primitive-math :as p])
   (:import
     [io.netty.bootstrap Bootstrap ServerBootstrap]
@@ -217,7 +218,7 @@
 
 ;;;
 
-(s/def-sink ChannelSink [coerce-fn downstream? ch]
+(manifold/def-sink ChannelSink [coerce-fn downstream? ch]
   (close [this]
     (when downstream?
       (close ch))
