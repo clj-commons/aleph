@@ -288,7 +288,7 @@
 
         (fn [req]
           (if (contains? req ::close)
-            (netty/wrap-future (.close ch))
+            (netty/wrap-future (netty/close ch))
             (let [rsp (locking ch
                         (s/put! requests req)
                         (s/take! responses ::closed))]
@@ -305,13 +305,24 @@
                     (d/chain rsp
                       (fn [rsp]
                         (let [body (:body rsp)]
+
+                          ;; handle connection life-cycle
                           (when-not keep-alive?
                             (if (s/stream? body)
-                              (s/on-closed body #(.close ch))
-                              (.close ch)))
-                          (assoc rsp :body
+                              (s/on-closed body #(netty/close ch))
+                              (netty/close ch)))
+
+                          (assoc rsp
+                            :body
                             (bs/to-input-stream body
-                              {:buffer-size response-buffer-size})))))))))))))))
+                              {:buffer-size response-buffer-size})
+
+                            :aleph/complete
+                            (if (s/stream? body)
+                              (let [d (d/deferred)]
+                                (s/on-closed body #(d/success! d true))
+                                d)
+                              true)))))))))))))))
 
 ;;;
 
@@ -340,7 +351,7 @@
           (when-not (d/error! d ex)
             (log/warn ex "error in websocket client"))
           (s/close! in)
-          (.close ctx))
+          (netty/close ctx))
 
        :channel-inactive
        ([_ ctx]
@@ -371,7 +382,7 @@
                     (s/on-drained in
                       #(d/chain (.writeAndFlush ch (CloseWebSocketFrame.))
                          netty/wrap-future
-                         (fn [_] (.close ctx))))))
+                         (fn [_] (netty/close ctx))))))
 
                 (instance? FullHttpResponse msg)
                 (let [rsp ^FullHttpResponse msg]
@@ -397,7 +408,7 @@
                 nil
 
                 (instance? CloseWebSocketFrame msg)
-                (.close ctx)))
+                (netty/close ctx)))
             (finally
               (netty/release msg)))))]))
 

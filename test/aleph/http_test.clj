@@ -6,6 +6,7 @@
     [aleph.netty :as netty]
     [byte-streams :as bs]
     [manifold.deferred :as d]
+    [manifold.stream :as s]
     [aleph.http :as http])
   (:import
     [java.util.concurrent
@@ -37,6 +38,10 @@
   {:status 200
    :body (bs/to-input-stream stream-response)})
 
+(defn manifold-handler [request]
+  {:status 200
+   :body (->> stream-response (map str) s/->source)})
+
 (defn echo-handler [request]
   {:status 200
    :body (:body request)})
@@ -55,6 +60,7 @@
 (def route-map
   {"/stream" stream-handler
    "/file" file-handler
+   "/manifold" manifold-handler
    "/seq" seq-handler
    "/string" string-handler
    "/echo" echo-handler
@@ -77,6 +83,7 @@
   (->>
     ["string" string-response
      "stream" stream-response
+     "manifold" stream-response
      "file" "this is a file"
      "seq" (apply str seq-response)
      ]
