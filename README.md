@@ -1,7 +1,7 @@
 Aleph exposes data from the network as a [Manifold](https://github.com/ztellman/manifold) stream, which can easily be transformed into a `java.io.InputStream`, [core.async](https://github.com/clojure/core.async) channel, Clojure sequence, or [many other byte representations](https://github.com/ztellman/byte-streams).  It exposes simple default wrappers for HTTP, TCP, and UDP, but allows access to full performance and flexibility of the underlying [Netty](https://github.com/netty/netty) library.
 
 ```clj
-[aleph "0.4.0-beta1"]
+[aleph "0.4.0-beta2"]
 ```
 
 ### HTTP
@@ -43,7 +43,7 @@ To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.http.ht
 
 ### WebSockets
 
-On any HTTP request which has the proper `Upgrade` headers, you may call `(aleph.http/websocket-connection req)`, which returns a deferred which yields a **duplex stream**.  Messages from the client can be received via `take!`, and sent to the client via `put!`.  An echo WebSocket handler, then, would just consist of:
+On any HTTP request which has the proper `Upgrade` headers, you may call `(aleph.http/websocket-connection req)`, which returns a deferred which yields a **duplex stream**, which uses a single stream to represent bidirectional communication.  Messages from the client can be received via `take!`, and sent to the client via `put!`.  An echo WebSocket handler, then, would just consist of:
 
 ```clj
 (require '[manifold.stream :as s])

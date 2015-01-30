@@ -162,7 +162,7 @@
     (assert controller "must specify :controller")
     (Executor.
       (or thread-factory (create-thread-factory))
-      (if queue-length
+      (if (and queue-length (pos? queue-length))
         (ArrayBlockingQueue. queue-length)
         (SynchronousQueue.))
       (if stats-callback
