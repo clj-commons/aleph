@@ -5,7 +5,7 @@
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1"]
                  [io.netty/netty-all "4.0.25.Final"]
-                 [io.aleph/dirigiste "0.1.0-alpha6"]
+                 [io.aleph/dirigiste "0.1.0-alpha7"]
                  [manifold "0.1.0-beta10"]
                  [byte-streams "0.2.0-alpha8"]
                  [potemkin "0.3.11"]]
