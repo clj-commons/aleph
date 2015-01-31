@@ -71,6 +71,9 @@
   [c]
   (swap! connection-stats-callbacks disj c))
 
+(def default-response-executor
+  (flow/utilization-executor 0.9 256))
+
 (defn connection-pool
   "Returns a connection pool which can be used as an argument in `request`.
 
@@ -96,22 +99,32 @@
            total-connections
            target-utilization
            connection-options
-           stats-callback]
+           stats-callback
+           response-executor]
     :or {connections-per-host 8
          total-connections 1024
-         target-utilization 0.9}}]
+         target-utilization 0.9
+         response-executor default-response-executor}}]
   (let [p (promise)
+        connection-options (assoc connection-options
+                             :response-executor response-executor)
         pool (flow/instrumented-pool
                {:generate (fn [host]
                             (let [c (promise)
-                                  conn (create-connection host connection-options #(flow/dispose @p host [@c]))]
+                                  conn (create-connection
+                                         host
+                                         connection-options
+                                         #(flow/dispose @p host [@c]))]
                               (deliver c conn)
                               [conn]))
                 :destroy (fn [_ c]
                            (d/chain c
                              first
                              client/close-connection))
-                :controller (Pools/utilizationController target-utilization connections-per-host total-connections)
+                :controller (Pools/utilizationController
+                              target-utilization
+                              connections-per-host
+                              total-connections)
                 :stats-callback stats-callback
                 })]
     @(deliver p pool)))

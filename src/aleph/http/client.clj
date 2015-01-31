@@ -215,7 +215,7 @@
      response-buffer-size 65536
      max-initial-line-length 4098
      max-header-size 8196
-     max-chunk-size 8196}}]
+     max-chunk-size 65536}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -248,12 +248,13 @@
            keep-alive?
            insecure?
            response-buffer-size
-           on-closed]
+           on-closed
+           response-executor]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536}
     :as options}]
-  (let [responses (s/stream 1024)
+  (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024)
         host (.getHostName ^InetSocketAddress remote-address)
         c (netty/create-client
