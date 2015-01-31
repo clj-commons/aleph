@@ -177,22 +177,21 @@
                (d/timeout! conn timeout)
                conn)
       (fn [conn]
-        (let [end (System/currentTimeMillis)]
-          (-> (first conn)
-            (d/chain
-              (fn [conn']
-                (let [end (System/currentTimeMillis)]
-                  (-> (middleware conn')
-                    (d/chain #(% req))
-                    (d/catch #(do (flow/release pool k conn) (throw %)))
-                    (d/chain
-                      (fn [rsp]
-                        (d/chain (:aleph/complete rsp)
-                          (fn [_]
-                            (flow/release pool k conn)))
-                        (-> rsp
-                          (dissoc :aleph/complete)
-                          (assoc :connection-time (- end start)))))))))))))))
+        (-> (first conn)
+          (d/chain
+            (fn [conn']
+              (let [end (System/currentTimeMillis)]
+                (-> (middleware conn')
+                  (d/chain #(% req))
+                  (d/catch #(do (flow/release pool k conn) (throw %)))
+                  (d/chain
+                    (fn [rsp]
+                      (d/chain (:aleph/complete rsp)
+                        (fn [_]
+                          (flow/release pool k conn)))
+                      (-> rsp
+                        (dissoc :aleph/complete)
+                        (assoc :connection-time (- end start))))))))))))))
 
 (defn- req
   ([method url]
