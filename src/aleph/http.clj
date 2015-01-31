@@ -165,16 +165,15 @@
 (defn request
   "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
    by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined."
-  [{:keys [pool middleware]
+  [{:keys [pool middleware socket-timeout]
     :or {pool default-connection-pool
          middleware identity}
     :as req}]
   (let [k (client/req->domain req)
         start (System/currentTimeMillis)
-        timeout (clojure.core/get req :socket-timeout)
         conn (flow/acquire pool k)]
-    (d/chain (if timeout
-               (d/timeout! conn timeout)
+    (d/chain (if socket-timeout
+               (d/timeout! conn socket-timeout)
                conn)
       (fn [conn]
         (-> (first conn)
