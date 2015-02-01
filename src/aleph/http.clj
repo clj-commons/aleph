@@ -193,28 +193,31 @@
       (maybe-timeout! socket-timeout)
       (d/chain
         (fn [conn]
-          (-> (first conn)
-            (maybe-timeout! connection-timeout)
-            (d/catch TimeoutException
-                     #(do (flow/dispose pool k conn) (throw %)))
-            (d/chain
-              (fn [conn']
-                (let [connection-end (System/currentTimeMillis)
-                      connection-time (- connection-end start)]
-                  (-> (middleware conn')
-                    (d/chain #(% req))
-                    (maybe-timeout! request-timeout)
-                    (d/catch TimeoutException
-                             #(do (flow/dispose pool k conn) (throw %)))
-                    (d/catch #(do (flow/release pool k conn) (throw %)))
-                    (d/chain
-                      (fn [rsp]
-                        (d/chain (:aleph/complete rsp)
-                          (fn [_]
-                            (flow/release pool k conn)))
-                        (-> rsp
-                          (dissoc :aleph/complete)
-                          (assoc :connection-time connection-time))))))))))))))
+          (let [socket-end (System/currentTimeMillis)
+                socket-time (- socket-end start)]
+            (-> (first conn)
+              (maybe-timeout! connection-timeout)
+              (d/catch TimeoutException
+                       #(do (flow/dispose pool k conn) (throw %)))
+              (d/chain
+                (fn [conn']
+                  (let [connection-end (System/currentTimeMillis)
+                        connection-time (- connection-end socket-end)]
+                    (-> (middleware conn')
+                      (d/chain #(% req))
+                      (maybe-timeout! request-timeout)
+                      (d/catch TimeoutException
+                               #(do (flow/dispose pool k conn) (throw %)))
+                      (d/catch #(do (flow/release pool k conn) (throw %)))
+                      (d/chain
+                        (fn [rsp]
+                          (d/chain (:aleph/complete rsp)
+                            (fn [_]
+                              (flow/release pool k conn)))
+                          (-> rsp
+                            (dissoc :aleph/complete)
+                            (assoc :connection-time connection-time
+                                   :socket-time socket-time)))))))))))))))
 
 (defn- req
   ([method url]
