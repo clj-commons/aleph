@@ -12,7 +12,9 @@
     [io.aleph.dirigiste Pools]
     [java.net
      URI
-     InetSocketAddress]))
+     InetSocketAddress]
+    [java.util.concurrent
+     TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -164,35 +166,56 @@
 
 (defn request
   "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
-   by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined."
-  [{:keys [pool middleware]
+   by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
+   the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined.
+
+   |:---|:---
+   | `pool` | a custom connection pool
+   | `middleware` | custom client middleware for the request
+   | `socket-timeout` | timeout in milliseconds for the pool to allocate a socket
+   | `connection-timeout` | timeout in milliseconds for the connection to become established
+   | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection"
+  [{:keys [pool
+           middleware
+           socket-timeout
+           connection-timeout
+           request-timeout]
     :or {pool default-connection-pool
          middleware identity}
     :as req}]
   (let [k (client/req->domain req)
         start (System/currentTimeMillis)
-        timeout (clojure.core/get req :socket-timeout)
-        conn (flow/acquire pool k)]
-    (d/chain (if timeout
-               (d/timeout! conn timeout)
-               conn)
-      (fn [conn]
-        (let [end (System/currentTimeMillis)]
-          (-> (first conn)
-            (d/chain
-              (fn [conn']
-                (let [end (System/currentTimeMillis)]
-                  (-> (middleware conn')
-                    (d/chain #(% req))
-                    (d/catch #(do (flow/release pool k conn) (throw %)))
-                    (d/chain
-                      (fn [rsp]
-                        (d/chain (:aleph/complete rsp)
-                          (fn [_]
-                            (flow/release pool k conn)))
-                        (-> rsp
-                          (dissoc :aleph/complete)
-                          (assoc :connection-time (- end start)))))))))))))))
+        maybe-timeout! (fn [d timeout]
+                         (if timeout
+                           (d/timeout! d timeout)
+                           d))]
+    (-> (flow/acquire pool k)
+      (maybe-timeout! socket-timeout)
+      (d/chain
+        (fn [conn]
+          (let [socket-end (System/currentTimeMillis)
+                socket-time (- socket-end start)]
+            (-> (first conn)
+              (maybe-timeout! connection-timeout)
+              (d/catch TimeoutException
+                       #(do (flow/dispose pool k conn) (throw %)))
+              (d/chain
+                (fn [conn']
+                  (let [connection-end (System/currentTimeMillis)
+                        connection-time (- connection-end socket-end)]
+                    (-> (middleware conn')
+                      (d/chain #(% req))
+                      (maybe-timeout! request-timeout)
+                      (d/catch #(do (flow/dispose pool k conn) (throw %)))
+                      (d/chain
+                        (fn [rsp]
+                          (d/chain (:aleph/complete rsp)
+                            (fn [_]
+                              (flow/release pool k conn)))
+                          (-> rsp
+                            (dissoc :aleph/complete)
+                            (assoc :connection-time connection-time
+                                   :socket-time socket-time)))))))))))))))
 
 (defn- req
   ([method url]
