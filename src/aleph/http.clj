@@ -206,12 +206,7 @@
                     (-> (middleware conn')
                       (d/chain #(% req))
                       (maybe-timeout! request-timeout)
-                      (d/catch
-                        (fn [e]
-                          (if (instance? TimeoutException e)
-                            (flow/dispose pool k conn)
-                            (flow/release pool k conn))
-                          (throw e)))
+                      (d/catch #(do (flow/dispose pool k conn) (throw %)))
                       (d/chain
                         (fn [rsp]
                           (d/chain (:aleph/complete rsp)
