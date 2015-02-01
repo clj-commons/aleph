@@ -13,7 +13,9 @@
      Executors]
     [java.io
      File
-     ByteArrayInputStream]))
+     ByteArrayInputStream]
+    [java.util.concurrent
+     TimeoutException]))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -156,6 +158,11 @@
                       {:body words
                        :socket-timeout 2000}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
+
+(deftest test-connection-timeout
+  (with-handler basic-handler
+    (is (thrown? TimeoutException @(http/get "http://8.8.8.8"
+                                     {:connection-timeout 2})))))
 
 ;;;
 
