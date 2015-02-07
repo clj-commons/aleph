@@ -124,10 +124,14 @@
 
 ;;;
 
-(defn invalid-value-response [x]
+(defn invalid-value-response [req x]
   (error-response
     (IllegalArgumentException.
-      (str "cannot treat " (pr-str x) "as HTTP response"))))
+      (str "cannot treat "
+        (pr-str x)
+        " as HTTP response for request to '"
+        (:uri req)
+        "'"))))
 
 (defn handle-request
   [^ChannelHandlerContext ctx
@@ -176,7 +180,7 @@
                   (send-response ctx keep-alive?
                     (if (map? rsp)
                       rsp
-                      (invalid-value-response rsp))))))))))))
+                      (invalid-value-response req rsp))))))))))))
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]

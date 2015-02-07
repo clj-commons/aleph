@@ -20,7 +20,7 @@
 
 
    |:---------|:-------------
-   | `port` | the port the server will bind to.  If `-1`, the server will bind to a random port.
+   | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
