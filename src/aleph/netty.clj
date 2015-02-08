@@ -29,10 +29,12 @@
      SelfSignedCertificate InsecureTrustManagerFactory]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
-    [io.netty.util.concurrent GenericFutureListener Future]
     [java.net SocketAddress InetSocketAddress]
+    [io.netty.util.concurrent
+     GenericFutureListener Future DefaultThreadFactory]
     [java.io InputStream]
     [java.nio ByteBuffer]
+    [io.netty.util.internal SystemPropertyUtil]
     [io.netty.util.internal.logging
      InternalLoggerFactory
      Log4JLoggerFactory
@@ -372,10 +374,21 @@
 (defn epoll? []
   (Epoll/isAvailable))
 
+(defn get-default-event-loop-threads
+  "Determines the default number of threads to use for a Netty EventLoopGroup.
+   This mimics the default used by Netty as of version 4.1."
+  []
+  (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
+    (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
+
+(def ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
+
 (def client-group
-  (if (epoll?)
-    (EpollEventLoopGroup.)
-    (NioEventLoopGroup.)))
+  (let [thread-count (get-default-event-loop-threads)
+        thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
+    (if (epoll?)
+      (EpollEventLoopGroup. thread-count thread-factory)
+      (NioEventLoopGroup. thread-count thread-factory))))
 
 (defn create-client
   [pipeline-builder
@@ -383,9 +396,7 @@
    bootstrap-transform
    ^SocketAddress remote-address
    ^SocketAddress local-address]
-  (let [^EventLoopGroup
-
-        ^Class
+  (let [^Class
         channel (if (epoll?)
                   EpollSocketChannel
                   NioSocketChannel)
