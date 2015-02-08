@@ -4,9 +4,10 @@
   (:import
     [io.aleph.dirigiste
      Pool
-     Pool$AcquireCallback
-     Pool$Controller
-     Pool$Generator
+     IPool
+     IPool$AcquireCallback
+     IPool$Controller
+     IPool$Generator
      Executors
      Executor
      Executor$Controller
@@ -78,18 +79,18 @@
     :or {sample-period 10
          control-period 10000
          max-queue-size 65536}}]
-  (let [^Pool$Controller c controller]
+  (let [^IPool$Controller c controller]
     (assert controller "must specify :controller")
     (assert generate   "must specify :generate")
     (Pool.
-      (reify Pool$Generator
+      (reify IPool$Generator
         (generate [_ k]
           (generate k))
         (destroy [_ k v]
           (when destroy
             (destroy k v))))
 
-      (reify Pool$Controller
+      (reify IPool$Controller
         (shouldIncrement [_ key objects-per-key total-objects]
           (.shouldIncrement c key objects-per-key total-objects))
         (adjustment [_ key->stats]
@@ -108,11 +109,11 @@
 (defn acquire
   "Acquires an object from the pool for key `k`, returning a deferred containing the object.  May
    throw a `java.util.concurrent.RejectedExecutionException` if there are too many pending acquires."
-  [^Pool p k]
+  [^IPool p k]
   (let [d (d/deferred)]
     (try
       (.acquire p k
-        (reify Pool$AcquireCallback
+        (reify IPool$AcquireCallback
           (handleObject [_ obj]
             (when-not (d/success! d obj)
               (.release p k obj)))))
@@ -122,12 +123,12 @@
 
 (defn release
   "Releases an object for key `k` back to the pool."
-  [^Pool p k obj]
+  [^IPool p k obj]
   (.release p k obj))
 
 (defn dispose
   "Disposes of a pooled object which is no longer valid."
-  [^Pool p k obj]
+  [^IPool p k obj]
   (.dispose p k obj))
 
 (defn instrumented-executor
