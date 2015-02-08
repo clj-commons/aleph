@@ -13,7 +13,9 @@
      Executors]
     [java.io
      File
-     ByteArrayInputStream]))
+     ByteArrayInputStream]
+    [java.util.concurrent
+     TimeoutException]))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -38,6 +40,10 @@
   {:status 200
    :body (bs/to-input-stream stream-response)})
 
+(defn slow-handler [request]
+  {:status 200
+   :body (cons "1" (lazy-seq (do (Thread/sleep 1000) '("2"))))})
+
 (defn manifold-handler [request]
   {:status 200
    :body (->> stream-response (map str) s/->source)})
@@ -59,6 +65,7 @@
 
 (def route-map
   {"/stream" stream-handler
+   "/slow" slow-handler
    "/file" file-handler
    "/manifold" manifold-handler
    "/seq" seq-handler
@@ -156,6 +163,18 @@
                       {:body words
                        :socket-timeout 2000}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
+
+(deftest test-connection-timeout
+  (with-handler basic-handler
+    (is (thrown? TimeoutException
+          @(http/get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
+             {:connection-timeout 2})))))
+
+(deftest test-request-timeout
+  (with-handler basic-handler
+    (is (thrown? TimeoutException
+          @(http/get "http://localhost:8080/slow"
+             {:request-timeout 5})))))
 
 ;;;
 
