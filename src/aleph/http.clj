@@ -184,7 +184,7 @@
                 (let [end (System/currentTimeMillis)]
                   (-> (middleware conn')
                     (d/chain #(% req))
-                    (d/catch #(do (flow/release pool k conn) (throw %)))
+                    (d/catch #(do (flow/release pool k conn) (d/error-deferred %)))
                     (d/chain
                       (fn [rsp]
                         (d/chain (:aleph/complete rsp)

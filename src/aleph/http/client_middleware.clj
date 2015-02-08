@@ -6,7 +6,8 @@
     [clojure.stacktrace :refer [root-cause]]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
-    [manifold.deferred :as d])
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
     [java.io InputStream]
     [java.net URL URLEncoder UnknownHostException]))
@@ -112,6 +113,117 @@
   (if (keyword? type)
     (str "application/" (name type))
     type))
+
+(defn wrap-exceptions
+  "Middleware that throws a slingshot exception if the response is not a
+  regular response. If :throw-entire-message? is set to true, the entire
+  response is used as the message, instead of just the status number."
+  [client]
+  (fn [req]
+    (d/let-flow [{:keys [status] :as rsp} (client req)]
+      (if (unexceptional-status? status)
+        rsp
+        (if (false? (opt req :throw-exceptions))
+          rsp
+          (d/chain rsp :aleph/complete
+            (fn [_]
+              (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
+
+(declare wrap-redirects)
+
+(defn follow-redirect
+  "Attempts to follow the redirects from the \"location\" header, if no such
+  header exists (bad server!), returns the response without following the
+  request."
+  [client {:keys [uri url scheme server-name server-port] :as req}
+   {:keys [trace-redirects body] :as rsp}]
+  (let [url (or url (str (name scheme) "://" server-name
+                         (when server-port (str ":" server-port)) uri))]
+    (if-let [raw-redirect (get-in rsp [:headers "location"])]
+      (let [redirect (str (URL. (URL. url) raw-redirect))]
+        (try
+          (if (instance? InputStream body)
+            (.close ^InputStream body)
+            (s/close! body))
+          (catch Exception _))
+        ((wrap-redirects client)
+         (-> req
+           (merge (parse-url redirect))
+           (dissoc :query-params)
+           (assoc :url redirect)
+           (assoc :trace-redirects trace-redirects))))
+      ;; Oh well, we tried, but if no location is set, return the response
+      rsp)))
+
+(defn wrap-redirects
+  "Middleware that follows redirects in the response. A slingshot exception is
+  thrown if too many redirects occur. Options
+  :follow-redirects - default:true, whether to follow redirects
+  :max-redirects - default:20, maximum number of redirects to follow
+  :force-redirects - default:false, force redirecting methods to GET requests
+  In the response:
+  :redirects-count - number of redirects
+  :trace-redirects - vector of sites the request was redirected from"
+  [client]
+  (fn [{:keys [request-method max-redirects redirects-count trace-redirects url]
+        :or {redirects-count 1 trace-redirects []
+             ;; max-redirects default taken from Firefox
+             max-redirects 20}
+        :as req}]
+    (d/let-flow [{:keys [status] :as rsp} (client req)
+                 rsp-r (assoc rsp
+                         :trace-redirects (if url
+                                            (conj trace-redirects url)
+                                            trace-redirects))]
+      (cond
+        (false? (opt req :follow-redirects))
+        rsp
+
+        (not (redirect? rsp-r))
+        rsp-r
+
+        (and max-redirects (> redirects-count max-redirects))
+        (if (opt req :throw-exceptions)
+          (throw (ex-info (str "too many redirects: " redirects-count) req))
+          rsp-r)
+
+        (= 303 status)
+        (follow-redirect client
+          (assoc req
+            :request-method :get
+            :redirects-count (inc redirects-count))
+          rsp-r)
+
+       (#{301 302} status)
+       (cond
+        (#{:get :head} request-method)
+        (follow-redirect client
+          (assoc req
+            :redirects-count
+            (inc redirects-count))
+          rsp)
+
+        (opt req :force-redirects)
+        (follow-redirect client
+          (assoc req
+            :request-method :get
+            :redirects-count (inc redirects-count))
+          rsp-r)
+
+        :else
+        rsp-r)
+
+       (= 307 status)
+       (if (or (#{:get :head} request-method)
+             (opt req :force-redirects))
+         (follow-redirect client
+           (assoc req :redirects-count (inc redirects-count)) rsp-r)
+         rsp-r)
+
+       :else
+       rsp-r))))
+
+
 
 (defn wrap-content-type
   "Middleware converting a `:content-type <keyword>` option to the formal
@@ -310,8 +422,8 @@
   [client]
   (fn [req]
     (let [start (System/currentTimeMillis)]
-      (d/chain (client req)
-        #(assoc % :request-time (- (System/currentTimeMillis) start))))))
+      (-> (client req)
+        (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
 (def default-middleware
   "The default list of middleware clj-http uses for wrapping requests."
@@ -321,6 +433,8 @@
    wrap-oauth
    wrap-user-info
    wrap-url
+   wrap-redirects
+   wrap-exceptions
    wrap-accept
    wrap-accept-encoding
    wrap-content-type
@@ -333,9 +447,13 @@
   "Returns a batteries-included HTTP request function corresponding to the given
   core client. See default-middleware for the middleware wrappers that are used
   by default"
-  [request]
-  (reduce
-    (fn wrap-request* [request middleware]
-      (middleware request))
-    request
-    default-middleware))
+  [client]
+  (let [client' (reduce
+                  (fn wrap-request* [request middleware]
+                    (middleware request))
+                  client
+                  default-middleware)]
+    (fn [req]
+      (if (:aleph.http.client/close req)
+        (client req)
+        (client' req)))))
