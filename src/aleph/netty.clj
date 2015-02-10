@@ -35,6 +35,7 @@
     [java.io InputStream]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
+    [java.util.concurrent CancellationException]
     [io.netty.util.internal.logging
      InternalLoggerFactory
      Log4JLoggerFactory
@@ -142,7 +143,9 @@
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
 
-(defn wrap-future [^Future f]
+
+(defn wrap-future
+  [^Future f]
   (when f
     (if (.isSuccess f)
       (d/success-deferred true)
@@ -150,10 +153,19 @@
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
-              (d/success! d (.isSuccess f)))))
+              (cond
+                (.isSuccess f)
+                  (d/success! d true)
+                (.isCancelled f)
+                  (d/error! d (CancellationException. "Future is cancelled."))
+                (some? (.cause f))
+                  (d/error! d (.cause f))
+                :else
+                  (d/error! d (IllegalStateException. (str "Unknown state of future: " {:isSuccess   (.isSuccess f)
+                                                                                        :isDone      (.isDone f)
+                                                                                        :isCancelled (.isCancelled f)
+                                                                                        :cause       (.cause f)})))))))
         d))))
-
-;;;
 
 (defn allocate [x]
   (if (instance? Channel x)
