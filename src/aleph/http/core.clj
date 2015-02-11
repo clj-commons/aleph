@@ -96,7 +96,7 @@
       (set/union
         (set (map str/lower-case (.names headers)))
         (set (keys added)))
-      (set (keys removed))))
+      (set removed)))
   (assoc [_ k v]
     (HeaderMap.
       headers
