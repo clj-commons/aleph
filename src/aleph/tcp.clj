@@ -103,7 +103,14 @@
 
        :channel-read
        ([_ ctx msg]
-          (netty/put! (.channel ctx) in msg)))]))
+          (netty/put! (.channel ctx) in msg))
+
+       :close
+       ([_ ctx promise]
+          (.close ctx promise)
+          ;; 'finally' block for realizing Deferred always.
+          (when-not (d/realized? d)
+            (d/error! d (IllegalStateException. "Can not connect.")))))]))
 
 (defn client
   "Given a host and port, returns a deferred which yields a duplex stream that can be used
@@ -122,16 +129,22 @@
     :or {bootstrap-transform identity}
     :as options}]
   (let [[s handler] (client-channel-handler options)]
-    (netty/create-client
-      (fn [^ChannelPipeline pipeline]
-        (.addLast pipeline "handler" ^ChannelHandler handler)
-        (when pipeline-transform
-          (pipeline-transform pipeline)))
-      (when ssl?
-        (if insecure?
-          (netty/insecure-ssl-client-context)
-          (netty/ssl-client-context)))
-      bootstrap-transform
-      (or remote-address (InetSocketAddress. ^String host (int port)))
-      local-address)
+    (-> (netty/create-client
+          (fn [^ChannelPipeline pipeline]
+            (.addLast pipeline "handler" ^ChannelHandler handler)
+            (when pipeline-transform
+              (pipeline-transform pipeline)))
+          (when ssl?
+            (if insecure?
+              (netty/insecure-ssl-client-context)
+              (netty/ssl-client-context)))
+          bootstrap-transform
+          (or remote-address (InetSocketAddress. ^String host (int port)))
+          local-address)
+        ;; netty/create-client returns a deferred object and the deferred might hold an exception on processing.
+        ;; the error must be propagated into the deferred 's'. Users can not handle
+        ;; the error without the propagation.
+        (d/catch
+          (fn [e]
+            (d/error! s e))))
     s))
