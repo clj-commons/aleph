@@ -201,7 +201,7 @@
           (assoc req
             :redirects-count
             (inc redirects-count))
-          rsp)
+          rsp-r)
 
         (opt req :force-redirects)
         (follow-redirect client
