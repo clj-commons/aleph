@@ -35,7 +35,7 @@
       <td align="left">a function that takes an <code>io.netty.channel.ChannelPipeline</code> object, which represents a connection, and modifies it.</td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/tcp.clj#L108">view source</a></div></div><div class="public anchor" id="var-start-server"><h3>start-server</h3><div class="usage"><code>(start-server handler {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform], :or {bootstrap-transform identity, pipeline-transform identity}, :as options})</code></div><div class="doc"><div class="markdown"><p>Takes a two-arg handler function which for each connection will be called with a duplex stream and a map containing information about the client. Returns a server object that can be shutdown via <code>java.io.Closeable.close()</code>, and whose port can be discovered via <code>aleph.netty.port</code>.</p>
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/tcp.clj#L113">view source</a></div></div><div class="public anchor" id="var-start-server"><h3>start-server</h3><div class="usage"><code>(start-server handler {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform], :or {bootstrap-transform identity, pipeline-transform identity}, :as options})</code></div><div class="doc"><div class="markdown"><p>Takes a two-arg handler function which for each connection will be called with a duplex stream and a map containing information about the client. Returns a server object that can be shutdown via <code>java.io.Closeable.close()</code>, and whose port can be discovered via <code>aleph.netty.port</code>.</p>
 <table>
   <tbody>
     <tr>
