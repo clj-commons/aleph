@@ -155,16 +155,16 @@
             (operationComplete [_ _]
               (cond
                 (.isSuccess f)
-                  (d/success! d true)
+                (d/success! d true)
+
                 (.isCancelled f)
-                  (d/error! d (CancellationException. "Future is cancelled."))
+                (d/error! d (CancellationException. "future is cancelled."))
+
                 (some? (.cause f))
-                  (d/error! d (.cause f))
+                (d/error! d (.cause f))
+
                 :else
-                  (d/error! d (IllegalStateException. (str "Unknown state of future: " {:isSuccess   (.isSuccess f)
-                                                                                        :isDone      (.isDone f)
-                                                                                        :isCancelled (.isCancelled f)
-                                                                                        :cause       (.cause f)})))))))
+                (d/error! d (IllegalStateException. "future in unknown state"))))))
         d))))
 
 (defn allocate [x]
