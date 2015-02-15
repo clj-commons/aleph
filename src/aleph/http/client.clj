@@ -276,8 +276,10 @@
         (s/consume
           (fn [req]
             (let [^HttpRequest req' (http/ring-request->netty-request req)]
-              (HttpHeaders/setHost req' ^String host)
-              (HttpHeaders/setKeepAlive req' keep-alive?)
+              (when-not (.get (.headers req') "Host")
+                (HttpHeaders/setHost req' ^String host))
+              (when-not (.get (.headers req') "Connection")
+                (HttpHeaders/setKeepAlive req' keep-alive?))
               (netty/safe-execute ch
                 (http/send-message ch true req' (get req :body)))))
           requests)
