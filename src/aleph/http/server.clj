@@ -100,6 +100,7 @@
 
 (let [[server-name connection-name date-name]
       (map #(HttpHeaders/newNameEntity %) ["Server" "Connection" "Date"])
+
       [server-value keep-alive-value close-value]
       (map #(HttpHeaders/newValueEntity %) ["Aleph/0.4.0" "Keep-Alive" "Close"])]
   (defn send-response

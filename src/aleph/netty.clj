@@ -161,7 +161,9 @@
                 (d/error! d (CancellationException. "future is cancelled."))
 
                 (some? (.cause f))
-                (d/error! d (.cause f))
+                (if (instance? java.nio.channels.ClosedChannelException (.cause f))
+                  (d/success! d false)
+                  (d/error! d (.cause f)))
 
                 :else
                 (d/error! d (IllegalStateException. "future in unknown state"))))))
