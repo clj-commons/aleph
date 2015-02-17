@@ -92,12 +92,12 @@
 ;; TCP is a streaming protocol, it is not guaranteed to arrive as a single packet, so the server
 ;; must be robust to split messages.  Since both client and server are using Gloss codecs, this
 ;; is automatic.
-@(s/put! c 1) ; => true
+@(s/put! c 1)  ; => true
 
 ;; The message is parsed by the server, and the response is sent, which again may be split
 ;; while in transit between the server and client.  The bytes are consumed and parsed by
 ;; `wrap-duplex-stream`, and the decoded message can be received via `take!`.
-@(s/take! c)  ; => 2
+@(s/take! c)   ; => 2
 
 ;; The server implements `java.io.Closeable`, and can be stopped by calling `close()`.
 (.close s)
@@ -123,12 +123,14 @@
 
           ;; first, check if there even was a message, and then transform it on another thread
           (fn [msg]
-            (when-not (= msg ::none)
+            (if (= ::none msg)
+              ::none
               (d/future (f msg))))
 
           ;; once the transformation is complete, write it back to the client
           (fn [msg']
-            (s/put! s msg'))
+            (when-not (= ::none msg')
+              (s/put! s msg')))
 
           ;; if we were successful in our response, recur and repeat
           (fn [result]
@@ -141,6 +143,26 @@
           (fn [ex]
             (s/put! s (str "ERROR: " ex))
             (s/close! s)))))))
+
+;; Alternately, we use `manifold.deferred/let-flow` to implement the composition of these
+;; asynchronous values.  It is certainly more concise, but at the cost of being less explicit.
+(defn slow-echo-handler
+  [f]
+  (fn [s info]
+    ((fn [] ;;d/loop []
+       (->
+         (d/let-flow [msg (s/take! s ::none)]
+           (prn 'msg msg)
+           (when-not (= ::none msg)
+             (d/let-flow [msg'   (d/future (f msg))
+                          result (s/put! s msg')]
+               (prn 'msg' msg')
+               (when result
+                 (d/recur)))))
+         (d/catch
+           (fn [ex]
+             (s/put! s (str "ERROR: " ex))
+             (s/close! s))))))))
 
 ;; ### demonstration
 
@@ -155,9 +177,9 @@
 
 (def c @(client "localhost" 10000))
 
-@(s/put! c 1) ; => true
+@(s/put! c 1)  ; => true
 
-@(s/take! c)  ; => 2
+@(s/take! c)   ; => 2
 
 (.close s)
 
