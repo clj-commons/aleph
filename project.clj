@@ -1,4 +1,4 @@
-(defproject aleph "0.4.0-SNAPSHOT"
+(defproject aleph "0.4.0-beta3"
   :description "a library for asynchronous network communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
