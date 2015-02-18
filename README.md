@@ -61,7 +61,7 @@ To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.http.ht
 
 ### TCP
 
-A TCP server is similar to an HTTP server, except that for each connection the handler takes two arguments: a duplex stream and a map containing information about the client.  The stream will emit Netty `ByteBuf` objects, which can be coerced into other byte representations using the [byte-streams](https://github.com/ztellman/byte-streams) library.  The stream will accept any messages which can be coerced into a binary representation.
+A TCP server is similar to an HTTP server, except that for each connection the handler takes two arguments: a duplex stream and a map containing information about the client.  The stream will emit byte-arrays, which can be coerced into other byte representations using the [byte-streams](https://github.com/ztellman/byte-streams) library.  The stream will accept any messages which can be coerced into a binary representation.
 
 An echo TCP server is very similar to the above WebSocket example:
 
@@ -88,7 +88,7 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
  :message ...}
 ```
 
-Where incoming packets will have a `:message` that is a Netty `ByteBuf` that can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
+Where incoming packets will have a `:message` that is a byte-array, which can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
 
 To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.udp.html).
 
