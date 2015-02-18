@@ -23,7 +23,7 @@
 (alter-meta! #'->TcpConnection assoc :private true)
 
 (defn- ^ChannelHandler server-channel-handler
-  [handler options]
+  [handler {:keys [raw-stream?] :as options}]
   (let [in (s/stream)]
     (netty/channel-handler
 
@@ -47,7 +47,10 @@
 
       :channel-read
       ([_ ctx msg]
-         (netty/put! (.channel ctx) in msg)))))
+         (netty/put! (.channel ctx) in
+           (if raw-stream?
+             msg
+             (netty/release-buf->array msg)))))))
 
 (defn start-server
   "Takes a two-arg handler function which for each connection will be called with a duplex
@@ -59,7 +62,8 @@
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it."
+   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform]
     :or {bootstrap-transform identity
@@ -77,7 +81,7 @@
       (InetSocketAddress. port))))
 
 (defn- ^ChannelHandler client-channel-handler
-  [options]
+  [{:keys [raw-stream?] :as options}]
   (let [d (d/deferred)
         in (s/stream)]
     [d
@@ -103,7 +107,10 @@
 
        :channel-read
        ([_ ctx msg]
-          (netty/put! (.channel ctx) in msg))
+          (netty/put! (.channel ctx) in
+            (if raw-stream?
+              msg
+              (netty/release-buf->array msg))))
 
        :close
        ([_ ctx promise]
@@ -122,8 +129,9 @@
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `insecure?` | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it."
-  [{:keys [host port remote-address local-address ssl? insecure? pipeline-transform bootstrap-transform]
+   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+  [{:keys [host port remote-address local-address ssl? insecure? pipeline-transform bootstrap-transform raw-stream?]
     :or {bootstrap-transform identity}
     :as options}]
   (let [[s handler] (client-channel-handler options)]

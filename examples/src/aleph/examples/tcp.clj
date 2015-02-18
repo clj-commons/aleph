@@ -149,20 +149,18 @@
 (defn slow-echo-handler
   [f]
   (fn [s info]
-    ((fn [] ;;d/loop []
-       (->
-         (d/let-flow [msg (s/take! s ::none)]
-           (prn 'msg msg)
-           (when-not (= ::none msg)
-             (d/let-flow [msg'   (d/future (f msg))
-                          result (s/put! s msg')]
-               (prn 'msg' msg')
-               (when result
-                 (d/recur)))))
-         (d/catch
-           (fn [ex]
-             (s/put! s (str "ERROR: " ex))
-             (s/close! s))))))))
+    (d/loop []
+      (->
+        (d/let-flow [msg (s/take! s ::none)]
+          (when-not (= ::none msg)
+            (d/let-flow [msg'   (d/future (f msg))
+                         result (s/put! s msg')]
+              (when result
+                (d/recur)))))
+        (d/catch
+          (fn [ex]
+            (s/put! s (str "ERROR: " ex))
+            (s/close! s)))))))
 
 ;; ### demonstration
 

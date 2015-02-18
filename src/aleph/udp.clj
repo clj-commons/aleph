@@ -20,10 +20,10 @@
     [io.netty.channel.socket.nio
      NioDatagramChannel]))
 
-(p/def-derived-map UdpPacket [^DatagramPacket packet]
+(p/def-derived-map UdpPacket [^DatagramPacket packet content]
   :host (-> packet ^InetSocketAddress (.sender) .getHostName)
   :port (-> packet ^InetSocketAddress (.sender) .getPort)
-  :message (.content packet))
+  :message content)
 
 (alter-meta! #'->UdpPacket assoc :private true)
 
@@ -33,8 +33,9 @@
    |:---|:---
    | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `broadcast?` | if true, all UDP datagrams are broadcast."
-  [{:keys [socket-address port broadcast?]}]
+   | `broadcast?` | if true, all UDP datagrams are broadcast.
+   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+  [{:keys [socket-address port broadcast? raw-stream?]}]
   (let [in (s/stream)
         d (d/deferred)
         g (NioEventLoopGroup.)
@@ -59,7 +60,14 @@
                                      (netty/to-byte-buf message)
                                      (or socket-address
                                        (InetSocketAddress. ^String host (int port)))))))
-                         in (s/map ->UdpPacket in)]
+                         in (s/map
+                              (fn [^DatagramPacket packet]
+                                (->UdpPacket
+                                  packet
+                                  (if raw-stream?
+                                    (.content packet)
+                                    (netty/release-buf->array (.content packet)))))
+                              in)]
                      (d/success! d
                        (s/splice out in))))
 

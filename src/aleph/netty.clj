@@ -75,6 +75,11 @@
       (.put dst buf))
     (.array dst)))
 
+(defn release-buf->array [^ByteBuf buf]
+  (let [ary (buf->array buf)]
+    (release buf)
+    ary))
+
 (defn bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
         dst (ByteBuffer/allocate (loop [cnt 0, s bufs']
