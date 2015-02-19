@@ -11,6 +11,7 @@
                  [potemkin "0.3.11"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha5"]
                                   [criterium "0.4.3"]
+                                  [org.clojure/tools.trace "0.7.8"]
                                   #_[codox-md "0.2.0" :exclusions [org.clojure/clojure]]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/0.4.0/"
           :src-linenum-anchor-prefix "L"

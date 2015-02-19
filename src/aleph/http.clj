@@ -185,40 +185,66 @@
     :as req}]
   (let [k (client/req->domain req)
         start (System/currentTimeMillis)
-        maybe-timeout! (fn [d timeout]
-                         (if timeout
-                           (d/timeout! d timeout)
-                           d))]
-    (-> (flow/acquire pool k)
+        maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))
+        maybe-connect (fn [a b] (when a (d/connect a b)))
+        rsp (d/deferred)]
+
+    ;; acquire a connection
+    (-> (when-not (realized? rsp)
+          (flow/acquire pool k))
       (maybe-timeout! pool-timeout)
       (d/chain
         (fn [conn]
+
+          ;; get the wrapper for the connection, which may or may not be realized yet
           (-> (first conn)
+
             (maybe-timeout! connection-timeout)
-            (d/catch TimeoutException
-              #(do (flow/dispose pool k conn) (throw %)))
+
+            ;; connection failed, bail out
+            (d/catch
+              (fn [e]
+                (flow/dispose pool k conn)
+                (d/error-deferred e)))
+
+            ;; actually make the request now
             (d/chain
+
+              ;; short-circuit if we didn't succeed in getting a connection
               (fn [conn']
-                (let [end (System/currentTimeMillis)]
-                  (-> (middleware conn')
-                    (d/chain #(% req))
-                    (maybe-timeout! request-timeout)
-                    (d/catch
-                      (fn [e]
-                        (if (instance? TimeoutException e)
-                          (do
-                            (client/close-connection conn')
-                            (flow/dispose pool k conn))
-                          (flow/release pool k conn))
-                        (d/error-deferred e)))
-                    (d/chain
-                      (fn [rsp]
-                        (d/chain (:aleph/complete rsp)
-                          (fn [_]
-                            (flow/release pool k conn)))
-                        (-> rsp
-                          (dissoc :aleph/complete)
-                          (assoc :connection-time (- end start)))))))))))))))
+                (when-not conn'
+                  (d/error-deferred nil)))
+
+              (fn [conn']
+                (if (realized? rsp)
+
+                  (flow/release pool k conn)
+
+                  (let [end (System/currentTimeMillis)]
+                    (-> ((middleware conn') req)
+                      (d/timeout! request-timeout)
+
+                      ;; request failed, if it was due to a timeout close the connection
+                      (d/catch
+                        (fn [e]
+                          (if (instance? TimeoutException e)
+                            (flow/dispose pool k conn)
+                            (flow/release pool k conn))
+                          (d/error-deferred e)))
+
+                      ;; clean up the response
+                      (d/chain
+                        (fn [rsp]
+                          ;; only release the connection back once the response is complete
+                          (d/chain (:aleph/complete rsp)
+                            (fn [_]
+                              (flow/release pool k conn)))
+                          (-> rsp
+                            (dissoc :aleph/complete)
+                            (assoc :connection-time (- end start)))))))))))))
+      (d/connect rsp))
+
+    rsp))
 
 (defn- req
   ([method url]
