@@ -210,19 +210,20 @@
             ;; actually make the request now
             (d/chain
 
-              ;; short-circuit if we didn't succeed in getting a connection
               (fn [conn']
-                (when-not conn'
-                  (d/error-deferred nil)))
+                (cond
 
-              (fn [conn']
-                (if (realized? rsp)
+                  (nil? conn')
+                  nil
 
+                  (realized? rsp)
                   (flow/release pool k conn)
 
+                  :else
                   (let [end (System/currentTimeMillis)]
                     (-> ((middleware conn') req)
-                      (d/timeout! request-timeout)
+
+                      (maybe-timeout! request-timeout)
 
                       ;; request failed, if it was due to a timeout close the connection
                       (d/catch
