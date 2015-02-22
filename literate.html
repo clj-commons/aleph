@@ -2866,7 +2866,7 @@ net.brehaut.ClojureTools = (function (SH) {
   };
 })(SyntaxHighlighter);
 </script><title>aleph.examples -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name">aleph.examples</h1><h2 class="project-version">0.4.0-SNAPSHOT</h2><br />
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">aleph</td><td class="dotted"><hr /></td><td class="dep-version">0.4.0-SNAPSHOT</td></tr><tr><td class="dep-name">manifold</td><td class="dotted"><hr /></td><td class="dep-version">0.1.0-SNAPSHOT</td></tr><tr><td class="dep-name">gloss</td><td class="dotted"><hr /></td><td class="dep-version">0.2.4</td></tr><tr><td class="dep-name">compojure</td><td class="dotted"><hr /></td><td class="dep-version">1.3.1</td></tr><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.7.0-alpha5</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#aleph.examples.http">aleph.examples.http</a></li><li><a href="#aleph.examples.tcp">aleph.examples.tcp</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.http" name="aleph.examples.http"><h1 class="project-name">aleph.examples.http</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">aleph</td><td class="dotted"><hr /></td><td class="dep-version">0.4.0-SNAPSHOT</td></tr><tr><td class="dep-name">manifold</td><td class="dotted"><hr /></td><td class="dep-version">0.1.0-SNAPSHOT</td></tr><tr><td class="dep-name">gloss</td><td class="dotted"><hr /></td><td class="dep-version">0.2.4</td></tr><tr><td class="dep-name">compojure</td><td class="dotted"><hr /></td><td class="dep-version">1.3.1</td></tr><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.7.0-alpha5</td></tr><tr><td class="dep-name">org.clojure/core.async</td><td class="dotted"><hr /></td><td class="dep-version">0.1.346.0-17112a-alpha</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#aleph.examples.http">aleph.examples.http</a></li><li><a href="#aleph.examples.tcp">aleph.examples.tcp</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.http" name="aleph.examples.http"><h1 class="project-name">aleph.examples.http</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns aleph.examples.http
   (:require
     [compojure.core :as compojure :refer [GET]]
@@ -2875,10 +2875,11 @@ net.brehaut.ClojureTools = (function (SH) {
     [aleph.http :as http]
     [byte-streams :as bs]
     [manifold.stream :as s]
-    [manifold.deferred :as d]))</pre></td></tr><tr><td class="docs"><p>For HTTP, Aleph implements a superset of the
+    [manifold.deferred :as d]
+    [clojure.core.async :as a]))</pre></td></tr><tr><td class="docs"><p>For HTTP, Aleph implements a superset of the
 <a href="https://github.com/ring-clojure/ring/blob/master/SPEC">Ring spec</a>, which means it can be
 used as a drop-in replacement for pretty much any other Clojure webserver.  In order to
-allow for asynchronous responses, however, it enables the use of
+allow for asynchronous responses, however, it allows for the use of
 <a href="https://github.com/ztellman/manifold">Manifold</a> deferreds and streams.  Uses of both
 will be illustrated below.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Complete documentation for the <code>aleph.http</code> namespace can be found <a href="http://ideolalia.com/aleph/aleph.http.html">here</a>.</p>
@@ -2901,13 +2902,18 @@ will be illustrated below.</p>
   (d/timeout!
     (d/deferred)
     1000
-    (hello-world-handler req)))</pre></td></tr><tr><td class="docs"><p>Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
+    (hello-world-handler req)))</pre></td></tr><tr><td class="docs"><p>Alternately, we can use a <a href="https://github.com/clojure/core.async">core.async</a> goroutine to
+   create our response, and convert the channel it returns using
+   <code>manifold.deferred/-&gt;deferred</code>. This is entirely equivalent to the previous implementation.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn delayed-hello-world-handler
+  [req]
+  (d/-&gt;deferred
+    (a/go
+      (let [_ (a/&lt;! (a/timeout 1000))]
+        (hello-world-handler req)))))</pre></td></tr><tr><td class="docs"><p>Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
    milliseconds.  While this would typically be represented by a lazy sequence, instead we use
    a Manifold stream.  Similar to the use of the deferred above, this means we don't need
    to allocate a thread per-request.</p>
-
-<p>   A lazy sequence can still be used, however, if the upstream provider of data is using an
-   <code>Enumerator</code> or a similar blocking mechanism for streaming data.</p>
 
 <p>   In this handler we're assuming the string value for <code>count</code> is a valid number.  If not,
    <code>Integer.parseInt()</code> will throw an exception, and we'll return a <code>500</code> status response
@@ -2923,7 +2929,33 @@ will be illustrated below.</p>
      :headers {&quot;content-type&quot; &quot;text/plain&quot;}
      :body (let [sent (atom 0)]
              (-&gt;&gt; (s/periodically 100 #(str (swap! sent inc) &quot;\n&quot;))
-               (s/transform (take cnt))))}))</pre></td></tr><tr><td class="docs"><p>This handler defines a set of endpoints via Compojure's <code>routes</code> macro.  Notice that above
+               (s/transform (take cnt))))}))</pre></td></tr><tr><td class="docs"><p>However, we can always still use lazy sequences. This is still useful when the upstream
+   data provider exposes the stream of data as an <code>Enumerator</code> or a similar blocking mechanism.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn streaming-numbers-handler
+  [{:keys [params]}]
+  (let [cnt (Integer/parseInt (get params &quot;count&quot; &quot;0&quot;))]
+    {:status 200
+     :headers {&quot;content-type&quot; &quot;text/plain&quot;}
+     :body (-&gt;&gt; (range cnt)
+             (map #(do (Thread/sleep 100) %))
+             (map #(str % &quot;\n&quot;)))}))</pre></td></tr><tr><td class="docs"><p>We can also take a core.async channel, coerce it to a Manifold source via
+   <code>manifold.stream/-&gt;source</code>.  All three implementations of <code>streaming-numbers-handler</code> are
+   equivalent.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn streaming-numbers-handler
+  [{:keys [params]}]
+  (let [cnt (Integer/parseInt (get params &quot;count&quot; &quot;0&quot;))
+        body (a/chan)]
+    ;; create a goroutine that emits incrementing numbers once every 100 milliseconds
+    (a/go-loop [i 0]
+      (if (&lt; i cnt)
+        (let [_ (a/&lt;! (a/timeout 100))]
+          (a/&gt;! body (str i &quot;\n&quot;))
+          (recur (inc i)))
+        (a/close! body)))
+    ;; return a response containing the coerced channel as the body
+    {:status 200
+     :headers {&quot;content-type&quot; &quot;text/plain&quot;}
+     :body (s/-&gt;source body)}))</pre></td></tr><tr><td class="docs"><p>This handler defines a set of endpoints via Compojure's <code>routes</code> macro.  Notice that above
 we've added the <code>GET</code> macro via <code>:refer</code> so it doesn't have to be qualified.  We wrap the
 result in <code>ring.middleware.params/wrap-params</code> so that we can get the <code>count</code> parameter in
 <code>streaming-numbers-handler</code>.</p>
