@@ -62,7 +62,7 @@
         nil
         nil))
     (URI.
-      (or (:scheme req) "http")
+      (name (or (:scheme req) :http))
       "nil"
       (:host req)
       (or (:port req) -1)
