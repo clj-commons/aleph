@@ -7,9 +7,14 @@
     [gloss.core :as gloss]
     [gloss.io :as io]))
 
+;; Complete documentation for the `aleph.tcp` namespace can be found [here](http://ideolalia.com/aleph/aleph.tcp.html).
+
 ;; ## the basics
 
-;; This defines a simple protocol where each frame starts with a 32-bit integer describing
+;; This uses [Gloss](https://github.com/ztellman/gloss), which is a library for defining byte
+;; formats, which are automatically compiled into encoder and streaming decoders.
+;;
+;; Here, we define a simple protocol where each frame starts with a 32-bit integer describing
 ;; the length of the string which follows.  We assume the string is EDN-encoded, and so we
 ;; define a `pre-encoder` of `pr-str`, which will turn our arbitrary value into a string, and
 ;; a `post-decoder` of `clojure.edn/read-string`, which will transform our string into a data
