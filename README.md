@@ -39,7 +39,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
   prn)
 ```
 
-To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
+To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.http).
 
 ### WebSockets
 
@@ -76,7 +76,7 @@ An echo TCP server is very similar to the above WebSocket example:
 
 A TCP client can be created via `(aleph.tcp/client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
-To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.tcp.html).
+To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.tcp).
 
 ### UDP
 
