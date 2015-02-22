@@ -6,12 +6,13 @@
     [aleph.http :as http]
     [byte-streams :as bs]
     [manifold.stream :as s]
-    [manifold.deferred :as d]))
+    [manifold.deferred :as d]
+    [clojure.core.async :as a]))
 
 ;; For HTTP, Aleph implements a superset of the
 ;; [Ring spec](https://github.com/ring-clojure/ring/blob/master/SPEC), which means it can be
 ;; used as a drop-in replacement for pretty much any other Clojure webserver.  In order to
-;; allow for asynchronous responses, however, it enables the use of
+;; allow for asynchronous responses, however, it allows for the use of
 ;; [Manifold](https://github.com/ztellman/manifold) deferreds and streams.  Uses of both
 ;; will be illustrated below.
 
@@ -40,14 +41,21 @@
     1000
     (hello-world-handler req)))
 
+(defn delayed-hello-world-handler
+  "Alternately, we can use a [core.async](https://github.com/clojure/core.async) goroutine to
+   create our response, and convert the channel it returns using
+   `manifold.deferred/->deferred`. This is entirely equivalent to the previous implementation."
+  [req]
+  (d/->deferred
+    (a/go
+      (let [_ (a/<! (a/timeout 1000))]
+        (hello-world-handler req)))))
+
 (defn streaming-numbers-handler
   "Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
    milliseconds.  While this would typically be represented by a lazy sequence, instead we use
    a Manifold stream.  Similar to the use of the deferred above, this means we don't need
    to allocate a thread per-request.
-
-   A lazy sequence can still be used, however, if the upstream provider of data is using an
-   `Enumerator` or a similar blocking mechanism for streaming data.
 
    In this handler we're assuming the string value for `count` is a valid number.  If not,
    `Integer.parseInt()` will throw an exception, and we'll return a `500` status response
@@ -63,6 +71,38 @@
      :body (let [sent (atom 0)]
              (->> (s/periodically 100 #(str (swap! sent inc) "\n"))
                (s/transform (take cnt))))}))
+
+(defn streaming-numbers-handler
+  "However, we can always still use lazy sequences. This is still useful when the upstream
+   data provider exposes the stream of data as an `Enumerator` or a similar blocking mechanism."
+  [{:keys [params]}]
+  (let [cnt (Integer/parseInt (get params "count" "0"))]
+    {:status 200
+     :headers {"content-type" "text/plain"}
+     :body (->> (range cnt)
+             (map #(do (Thread/sleep 100) %))
+             (map #(str % "\n")))}))
+
+(defn streaming-numbers-handler
+  "We can also take a core.async channel, coerce it to a Manifold source via
+   `manifold.stream/->source`.  All three implementations of `streaming-numbers-handler` are
+   equivalent."
+  [{:keys [params]}]
+  (let [cnt (Integer/parseInt (get params "count" "0"))
+        body (a/chan)]
+
+    ;; create a goroutine that emits incrementing numbers once every 100 milliseconds
+    (a/go-loop [i 0]
+      (if (< i cnt)
+        (let [_ (a/<! (a/timeout 100))]
+          (a/>! body (str i "\n"))
+          (recur (inc i)))
+        (a/close! body)))
+
+    ;; return a response containing the coerced channel as the body
+    {:status 200
+     :headers {"content-type" "text/plain"}
+     :body (s/->source body)}))
 
 ;; This handler defines a set of endpoints via Compojure's `routes` macro.  Notice that above
 ;; we've added the `GET` macro via `:refer` so it doesn't have to be qualified.  We wrap the
