@@ -2993,7 +2993,8 @@ strings via <code>byte-streams/to-line-seq</code>.</p>
         {:query-params {:count 10}})
   :body
   bs/to-line-seq
-  (map #(Integer/parseInt %))) ;=&gt; (0 1 2 3 4 5 6 7 8 9)</pre></td></tr><tr><td class="docs"><p>=> (0 1 2 3 4 5 6 7 8 9)</p>
+  (map #(Integer/parseInt %))
+  doall) ;=&gt; (0 1 2 3 4 5 6 7 8 9)</pre></td></tr><tr><td class="docs"><p>=> (0 1 2 3 4 5 6 7 8 9)</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(.close s)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.tcp" name="aleph.examples.tcp"><h1 class="project-name">aleph.examples.tcp</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns aleph.examples.tcp
