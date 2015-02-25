@@ -211,6 +211,7 @@
             (d/chain
 
               (fn [conn']
+
                 (cond
 
                   (nil? conn')
@@ -236,6 +237,7 @@
                       ;; clean up the response
                       (d/chain
                         (fn [rsp]
+
                           ;; only release the connection back once the response is complete
                           (d/chain (:aleph/complete rsp)
                             (fn [_]

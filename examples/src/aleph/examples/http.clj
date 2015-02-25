@@ -74,7 +74,7 @@
 
 (defn streaming-numbers-handler
   "However, we can always still use lazy sequences. This is still useful when the upstream
-   data provider exposes the stream of data as an `Enumerator` or a similar blocking mechanism."
+   data provider exposes the stream of data as an `Iterator` or a similar blocking mechanism."
   [{:keys [params]}]
   (let [cnt (Integer/parseInt (get params "count" "0"))]
     {:status 200
@@ -122,26 +122,32 @@
 
 (def s (http/start-server handler {:port 10000}))
 
+;; Here we immediately dereference the response, get the `:body`, which is an InputStream,
+;; and coerce it to a string using `byte-strings/to-string`.
 (-> @(http/get "http://localhost:10000/hello")
   :body
-  bs/to-string
-  prn)
+  bs/to-string) ;=> "hello world!"
 
+;; And we do the same exact thing for the `delayed_hello` endpoint, which returns an identical
+;; result after a second's pause.
 (-> @(http/get "http://localhost:10000/delayed_hello")
   :body
-  bs/to-string
-  prn)
+  bs/to-string) ;=> (beat) "hello world!"
 
+;; Instead of dereferencing the response, we can use `manifold.deferred/chain` to compose
+;; operations over it. Here we dereference the final result so that we don't close the server
+;; before the response is complete, but we could also perform some side effect further down
+;; the chain if we want to completely avoid blocking operations.
 @(d/chain (http/get "http://localhost:10000/delayed_hello")
    :body
-   bs/to-string
-   prn)
+   bs/to-string) ;=> (beat) "hello world!"
 
+;; Here we take a line-delimited streaming response, and coerce it to a lazy sequence of
+;; strings via `byte-streams/to-line-seq`.
 (->> @(http/get "http://localhost:10000/numbers"
         {:query-params {:count 10}})
   :body
   bs/to-line-seq
-  (map #(Integer/parseInt %))
-  prn)
+  (map #(Integer/parseInt %))) ;=> (0 1 2 3 4 5 6 7 8 9)
 
 (.close s)

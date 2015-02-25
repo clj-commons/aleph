@@ -131,12 +131,19 @@
 
 (declare wrap-redirects)
 
+(in-ns 'aleph.http)
+(declare request)
+(in-ns 'aleph.http.client-middleware)
+
 (defn follow-redirect
   "Attempts to follow the redirects from the \"location\" header, if no such
   header exists (bad server!), returns the response without following the
   request."
-  [client {:keys [uri url scheme server-name server-port] :as req}
-   {:keys [trace-redirects body] :as rsp}]
+  [client
+   {:keys [uri url scheme server-name server-port trace-redirects]
+    :or {trace-redirects []}
+    :as req}
+   {:keys [body] :as rsp}]
   (let [url (or url (str (name scheme) "://" server-name
                          (when server-port (str ":" server-port)) uri))]
     (if-let [raw-redirect (get-in rsp [:headers "location"])]
@@ -146,12 +153,11 @@
             (.close ^InputStream body)
             (s/close! body))
           (catch Exception _))
-        ((wrap-redirects client)
+        (aleph.http/request
          (-> req
-           (merge (parse-url redirect))
            (dissoc :query-params)
            (assoc :url redirect)
-           (assoc :trace-redirects trace-redirects))))
+           (assoc :trace-redirects (conj trace-redirects redirect)))))
       ;; Oh well, we tried, but if no location is set, return the response
       rsp)))
 
@@ -166,15 +172,14 @@
   :trace-redirects - vector of sites the request was redirected from"
   [client]
   (fn [{:keys [request-method max-redirects redirects-count trace-redirects url]
-        :or {redirects-count 1 trace-redirects []
+        :or {redirects-count 0
              ;; max-redirects default taken from Firefox
              max-redirects 20}
         :as req}]
     (d/let-flow [{:keys [status] :as rsp} (client req)
-                 rsp-r (assoc rsp
-                         :trace-redirects (if url
-                                            (conj trace-redirects url)
-                                            trace-redirects))]
+                 rsp-r (if (empty? trace-redirects)
+                         rsp
+                         (assoc rsp :trace-redirects trace-redirects))]
       (cond
         (false? (opt req :follow-redirects))
         rsp
@@ -193,6 +198,7 @@
             :request-method :get
             :redirects-count (inc redirects-count))
           rsp-r)
+
 
        (#{301 302} status)
        (cond
