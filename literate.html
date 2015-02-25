@@ -2930,7 +2930,7 @@ will be illustrated below.</p>
      :body (let [sent (atom 0)]
              (-&gt;&gt; (s/periodically 100 #(str (swap! sent inc) &quot;\n&quot;))
                (s/transform (take cnt))))}))</pre></td></tr><tr><td class="docs"><p>However, we can always still use lazy sequences. This is still useful when the upstream
-   data provider exposes the stream of data as an <code>Enumerator</code> or a similar blocking mechanism.</p>
+   data provider exposes the stream of data as an <code>Iterator</code> or a similar blocking mechanism.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn streaming-numbers-handler
   [{:keys [params]}]
   (let [cnt (Integer/parseInt (get params &quot;count&quot; &quot;0&quot;))]
@@ -2970,25 +2970,31 @@ return a <code>nil</code> response, which will cause Aleph to log an error.</p>
       (GET &quot;/delayed_hello&quot; [] delayed-hello-world-handler)
       (GET &quot;/numbers&quot; [] streaming-numbers-handler)
       (route/not-found &quot;No such page.&quot;))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(def s (http/start-server handler {:port 10000}))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(def s (http/start-server handler {:port 10000}))</pre></td></tr><tr><td class="docs"><p>Here we immediately dereference the response, get the <code>:body</code>, which is an InputStream,
+and coerce it to a string using <code>byte-strings/to-string</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(-&gt; @(http/get &quot;http://localhost:10000/hello&quot;)
   :body
-  bs/to-string
-  prn)</pre></td></tr><tr><td class="docs">
+  bs/to-string) ;=&gt; &quot;hello world!&quot;</pre></td></tr><tr><td class="docs"><p>=> "hello world!"</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>And we do the same exact thing for the <code>delayed_hello</code> endpoint, which returns an identical
+result after a second's pause.</p>
 </td><td class="codes"><pre class="brush: clojure">(-&gt; @(http/get &quot;http://localhost:10000/delayed_hello&quot;)
   :body
-  bs/to-string
-  prn)</pre></td></tr><tr><td class="docs">
+  bs/to-string) ;=&gt; (beat) &quot;hello world!&quot;</pre></td></tr><tr><td class="docs"><p>=> (beat) "hello world!"</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Instead of dereferencing the response, we can use <code>manifold.deferred/chain</code> to compose
+operations over it. Here we dereference the final result so that we don't close the server
+before the response is complete, but we could also perform some side effect further down
+the chain if we want to completely avoid blocking operations.</p>
 </td><td class="codes"><pre class="brush: clojure">@(d/chain (http/get &quot;http://localhost:10000/delayed_hello&quot;)
    :body
-   bs/to-string
-   prn)</pre></td></tr><tr><td class="docs">
+   bs/to-string) ;=&gt; (beat) &quot;hello world!&quot;</pre></td></tr><tr><td class="docs"><p>=> (beat) "hello world!"</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Here we take a line-delimited streaming response, and coerce it to a lazy sequence of
+strings via <code>byte-streams/to-line-seq</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(-&gt;&gt; @(http/get &quot;http://localhost:10000/numbers&quot;
         {:query-params {:count 10}})
   :body
   bs/to-line-seq
-  (map #(Integer/parseInt %))
-  prn)</pre></td></tr><tr><td class="docs">
+  (map #(Integer/parseInt %))) ;=&gt; (0 1 2 3 4 5 6 7 8 9)</pre></td></tr><tr><td class="docs"><p>=> (0 1 2 3 4 5 6 7 8 9)</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(.close s)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.tcp" name="aleph.examples.tcp"><h1 class="project-name">aleph.examples.tcp</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns aleph.examples.tcp
   (require
