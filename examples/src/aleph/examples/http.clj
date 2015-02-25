@@ -148,6 +148,7 @@
         {:query-params {:count 10}})
   :body
   bs/to-line-seq
-  (map #(Integer/parseInt %))) ;=> (0 1 2 3 4 5 6 7 8 9)
+  (map #(Integer/parseInt %))
+  doall) ;=> (0 1 2 3 4 5 6 7 8 9)
 
 (.close s)
