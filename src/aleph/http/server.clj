@@ -209,92 +209,92 @@
 
       :exception-caught
       ([_ ctx ex]
-         (log/warn ex "error in HTTP server"))
+        (log/warn ex "error in HTTP server"))
 
       :channel-inactive
       ([_ ctx]
-         (when-let [s @stream]
-           (s/close! s))
-         (doseq [b @buffer]
-           (netty/release b)))
+        (when-let [s @stream]
+          (s/close! s))
+        (doseq [b @buffer]
+          (netty/release b)))
 
       :channel-read
       ([_ ctx msg]
-         (cond
+        (cond
 
-           (instance? HttpRequest msg)
-           (let [req msg]
+          (instance? HttpRequest msg)
+          (let [req msg]
 
-             (when (HttpHeaders/is100ContinueExpected req)
-               (.writeAndFlush ctx
-                 (DefaultFullHttpResponse.
-                   HttpVersion/HTTP_1_1
-                   HttpResponseStatus/CONTINUE)))
+            (when (HttpHeaders/is100ContinueExpected req)
+              (.writeAndFlush ctx
+                (DefaultFullHttpResponse.
+                  HttpVersion/HTTP_1_1
+                  HttpResponseStatus/CONTINUE)))
 
-             (if (HttpHeaders/isTransferEncodingChunked req)
-               (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
-                 (reset! stream s)
-                 (handle-request ctx req s))
-               (reset! request req)))
+            (if (HttpHeaders/isTransferEncodingChunked req)
+              (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
+                (reset! stream s)
+                (handle-request ctx req s))
+              (reset! request req)))
 
-           (instance? HttpContent msg)
-           (let [content (.content ^HttpContent msg)]
-             (if (instance? LastHttpContent msg)
-               (do
+          (instance? HttpContent msg)
+          (let [content (.content ^HttpContent msg)]
+            (if (instance? LastHttpContent msg)
+              (do
 
-                 (if-let [s @stream]
+                (if-let [s @stream]
 
-                   (do
-                     (s/put! s (netty/buf->array content))
-                     (netty/release content)
-                     (s/close! s))
+                  (do
+                    (s/put! s (netty/buf->array content))
+                    (netty/release content)
+                    (s/close! s))
 
-                   (if (and (zero? (.get buffer-size))
-                         (zero? (.readableBytes content)))
+                  (if (and (zero? (.get buffer-size))
+                        (zero? (.readableBytes content)))
 
                      ;; there was never any body
-                     (do
-                       (netty/release content)
-                       (handle-request ctx @request nil))
+                    (do
+                      (netty/release content)
+                      (handle-request ctx @request nil))
 
-                     (let [bufs (conj @buffer content)
-                           bytes (netty/bufs->array bufs)]
-                       (doseq [b bufs]
-                         (netty/release b))
-                       (handle-request ctx @request bytes))))
+                    (let [bufs (conj @buffer content)
+                          bytes (netty/bufs->array bufs)]
+                      (doseq [b bufs]
+                        (netty/release b))
+                      (handle-request ctx @request bytes))))
 
-                 (.set buffer-size 0)
-                 (reset! stream nil)
-                 (reset! buffer [])
-                 (reset! request nil))
+                (.set buffer-size 0)
+                (reset! stream nil)
+                (reset! buffer [])
+                (reset! request nil))
 
-               (if-let [s @stream]
+              (if-let [s @stream]
 
                  ;; already have a stream going
-                 (do
-                   (netty/put! (.channel ctx) s (netty/buf->array content))
-                   (netty/release content))
+                (do
+                  (netty/put! (.channel ctx) s (netty/buf->array content))
+                  (netty/release content))
 
-                 (let [len (.readableBytes ^ByteBuf content)]
+                (let [len (.readableBytes ^ByteBuf content)]
 
-                   (when-not (zero? len)
-                     (swap! buffer conj content))
+                  (when-not (zero? len)
+                    (swap! buffer conj content))
 
-                   (let [size (.addAndGet buffer-size len)]
+                  (let [size (.addAndGet buffer-size len)]
 
                      ;; buffer size exceeded, flush it as a stream
-                     (when (< buffer-capacity size)
-                       (let [bufs @buffer
-                             s (doto (s/buffered-stream #(alength ^bytes %) buffer-capacity)
-                                 (s/put! (netty/bufs->array bufs)))]
+                    (when (< buffer-capacity size)
+                      (let [bufs @buffer
+                            s (doto (s/buffered-stream #(alength ^bytes %) buffer-capacity)
+                                (s/put! (netty/bufs->array bufs)))]
 
-                         (doseq [b bufs]
-                           (netty/release b))
+                        (doseq [b bufs]
+                          (netty/release b))
 
-                         (reset! buffer [])
-                         (reset! stream s)
+                        (reset! buffer [])
+                        (reset! stream s)
 
-                         (handle-request ctx @request s)))))))))))))
+                        (handle-request ctx @request s)))))))))))))
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
@@ -319,35 +319,35 @@
 
       :exception-caught
       ([_ ctx ex]
-         (log/warn ex "error in HTTP server"))
+        (log/warn ex "error in HTTP server"))
 
       :channel-inactive
       ([_ ctx]
-         (when-let [s @stream]
-           (s/close! s)))
+        (when-let [s @stream]
+          (s/close! s)))
 
       :channel-read
       ([_ ctx msg]
-         (cond
+        (cond
 
-           (instance? HttpRequest msg)
-           (let [req msg]
+          (instance? HttpRequest msg)
+          (let [req msg]
 
-             (when (HttpHeaders/is100ContinueExpected req)
-               (.writeAndFlush ctx
-                 (DefaultFullHttpResponse.
-                   HttpVersion/HTTP_1_1
-                   HttpResponseStatus/CONTINUE)))
+            (when (HttpHeaders/is100ContinueExpected req)
+              (.writeAndFlush ctx
+                (DefaultFullHttpResponse.
+                  HttpVersion/HTTP_1_1
+                  HttpResponseStatus/CONTINUE)))
 
-             (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)]
-               (reset! stream s)
-               (handle-request ctx req s)))
+            (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)]
+              (reset! stream s)
+              (handle-request ctx req s)))
 
-           (instance? HttpContent msg)
-           (let [content (.content ^HttpContent msg)]
-             (netty/put! (.channel ctx) @stream content)
-             (when (instance? LastHttpContent msg)
-               (s/close! @stream))))))))
+          (instance? HttpContent msg)
+          (let [content (.content ^HttpContent msg)]
+            (netty/put! (.channel ctx) @stream content)
+            (when (instance? LastHttpContent msg)
+              (s/close! @stream))))))))
 
 (defn pipeline-builder
   [handler
@@ -458,41 +458,41 @@
 
        :exception-caught
        ([_ ctx ex]
-          (when-not (instance? IOException ex)
-            (log/warn ex "error in websocket handler"))
-          (s/close! out)
-          (.close ctx))
+         (when-not (instance? IOException ex)
+           (log/warn ex "error in websocket handler"))
+         (s/close! out)
+         (.close ctx))
 
        :channel-inactive
        ([_ ctx]
-          (s/close! out)
-          (s/close! in))
+         (s/close! out)
+         (s/close! in))
 
        :channel-read
        ([_ ctx msg]
-          (try
-            (let [ch (.channel ctx)]
-              (when (instance? WebSocketFrame msg)
-                (let [^WebSocketFrame msg msg]
-                  (cond
+         (try
+           (let [ch (.channel ctx)]
+             (when (instance? WebSocketFrame msg)
+               (let [^WebSocketFrame msg msg]
+                 (cond
 
-                    (instance? TextWebSocketFrame msg)
-                    (netty/put! ch in (.text ^TextWebSocketFrame msg))
+                   (instance? TextWebSocketFrame msg)
+                   (netty/put! ch in (.text ^TextWebSocketFrame msg))
 
-                    (instance? BinaryWebSocketFrame msg)
-                    (let [body (.content ^BinaryWebSocketFrame (netty/acquire msg))]
-                      (netty/put! ch in
-                        (if raw-stream?
-                          body
-                          (netty/buf->array body))))
+                   (instance? BinaryWebSocketFrame msg)
+                   (let [body (.content ^BinaryWebSocketFrame (netty/acquire msg))]
+                     (netty/put! ch in
+                       (if raw-stream?
+                         body
+                         (netty/buf->array body))))
 
-                    (instance? PingWebSocketFrame msg)
-                    (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
+                   (instance? PingWebSocketFrame msg)
+                   (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
 
-                    (instance? CloseWebSocketFrame msg)
-                    (.close handshaker ch (netty/acquire msg))))))
-            (finally
-              (netty/release msg)))))]))
+                   (instance? CloseWebSocketFrame msg)
+                   (.close handshaker ch (netty/acquire msg))))))
+           (finally
+             (netty/release msg)))))]))
 
 (defn initialize-websocket-handler
   [^NettyRequest req

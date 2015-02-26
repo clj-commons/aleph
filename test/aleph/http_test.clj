@@ -76,8 +76,7 @@
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
                (.close ^java.io.Closeable @browser-server)
-               (catch Exception e
-                 )))})
+               (catch Exception e)))})
 
 (defn print-vals [& args]
   (apply prn args)
@@ -92,8 +91,7 @@
      "stream" stream-response
      "manifold" stream-response
      "file" "this is a file"
-     "seq" (apply str seq-response)
-     ]
+     "seq" (apply str seq-response)]
     (repeat 10)
     (apply concat)
     (partition 2)))
@@ -185,10 +183,10 @@
 (deftest test-client-events-daemon-thread
   (with-handler basic-handler
     (is
-     (= string-response
+      (= string-response
         (bs/to-string
-         (:body
-          @(http/get "http://localhost:8080/string")))))
+          (:body
+            @(http/get "http://localhost:8080/string")))))
     (let [client-threads (get-netty-client-event-threads)]
       (is (> (count client-threads) 0))
       (is (every? #(.isDaemon ^Thread %) client-threads)))))

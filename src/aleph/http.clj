@@ -127,8 +127,7 @@
                               target-utilization
                               connections-per-host
                               total-connections)
-                :stats-callback stats-callback
-                })]
+                :stats-callback stats-callback})]
     @(deliver p pool)))
 
 (def default-connection-pool
@@ -147,9 +146,9 @@
    | `insecure?` | if `true`, the certificates for `wss://` will be ignored.
    | `headers` | the headers that should be included in the handshake"
   ([url]
-     (websocket-client url nil))
+    (websocket-client url nil))
   ([url {:keys [raw-stream? insecure? headers] :as options}]
-     (client/websocket-connection url options)))
+    (client/websocket-connection url options)))
 
 (defn websocket-connection
   "Given an HTTP request that can be upgraded to a WebSocket connection, returns a
@@ -160,9 +159,9 @@
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `headers` | the headers that should be included in the handshake"
   ([req]
-     (websocket-connection req nil))
+    (websocket-connection req nil))
   ([req {:keys [raw-stream? headers] :as options}]
-     (server/initialize-websocket-handler req options)))
+    (server/initialize-websocket-handler req options)))
 
 (defn request
   "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
@@ -251,16 +250,16 @@
 
 (defn- req
   ([method url]
-     (req method url nil))
+    (req method url nil))
   ([method url options]
-     (let [req (assoc options
-                 :request-method method
-                 :url url)]
-       (request
-         (merge
-           {:url url
-            :request-method method}
-           options)))))
+    (let [req (assoc options
+                :request-method method
+                :url url)]
+      (request
+        (merge
+          {:url url
+           :request-method method}
+          options)))))
 
 (def ^:private arglists
   '[[url]

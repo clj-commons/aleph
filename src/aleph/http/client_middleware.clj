@@ -73,9 +73,9 @@
 
 (defn url-encode
   ([s]
-   (url-encode s "UTF-8"))
+    (url-encode s "UTF-8"))
   ([s encoding]
-   (URLEncoder/encode s encoding)))
+    (URLEncoder/encode s encoding)))
 
 (defn opt
   "Check the request parameters for a keyword  boolean option, with or without
@@ -101,20 +101,20 @@
   [path-or-query]
   (when path-or-query
     (-> path-or-query
-        (str/replace " " "%20")
-        (str/replace
-          #"[^a-zA-Z0-9\.\-\_\~\!\$\&\'\(\)\*\+\,\;\=\:\@\/\%\?]"
-          url-encode))))
+      (str/replace " " "%20")
+      (str/replace
+        #"[^a-zA-Z0-9\.\-\_\~\!\$\&\'\(\)\*\+\,\;\=\:\@\/\%\?]"
+        url-encode))))
 
 (defn parse-url
   "Parse a URL string into a map of interesting parts."
   [url]
   (let [url-parsed (URL. url)]
-    {:scheme       (keyword (.getProtocol url-parsed))
-     :server-name  (.getHost url-parsed)
-     :server-port  (when-pos (.getPort url-parsed))
-     :uri          (url-encode-illegal-characters (.getPath url-parsed))
-     :user-info    (.getUserInfo url-parsed)
+    {:scheme (keyword (.getProtocol url-parsed))
+     :server-name (.getHost url-parsed)
+     :server-port (when-pos (.getPort url-parsed))
+     :uri (url-encode-illegal-characters (.getPath url-parsed))
+     :user-info (.getUserInfo url-parsed)
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 ;; Statuses for which clj-http will not throw an exception
@@ -158,13 +158,13 @@
   [client]
   (fn [req]
     (d/let-flow [{:keys [status] :as rsp} (client req)]
-                (if (unexceptional-status? status)
-                  rsp
-                  (if (false? (opt req :throw-exceptions))
-                    rsp
-                    (d/chain rsp :aleph/complete
-                             (fn [_]
-                               (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
+      (if (unexceptional-status? status)
+        rsp
+        (if (false? (opt req :throw-exceptions))
+          rsp
+          (d/chain rsp :aleph/complete
+            (fn [_]
+              (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
 
 (declare wrap-redirects)
 
@@ -178,11 +178,11 @@
   request."
   [client
    {:keys [uri url scheme server-name server-port trace-redirects]
-    :or   {trace-redirects []}
-    :as   req}
+    :or {trace-redirects []}
+    :as req}
    {:keys [body] :as rsp}]
   (let [url (or url (str (name scheme) "://" server-name
-                         (when server-port (str ":" server-port)) uri))]
+                      (when server-port (str ":" server-port)) uri))]
     (if-let [raw-redirect (get-in rsp [:headers "location"])]
       (let [redirect (str (URL. (URL. url) raw-redirect))]
         (try
@@ -192,9 +192,9 @@
           (catch Exception _))
         (aleph.http/request
           (-> req
-              (dissoc :query-params)
-              (assoc :url redirect)
-              (assoc :trace-redirects (conj trace-redirects redirect)))))
+            (dissoc :query-params)
+            (assoc :url redirect)
+            (assoc :trace-redirects (conj trace-redirects redirect)))))
       ;; Oh well, we tried, but if no location is set, return the response
       rsp)))
 
@@ -209,62 +209,62 @@
   :trace-redirects - vector of sites the request was redirected from"
   [client]
   (fn [{:keys [request-method max-redirects redirects-count trace-redirects url]
-        :or   {redirects-count 0
-               ;; max-redirects default taken from Firefox
-               max-redirects   20}
-        :as   req}]
+        :or {redirects-count 0
+             ;; max-redirects default taken from Firefox
+             max-redirects 20}
+        :as req}]
     (d/let-flow [{:keys [status] :as rsp} (client req)
                  rsp-r (if (empty? trace-redirects)
                          rsp
                          (assoc rsp :trace-redirects trace-redirects))]
-                (cond
-                  (false? (opt req :follow-redirects))
-                  rsp
+      (cond
+        (false? (opt req :follow-redirects))
+        rsp
 
-                  (not (redirect? rsp-r))
-                  rsp-r
+        (not (redirect? rsp-r))
+        rsp-r
 
-                  (and max-redirects (> redirects-count max-redirects))
-                  (if (opt req :throw-exceptions)
-                    (throw (ex-info (str "too many redirects: " redirects-count) req))
-                    rsp-r)
+        (and max-redirects (> redirects-count max-redirects))
+        (if (opt req :throw-exceptions)
+          (throw (ex-info (str "too many redirects: " redirects-count) req))
+          rsp-r)
 
-                  (= 303 status)
-                  (follow-redirect client
-                                   (assoc req
-                                     :request-method :get
-                                     :redirects-count (inc redirects-count))
-                                   rsp-r)
+        (= 303 status)
+        (follow-redirect client
+          (assoc req
+            :request-method :get
+            :redirects-count (inc redirects-count))
+          rsp-r)
 
 
-                  (#{301 302} status)
-                  (cond
-                    (#{:get :head} request-method)
-                    (follow-redirect client
-                                     (assoc req
-                                       :redirects-count
-                                       (inc redirects-count))
-                                     rsp-r)
+        (#{301 302} status)
+        (cond
+          (#{:get :head} request-method)
+          (follow-redirect client
+            (assoc req
+              :redirects-count
+              (inc redirects-count))
+            rsp-r)
 
-                    (opt req :force-redirects)
-                    (follow-redirect client
-                                     (assoc req
-                                       :request-method :get
-                                       :redirects-count (inc redirects-count))
-                                     rsp-r)
+          (opt req :force-redirects)
+          (follow-redirect client
+            (assoc req
+              :request-method :get
+              :redirects-count (inc redirects-count))
+            rsp-r)
 
-                    :else
-                    rsp-r)
+          :else
+          rsp-r)
 
-                  (= 307 status)
-                  (if (or (#{:get :head} request-method)
-                          (opt req :force-redirects))
-                    (follow-redirect client
-                                     (assoc req :redirects-count (inc redirects-count)) rsp-r)
-                    rsp-r)
+        (= 307 status)
+        (if (or (#{:get :head} request-method)
+              (opt req :force-redirects))
+          (follow-redirect client
+            (assoc req :redirects-count (inc redirects-count)) rsp-r)
+          rsp-r)
 
-                  :else
-                  rsp-r))))
+        :else
+        rsp-r))))
 
 
 
@@ -287,8 +287,8 @@
   (fn [{:keys [accept] :as req}]
     (if accept
       (client (-> req (dissoc :accept)
-                  (assoc-in [:headers "accept"]
-                            (content-type-value accept))))
+                (assoc-in [:headers "accept"]
+                  (content-type-value accept))))
       (client req))))
 
 (defn accept-encoding-value [accept-encoding]
@@ -301,8 +301,8 @@
   (fn [{:keys [accept-encoding] :as req}]
     (if accept-encoding
       (client (-> req (dissoc :accept-encoding)
-                  (assoc-in [:headers "accept-encoding"]
-                            (accept-encoding-value accept-encoding))))
+                (assoc-in [:headers "accept-encoding"]
+                  (accept-encoding-value accept-encoding))))
       (client req))))
 
 (defn detect-charset
@@ -317,34 +317,34 @@
 (defn generate-query-string [params & [content-type]]
   (let [encoding (detect-charset content-type)]
     (str/join "&"
-              (mapcat (fn [[k v]]
-                        (if (sequential? v)
-                          (map #(str (url-encode (name %1) encoding)
-                                     "="
-                                     (url-encode (str %2) encoding))
-                               (repeat k) v)
-                          [(str (url-encode (name k) encoding)
-                                "="
-                                (url-encode (str v) encoding))]))
-                      params))))
+      (mapcat (fn [[k v]]
+                (if (sequential? v)
+                  (map #(str (url-encode (name %1) encoding)
+                          "="
+                          (url-encode (str %2) encoding))
+                    (repeat k) v)
+                  [(str (url-encode (name k) encoding)
+                     "="
+                     (url-encode (str v) encoding))]))
+        params))))
 
 (defn wrap-query-params
   "Middleware converting the :query-params option to a querystring on
   the request."
   [client]
   (fn [{:keys [query-params content-type]
-        :or   {content-type :x-www-form-urlencoded}
-        :as   req}]
+        :or {content-type :x-www-form-urlencoded}
+        :as req}]
     (if query-params
       (client (-> req (dissoc :query-params)
-                  (update-in [:query-string]
-                             (fn [old-query-string new-query-string]
-                               (if-not (empty? old-query-string)
-                                 (str old-query-string "&" new-query-string)
-                                 new-query-string))
-                             (generate-query-string
-                               query-params
-                               (content-type-value content-type)))))
+                (update-in [:query-string]
+                  (fn [old-query-string new-query-string]
+                    (if-not (empty? old-query-string)
+                      (str old-query-string "&" new-query-string)
+                      new-query-string))
+                  (generate-query-string
+                    query-params
+                    (content-type-value content-type)))))
       (client req))))
 
 (defn basic-auth-value [basic-auth]
@@ -353,9 +353,9 @@
                      (str (first basic-auth) ":" (second basic-auth)))
         bytes (.getBytes ^String basic-auth "UTF-8")]
     (str "Basic "
-         (-> ^String basic-auth
-             (.getBytes "UTF-8")
-             javax.xml.bind.DatatypeConverter/printBase64Binary))))
+      (-> ^String basic-auth
+        (.getBytes "UTF-8")
+        javax.xml.bind.DatatypeConverter/printBase64Binary))))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
@@ -363,8 +363,8 @@
   (fn [req]
     (if-let [basic-auth (:basic-auth req)]
       (client (-> req (dissoc :basic-auth)
-                  (assoc-in [:headers "authorization"]
-                            (basic-auth-value basic-auth))))
+                (assoc-in [:headers "authorization"]
+                  (basic-auth-value basic-auth))))
       (client req))))
 
 (defn wrap-oauth
@@ -373,8 +373,8 @@
   (fn [req]
     (if-let [oauth-token (:oauth-token req)]
       (client (-> req (dissoc :oauth-token)
-                  (assoc-in [:headers "authorization"]
-                            (str "Bearer " oauth-token))))
+                (assoc-in [:headers "authorization"]
+                  (str "Bearer " oauth-token))))
       (client req))))
 
 (defn parse-user-info [user-info]
@@ -395,20 +395,20 @@
   (fn [req]
     (if-let [m (:method req)]
       (client (-> req (dissoc :method)
-                  (assoc :request-method m)))
+                (assoc :request-method m)))
       (client req))))
 
 (defn wrap-form-params
   "Middleware wrapping the submission or form parameters."
   [client]
   (fn [{:keys [form-params content-type request-method json-opts]
-        :or   {content-type :x-www-form-urlencoded}
-        :as   req}]
+        :or {content-type :x-www-form-urlencoded}
+        :as req}]
     (if (and form-params (#{:post :put :patch} request-method))
       (client (-> req
-                  (dissoc :form-params)
-                  (assoc :content-type (content-type-value content-type)
-                         :body (generate-query-string form-params (content-type-value content-type)))))
+                (dissoc :form-params)
+                (assoc :content-type (content-type-value content-type)
+                  :body (generate-query-string form-params (content-type-value content-type)))))
       (client req))))
 
 (defn- nest-params
@@ -416,14 +416,14 @@
   (if-let [params (request param-key)]
     (assoc request param-key (prewalk
                                #(if (and (vector? %) (map? (second %)))
-                                 (let [[fk m] %]
-                                   (reduce
-                                     (fn [m [sk v]]
-                                       (assoc m (str (name fk)
-                                                     \[ (name sk) \]) v))
-                                     {}
-                                     m))
-                                 %)
+                                  (let [[fk m] %]
+                                    (reduce
+                                      (fn [m [sk v]]
+                                        (assoc m (str (name fk)
+                                                   \[ (name sk) \]) v))
+                                      {}
+                                      m))
+                                  %)
                                params))
     request))
 
@@ -466,7 +466,7 @@
   (fn [req]
     (let [start (System/currentTimeMillis)]
       (-> (client req)
-          (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
+        (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
 (defn parse-content-type
   "Parse `s` as an RFC 2616 media type."

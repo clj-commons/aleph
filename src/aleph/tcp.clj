@@ -29,28 +29,28 @@
 
       :exception-caught
       ([_ ctx ex]
-         (when-not (instance? IOException ex)
-           (log/warn ex "error in TCP server")))
+        (when-not (instance? IOException ex)
+          (log/warn ex "error in TCP server")))
 
       :channel-inactive
       ([_ ctx]
-         (s/close! in))
+        (s/close! in))
 
       :channel-active
       ([_ ctx]
-         (let [ch (.channel ctx)]
-           (handler
-             (s/splice
-               (netty/sink ch true netty/to-byte-buf)
-               in)
-             (->TcpConnection ch))))
+        (let [ch (.channel ctx)]
+          (handler
+            (s/splice
+              (netty/sink ch true netty/to-byte-buf)
+              in)
+            (->TcpConnection ch))))
 
       :channel-read
       ([_ ctx msg]
-         (netty/put! (.channel ctx) in
-           (if raw-stream?
-             msg
-             (netty/release-buf->array msg)))))))
+        (netty/put! (.channel ctx) in
+          (if raw-stream?
+            msg
+            (netty/release-buf->array msg)))))))
 
 (defn start-server
   "Takes a two-arg handler function which for each connection will be called with a duplex
@@ -90,32 +90,32 @@
 
        :exception-caught
        ([_ ctx ex]
-          (when-not (d/error! d ex)
-            (log/warn ex "error in TCP client")))
+         (when-not (d/error! d ex)
+           (log/warn ex "error in TCP client")))
 
        :channel-inactive
        ([_ ctx]
-          (s/close! in))
+         (s/close! in))
 
        :channel-active
        ([_ ctx]
-          (let [ch (.channel ctx)]
-            (d/success! d
-              (s/splice
-                (netty/sink ch true netty/to-byte-buf)
-                in))))
+         (let [ch (.channel ctx)]
+           (d/success! d
+             (s/splice
+               (netty/sink ch true netty/to-byte-buf)
+               in))))
 
        :channel-read
        ([_ ctx msg]
-          (netty/put! (.channel ctx) in
-            (if raw-stream?
-              msg
-              (netty/release-buf->array msg))))
+         (netty/put! (.channel ctx) in
+           (if raw-stream?
+             msg
+             (netty/release-buf->array msg))))
 
        :close
        ([_ ctx promise]
-          (.close ctx promise)
-          (d/error! d (IllegalStateException. "unable to connect"))))]))
+         (.close ctx promise)
+         (d/error! d (IllegalStateException. "unable to connect"))))]))
 
 (defn client
   "Given a host and port, returns a deferred which yields a duplex stream that can be used

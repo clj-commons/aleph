@@ -121,29 +121,29 @@
 
   (defn ^ByteBuf to-byte-buf
     ([x]
-       (cond
-         (nil? x)
-         Unpooled/EMPTY_BUFFER
+      (cond
+        (nil? x)
+        Unpooled/EMPTY_BUFFER
 
-         (instance? array-class x)
-         (Unpooled/copiedBuffer ^bytes x)
+        (instance? array-class x)
+        (Unpooled/copiedBuffer ^bytes x)
 
-         (instance? String x)
-         (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
+        (instance? String x)
+        (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
 
-         (instance? ByteBuffer x)
-         (Unpooled/wrappedBuffer ^ByteBuffer x)
+        (instance? ByteBuffer x)
+        (Unpooled/wrappedBuffer ^ByteBuffer x)
 
-         (instance? ByteBuf x)
-         x
+        (instance? ByteBuf x)
+        x
 
-         :else
-         (bs/convert x ByteBuf)))
+        :else
+        (bs/convert x ByteBuf)))
     ([ch x]
-       (if (nil? x)
-         Unpooled/EMPTY_BUFFER
-         (doto (allocate ch)
-           (append-to-buf! x))))))
+      (if (nil? x)
+        Unpooled/EMPTY_BUFFER
+        (doto (allocate ch)
+          (append-to-buf! x))))))
 
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
@@ -248,8 +248,7 @@
   (description [_]
     {:type "netty"
      :sink? true
-     :closed? (not (.isOpen (channel ch)))
-     })
+     :closed? (not (.isOpen (channel ch)))})
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
@@ -271,13 +270,13 @@
 
 (defn sink
   ([ch]
-     (sink ch true identity))
+    (sink ch true identity))
   ([ch downstream? coerce-fn]
-     (let [sink (->ChannelSink coerce-fn downstream? ch)]
-       (d/chain' (.closeFuture (channel ch))
-         wrap-future
-         (fn [_] (s/close! sink)))
-       sink)))
+    (let [sink (->ChannelSink coerce-fn downstream? ch)]
+      (d/chain' (.closeFuture (channel ch))
+        wrap-future
+        (fn [_] (s/close! sink)))
+      sink)))
 
 ;;;
 
@@ -295,67 +294,67 @@
      (exceptionCaught
        ~@(or (:exception-caught handlers)
            `([_ ctx# cause#]
-               (.fireExceptionCaught ctx# cause#))))
+              (.fireExceptionCaught ctx# cause#))))
      (channelRegistered
        ~@(or (:channel-registered handlers)
            `([_ ctx#]
-               (.fireChannelRegistered ctx#))))
+              (.fireChannelRegistered ctx#))))
      (channelUnregistered
        ~@(or (:channel-unregistered handlers)
            `([_ ctx#]
-               (.fireChannelUnregistered ctx#))))
+              (.fireChannelUnregistered ctx#))))
      (channelActive
        ~@(or (:channel-active handlers)
            `([_ ctx#]
-               (.fireChannelActive ctx#))))
+              (.fireChannelActive ctx#))))
      (channelInactive
        ~@(or (:channel-inactive handlers)
            `([_ ctx#]
-               (.fireChannelInactive ctx#))))
+              (.fireChannelInactive ctx#))))
      (channelRead
        ~@(or (:channel-read handlers)
            `([_ ctx# msg#]
-               (.fireChannelRead ctx# msg#))))
+              (.fireChannelRead ctx# msg#))))
      (channelReadComplete
        ~@(or (:channel-read-complete handlers)
            `([_ ctx#]
-               (.fireChannelReadComplete ctx#))))
+              (.fireChannelReadComplete ctx#))))
      (userEventTriggered
        ~@(or (:user-event-triggered handlers)
            `([_ ctx# evt#]
-               (.fireUserEventTriggered ctx# evt#))))
+              (.fireUserEventTriggered ctx# evt#))))
      (channelWritabilityChanged
        ~@(or (:channel-writability-changed handlers)
            `([_ ctx#]
-               (.fireChannelWritabilityChanged ctx#))))
+              (.fireChannelWritabilityChanged ctx#))))
      (bind
        ~@(or (:bind handlers)
            `([_ ctx# local-address# promise#]
-               (.bind ctx# local-address# promise#))))
+              (.bind ctx# local-address# promise#))))
      (connect
        ~@(or (:connect handlers)
            `([_ ctx# remote-address# local-address# promise#]
-               (.connect ctx# remote-address# local-address# promise#))))
+              (.connect ctx# remote-address# local-address# promise#))))
      (disconnect
        ~@(or (:disconnect handlers)
            `([_ ctx# promise#]
-               (.disconnect ctx# promise#))))
+              (.disconnect ctx# promise#))))
      (close
        ~@(or (:close handlers)
            `([_ ctx# promise#]
-               (.close ctx# promise#))))
+              (.close ctx# promise#))))
      (read
        ~@(or (:read handlers)
            `([_ ctx#]
-               (.read ctx#))))
+              (.read ctx#))))
      (write
        ~@(or (:write handlers)
            `([_ ctx# msg# promise#]
-               (.write ctx# msg# promise#))))
+              (.write ctx# msg# promise#))))
      (flush
        ~@(or (:flush handlers)
            `([_ ctx#]
-               (.flush ctx#))))))
+              (.flush ctx#))))))
 
 (defn pipeline-initializer [pipeline-builder]
   (channel-handler

@@ -24,27 +24,26 @@
 
 (defn- stats->map
   ([s]
-     (stats->map s [0.5 0.9 0.95 0.99 0.999]))
+    (stats->map s [0.5 0.9 0.95 0.99 0.999]))
   ([^Stats s quantiles]
-     (let [stats (.getMetrics s)
-           q #(zipmap quantiles (mapv % quantiles))]
-       (merge
-         {:num-workers (.getNumWorkers s)}
-         (when (contains? stats Stats$Metric/QUEUE_LENGTH)
-           {:queue-length (q #(.getQueueLength s %))})
-         (when (contains? stats Stats$Metric/QUEUE_LATENCY)
-           {:queue-latency (q #(double (/ (.getQueueLatency s %) 1e6)))})
-         (when (contains? stats Stats$Metric/TASK_LATENCY)
-           {:task-latency (q #(double (/ (.getTaskLatency s %) 1e6)))})
-         (when (contains? stats Stats$Metric/TASK_ARRIVAL_RATE)
-           {:task-arrival-rate (q #(.getTaskArrivalRate s %))})
-         (when (contains? stats Stats$Metric/TASK_COMPLETION_RATE)
-           {:task-completion-rate (q #(.getTaskCompletionRate s %))})
-         (when (contains? stats Stats$Metric/TASK_REJECTION_RATE)
-           {:task-rejection-rate (q #(.getTaskRejectionRate s %))})
-         (when (contains? stats Stats$Metric/UTILIZATION)
-           {:utilization (q #(.getUtilization s %))})
-         ))))
+    (let [stats (.getMetrics s)
+          q #(zipmap quantiles (mapv % quantiles))]
+      (merge
+        {:num-workers (.getNumWorkers s)}
+        (when (contains? stats Stats$Metric/QUEUE_LENGTH)
+          {:queue-length (q #(.getQueueLength s %))})
+        (when (contains? stats Stats$Metric/QUEUE_LATENCY)
+          {:queue-latency (q #(double (/ (.getQueueLatency s %) 1e6)))})
+        (when (contains? stats Stats$Metric/TASK_LATENCY)
+          {:task-latency (q #(double (/ (.getTaskLatency s %) 1e6)))})
+        (when (contains? stats Stats$Metric/TASK_ARRIVAL_RATE)
+          {:task-arrival-rate (q #(.getTaskArrivalRate s %))})
+        (when (contains? stats Stats$Metric/TASK_COMPLETION_RATE)
+          {:task-completion-rate (q #(.getTaskCompletionRate s %))})
+        (when (contains? stats Stats$Metric/TASK_REJECTION_RATE)
+          {:task-rejection-rate (q #(.getTaskRejectionRate s %))})
+        (when (contains? stats Stats$Metric/UTILIZATION)
+          {:utilization (q #(.getUtilization s %))})))))
 
 (let [factories (atom 0)]
   (defn- create-thread-factory []
@@ -183,24 +182,24 @@
 (defn fixed-thread-executor
   "Returns an executor which has a fixed number of threads."
   ([num-threads]
-     (fixed-thread-executor num-threads nil))
+    (fixed-thread-executor num-threads nil))
   ([num-threads options]
-     (instrumented-executor
-       (assoc options
-         :max-threads num-threads
-         :controller (reify Executor$Controller
-                       (shouldIncrement [_ n]
-                         (< n num-threads))
-                       (adjustment [_ s]
-                         (- num-threads (.getNumWorkers s))))))))
+    (instrumented-executor
+      (assoc options
+        :max-threads num-threads
+        :controller (reify Executor$Controller
+                      (shouldIncrement [_ n]
+                        (< n num-threads))
+                      (adjustment [_ s]
+                        (- num-threads (.getNumWorkers s))))))))
 
 (defn utilization-executor
   "Returns an executor which sizes the thread pool according to target utilization, within
    `[0,1]`, up to `max-threads`."
   ([utilization max-threads]
-     (utilization-executor utilization max-threads nil))
+    (utilization-executor utilization max-threads nil))
   ([utilization max-threads options]
-     (instrumented-executor
-       (assoc options
-         :max-threads max-threads
-         :controller (Executors/utilizationController utilization max-threads)))))
+    (instrumented-executor
+      (assoc options
+        :max-threads max-threads
+        :controller (Executors/utilizationController utilization max-threads)))))

@@ -118,13 +118,13 @@
           (if-let [v (->> headers
                        .entries
                        (reduce
-                        (fn [v ^Map$Entry e]
-                          (if (= k' (str/lower-case (.getKey e)))
-                            (if v
-                              (str v "," (.getValue e))
-                              (.getValue e))
-                            v))
-                        nil))]
+                         (fn [v ^Map$Entry e]
+                           (if (= k' (str/lower-case (.getKey e)))
+                             (if v
+                               (str v "," (.getValue e))
+                               (.getValue e))
+                             v))
+                         nil))]
             v
             default-value))))))
 
