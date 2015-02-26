@@ -52,7 +52,7 @@
       (reify ThreadFactory
         (newThread [_ r]
           (doto
-           (Thread. r (str "aleph-pool-" factory "-" (swap! threads inc)))
+            (Thread. r (str "aleph-pool-" factory "-" (swap! threads inc)))
             (.setDaemon true)))))))
 
 (defn instrumented-pool

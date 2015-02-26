@@ -202,9 +202,9 @@
 
             ;; connection failed, bail out
             (d/catch
-             (fn [e]
-               (flow/dispose pool k conn)
-               (d/error-deferred e)))
+              (fn [e]
+                (flow/dispose pool k conn)
+                (d/error-deferred e)))
 
             ;; actually make the request now
             (d/chain
@@ -227,11 +227,11 @@
 
                       ;; request failed, if it was due to a timeout close the connection
                       (d/catch
-                       (fn [e]
-                         (if (instance? TimeoutException e)
-                           (flow/dispose pool k conn)
-                           (flow/release pool k conn))
-                         (d/error-deferred e)))
+                        (fn [e]
+                          (if (instance? TimeoutException e)
+                            (flow/dispose pool k conn)
+                            (flow/release pool k conn))
+                          (d/error-deferred e)))
 
                       ;; clean up the response
                       (d/chain
