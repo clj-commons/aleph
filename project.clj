@@ -21,7 +21,9 @@
                     aleph.http
                     aleph.flow]
           :output-dir "doc"}
-  :plugins [[codox "0.8.10"]]
+  :plugins [[codox "0.8.10"]
+            [lein-cljfmt "0.1.10"]]
+  :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default (complement :benchmark)
                    :benchmark :benchmark
                    :all (constantly true)}

@@ -47,33 +47,33 @@
               (netty/channel-handler
                 :exception-caught
                 ([_ ctx ex]
-                   (when-not (d/error! d ex)
-                     (log/warn ex "error in UDP socket")))
+                  (when-not (d/error! d ex)
+                    (log/warn ex "error in UDP socket")))
 
                 :channel-active
                 ([_ ctx]
-                   (let [ch (.channel ctx)
-                         out (netty/sink ch true
-                               (fn [msg]
-                                 (let [{:keys [host port message socket-address]} msg]
-                                   (DatagramPacket.
-                                     (netty/to-byte-buf message)
-                                     (or socket-address
-                                       (InetSocketAddress. ^String host (int port)))))))
-                         in (s/map
-                              (fn [^DatagramPacket packet]
-                                (->UdpPacket
-                                  packet
-                                  (if raw-stream?
-                                    (.content packet)
-                                    (netty/release-buf->array (.content packet)))))
-                              in)]
-                     (d/success! d
-                       (s/splice out in))))
+                  (let [ch (.channel ctx)
+                        out (netty/sink ch true
+                              (fn [msg]
+                                (let [{:keys [host port message socket-address]} msg]
+                                  (DatagramPacket.
+                                    (netty/to-byte-buf message)
+                                    (or socket-address
+                                      (InetSocketAddress. ^String host (int port)))))))
+                        in (s/map
+                             (fn [^DatagramPacket packet]
+                               (->UdpPacket
+                                 packet
+                                 (if raw-stream?
+                                   (.content packet)
+                                   (netty/release-buf->array (.content packet)))))
+                             in)]
+                    (d/success! d
+                      (s/splice out in))))
 
                 :channel-read
                 ([_ ctx msg]
-                   (netty/put! (.channel ctx) in msg)))))
+                  (netty/put! (.channel ctx) in msg)))))
         socket-address (or socket-address (InetSocketAddress. (or port 0)))]
     (try
       (-> b (.bind ^SocketAddress socket-address))
