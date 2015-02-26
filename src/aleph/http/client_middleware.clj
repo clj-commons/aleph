@@ -7,10 +7,47 @@
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [byte-streams :as bs]
+    [clojure.edn :as edn])
   (:import
     [java.io InputStream]
     [java.net URL URLEncoder UnknownHostException]))
+
+;; Cheshire is an optional dependency, so we check for it at compile time.
+(def json-enabled?
+  (try
+    (require 'cheshire.core)
+    true
+    (catch Throwable _ false)))
+
+;; Transit is an optional dependency, so check at compile time.
+(def transit-enabled?
+  (try
+    (require 'cognitect.transit)
+    true
+    (catch Throwable _ false)))
+
+(defn ^:dynamic parse-transit
+  "Resolve and apply Transit's JSON/MessagePack decoding."
+  [in type & [opts]]
+  {:pre [transit-enabled?]}
+  (let [reader (ns-resolve 'cognitect.transit 'reader)
+        read (ns-resolve 'cognitect.transit 'read)]
+    (read (reader in type opts))))
+
+(defn ^:dynamic json-decode
+  "Resolve and apply cheshire's json decoding dynamically."
+  [& args]
+  {:pre [json-enabled?]}
+  (apply (ns-resolve (symbol "cheshire.core") (symbol "decode")) args))
+
+(defn ^:dynamic json-decode-strict
+  "Resolve and apply cheshire's json decoding dynamically (with lazy parsing
+  disabled)."
+  [& args]
+  {:pre [json-enabled?]}
+  (apply (ns-resolve (symbol "cheshire.core") (symbol "decode-strict")) args))
 
 ;;;
 
@@ -36,9 +73,9 @@
 
 (defn url-encode
   ([s]
-     (url-encode s "UTF-8"))
+   (url-encode s "UTF-8"))
   ([s encoding]
-     (URLEncoder/encode s encoding)))
+   (URLEncoder/encode s encoding)))
 
 (defn opt
   "Check the request parameters for a keyword  boolean option, with or without
@@ -73,11 +110,11 @@
   "Parse a URL string into a map of interesting parts."
   [url]
   (let [url-parsed (URL. url)]
-    {:scheme (keyword (.getProtocol url-parsed))
-     :server-name (.getHost url-parsed)
-     :server-port (when-pos (.getPort url-parsed))
-     :uri (url-encode-illegal-characters (.getPath url-parsed))
-     :user-info (.getUserInfo url-parsed)
+    {:scheme       (keyword (.getProtocol url-parsed))
+     :server-name  (.getHost url-parsed)
+     :server-port  (when-pos (.getPort url-parsed))
+     :uri          (url-encode-illegal-characters (.getPath url-parsed))
+     :user-info    (.getUserInfo url-parsed)
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 ;; Statuses for which clj-http will not throw an exception
@@ -121,13 +158,13 @@
   [client]
   (fn [req]
     (d/let-flow [{:keys [status] :as rsp} (client req)]
-      (if (unexceptional-status? status)
-        rsp
-        (if (false? (opt req :throw-exceptions))
-          rsp
-          (d/chain rsp :aleph/complete
-            (fn [_]
-              (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
+                (if (unexceptional-status? status)
+                  rsp
+                  (if (false? (opt req :throw-exceptions))
+                    rsp
+                    (d/chain rsp :aleph/complete
+                             (fn [_]
+                               (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
 
 (declare wrap-redirects)
 
@@ -141,8 +178,8 @@
   request."
   [client
    {:keys [uri url scheme server-name server-port trace-redirects]
-    :or {trace-redirects []}
-    :as req}
+    :or   {trace-redirects []}
+    :as   req}
    {:keys [body] :as rsp}]
   (let [url (or url (str (name scheme) "://" server-name
                          (when server-port (str ":" server-port)) uri))]
@@ -154,10 +191,10 @@
             (s/close! body))
           (catch Exception _))
         (aleph.http/request
-         (-> req
-           (dissoc :query-params)
-           (assoc :url redirect)
-           (assoc :trace-redirects (conj trace-redirects redirect)))))
+          (-> req
+              (dissoc :query-params)
+              (assoc :url redirect)
+              (assoc :trace-redirects (conj trace-redirects redirect)))))
       ;; Oh well, we tried, but if no location is set, return the response
       rsp)))
 
@@ -172,62 +209,62 @@
   :trace-redirects - vector of sites the request was redirected from"
   [client]
   (fn [{:keys [request-method max-redirects redirects-count trace-redirects url]
-        :or {redirects-count 0
-             ;; max-redirects default taken from Firefox
-             max-redirects 20}
-        :as req}]
+        :or   {redirects-count 0
+               ;; max-redirects default taken from Firefox
+               max-redirects   20}
+        :as   req}]
     (d/let-flow [{:keys [status] :as rsp} (client req)
                  rsp-r (if (empty? trace-redirects)
                          rsp
                          (assoc rsp :trace-redirects trace-redirects))]
-      (cond
-        (false? (opt req :follow-redirects))
-        rsp
+                (cond
+                  (false? (opt req :follow-redirects))
+                  rsp
 
-        (not (redirect? rsp-r))
-        rsp-r
+                  (not (redirect? rsp-r))
+                  rsp-r
 
-        (and max-redirects (> redirects-count max-redirects))
-        (if (opt req :throw-exceptions)
-          (throw (ex-info (str "too many redirects: " redirects-count) req))
-          rsp-r)
+                  (and max-redirects (> redirects-count max-redirects))
+                  (if (opt req :throw-exceptions)
+                    (throw (ex-info (str "too many redirects: " redirects-count) req))
+                    rsp-r)
 
-        (= 303 status)
-        (follow-redirect client
-          (assoc req
-            :request-method :get
-            :redirects-count (inc redirects-count))
-          rsp-r)
+                  (= 303 status)
+                  (follow-redirect client
+                                   (assoc req
+                                     :request-method :get
+                                     :redirects-count (inc redirects-count))
+                                   rsp-r)
 
 
-       (#{301 302} status)
-       (cond
-        (#{:get :head} request-method)
-        (follow-redirect client
-          (assoc req
-            :redirects-count
-            (inc redirects-count))
-          rsp-r)
+                  (#{301 302} status)
+                  (cond
+                    (#{:get :head} request-method)
+                    (follow-redirect client
+                                     (assoc req
+                                       :redirects-count
+                                       (inc redirects-count))
+                                     rsp-r)
 
-        (opt req :force-redirects)
-        (follow-redirect client
-          (assoc req
-            :request-method :get
-            :redirects-count (inc redirects-count))
-          rsp-r)
+                    (opt req :force-redirects)
+                    (follow-redirect client
+                                     (assoc req
+                                       :request-method :get
+                                       :redirects-count (inc redirects-count))
+                                     rsp-r)
 
-        :else
-        rsp-r)
+                    :else
+                    rsp-r)
 
-       (= 307 status)
-       (if (or (#{:get :head} request-method)
-             (opt req :force-redirects))
-         (follow-redirect client
-           (assoc req :redirects-count (inc redirects-count)) rsp-r)
-         rsp-r)
+                  (= 307 status)
+                  (if (or (#{:get :head} request-method)
+                          (opt req :force-redirects))
+                    (follow-redirect client
+                                     (assoc req :redirects-count (inc redirects-count)) rsp-r)
+                    rsp-r)
 
-       :else
-       rsp-r))))
+                  :else
+                  rsp-r))))
 
 
 
@@ -272,10 +309,10 @@
   "Given a charset header, detect the charset, returns UTF-8 if not found."
   [content-type]
   (or
-   (when-let [found (when content-type
-                      (re-find #"(?i)charset\s*=\s*([^\s]+)" content-type))]
-     (second found))
-   "UTF-8"))
+    (when-let [found (when content-type
+                       (re-find #"(?i)charset\s*=\s*([^\s]+)" content-type))]
+      (second found))
+    "UTF-8"))
 
 (defn generate-query-string [params & [content-type]]
   (let [encoding (detect-charset content-type)]
@@ -296,8 +333,8 @@
   the request."
   [client]
   (fn [{:keys [query-params content-type]
-        :or {content-type :x-www-form-urlencoded}
-        :as req}]
+        :or   {content-type :x-www-form-urlencoded}
+        :as   req}]
     (if query-params
       (client (-> req (dissoc :query-params)
                   (update-in [:query-string]
@@ -306,8 +343,8 @@
                                  (str old-query-string "&" new-query-string)
                                  new-query-string))
                              (generate-query-string
-                              query-params
-                              (content-type-value content-type)))))
+                               query-params
+                               (content-type-value content-type)))))
       (client req))))
 
 (defn basic-auth-value [basic-auth]
@@ -316,9 +353,9 @@
                      (str (first basic-auth) ":" (second basic-auth)))
         bytes (.getBytes ^String basic-auth "UTF-8")]
     (str "Basic "
-      (-> ^String basic-auth
-        (.getBytes "UTF-8")
-        javax.xml.bind.DatatypeConverter/printBase64Binary))))
+         (-> ^String basic-auth
+             (.getBytes "UTF-8")
+             javax.xml.bind.DatatypeConverter/printBase64Binary))))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
@@ -365,8 +402,8 @@
   "Middleware wrapping the submission or form parameters."
   [client]
   (fn [{:keys [form-params content-type request-method json-opts]
-        :or {content-type :x-www-form-urlencoded}
-        :as req}]
+        :or   {content-type :x-www-form-urlencoded}
+        :as   req}]
     (if (and form-params (#{:post :put :patch} request-method))
       (client (-> req
                   (dissoc :form-params)
@@ -378,16 +415,16 @@
   [request param-key]
   (if-let [params (request param-key)]
     (assoc request param-key (prewalk
-                              #(if (and (vector? %) (map? (second %)))
+                               #(if (and (vector? %) (map? (second %)))
                                  (let [[fk m] %]
                                    (reduce
-                                    (fn [m [sk v]]
-                                      (assoc m (str (name fk)
-                                                    \[ (name sk) \]) v))
-                                    {}
-                                    m))
+                                     (fn [m [sk v]]
+                                       (assoc m (str (name fk)
+                                                     \[ (name sk) \]) v))
+                                     {}
+                                     m))
                                  %)
-                              params))
+                               params))
     request))
 
 (defn wrap-nested-params
@@ -397,9 +434,9 @@
     (if (= :json content-type)
       (client req)
       (client (reduce
-               nest-params
-               req
-               [:query-params :form-params])))))
+                nest-params
+                req
+                [:query-params :form-params])))))
 
 (defn wrap-url
   "Middleware wrapping request URL parsing."
@@ -429,7 +466,133 @@
   (fn [req]
     (let [start (System/currentTimeMillis)]
       (-> (client req)
-        (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
+          (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
+
+(defn parse-content-type
+  "Parse `s` as an RFC 2616 media type."
+  [s]
+  (if-let [m (re-matches #"\s*(([^/]+)/([^ ;]+))\s*(\s*;.*)?" (str s))]
+    {:content-type (keyword (nth m 1))
+     :content-type-params
+                   (->> (str/split (str (nth m 4)) #"\s*;\s*")
+                        (identity)
+                        (remove str/blank?)
+                        (map #(str/split % #"="))
+                        (mapcat (fn [[k v]] [(keyword (str/lower-case k)) (str/trim v)]))
+                        (apply hash-map))}))
+
+;; Multimethods for coercing body type to the :as key
+(defmulti coerce-response-body (fn [req _] (:as req)))
+
+(defmethod coerce-response-body :byte-array [_ resp]
+  (assoc resp :body (bs/to-byte-array (:body resp))))
+
+(defmethod coerce-response-body :stream [_ resp]
+  (let [body (:body resp)]
+    (cond (instance? InputStream body) resp
+          ;; This shouldn't happen, but we plan for it anyway
+          (instance? (Class/forName "[B") body)
+          (assoc resp :body (bs/to-input-stream body)))))
+
+(defn coerce-json-body
+  [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
+  (let [^String charset (or charset (-> resp :content-type-params :charset)
+                            "UTF-8")
+        body (bs/to-byte-array body)
+        decode-func (if strict? json-decode-strict json-decode)]
+    (if json-enabled?
+      (cond
+        (= coerce :always)
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        (and (unexceptional-status? status)
+             (or (nil? coerce) (= coerce :unexceptional)))
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        (and (not (unexceptional-status? status)) (= coerce :exceptional))
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        :else (assoc resp :body (String. ^"[B" body charset)))
+      (assoc resp :body (String. ^"[B" body charset)))))
+
+(defn coerce-clojure-body
+  [request {:keys [body] :as resp}]
+  (let [^String charset (or (-> resp :content-type-params :charset) "UTF-8")
+        body (bs/to-byte-array body)]
+    (assoc resp :body (edn/read-string (String. ^"[B" body charset)))))
+
+(defn coerce-transit-body
+  [{:keys [transit-opts] :as request} {:keys [body] :as resp} type]
+  (if transit-enabled?
+    (assoc resp :body (parse-transit body type transit-opts))
+    resp))
+
+(defmulti coerce-content-type (fn [req resp] (:content-type resp)))
+
+(defmethod coerce-content-type :application/clojure [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-content-type :application/edn [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-content-type :application/json [req resp]
+  (coerce-json-body req resp true false))
+
+(defmethod coerce-content-type :application/transit+json [req resp]
+  (coerce-transit-body req resp :json))
+
+(defmethod coerce-content-type :application/transit+msgpack [req resp]
+  (coerce-transit-body req resp :msgpack))
+
+(defmethod coerce-content-type :default [req resp]
+  (if-let [charset (-> resp :content-type-params :charset)]
+    (coerce-response-body {:as charset} resp)
+    (coerce-response-body {:as :default} resp)))
+
+(defmethod coerce-response-body :auto [request resp]
+  (let [header (get-in resp [:headers "content-type"])]
+    (->> (merge resp (parse-content-type header))
+         (coerce-content-type request))))
+
+(defmethod coerce-response-body :json [req resp]
+  (coerce-json-body req resp true false))
+
+(defmethod coerce-response-body :json-strict [req resp]
+  (coerce-json-body req resp true true))
+
+(defmethod coerce-response-body :json-strict-string-keys [req resp]
+  (coerce-json-body req resp false true))
+
+(defmethod coerce-response-body :json-string-keys [req resp]
+  (coerce-json-body req resp false false))
+
+(defmethod coerce-response-body :clojure [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-response-body :transit+json [req resp]
+  (coerce-transit-body req resp :json))
+
+(defmethod coerce-response-body :transit+msgpack [req resp]
+  (coerce-transit-body req resp :msgpack))
+
+(defmethod coerce-response-body :default
+  [{:keys [as]} {:keys [body] :as resp}]
+  (let [body-bytes (bs/to-byte-array body)]
+    (cond
+      (string? as) (assoc resp :body (String. ^"[B" body-bytes ^String as))
+      :else (assoc resp :body (String. ^"[B" body-bytes "UTF-8")))))
+
+(defn wrap-output-coercion
+  "Middleware converting a response body from a byte-array to a different
+  object. Defaults to a String if no :as key is specified, the
+  `coerce-response-body` multimethod may be extended to add
+  additional coercions."
+  [client]
+  (fn [req]
+    (d/let-flow [{:keys [body] :as resp} (client req)]
+                (if body
+                  (coerce-response-body req resp)
+                  resp))))
 
 (def default-middleware
   "The default list of middleware clj-http uses for wrapping requests."
@@ -447,7 +610,8 @@
    wrap-form-params
    wrap-nested-params
    wrap-method
-   wrap-unknown-host])
+   wrap-unknown-host
+   wrap-output-coercion])
 
 (defn wrap-request
   "Returns a batteries-included HTTP request function corresponding to the given
