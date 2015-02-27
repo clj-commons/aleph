@@ -405,8 +405,8 @@
   (let [thread-count (get-default-event-loop-threads)
         thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
     (if (epoll?)
-      (EpollEventLoopGroup. thread-count thread-factory)
-      (NioEventLoopGroup. thread-count thread-factory))))
+      (EpollEventLoopGroup. (long thread-count) thread-factory)
+      (NioEventLoopGroup. (long thread-count) thread-factory))))
 
 (defn create-client
   [pipeline-builder
@@ -477,7 +477,6 @@
               (.group group)
               (.channel channel)
               (.childHandler (pipeline-initializer pipeline-builder))
-              (.childOption ChannelOption/ALLOCATOR PooledByteBufAllocator/DEFAULT)
               (.childOption ChannelOption/SO_REUSEADDR true)
               (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
               bootstrap-transform)
