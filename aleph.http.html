@@ -27,7 +27,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L292">view source</a></div></div><div class="public anchor" id="var-connection-pool"><h3>connection-pool</h3><div class="usage"><code><pre>(connection-pool
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L297">view source</a></div></div><div class="public anchor" id="var-connection-pool"><h3>connection-pool</h3><div class="usage"><code><pre>(connection-pool
   {:keys [connections-per-host
           total-connections
           target-utilization
@@ -126,7 +126,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L291">view source</a></div></div><div class="public anchor" id="var-get"><h3>get</h3><div class="usage"><code><pre>(get url)
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L296">view source</a></div></div><div class="public anchor" id="var-get"><h3>get</h3><div class="usage"><code><pre>(get url)
 </pre></code><code><pre>(get
   url
   {:keys [pool middleware
@@ -154,7 +154,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L285">view source</a></div></div><div class="public anchor" id="var-head"><h3>head</h3><div class="usage"><code><pre>(head url)
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L290">view source</a></div></div><div class="public anchor" id="var-head"><h3>head</h3><div class="usage"><code><pre>(head url)
 </pre></code><code><pre>(head
   url
   {:keys [pool middleware
@@ -182,7 +182,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L290">view source</a></div></div><div class="public anchor" id="var-options"><h3>options</h3><div class="usage"><code><pre>(options url)
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L295">view source</a></div></div><div class="public anchor" id="var-options"><h3>options</h3><div class="usage"><code><pre>(options url)
 </pre></code><code><pre>(options
   url
   {:keys [pool middleware
@@ -210,7 +210,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L288">view source</a></div></div><div class="public anchor" id="var-post"><h3>post</h3><div class="usage"><code><pre>(post url)
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L293">view source</a></div></div><div class="public anchor" id="var-post"><h3>post</h3><div class="usage"><code><pre>(post url)
 </pre></code><code><pre>(post
   url
   {:keys [pool middleware
@@ -238,7 +238,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L286">view source</a></div></div><div class="public anchor" id="var-put"><h3>put</h3><div class="usage"><code><pre>(put url)
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L291">view source</a></div></div><div class="public anchor" id="var-put"><h3>put</h3><div class="usage"><code><pre>(put url)
 </pre></code><code><pre>(put
   url
   {:keys [pool middleware
@@ -266,15 +266,17 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L287">view source</a></div></div><div class="public anchor" id="var-register-connection-stats-callback"><h3>register-connection-stats-callback</h3><div class="usage"><code><pre>(register-connection-stats-callback
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L292">view source</a></div></div><div class="public anchor" id="var-register-connection-stats-callback"><h3>register-connection-stats-callback</h3><div class="usage"><code><pre>(register-connection-stats-callback
   c)
 </pre></code></div><div class="doc"><div class="markdown"><p>Registers a callback which will be called with connection-pool stats.</p></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L66">view source</a></div></div><div class="public anchor" id="var-request"><h3>request</h3><div class="usage"><code><pre>(request
   {:keys [pool middleware
           pool-timeout
           connection-timeout
-          request-timeout],
+          request-timeout
+          follow-redirects?],
    :or {pool default-connection-pool,
-        middleware identity},
+        middleware identity,
+        follow-redirects? true},
    :as req})
 </pre></code></div><div class="doc"><div class="markdown"><p>Takes an HTTP request, as defined by the Ring protocol, with the extensions defined by <a href="https://github.com/dakrone/clj-http">clj-http</a>, and returns a deferred representing the HTTP response. Also allows for a custom <code>pool</code> or <code>middleware</code> to be defined.</p>
 <table>
@@ -395,7 +397,7 @@
       <td align="left">an optional body, which should be coercable to a byte representation via <a href="https://github.com/ztellman/byte-streams">byte-streams</a></td>
     </tr>
   </tbody>
-</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L289">view source</a></div></div><div class="public anchor" id="var-unregister-connection-stats-callback"><h3>unregister-connection-stats-callback</h3><div class="usage"><code><pre>(unregister-connection-stats-callback
+</table></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L294">view source</a></div></div><div class="public anchor" id="var-unregister-connection-stats-callback"><h3>unregister-connection-stats-callback</h3><div class="usage"><code><pre>(unregister-connection-stats-callback
   c)
 </pre></code></div><div class="doc"><div class="markdown"><p>Unregisters a previous connection-pool stats callback.</p></div></div><div class="src-link"><a href="https://github.com/ztellman/aleph/tree/0.4.0/src/aleph/http.clj#L71">view source</a></div></div><div class="public anchor" id="var-websocket-client"><h3>websocket-client</h3><div class="usage"><code><pre>(websocket-client
   url)
