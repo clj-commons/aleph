@@ -60,11 +60,25 @@
   {:status 200
    :body "hello"})
 
+(defn redirect-handler [{:keys [query-string] :as request}]
+  (let [count (-> (.split #"[?=]" query-string) second Integer/parseInt)
+        host (-> request :headers (get "host"))]
+    (if (zero? count)
+      {:status 200 :body "ok"}
+      {:status 302
+       :headers {"location" (str "http://"
+                              (if (= "localhost" host)
+                                "127.0.0.1"
+                                "localhost")
+                              ":8080/redirect?count=" (dec count))}
+       :body "redirected!"})))
+
 (def latch (promise))
 (def browser-server (atom nil))
 
 (def route-map
-  {"/stream" stream-handler
+  {"/redirect" redirect-handler
+   "/stream" stream-handler
    "/slow" slow-handler
    "/file" file-handler
    "/manifold" manifold-handler
@@ -151,6 +165,21 @@
                       {:body words
                        :socket-timeout 2000}))]
         (is (= words (bs/to-string body)))))))
+
+(deftest test-redirect
+  (with-both-handlers basic-handler
+    (is (= "ok"
+          (-> @(http/get "http://localhost:8080/redirect?count=10")
+            :body
+            bs/to-string)))
+    (is (= "redirected!"
+          (-> @(http/get "http://localhost:8080/redirect?count=25")
+            :body
+            bs/to-string)))
+    (is (= "ok"
+          (-> @(http/get "http://localhost:8080/redirect?count=25" {:max-redirects 30})
+            :body
+            bs/to-string)))))
 
 (deftest test-line-echo
   (with-handler basic-handler

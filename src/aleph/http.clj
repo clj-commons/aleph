@@ -178,9 +178,11 @@
            middleware
            pool-timeout
            connection-timeout
-           request-timeout]
+           request-timeout
+           follow-redirects?]
     :or {pool default-connection-pool
-         middleware identity}
+         middleware identity
+         follow-redirects? true}
     :as req}]
   (let [k (client/req->domain req)
         start (System/currentTimeMillis)
@@ -243,7 +245,10 @@
                               (flow/release pool k conn)))
                           (-> rsp
                             (dissoc :aleph/complete)
-                            (assoc :connection-time (- end start)))))))))))))
+                            (assoc :connection-time (- end start)))))))))
+
+              (fn [rsp]
+                (middleware/handle-redirects request req rsp))))))
       (d/connect rsp))
 
     rsp))
