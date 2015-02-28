@@ -156,6 +156,7 @@
   :follow-redirects - default:true, whether to follow redirects
   :max-redirects - default:20, maximum number of redirects to follow
   :force-redirects - default:false, force redirecting methods to GET requests
+
   In the response:
   :redirects-count - number of redirects
   :trace-redirects - vector of sites the request was redirected from"

@@ -292,7 +292,8 @@
         (fn [req]
           (if (contains? req ::close)
             (netty/wrap-future (netty/close ch))
-            (let [rsp (locking ch
+            (let [raw-stream? (get req :raw-stream? raw-stream?)
+                  rsp (locking ch
                         (s/put! requests req)
                         (s/take! responses ::closed))]
               (d/chain rsp
