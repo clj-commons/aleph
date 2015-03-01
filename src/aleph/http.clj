@@ -178,9 +178,11 @@
            middleware
            pool-timeout
            connection-timeout
-           request-timeout]
+           request-timeout
+           follow-redirects?]
     :or {pool default-connection-pool
-         middleware identity}
+         middleware identity
+         follow-redirects? true}
     :as req}]
   (let [k (client/req->domain req)
         start (System/currentTimeMillis)
@@ -221,29 +223,35 @@
 
                   :else
                   (let [end (System/currentTimeMillis)]
-                    (-> ((middleware conn') req)
+                    ((middleware
+                       (fn [req]
+                         (-> (conn' req)
 
-                      (maybe-timeout! request-timeout)
+                           (maybe-timeout! request-timeout)
 
-                      ;; request failed, if it was due to a timeout close the connection
-                      (d/catch
-                        (fn [e]
-                          (if (instance? TimeoutException e)
-                            (flow/dispose pool k conn)
-                            (flow/release pool k conn))
-                          (d/error-deferred e)))
+                           ;; request failed, if it was due to a timeout close the connection
+                           (d/catch
+                             (fn [e]
+                               (if (instance? TimeoutException e)
+                                 (flow/dispose pool k conn)
+                                 (flow/release pool k conn))
+                               (d/error-deferred e)))
 
-                      ;; clean up the response
-                      (d/chain
-                        (fn [rsp]
+                           ;; clean up the response
+                           (d/chain
+                             (fn [rsp]
 
-                          ;; only release the connection back once the response is complete
-                          (d/chain (:aleph/complete rsp)
-                            (fn [_]
-                              (flow/release pool k conn)))
-                          (-> rsp
-                            (dissoc :aleph/complete)
-                            (assoc :connection-time (- end start)))))))))))))
+                               ;; only release the connection back once the response is complete
+                               (d/chain (:aleph/complete rsp)
+                                 (fn [_]
+                                   (flow/release pool k conn)))
+                               (-> rsp
+                                 (dissoc :aleph/complete)
+                                 (assoc :connection-time (- end start))))))))
+                     req))))
+
+              (fn [rsp]
+                (middleware/handle-redirects request req rsp))))))
       (d/connect rsp))
 
     rsp))

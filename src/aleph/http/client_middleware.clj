@@ -166,12 +166,6 @@
             (fn [_]
               (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
 
-(declare wrap-redirects)
-
-(in-ns 'aleph.http)
-(declare request)
-(in-ns 'aleph.http.client-middleware)
-
 (defn follow-redirect
   "Attempts to follow the redirects from the \"location\" header, if no such
   header exists (bad server!), returns the response without following the
@@ -185,12 +179,7 @@
                       (when server-port (str ":" server-port)) uri))]
     (if-let [raw-redirect (get-in rsp [:headers "location"])]
       (let [redirect (str (URL. (URL. url) raw-redirect))]
-        (try
-          (if (instance? InputStream body)
-            (.close ^InputStream body)
-            (s/close! body))
-          (catch Exception _))
-        (aleph.http/request
+        (client
           (-> req
             (dissoc :query-params)
             (assoc :url redirect)
@@ -198,73 +187,73 @@
       ;; Oh well, we tried, but if no location is set, return the response
       rsp)))
 
-(defn wrap-redirects
+(defn handle-redirects
   "Middleware that follows redirects in the response. A slingshot exception is
   thrown if too many redirects occur. Options
   :follow-redirects - default:true, whether to follow redirects
   :max-redirects - default:20, maximum number of redirects to follow
   :force-redirects - default:false, force redirecting methods to GET requests
+
   In the response:
   :redirects-count - number of redirects
   :trace-redirects - vector of sites the request was redirected from"
-  [client]
-  (fn [{:keys [request-method max-redirects redirects-count trace-redirects url]
-        :or {redirects-count 0
-             ;; max-redirects default taken from Firefox
-             max-redirects 20}
-        :as req}]
-    (d/let-flow [{:keys [status] :as rsp} (client req)
-                 rsp-r (if (empty? trace-redirects)
-                         rsp
-                         (assoc rsp :trace-redirects trace-redirects))]
+  [client
+   {:keys [request-method max-redirects redirects-count trace-redirects url]
+    :or {redirects-count 0
+         ;; max-redirects default taken from Firefox
+         max-redirects 20}
+    :as req}
+   {:keys [status] :as rsp}]
+  (let [rsp-r (if (empty? trace-redirects)
+                rsp
+                (assoc rsp :trace-redirects trace-redirects))]
+    (cond
+      (false? (opt req :follow-redirects))
+      rsp
+
+      (not (redirect? rsp-r))
+      rsp-r
+
+      (and max-redirects (> redirects-count max-redirects))
+      (if (opt req :throw-exceptions)
+        (throw (ex-info (str "too many redirects: " redirects-count) req))
+        rsp-r)
+
+      (= 303 status)
+      (follow-redirect client
+        (assoc req
+          :request-method :get
+          :redirects-count (inc redirects-count))
+        rsp-r)
+
+
+      (#{301 302} status)
       (cond
-        (false? (opt req :follow-redirects))
-        rsp
-
-        (not (redirect? rsp-r))
-        rsp-r
-
-        (and max-redirects (> redirects-count max-redirects))
-        (if (opt req :throw-exceptions)
-          (throw (ex-info (str "too many redirects: " redirects-count) req))
+        (#{:get :head} request-method)
+        (follow-redirect client
+          (assoc req
+            :redirects-count (inc redirects-count))
           rsp-r)
 
-        (= 303 status)
+        (opt req :force-redirects)
         (follow-redirect client
           (assoc req
             :request-method :get
             :redirects-count (inc redirects-count))
           rsp-r)
 
-
-        (#{301 302} status)
-        (cond
-          (#{:get :head} request-method)
-          (follow-redirect client
-            (assoc req
-              :redirects-count
-              (inc redirects-count))
-            rsp-r)
-
-          (opt req :force-redirects)
-          (follow-redirect client
-            (assoc req
-              :request-method :get
-              :redirects-count (inc redirects-count))
-            rsp-r)
-
-          :else
-          rsp-r)
-
-        (= 307 status)
-        (if (or (#{:get :head} request-method)
-              (opt req :force-redirects))
-          (follow-redirect client
-            (assoc req :redirects-count (inc redirects-count)) rsp-r)
-          rsp-r)
-
         :else
-        rsp-r))))
+        rsp-r)
+
+      (= 307 status)
+      (if (or (#{:get :head} request-method)
+            (opt req :force-redirects))
+        (follow-redirect client
+          (assoc req :redirects-count (inc redirects-count)) rsp-r)
+        rsp-r)
+
+      :else
+      rsp-r)))
 
 
 
@@ -602,7 +591,6 @@
    wrap-oauth
    wrap-user-info
    wrap-url
-   wrap-redirects
    wrap-exceptions
    wrap-accept
    wrap-accept-encoding

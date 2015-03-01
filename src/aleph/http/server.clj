@@ -81,10 +81,10 @@
 (defn ^CharSequence date-header-value [^ChannelHandlerContext ctx]
   (if-let [^AtomicReference ref (.get date-value)]
     (.get ref)
-    (let [ref (AtomicReference. (HttpHeaders/newValueEntity (rfc-1123-date-string)))]
+    (let [ref (AtomicReference. (HttpHeaders/newEntity (rfc-1123-date-string)))]
       (.set date-value ref)
       (.scheduleWithFixedDelay (.executor ctx)
-        #(.set ref (HttpHeaders/newValueEntity (rfc-1123-date-string)))
+        #(.set ref (HttpHeaders/newEntity (rfc-1123-date-string)))
         1000
         1000
         TimeUnit/MILLISECONDS)
@@ -99,10 +99,10 @@
            (str w))})
 
 (let [[server-name connection-name date-name]
-      (map #(HttpHeaders/newNameEntity %) ["Server" "Connection" "Date"])
+      (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
 
       [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newValueEntity %) ["Aleph/0.4.0" "Keep-Alive" "Close"])]
+      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.0" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? rsp]
     (let [[^HttpResponse rsp body]

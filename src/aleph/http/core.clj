@@ -53,7 +53,7 @@
             "TE"]]
     (zipmap
       (map str/lower-case ks)
-      (map #(HttpHeaders/newNameEntity %) ks))))
+      (map #(HttpHeaders/newEntity %) ks))))
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 
@@ -68,7 +68,7 @@
                (->> (str/split s' #"-")
                  (map str/capitalize)
                  (str/join "-")
-                 HttpHeaders/newNameEntity))]
+                 HttpHeaders/newEntity))]
 
       ;; in practice this should never happen, so we
       ;; can be stupid about cache expiration
