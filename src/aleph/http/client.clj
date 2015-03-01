@@ -8,6 +8,8 @@
     [aleph.http.client-middleware :as middleware]
     [aleph.netty :as netty])
   (:import
+    [java.io
+     IOException]
     [java.net
      URI
      InetSocketAddress]
@@ -127,7 +129,8 @@
 
       :exception-caught
       ([_ ctx ex]
-        (log/warn ex "error in HTTP server"))
+        (when-not (instance? IOException ex)
+          (log/warn ex "error in HTTP client")))
 
       :channel-inactive
       ([_ ctx]

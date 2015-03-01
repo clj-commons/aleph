@@ -235,30 +235,30 @@
 
                              ;; request failed, if it was due to a timeout close the connection
                              (d/catch
-                              (fn [e]
-                                (if (instance? TimeoutException e)
-                                  (flow/dispose pool k conn)
-                                  (flow/release pool k conn))
-                                (d/error-deferred e)))
+                               (fn [e]
+                                 (if (instance? TimeoutException e)
+                                   (flow/dispose pool k conn)
+                                   (flow/release pool k conn))
+                                 (d/error-deferred e)))
 
                             ;; clean up the response
-                            (d/chain
-                              (fn [rsp]
+                             (d/chain
+                               (fn [rsp]
 
                                 ;; only release the connection back once the response is complete
-                                (d/chain (:aleph/complete rsp)
-                                  (fn [_]
-                                    (flow/release pool k conn)))
-                                (-> rsp
-                                  (dissoc :aleph/complete)
-                                  (assoc :connection-time (- end start)))))))))
+                                 (d/chain (:aleph/complete rsp)
+                                   (fn [_]
+                                     (flow/release pool k conn)))
+                                 (-> rsp
+                                   (dissoc :aleph/complete)
+                                   (assoc :connection-time (- end start)))))))))
 
-                    (fn [rsp]
-                      (middleware/handle-redirects request req rsp))))))
-            (d/connect rsp))
+                     (fn [rsp]
+                       (middleware/handle-redirects request req rsp))))))
+             (d/connect rsp))
 
-          rsp)))
-    req)))
+           rsp)))
+      req)))
 
 (defn- req
   ([method url]
