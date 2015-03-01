@@ -167,7 +167,6 @@
          max-redirects 20}
     :as req}
    {:keys [status] :as rsp}]
-  (prn 'rsp rsp)
   (let [rsp-r (if (empty? trace-redirects)
                 rsp
                 (assoc rsp :trace-redirects trace-redirects))]
