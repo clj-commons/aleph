@@ -44,7 +44,7 @@
   "Returns a deferred that yields a function which, given an HTTP request, returns
    a deferred representing the HTTP response.  If the server disconnects, all responses
    will be errors, and a new connection must be created."
-  [^URI uri options on-closed]
+  [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
         ssl? (= "https" scheme)]
     (d/chain
@@ -59,7 +59,7 @@
         (if on-closed
           (assoc options :on-closed on-closed)
           options))
-      middleware/wrap-request)))
+      middleware)))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -102,11 +102,13 @@
            target-utilization
            connection-options
            stats-callback
-           response-executor]
+           response-executor
+           middleware]
     :or {connections-per-host 8
          total-connections 1024
          target-utilization 0.9
-         response-executor default-response-executor}}]
+         response-executor default-response-executor
+         middleware middleware/wrap-request}}]
   (let [p (promise)
         connection-options (assoc connection-options
                              :response-executor response-executor)
@@ -116,6 +118,7 @@
                                   conn (create-connection
                                          host
                                          connection-options
+                                         middleware
                                          #(flow/dispose @p host [@c]))]
                               (deliver c conn)
                               [conn]))
@@ -163,98 +166,99 @@
   ([req {:keys [raw-stream? headers] :as options}]
     (server/initialize-websocket-handler req options)))
 
-(defn request
-  "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
-   by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
-   the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined.
+(let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))
+      maybe-connect (fn [a b] (when a (d/connect a b)))]
+  (defn request
+    "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
+     by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
+     the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined.
 
-   |:---|:---
-   | `pool` | a custom connection pool
-   | `middleware` | custom client middleware for the request
-   | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
-   | `connection-timeout` | timeout in milliseconds for the connection to become established
-   | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection"
-  [{:keys [pool
-           middleware
-           pool-timeout
-           connection-timeout
-           request-timeout
-           follow-redirects?]
-    :or {pool default-connection-pool
-         middleware identity
-         follow-redirects? true}
-    :as req}]
-  (let [k (client/req->domain req)
-        start (System/currentTimeMillis)
-        maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))
-        maybe-connect (fn [a b] (when a (d/connect a b)))
-        rsp (d/deferred)]
+     |:---|:---
+     | `pool` | a custom connection pool
+     | `middleware` | custom client middleware for the request
+     | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
+     | `connection-timeout` | timeout in milliseconds for the connection to become established
+     | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection"
+    [{:keys [pool
+             middleware
+             pool-timeout
+             connection-timeout
+             request-timeout
+             follow-redirects?]
+      :or {pool default-connection-pool
+           middleware identity
+           follow-redirects? true}
+      :as req}]
 
-    ;; acquire a connection
-    (-> (when-not (realized? rsp)
-          (flow/acquire pool k))
-      (maybe-timeout! pool-timeout)
-      (d/chain
-        (fn [conn]
+    ((middleware
+       (fn [req]
+         (let [k (client/req->domain req)
+               start (System/currentTimeMillis)
+               rsp (d/deferred)]
 
-          ;; get the wrapper for the connection, which may or may not be realized yet
-          (-> (first conn)
+           ;; acquire a connection
+           (-> (when-not (realized? rsp)
+                 (flow/acquire pool k))
+             (maybe-timeout! pool-timeout)
+             (d/chain
+               (fn [conn]
 
-            (maybe-timeout! connection-timeout)
+                 ;; get the wrapper for the connection, which may or may not be realized yet
+                 (-> (first conn)
 
-            ;; connection failed, bail out
-            (d/catch
-              (fn [e]
-                (flow/dispose pool k conn)
-                (d/error-deferred e)))
+                   (maybe-timeout! connection-timeout)
 
-            ;; actually make the request now
-            (d/chain
+                   ;; connection failed, bail out
+                   (d/catch
+                     (fn [e]
+                       (flow/dispose pool k conn)
+                       (d/error-deferred e)))
 
-              (fn [conn']
+                   ;; actually make the request now
+                   (d/chain
 
-                (cond
+                     (fn [conn']
 
-                  (nil? conn')
-                  nil
+                       (cond
 
-                  (realized? rsp)
-                  (flow/release pool k conn)
+                         (nil? conn')
+                         nil
 
-                  :else
-                  (let [end (System/currentTimeMillis)]
-                    ((middleware
-                       (fn [req]
-                         (-> (conn' req)
+                         (realized? rsp)
+                         (flow/release pool k conn)
 
-                           (maybe-timeout! request-timeout)
+                         :else
+                         (let [end (System/currentTimeMillis)]
+                           (-> (conn' req)
 
-                           ;; request failed, if it was due to a timeout close the connection
-                           (d/catch
-                             (fn [e]
-                               (if (instance? TimeoutException e)
-                                 (flow/dispose pool k conn)
-                                 (flow/release pool k conn))
-                               (d/error-deferred e)))
+                             (maybe-timeout! request-timeout)
 
-                           ;; clean up the response
-                           (d/chain
-                             (fn [rsp]
+                             ;; request failed, if it was due to a timeout close the connection
+                             (d/catch
+                               (fn [e]
+                                 (if (instance? TimeoutException e)
+                                   (flow/dispose pool k conn)
+                                   (flow/release pool k conn))
+                                 (d/error-deferred e)))
 
-                               ;; only release the connection back once the response is complete
-                               (d/chain (:aleph/complete rsp)
-                                 (fn [_]
-                                   (flow/release pool k conn)))
-                               (-> rsp
-                                 (dissoc :aleph/complete)
-                                 (assoc :connection-time (- end start))))))))
-                     req))))
+                            ;; clean up the response
+                             (d/chain
+                               (fn [rsp]
 
-              (fn [rsp]
-                (middleware/handle-redirects request req rsp))))))
-      (d/connect rsp))
+                                ;; only release the connection back once the response is complete
+                                 (d/chain (:aleph/complete rsp)
+                                   (fn [_]
+                                     (flow/release pool k conn)))
+                                 (-> rsp
+                                   (dissoc :aleph/complete)
+                                   (assoc :connection-time (- end start)))))))))
 
-    rsp))
+                     (fn [rsp]
+                       (middleware/handle-redirects request req rsp))))))
+             (d/connect rsp))
+
+           rsp)))
+      req)))
 
 (defn- req
   ([method url]

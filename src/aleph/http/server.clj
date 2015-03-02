@@ -209,7 +209,8 @@
 
       :exception-caught
       ([_ ctx ex]
-        (log/warn ex "error in HTTP server"))
+        (when-not (instance? IOException ex)
+          (log/warn ex "error in HTTP server")))
 
       :channel-inactive
       ([_ ctx]
@@ -319,7 +320,8 @@
 
       :exception-caught
       ([_ ctx ex]
-        (log/warn ex "error in HTTP server"))
+        (when-not (instance? IOException ex)
+          (log/warn ex "error in HTTP server")))
 
       :channel-inactive
       ([_ ctx]
@@ -458,6 +460,7 @@
 
        :exception-caught
        ([_ ctx ex]
+
          (when-not (instance? IOException ex)
            (log/warn ex "error in websocket handler"))
          (s/close! out)

@@ -181,6 +181,17 @@
             :body
             bs/to-string)))))
 
+(deftest test-middleware
+  (with-both-handlers basic-handler
+    (is (= "String!"
+          (-> @(http/get "http://localhost:8080/stream"
+                 {:middleware
+                  (fn [client]
+                    (fn [req]
+                      (client (assoc req :url "http://localhost:8080/string"))))})
+            :body
+            bs/to-string)))))
+
 (deftest test-line-echo
   (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5]]

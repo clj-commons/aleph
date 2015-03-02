@@ -4,9 +4,7 @@
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1"]
-                 [io.netty/netty-codec-http "4.1.0.Beta3"]
-                 [io.netty/netty-transport "4.1.0.Beta3"]
-                 [io.netty/netty-transport-native-epoll "4.1.0.Beta3"]
+                 [io.netty/netty-all "4.1.0.Beta3"]
                  [io.aleph/dirigiste "0.1.0-alpha8"]
                  [manifold "0.1.0-SNAPSHOT"]
                  [byte-streams "0.2.0-alpha8"]
