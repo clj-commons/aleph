@@ -182,12 +182,22 @@
 (defn write [x msg]
   (if (instance? Channel x)
     (.write ^Channel x msg (.voidPromise ^Channel x))
-    (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x))))
+    (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x)))
+  nil)
 
-(defn write-and-flush [x msg]
+(defn write-and-flush
+  [x msg]
   (if (instance? Channel x)
-    (.writeAndFlush ^Channel x msg)
-    (.writeAndFlush ^ChannelHandlerContext x msg)))
+    (if (.isWritable ^Channel x)
+      (do
+        (.writeAndFlush ^Channel x msg (.voidPromise ^Channel x))
+        nil)
+      (.writeAndFlush ^Channel x msg))
+    (if (-> ^ChannelHandlerContext x .channel .isWritable)
+      (do
+        (.writeAndFlush ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x))
+        nil)
+      (.writeAndFlush ^ChannelHandlerContext x msg))))
 
 (defn flush [x]
   (if (instance? Channel x)
@@ -261,7 +271,7 @@
                       " into binary representation"))
                   (close ch)))
           ^ChannelFuture f (write-and-flush ch msg)
-          d (wrap-future f)]
+          d (or (wrap-future f) (d/success-deferred true))]
       (if blocking?
         @d
         d)))
