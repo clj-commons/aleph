@@ -28,13 +28,6 @@
     true
     (catch Throwable _ false)))
 
-;; det-enc is an optional dependency, so check at compile time.
-(def detect-charset-enabled?
-  (try
-    (require 'det-enc.core)
-    true
-    (catch Throwable _ false)))
-
 (defn ^:dynamic parse-transit
   "Resolve and apply Transit's JSON/MessagePack decoding."
   [in type & [opts]]
@@ -55,13 +48,6 @@
   [& args]
   {:pre [json-enabled?]}
   (apply (ns-resolve (symbol "cheshire.core") (symbol "decode-strict")) args))
-
-(defn ^:dynamic detect-bytes-charset
-  "Resolve and apply det-enc detect."
-  [bytes]
-  {:pre [detect-charset-enabled?]}
-  (let [detect (ns-resolve 'det-enc.core 'detect)]
-    (detect bytes)))
 
 ;;;
 
@@ -578,14 +564,14 @@
 (defmethod coerce-response-body :transit+msgpack [req resp]
   (coerce-transit-body req resp :msgpack))
 
-(defmethod coerce-response-body :default
-  [{:keys [as]} {:keys [body] :as resp}]
+(defmethod coerce-response-body :string [{:keys [as]} {:keys [body] :as resp}]
   (let [body-bytes (bs/to-byte-array body)]
-    (let [charset (cond
-                    (string? as) as
-                    detect-charset-enabled? (or (detect-bytes-charset body-bytes) "UTF-8")
-                    :else "UTF-8")]
-      (assoc resp :body (String. ^"[B" body-bytes ^String charset)))))
+    (if (string? as)
+      (assoc resp :body (bs/to-string body-bytes {:charset as}))
+      (assoc resp :body (bs/to-string body-bytes)))))
+
+(defmethod coerce-response-body :default [_ resp]
+  resp)
 
 (defn wrap-output-coercion
   "Middleware converting a response body from a byte-array to a different
