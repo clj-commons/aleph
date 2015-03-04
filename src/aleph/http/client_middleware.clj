@@ -463,12 +463,12 @@
   (if-let [m (re-matches #"\s*(([^/]+)/([^ ;]+))\s*(\s*;.*)?" (str s))]
     {:content-type (keyword (nth m 1))
      :content-type-params
-                   (->> (str/split (str (nth m 4)) #"\s*;\s*")
-                        (identity)
-                        (remove str/blank?)
-                        (map #(str/split % #"="))
-                        (mapcat (fn [[k v]] [(keyword (str/lower-case k)) (str/trim v)]))
-                        (apply hash-map))}))
+     (->> (str/split (str (nth m 4)) #"\s*;\s*")
+       (identity)
+       (remove str/blank?)
+       (map #(str/split % #"="))
+       (mapcat (fn [[k v]] [(keyword (str/lower-case k)) (str/trim v)]))
+       (apply hash-map))}))
 
 ;; Multimethods for coercing body type to the :as key
 (defmulti coerce-response-body (fn [req _] (:as req)))
@@ -480,13 +480,13 @@
   (let [body (:body resp)]
     (cond (instance? InputStream body) resp
           ;; This shouldn't happen, but we plan for it anyway
-          (instance? (Class/forName "[B") body)
-          (assoc resp :body (bs/to-input-stream body)))))
+      (instance? (Class/forName "[B") body)
+      (assoc resp :body (bs/to-input-stream body)))))
 
 (defn coerce-json-body
   [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
   (let [^String charset (or charset (-> resp :content-type-params :charset)
-                            "UTF-8")
+                          "UTF-8")
         body (bs/to-byte-array body)
         decode-func (if strict? json-decode-strict json-decode)]
     (if json-enabled?
@@ -495,7 +495,7 @@
         (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
 
         (and (unexceptional-status? status)
-             (or (nil? coerce) (= coerce :unexceptional)))
+          (or (nil? coerce) (= coerce :unexceptional)))
         (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
 
         (and (not (unexceptional-status? status)) (= coerce :exceptional))
@@ -541,7 +541,7 @@
 (defmethod coerce-response-body :auto [request resp]
   (let [header (get-in resp [:headers "content-type"])]
     (->> (merge resp (parse-content-type header))
-         (coerce-content-type request))))
+      (coerce-content-type request))))
 
 (defmethod coerce-response-body :json [req resp]
   (coerce-json-body req resp true false))
@@ -581,9 +581,9 @@
   [client]
   (fn [req]
     (d/let-flow [{:keys [body] :as resp} (client req)]
-                (if body
-                  (coerce-response-body req resp)
-                  resp))))
+      (if body
+        (coerce-response-body req resp)
+        resp))))
 
 (def default-middleware
   "The default list of middleware clj-http uses for wrapping requests."
