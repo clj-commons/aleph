@@ -264,14 +264,10 @@
   ([method url]
     (req method url nil))
   ([method url options]
-    (let [req (assoc options
-                :request-method method
-                :url url)]
-      (request
-        (merge
-          {:url url
-           :request-method method}
-          options)))))
+     (request
+       (assoc options
+         :request-method method
+         :url url))))
 
 (def ^:private arglists
   '[[url]
