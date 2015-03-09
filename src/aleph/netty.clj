@@ -239,7 +239,7 @@
       (do
         (-> ch .config (.setAutoRead false))
         #_(prn 'backpressure)
-        (d/chain d
+        (d/chain' d
           (fn [result]
             (when-not result
               (.close ch))
@@ -451,7 +451,7 @@
                 (.connect b remote-address local-address)
                 (.connect b remote-address))]
 
-        (d/chain (wrap-future f)
+        (d/chain' (wrap-future f)
           (fn [_]
             (let [ch (.channel ^ChannelFuture f)]
               ch)))))))

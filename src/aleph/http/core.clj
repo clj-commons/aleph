@@ -339,7 +339,9 @@
         (-> f
           (d/chain'
             (fn [^ChannelFuture f]
-              (.addListener f ChannelFutureListener/CLOSE)))
-          (d/catch Throwable #(log/error % "err"))))
+              (if f
+                (.addListener f ChannelFutureListener/CLOSE)
+                (netty/close ch))))
+          (d/catch (fn [_]))))
 
       f)))

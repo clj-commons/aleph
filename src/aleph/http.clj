@@ -47,7 +47,7 @@
   [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
         ssl? (= "https" scheme)]
-    (d/chain
+    (d/chain'
       (client/http-connection
         (InetSocketAddress.
           (.getHost uri)
@@ -123,7 +123,7 @@
                               (deliver c conn)
                               [conn]))
                 :destroy (fn [_ c]
-                           (d/chain c
+                           (d/chain' c
                              first
                              client/close-connection))
                 :controller (Pools/utilizationController
@@ -200,7 +200,7 @@
            (-> (when-not (realized? rsp)
                  (flow/acquire pool k))
              (maybe-timeout! pool-timeout)
-             (d/chain
+             (d/chain'
                (fn [conn]
 
                  ;; get the wrapper for the connection, which may or may not be realized yet
@@ -215,7 +215,7 @@
                        (d/error-deferred e)))
 
                    ;; actually make the request now
-                   (d/chain
+                   (d/chain'
 
                      (fn [conn']
 
@@ -242,11 +242,11 @@
                                  (d/error-deferred e)))
 
                             ;; clean up the response
-                             (d/chain
+                             (d/chain'
                                (fn [rsp]
 
                                 ;; only release the connection back once the response is complete
-                                 (d/chain (:aleph/complete rsp)
+                                 (d/chain' (:aleph/complete rsp)
                                    (fn [_]
                                      (flow/release pool k conn)))
                                  (-> rsp

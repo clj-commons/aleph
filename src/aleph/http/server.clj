@@ -450,7 +450,7 @@
         in (s/stream 16)]
 
     (s/on-drained in
-      #(d/chain (.close handshaker ch (CloseWebSocketFrame.))
+      #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))
          netty/wrap-future
          (fn [_] (.close ch))))
 
