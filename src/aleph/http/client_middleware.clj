@@ -7,10 +7,47 @@
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [byte-streams :as bs]
+    [clojure.edn :as edn])
   (:import
     [java.io InputStream]
     [java.net URL URLEncoder UnknownHostException]))
+
+;; Cheshire is an optional dependency, so we check for it at compile time.
+(def json-enabled?
+  (try
+    (require 'cheshire.core)
+    true
+    (catch Throwable _ false)))
+
+;; Transit is an optional dependency, so check at compile time.
+(def transit-enabled?
+  (try
+    (require 'cognitect.transit)
+    true
+    (catch Throwable _ false)))
+
+(defn ^:dynamic parse-transit
+  "Resolve and apply Transit's JSON/MessagePack decoding."
+  [in type & [opts]]
+  {:pre [transit-enabled?]}
+  (let [reader (ns-resolve 'cognitect.transit 'reader)
+        read (ns-resolve 'cognitect.transit 'read)]
+    (read (reader in type opts))))
+
+(defn ^:dynamic json-decode
+  "Resolve and apply cheshire's json decoding dynamically."
+  [& args]
+  {:pre [json-enabled?]}
+  (apply (ns-resolve (symbol "cheshire.core") (symbol "decode")) args))
+
+(defn ^:dynamic json-decode-strict
+  "Resolve and apply cheshire's json decoding dynamically (with lazy parsing
+  disabled)."
+  [& args]
+  {:pre [json-enabled?]}
+  (apply (ns-resolve (symbol "cheshire.core") (symbol "decode-strict")) args))
 
 ;;;
 
@@ -420,6 +457,134 @@
       (-> (client req)
         (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
+(defn parse-content-type
+  "Parse `s` as an RFC 2616 media type."
+  [s]
+  (if-let [m (re-matches #"\s*(([^/]+)/([^ ;]+))\s*(\s*;.*)?" (str s))]
+    {:content-type (keyword (nth m 1))
+     :content-type-params
+     (->> (str/split (str (nth m 4)) #"\s*;\s*")
+       (identity)
+       (remove str/blank?)
+       (map #(str/split % #"="))
+       (mapcat (fn [[k v]] [(keyword (str/lower-case k)) (str/trim v)]))
+       (apply hash-map))}))
+
+;; Multimethods for coercing body type to the :as key
+(defmulti coerce-response-body (fn [req _] (:as req)))
+
+(defmethod coerce-response-body :byte-array [_ resp]
+  (assoc resp :body (bs/to-byte-array (:body resp))))
+
+(defmethod coerce-response-body :stream [_ resp]
+  (let [body (:body resp)]
+    (cond (instance? InputStream body) resp
+          ;; This shouldn't happen, but we plan for it anyway
+      (instance? (Class/forName "[B") body)
+      (assoc resp :body (bs/to-input-stream body)))))
+
+(defn coerce-json-body
+  [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
+  (let [^String charset (or charset (-> resp :content-type-params :charset)
+                          "UTF-8")
+        body (bs/to-byte-array body)
+        decode-func (if strict? json-decode-strict json-decode)]
+    (if json-enabled?
+      (cond
+        (= coerce :always)
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        (and (unexceptional-status? status)
+          (or (nil? coerce) (= coerce :unexceptional)))
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        (and (not (unexceptional-status? status)) (= coerce :exceptional))
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        :else (assoc resp :body (String. ^"[B" body charset)))
+      (assoc resp :body (String. ^"[B" body charset)))))
+
+(defn coerce-clojure-body
+  [request {:keys [body] :as resp}]
+  (let [^String charset (or (-> resp :content-type-params :charset) "UTF-8")
+        body (bs/to-byte-array body)]
+    (assoc resp :body (edn/read-string (String. ^"[B" body charset)))))
+
+(defn coerce-transit-body
+  [{:keys [transit-opts] :as request} {:keys [body] :as resp} type]
+  (if transit-enabled?
+    (assoc resp :body (parse-transit body type transit-opts))
+    resp))
+
+(defmulti coerce-content-type (fn [req resp] (:content-type resp)))
+
+(defmethod coerce-content-type :application/clojure [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-content-type :application/edn [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-content-type :application/json [req resp]
+  (coerce-json-body req resp true false))
+
+(defmethod coerce-content-type :application/transit+json [req resp]
+  (coerce-transit-body req resp :json))
+
+(defmethod coerce-content-type :application/transit+msgpack [req resp]
+  (coerce-transit-body req resp :msgpack))
+
+(defmethod coerce-content-type :default [req resp]
+  (if-let [charset (-> resp :content-type-params :charset)]
+    (coerce-response-body {:as charset} resp)
+    (coerce-response-body {:as :default} resp)))
+
+(defmethod coerce-response-body :auto [request resp]
+  (let [header (get-in resp [:headers "content-type"])]
+    (->> (merge resp (parse-content-type header))
+      (coerce-content-type request))))
+
+(defmethod coerce-response-body :json [req resp]
+  (coerce-json-body req resp true false))
+
+(defmethod coerce-response-body :json-strict [req resp]
+  (coerce-json-body req resp true true))
+
+(defmethod coerce-response-body :json-strict-string-keys [req resp]
+  (coerce-json-body req resp false true))
+
+(defmethod coerce-response-body :json-string-keys [req resp]
+  (coerce-json-body req resp false false))
+
+(defmethod coerce-response-body :clojure [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-response-body :transit+json [req resp]
+  (coerce-transit-body req resp :json))
+
+(defmethod coerce-response-body :transit+msgpack [req resp]
+  (coerce-transit-body req resp :msgpack))
+
+(defmethod coerce-response-body :string [{:keys [as]} {:keys [body] :as resp}]
+  (let [body-bytes (bs/to-byte-array body)]
+    (if (string? as)
+      (assoc resp :body (bs/to-string body-bytes {:charset as}))
+      (assoc resp :body (bs/to-string body-bytes)))))
+
+(defmethod coerce-response-body :default [_ resp]
+  resp)
+
+(defn wrap-output-coercion
+  "Middleware converting a response body from a byte-array to a different
+  object. Defaults to a String if no :as key is specified, the
+  `coerce-response-body` multimethod may be extended to add
+  additional coercions."
+  [client]
+  (fn [req]
+    (d/let-flow [{:keys [body] :as resp} (client req)]
+      (if body
+        (coerce-response-body req resp)
+        resp))))
+
 (def default-middleware
   "The default list of middleware clj-http uses for wrapping requests."
   [wrap-request-timing
@@ -435,7 +600,8 @@
    wrap-form-params
    wrap-nested-params
    wrap-method
-   wrap-unknown-host])
+   wrap-unknown-host
+   wrap-output-coercion])
 
 (defn wrap-request
   "Returns a batteries-included HTTP request function corresponding to the given
