@@ -92,6 +92,10 @@ Where incoming packets will have a `:message` that is a byte-array, which can be
 
 To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.udp.html).
 
+### Mailing list 
+
+The best place to ask questions about aleph (or manifold) is [the aleph mailing list](http://groups.google.com/group/aleph-lib).
+
 ### license
 
 Copyright © 2014 Zachary Tellman
