@@ -76,12 +76,14 @@
   [response-stream buffer-capacity]
   (let [stream (atom nil)
         previous-response (atom nil)
+        complete (atom nil)
 
         handle-response
-        (fn [response body]
+        (fn [response complete body]
           (s/put! response-stream
             (http/netty-response->ring-response
               response
+              complete
               body)))]
 
     (netty/channel-handler
@@ -103,14 +105,18 @@
           (instance? HttpResponse msg)
           (let [rsp msg]
 
-            (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)]
+            (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)
+                  c (d/deferred)]
               (reset! stream s)
-              (handle-response rsp s)))
+              (reset! complete c)
+              (s/on-closed s #(d/success! c true))
+              (handle-response rsp c s)))
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
             (netty/put! (.channel ctx) @stream content)
             (when (instance? LastHttpContent msg)
+              (d/success! @complete false)
               (s/close! @stream))))))))
 
 (defn client-handler
@@ -119,10 +125,12 @@
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
         stream (atom nil)
-        handle-response (fn [rsp body]
+        complete (atom nil)
+        handle-response (fn [rsp complete body]
                           (s/put! response-stream
                             (http/netty-response->ring-response
                               rsp
+                              complete
                               body)))]
 
     (netty/channel-handler
@@ -148,9 +156,12 @@
           (let [rsp msg]
 
             (if (HttpHeaders/isTransferEncodingChunked rsp)
-              (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
+              (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)
+                    c (d/deferred)]
                 (reset! stream s)
-                (handle-response rsp s))
+                (reset! complete c)
+                (s/on-closed s #(d/success! c true))
+                (handle-response rsp c s))
               (reset! response rsp)))
 
           (instance? HttpContent msg)
@@ -163,13 +174,14 @@
                   (do
                     (s/put! s (netty/buf->array content))
                     (netty/release content)
+                    (d/success! @complete false)
                     (s/close! s))
 
                   (let [bufs (conj @buffer content)
                         bytes (netty/bufs->array bufs)]
                     (doseq [b bufs]
                       (netty/release b))
-                    (handle-response @response bytes)))
+                    (handle-response @response (d/success-deferred false) bytes)))
 
                 (.set buffer-size 0)
                 (reset! stream nil)
@@ -193,6 +205,7 @@
                      ;; buffer size exceeded, flush it as a stream
                     (when (< buffer-capacity size)
                       (let [bufs @buffer
+                            c (d/deferred)
                             s (doto (s/buffered-stream #(alength ^bytes %) 16384)
                                 (s/put! (netty/bufs->array bufs)))]
 
@@ -201,8 +214,11 @@
 
                         (reset! buffer [])
                         (reset! stream s)
+                        (reset! complete c)
 
-                        (handle-response @response s)))))))))))))
+                        (s/on-closed s #(d/success! c true))
+
+                        (handle-response @response c s)))))))))))))
 
 (defn pipeline-builder
   [response-stream
@@ -322,14 +338,7 @@
                           (assoc rsp
                             :body
                             (bs/to-input-stream body
-                              {:buffer-size response-buffer-size})
-
-                            :aleph/complete
-                            (if (s/stream? body)
-                              (let [d (d/deferred)]
-                                (s/on-closed body #(d/success! d true))
-                                d)
-                              true)))))))))))))))
+                              {:buffer-size response-buffer-size})))))))))))))))
 
 ;;;
 

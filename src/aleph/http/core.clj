@@ -200,10 +200,11 @@
   :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
   :body body)
 
-(p/def-derived-map NettyResponse [^HttpResponse rsp body]
+(p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
   :status (-> rsp .getStatus .code)
   :keep-alive? (HttpHeaders/isKeepAlive rsp)
   :headers (-> rsp .headers headers->map)
+  :aleph/complete complete
   :body body)
 
 (defn netty-request->ring-request [^HttpRequest req ssl? ch body]
@@ -214,8 +215,8 @@
     (AtomicBoolean. false)
     (-> req .getUri (.indexOf (int 63))) body))
 
-(defn netty-response->ring-response [rsp body]
-  (->NettyResponse rsp body))
+(defn netty-response->ring-response [rsp complete body]
+  (->NettyResponse rsp complete body))
 
 ;;;
 

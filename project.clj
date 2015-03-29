@@ -27,5 +27,10 @@
   :test-selectors {:default (complement :benchmark)
                    :benchmark :benchmark
                    :all (constantly true)}
-  :jvm-opts ^:replace ["-server" "-XX:+UseConcMarkSweepGC" "-Xmx4g"]
+  :jvm-opts ^:replace ["-server"
+                       "-XX:+UseConcMarkSweepGC"
+                       "-Xmx4g"
+                       #_"-XX:+PrintCompilation"
+                       #_"-XX:+UnlockDiagnosticVMOptions"
+                       #_"-XX:+PrintInlining"]
   :global-vars {*warn-on-reflection* true})

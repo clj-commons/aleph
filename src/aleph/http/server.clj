@@ -204,7 +204,82 @@
               req
               @previous-response
               body
-              (HttpHeaders/isKeepAlive req))))]
+              (HttpHeaders/isKeepAlive req))))
+
+        process-request
+        (fn [ctx req]
+          (when (HttpHeaders/is100ContinueExpected req)
+            (netty/write-and-flush ctx
+              (DefaultFullHttpResponse.
+                HttpVersion/HTTP_1_1
+                HttpResponseStatus/CONTINUE)))
+
+          (if (HttpHeaders/isTransferEncodingChunked req)
+            (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
+              (reset! stream s)
+              (handle-request ctx req s))
+            (reset! request req)))
+
+        process-last-content
+        (fn [ctx ^HttpContent msg]
+          (let [content (.content msg)]
+            (if-let [s @stream]
+
+              (do
+                (s/put! s (netty/buf->array content))
+                (netty/release content)
+                (s/close! s))
+
+              (if (and (zero? (.get buffer-size))
+                    (zero? (.readableBytes content)))
+
+                ;; there was never any body
+                (do
+                  (netty/release content)
+                  (handle-request ctx @request nil))
+
+                (let [bufs (conj @buffer content)
+                      bytes (netty/bufs->array bufs)]
+                  (doseq [b bufs]
+                    (netty/release b))
+                  (handle-request ctx @request bytes))))
+
+            (.set buffer-size 0)
+            (reset! stream nil)
+            (reset! buffer [])
+            (reset! request nil)))
+
+        process-content
+        (fn [ctx ^HttpContent msg]
+          (let [content (.content msg)]
+            (if-let [s @stream]
+
+              ;; already have a stream going
+              (do
+                (netty/put! (netty/channel ctx) s (netty/buf->array content))
+                (netty/release content))
+
+              (let [len (.readableBytes ^ByteBuf content)]
+
+                (when-not (zero? len)
+                  (swap! buffer conj content))
+
+                (let [size (.addAndGet buffer-size len)]
+
+                  ;; buffer size exceeded, flush it as a stream
+                  (when (< buffer-capacity size)
+                    (let [bufs @buffer
+                          s (doto (s/buffered-stream #(alength ^bytes %) buffer-capacity)
+                              (s/put! (netty/bufs->array bufs)))]
+
+                      (doseq [b bufs]
+                        (netty/release b))
+
+                      (reset! buffer [])
+                      (reset! stream s)
+
+                      (handle-request ctx @request s))))))))]
+
     (netty/channel-handler
 
       :exception-caught
@@ -224,78 +299,12 @@
         (cond
 
           (instance? HttpRequest msg)
-          (let [req msg]
-
-            (when (HttpHeaders/is100ContinueExpected req)
-              (.writeAndFlush ctx
-                (DefaultFullHttpResponse.
-                  HttpVersion/HTTP_1_1
-                  HttpResponseStatus/CONTINUE)))
-
-            (if (HttpHeaders/isTransferEncodingChunked req)
-              (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
-                (reset! stream s)
-                (handle-request ctx req s))
-              (reset! request req)))
+          (process-request ctx msg)
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
-            (if (instance? LastHttpContent msg)
-              (do
-
-                (if-let [s @stream]
-
-                  (do
-                    (s/put! s (netty/buf->array content))
-                    (netty/release content)
-                    (s/close! s))
-
-                  (if (and (zero? (.get buffer-size))
-                        (zero? (.readableBytes content)))
-
-                     ;; there was never any body
-                    (do
-                      (netty/release content)
-                      (handle-request ctx @request nil))
-
-                    (let [bufs (conj @buffer content)
-                          bytes (netty/bufs->array bufs)]
-                      (doseq [b bufs]
-                        (netty/release b))
-                      (handle-request ctx @request bytes))))
-
-                (.set buffer-size 0)
-                (reset! stream nil)
-                (reset! buffer [])
-                (reset! request nil))
-
-              (if-let [s @stream]
-
-                 ;; already have a stream going
-                (do
-                  (netty/put! (.channel ctx) s (netty/buf->array content))
-                  (netty/release content))
-
-                (let [len (.readableBytes ^ByteBuf content)]
-
-                  (when-not (zero? len)
-                    (swap! buffer conj content))
-
-                  (let [size (.addAndGet buffer-size len)]
-
-                     ;; buffer size exceeded, flush it as a stream
-                    (when (< buffer-capacity size)
-                      (let [bufs @buffer
-                            s (doto (s/buffered-stream #(alength ^bytes %) buffer-capacity)
-                                (s/put! (netty/bufs->array bufs)))]
-
-                        (doseq [b bufs]
-                          (netty/release b))
-
-                        (reset! buffer [])
-                        (reset! stream s)
-
-                        (handle-request ctx @request s)))))))))))))
+          (if (instance? LastHttpContent msg)
+            (process-last-content ctx msg)
+            (process-content ctx msg)))))))
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]

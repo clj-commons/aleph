@@ -187,6 +187,7 @@
              follow-redirects?]
       :or {pool default-connection-pool
            middleware identity
+           connection-timeout 6e4 ;; 60 seconds
            follow-redirects? true}
       :as req}]
 
@@ -247,8 +248,10 @@
 
                                 ;; only release the connection back once the response is complete
                                  (d/chain' (:aleph/complete rsp)
-                                   (fn [_]
-                                     (flow/release pool k conn)))
+                                   (fn [early?]
+                                     (if early?
+                                       (flow/dispose pool k conn)
+                                       (flow/release pool k conn))))
                                  (-> rsp
                                    (dissoc :aleph/complete)
                                    (assoc :connection-time (- end start)))))))))
