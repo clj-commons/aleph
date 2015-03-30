@@ -1,4 +1,4 @@
-(ns aleph.examples.http
+(ns aleph.examples.websocket
   (:require
     [compojure.core :as compojure :refer [GET]]
     [ring.middleware.params :as params]
@@ -104,7 +104,7 @@
   (->> conn
     (s/transform (take 10))
     s/stream->seq
-    doall)) ;=> ("0" "1" "2" "3" "4" "5" "6" "7" "8" "9")
+    doall))    ;=> ("0" "1" "2" "3" "4" "5" "6" "7" "8" "9")
 
 ;; Here we create two clients, and have them speak to each other
 (let [conn1 @(http/websocket-client "ws://localhost:10000/chat")

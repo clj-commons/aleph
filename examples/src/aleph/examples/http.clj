@@ -126,13 +126,13 @@
 ;; and coerce it to a string using `byte-strings/to-string`.
 (-> @(http/get "http://localhost:10000/hello")
   :body
-  bs/to-string) ;=> "hello world!"
+  bs/to-string)   ;=> "hello world!"
 
 ;; And we do the same exact thing for the `delayed_hello` endpoint, which returns an identical
 ;; result after a second's pause.
 (-> @(http/get "http://localhost:10000/delayed_hello")
   :body
-  bs/to-string) ;=> (beat) "hello world!"
+  bs/to-string)   ;=> (beat) "hello world!"
 
 ;; Instead of dereferencing the response, we can use `manifold.deferred/chain` to compose
 ;; operations over it. Here we dereference the final result so that we don't close the server
@@ -149,7 +149,7 @@
   :body
   bs/to-line-seq
   (map #(Integer/parseInt %))
-  doall) ;=> (0 1 2 3 4 5 6 7 8 9)
+  doall)   ;=> (0 1 2 3 4 5 6 7 8 9)
 
 ;; By default, the `:body` of any response is a `java.io.InputStream`.  However, this means
 ;; that our consumption of the body needs to be synchronous, as shown above by coercing it
