@@ -57,7 +57,7 @@ This takes all messages from the client, and feeds them back into the duplex soc
 
 WebSocket clients can be created via `(aleph.http/websocket-client url)`, which returns a deferred which yields a duplex stream that can send and receive messages from the server.
 
-To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.http.html).
+To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.websocket).
 
 ### TCP
 
