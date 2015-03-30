@@ -151,4 +151,31 @@
   (map #(Integer/parseInt %))
   doall) ;=> (0 1 2 3 4 5 6 7 8 9)
 
+;; By default, the `:body` of any response is a `java.io.InputStream`.  However, this means
+;; that our consumption of the body needs to be synchronous, as shown above by coercing it
+;; to a Clojure seq.  If we want to have the body be asynchronous, we need to specify
+;; `:raw-stream?` to be `true`.
+@(d/chain
+   (http/get "http://localhost:10000/numbers"
+     {:query-params {:count 10}
+      :raw-stream? true})
+   :body
+   #(s/map bs/to-byte-array %)
+   #(s/reduce conj [] %)
+   bs/to-string)
+
+;; In the above example, we coerce a stream of Netty `ByteBuf` objects into a stream of `byte[]`
+;; before asynchronously accumulating them and coercing the entire collection into a `String`
+;; once the stream is exhausted.
+;;
+;; This is a useful indirection, since `ByteBuf` objects are
+;; [reference counted](http://netty.io/wiki/reference-counted-objects.html), and generally
+;; add a lot of complexity to the code in all but the simplest use cases.  Coercing the `ByteBuf`
+;; objects to any other form (`byte[]`, `String`, etc.) will copy the bytes and decrement
+;; the ref-count, which is almost always what's wanted.
+;;
+;; However, if we're simply forwarding the bytes to another network socket, or want to minimize
+;; memory copies at all costs, leaving the `ByteBuf` objects in their native form is the way to
+;; go.
+
 (.close s)
