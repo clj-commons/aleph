@@ -2866,7 +2866,7 @@ net.brehaut.ClojureTools = (function (SH) {
   };
 })(SyntaxHighlighter);
 </script><title>aleph.examples -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name">aleph.examples</h1><h2 class="project-version">0.4.0-SNAPSHOT</h2><br />
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">aleph</td><td class="dotted"><hr /></td><td class="dep-version">0.4.0-SNAPSHOT</td></tr><tr><td class="dep-name">manifold</td><td class="dotted"><hr /></td><td class="dep-version">0.1.0-SNAPSHOT</td></tr><tr><td class="dep-name">gloss</td><td class="dotted"><hr /></td><td class="dep-version">0.2.4</td></tr><tr><td class="dep-name">compojure</td><td class="dotted"><hr /></td><td class="dep-version">1.3.1</td></tr><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.7.0-alpha5</td></tr><tr><td class="dep-name">org.clojure/core.async</td><td class="dotted"><hr /></td><td class="dep-version">0.1.346.0-17112a-alpha</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#aleph.examples.http">aleph.examples.http</a></li><li><a href="#aleph.examples.tcp">aleph.examples.tcp</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.http" name="aleph.examples.http"><h1 class="project-name">aleph.examples.http</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">aleph</td><td class="dotted"><hr /></td><td class="dep-version">0.4.0-SNAPSHOT</td></tr><tr><td class="dep-name">manifold</td><td class="dotted"><hr /></td><td class="dep-version">0.1.0-SNAPSHOT</td></tr><tr><td class="dep-name">gloss</td><td class="dotted"><hr /></td><td class="dep-version">0.2.4</td></tr><tr><td class="dep-name">compojure</td><td class="dotted"><hr /></td><td class="dep-version">1.3.1</td></tr><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.7.0-alpha5</td></tr><tr><td class="dep-name">org.clojure/core.async</td><td class="dotted"><hr /></td><td class="dep-version">0.1.346.0-17112a-alpha</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#aleph.examples.http">aleph.examples.http</a></li><li><a href="#aleph.examples.http">aleph.examples.http</a></li><li><a href="#aleph.examples.tcp">aleph.examples.tcp</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.http" name="aleph.examples.http"><h1 class="project-name">aleph.examples.http</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns aleph.examples.http
   (:require
     [compojure.core :as compojure :refer [GET]]
@@ -2995,7 +2995,138 @@ strings via <code>byte-streams/to-line-seq</code>.</p>
   bs/to-line-seq
   (map #(Integer/parseInt %))
   doall) ;=&gt; (0 1 2 3 4 5 6 7 8 9)</pre></td></tr><tr><td class="docs"><p>=> (0 1 2 3 4 5 6 7 8 9)</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>By default, the <code>:body</code> of any response is a <code>java.io.InputStream</code>.  However, this means
+that our consumption of the body needs to be synchronous, as shown above by coercing it
+to a Clojure seq.  If we want to have the body be asynchronous, we need to specify
+<code>:raw-stream?</code> to be <code>true</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">@(d/chain
+   (http/get &quot;http://localhost:10000/numbers&quot;
+     {:query-params {:count 10}
+      :raw-stream? true})
+   :body
+   #(s/map bs/to-byte-array %)
+   #(s/reduce conj [] %)
+   bs/to-string)</pre></td></tr><tr><td class="docs"><p>In the above example, we coerce a stream of Netty <code>ByteBuf</code> objects into a stream of <code>byte[]</code>
+before asynchronously accumulating them and coercing the entire collection into a <code>String</code>
+once the stream is exhausted.</p>
+
+<p>This is a useful indirection, since <code>ByteBuf</code> objects are
+<a href="http://netty.io/wiki/reference-counted-objects.html">reference counted</a>, and generally
+add a lot of complexity to the code in all but the simplest use cases.  Coercing the <code>ByteBuf</code>
+objects to any other form (<code>byte[]</code>, <code>String</code>, etc.) will copy the bytes and decrement
+the ref-count, which is almost always what's wanted.</p>
+
+<p>However, if we're simply forwarding the bytes to another network socket, or want to minimize
+memory copies at all costs, leaving the <code>ByteBuf</code> objects in their native form is the way to
+go.</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(.close s)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.http" name="aleph.examples.http"><h1 class="project-name">aleph.examples.http</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ns aleph.examples.http
+  (:require
+    [compojure.core :as compojure :refer [GET]]
+    [ring.middleware.params :as params]
+    [compojure.route :as route]
+    [aleph.http :as http]
+    [byte-streams :as bs]
+    [manifold.stream :as s]
+    [manifold.deferred :as d]
+    [manifold.bus :as bus]
+    [clojure.core.async :as a]))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(def non-websocket-request
+  {:status 400
+   :headers {&quot;content-type&quot; &quot;application/text&quot;}
+   :body &quot;Expected a websocket request.&quot;})</pre></td></tr><tr><td class="docs"><p>This handler sets up a websocket connection, and then proceeds to echo back every message
+   it receives from the client.  The value yielded by <code>websocket-connection</code> is a **duplex
+   stream**, which represents communication to and from the client.  Therefore, all we need to
+   do in order to echo the messages is connect the stream to itself.</p>
+
+<p>   Since any request it gets may not be a valid handshake for a websocket request, we need to
+   handle that case appropriately.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn echo-handler
+  [req]
+  (if-let [socket (try
+                    @(http/websocket-connection req)
+                    (catch Exception e
+                      nil))]
+    (s/connect socket socket)
+    non-websocket-request))</pre></td></tr><tr><td class="docs"><p>The previous handler blocks until the websocket handshake completes, which unnecessarily
+   takes up a thread.  This accomplishes the same as above, but asynchronously. </p>
+</td><td class="codes"><pre class="brush: clojure">(defn echo-handler
+  [req]
+  (-&gt; (http/websocket-connection req)
+    (d/chain
+      (fn [socket]
+        (s/connect socket socket)))
+    (d/catch
+      (fn [_]
+        non-websocket-request))))</pre></td></tr><tr><td class="docs"><p>This is another asynchronous handler, but uses <code>let-flow</code> instead of <code>chain</code> to define the
+   handler in a way that at least somewhat resembles the synchronous handler.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn echo-handler
+  [req]
+  (-&gt;
+    (d/let-flow [socket (http/websocket-connection req)]
+      (s/connect socket socket))
+    (d/catch
+      (fn [_]
+        non-websocket-request))))</pre></td></tr><tr><td class="docs"><p>to represent all the different chat rooms, we use an <strong>event bus</strong>, which is simple
+implementation of the publish/subscribe model</p>
+</td><td class="codes"><pre class="brush: clojure">(def chatrooms (bus/event-bus))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn chat-handler
+  [req]
+  (d/let-flow [conn (d/catch
+                      (http/websocket-connection req)
+                      (fn [_] nil))]
+    (if-not conn
+      ;; if it wasn't a valid websocket handshake, return an error
+      non-websocket-request
+      ;; otherwise, take the first two messages, which give us the chatroom and name
+      (d/let-flow [room (s/take! conn)
+                   name (s/take! conn)]
+        ;; take all messages from the chatroom, and feed them to the client
+        (s/connect
+          (bus/subscribe chatrooms room)
+          conn)
+        ;; take all messages from the client, prepend the name, and publish it to the room
+        (s/consume
+          #(bus/publish! chatrooms room %)
+          (-&gt;&gt; conn
+            (s/map #(str name &quot;: &quot; %))
+            (s/buffer 100)))))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(def handler
+  (params/wrap-params
+    (compojure/routes
+      (GET &quot;/echo&quot; [] echo-handler)
+      (GET &quot;/chat&quot; [] chat-handler)
+      (route/not-found &quot;No such page.&quot;))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(def s (http/start-server handler {:port 10000}))</pre></td></tr><tr><td class="docs"><p>Here we <code>put!</code> ten messages to the server, and read them back again</p>
+</td><td class="codes"><pre class="brush: clojure">(let [conn @(http/websocket-client &quot;ws://localhost:10000/echo&quot;)]
+
+  (s/put-all! conn
+    (-&gt;&gt; 10 range (map str)))
+
+  (-&gt;&gt; conn
+    (s/transform (take 10))
+    s/stream-&gt;seq
+    doall)) ;=&gt; (&quot;0&quot; &quot;1&quot; &quot;2&quot; &quot;3&quot; &quot;4&quot; &quot;5&quot; &quot;6&quot; &quot;7&quot; &quot;8&quot; &quot;9&quot;)</pre></td></tr><tr><td class="docs"><p>=> ("0" "1" "2" "3" "4" "5" "6" "7" "8" "9")</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Here we create two clients, and have them speak to each other</p>
+</td><td class="codes"><pre class="brush: clojure">(let [conn1 @(http/websocket-client &quot;ws://localhost:10000/chat&quot;)
+      conn2 @(http/websocket-client &quot;ws://localhost:10000/chat&quot;)
+      ]
+
+  ;; sign our two users in
+  (s/put-all! conn1 [&quot;shoes and ships&quot; &quot;Alice&quot;])
+  (s/put-all! conn2 [&quot;shoes and ships&quot; &quot;Bob&quot;])
+
+  (s/put! conn1 &quot;hello&quot;)
+
+  @(s/take! conn1)   ;=&gt; &quot;Alice: hello&quot;
+  @(s/take! conn2)   ;=&gt; &quot;Alice: hello&quot;
+
+  (s/put! conn2 &quot;hi!&quot;)
+
+  @(s/take! conn1)   ;=&gt; &quot;Bob: hi!&quot;
+  @(s/take! conn2)   ;=&gt; &quot;Bob: hi!&quot;
+  )</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(.close s)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#aleph.examples.tcp" name="aleph.examples.tcp"><h1 class="project-name">aleph.examples.tcp</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns aleph.examples.tcp
   (require
@@ -3141,7 +3272,7 @@ asynchronous values.  It is certainly more concise, but at the cost of being les
 </td><td class="codes"><pre class="brush: clojure">@(s/put! c 1)  ; =&gt; true</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">@(s/take! c)   ; =&gt; 2</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(.close s)</pre></td></tr><tr><td class="docs"><h3>end demonstration</h3>
-</td><td class="codes"></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_aleph.examples.http">aleph.examples.http</li><li class="floating-toc-li" id="floating-toc_aleph.examples.tcp">aleph.examples.tcp</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
+</td><td class="codes"></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_aleph.examples.http">aleph.examples.http</li><li class="floating-toc-li" id="floating-toc_aleph.examples.http">aleph.examples.http</li><li class="floating-toc-li" id="floating-toc_aleph.examples.tcp">aleph.examples.tcp</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 
 // hackity hack
