@@ -1,4 +1,4 @@
-(defproject aleph "0.3.4-SNAPSHOT"
+(defproject aleph "0.4.0-SNAPSHOT"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -8,7 +8,7 @@
                  [io.aleph/dirigiste "0.1.0-alpha8"]
                  [manifold "0.1.0-SNAPSHOT"]
                  [byte-streams "0.2.0-alpha8"]
-                 [potemkin "0.3.11"]]
+                 [potemkin "0.3.12"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha5"]
                                   [criterium "0.4.3"]
                                   [org.clojure/tools.trace "0.7.8"]
