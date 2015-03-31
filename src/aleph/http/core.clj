@@ -1,411 +1,348 @@
-;;   Copyright (c) Zachary Tellman. All rights reserved.
-;;   The use and distribution terms for this software are covered by the
-;;   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
-;;   which can be found in the file epl-v10.html at the root of this distribution.
-;;   By using this software in any fashion, you are agreeing to be bound by
-;;   the terms of this license.
-;;   You must not remove this notice, or any other, from this software.
-
 (ns aleph.http.core
-  (:use
-    [potemkin]
-    [aleph.netty.core :only (rfc-1123-date-string)]
-    [lamina core api executor])
   (:require
-    [aleph.http.options :as options]
-    [aleph.netty.client :as client]
-    [aleph.formats :as formats]
+    [manifold.stream :as s]
+    [manifold.deferred :as d]
     [aleph.netty :as netty]
+    [clojure.tools.logging :as log]
+    [clojure.set :as set]
     [clojure.string :as str]
-    [clojure.tools.logging :as log])
+    [potemkin :as p])
   (:import
-    [java.io
-     RandomAccessFile
-     InputStream
-     File]
-    [org.jboss.netty.handler.codec.http
-     DefaultHttpChunk
-     DefaultHttpResponse
-     DefaultHttpRequest
-     HttpVersion
-     HttpResponseStatus
-     HttpResponse
-     HttpRequest
-     HttpMessage
-     HttpMethod
-     HttpRequest
-     HttpChunk
-     HttpHeaders]
-    [org.jboss.netty.channel
-     Channel]
-    [org.jboss.netty.buffer
-     ChannelBuffers]
+    [io.netty.channel
+     Channel
+     DefaultFileRegion
+     ChannelFuture
+     ChannelFutureListener
+     ChannelHandlerContext]
+    [io.netty.buffer
+     ByteBuf Unpooled]
     [java.nio
      ByteBuffer]
-    [java.nio.channels
-     FileChannel
-     FileChannel$MapMode]
+    [io.netty.handler.codec.http
+     DefaultHttpRequest DefaultLastHttpContent
+     DefaultHttpResponse DefaultFullHttpRequest
+     HttpHeaders DefaultHttpHeaders HttpContent
+     HttpMethod HttpRequest HttpMessage
+     HttpResponse HttpResponseStatus
+     DefaultHttpContent
+     HttpVersion
+     LastHttpContent]
+    [java.io
+     File
+     RandomAccessFile
+     Closeable]
     [java.net
-     URLConnection
-     InetAddress
-     InetSocketAddress]))
+     InetSocketAddress]
+    [java.util
+     Map$Entry]
+    [java.util.concurrent
+     ConcurrentHashMap]
+    [java.util.concurrent.atomic
+     AtomicBoolean]))
 
-(def request-methods [:get :post :put :delete :trace :connect :head :options :patch])
-
-(def netty-method->keyword
-  (zipmap
-    (map #(HttpMethod/valueOf (str/upper-case (name %))) request-methods)
-    request-methods))
-
-(def keyword->netty-method
-  (zipmap
-    (vals netty-method->keyword)
-    (keys netty-method->keyword)))
-
-(defn request-method [^HttpRequest request]
-  (netty-method->keyword (.getMethod request)))
-
-(defn response-code [^HttpResponse response]
-  (-> response .getStatus .getCode))
-
-(defn http-headers [^HttpMessage msg]
-  (let [k (keys (.getHeaders msg))]
+(def non-standard-keys
+  (let [ks ["Content-MD5"
+            "ETag"
+            "WWW-Authenticate"
+            "X-XSS-Protection"
+            "X-WebKit-CSP"
+            "X-UA-Compatible"
+            "X-ATT-DeviceId"
+            "DNT"
+            "P3P"
+            "TE"]]
     (zipmap
-      (map str/lower-case k)
-      (map #(.getHeader msg %) k))))
+      (map str/lower-case ks)
+      (map #(HttpHeaders/newEntity %) ks))))
 
-(defn http-body [^HttpMessage msg]
-  (.getContent msg))
+(def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 
-(defn http-content-type [^HttpMessage msg]
-  (.getHeader msg "Content-Type"))
+(defn normalize-header-key
+  "Normalizes a header key to `Ab-Cd` format."
+  [s]
+  (if-let [s' (.get cached-header-keys s)]
+    s'
+    (let [s' (str/lower-case (name s))
+          s' (or
+               (non-standard-keys s')
+               (->> (str/split s' #"-")
+                 (map str/capitalize)
+                 (str/join "-")
+                 HttpHeaders/newEntity))]
 
-(defn http-character-encoding [^HttpMessage msg]
-  (when-let [content-type (.getHeader msg "Content-Type")]
-    (->> (str/split content-type #"[;=]")
-      (map str/trim)
-      (drop-while #(not= % "charset"))
-      second)))
+      ;; in practice this should never happen, so we
+      ;; can be stupid about cache expiration
+      (when (< 10000 (.size cached-header-keys))
+        (.clear cached-header-keys))
 
-(defn http-content-length [^HttpMessage msg]
-  (when-let [content-length (.getHeader msg "Content-Length")]
-    (try
-      (Integer/parseInt content-length)
-      (catch Exception e
-        (log/error e (str "Error parsing content-length: " content-length))
-        nil))))
+      (.put cached-header-keys s s')
+      s')))
 
-(defn request-uri [^HttpRequest request]
-  (first (str/split (.getUri request) #"[?]")))
+(p/def-map-type HeaderMap
+  [^HttpHeaders headers
+   added
+   removed
+   mta]
+  (meta [_]
+    mta)
+  (with-meta [_ m]
+    (HeaderMap.
+      headers
+      added
+      removed
+      m))
+  (keys [_]
+    (set/difference
+      (set/union
+        (set (map str/lower-case (.names headers)))
+        (set (keys added)))
+      (set removed)))
+  (assoc [_ k v]
+    (HeaderMap.
+      headers
+      (assoc added k v)
+      (disj removed k)
+      mta))
+  (dissoc [_ k]
+    (HeaderMap.
+      headers
+      (dissoc added k)
+      (conj (or removed #{}) k)
+      mta))
+  (get [_ k default-value]
+    (if (contains? removed k)
+      default-value
+      (if-let [e (find added k)]
+        (val e)
+        (let [k' (str/lower-case (name k))]
+          (if-let [v (->> headers
+                       .entries
+                       (reduce
+                         (fn [v ^Map$Entry e]
+                           (if (= k' (str/lower-case (.getKey e)))
+                             (if v
+                               (str v "," (.getValue e))
+                               (.getValue e))
+                             v))
+                         nil))]
+            v
+            default-value))))))
 
-(defn request-query-string [^HttpRequest request]
-  (second (str/split (.getUri request) #"[?]")))
+(defn headers->map [^HttpHeaders h]
+  (HeaderMap. h nil nil nil))
 
-;;;
+(defn map->headers! [^HttpHeaders h m]
+  (doseq [e m]
+    (let [k (normalize-header-key (key e))
+          v (val e)]
+      (if (sequential? v)
+        (.add h ^CharSequence k ^Iterable v)
+        (.add h ^CharSequence k ^Object v)))))
 
-(defn normalize-headers [headers]
-  (zipmap
-    (map
-      #(->> (str/split (name %) #"-")
-         (map str/capitalize)
-         (str/join "-"))
-      (keys headers))
-    (vals headers)))
+(defn ring-response->netty-response [m]
+  (let [status (get m :status 200)
+        headers (get m :headers)
+        rsp (DefaultHttpResponse.
+              HttpVersion/HTTP_1_1
+              (HttpResponseStatus/valueOf status)
+              false)]
+    (when headers
+      (map->headers! (.headers rsp) headers))
+    rsp))
 
-(defn guess-body-format [m]
-  (let [body (:body m)]
-    (when body
-      (cond
-        (string? body)
-        ["text/plain" "utf-8"]
+(defn ring-request->netty-request [m]
+  (let [headers (get m :headers)
+        req (DefaultHttpRequest.
+              HttpVersion/HTTP_1_1
+              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
+              (str (get m :uri)
+                (when-let [q (get m :query-string)]
+                  (str "?" q))))]
+    (when headers
+      (map->headers! (.headers req) headers))
+    req))
 
-        (instance? File body)
-        [(or
-           (URLConnection/guessContentTypeFromName (.getName ^File body))
-           "application/octet-stream")]
+(defn ring-request->full-netty-request [m]
+  (let [headers (get m :headers)
+        req (DefaultFullHttpRequest.
+              HttpVersion/HTTP_1_1
+              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
+              (str (get m :uri)
+                (when-let [q (get m :query-string)]
+                  (str "?" q)))
+              (netty/to-byte-buf (:body m)))]
+    (when headers
+      (map->headers! (.headers req) headers))
+    req))
 
-        (formats/bytes? body)
-        ["application/octet-stream"]))))
-
-(defn normalize-ring-map [m]
-  (let [[type encoding] (guess-body-format m)]
-    (-> m
-      (update-in [:status] #(or % 200))
-      (update-in [:headers] normalize-headers)
-      (update-in [:headers "Connection"]
-        #(or %
-           (if (:keep-alive? m)
-             "keep-alive"
-             "close")))
-      (update-in [:content-type] #(or % type))
-      (update-in [:character-encoding] #(or % encoding))
-      (update-in [:headers "Content-Type"]
-        #(or %
-           (when (:body m)
-             (str
-               (:content-type m)
-               (when-let [charset (:character-encoding m)]
-                 (str "; charset=" charset)))))))))
-
-;;;
-
-(defn decode-body [^String content-type ^String character-encoding body]
-  (when body
-    (let [charset (or character-encoding (options/charset))]
-      (cond
-        (.startsWith content-type "text/")
-        (formats/bytes->string body charset)
-
-        (.startsWith content-type "application/json")
-        (formats/decode-json body)
-
-        (.startsWith content-type "application/xml")
-        (formats/decode-xml body)
-
-        :else
-        body))))
-
-(defn decode-message [{:keys [content-type character-encoding body] :as msg}]
-  (if (channel? body)
-    (run-pipeline (reduce* conj [] body)
-      #(decode-message (assoc msg :body %)))
-    (assoc msg :body (decode-body content-type character-encoding body))))
-
-;;;
-
-(defn expand-writes [f honor-keep-alive? ch]
-  (let [ch* (channel)
-        default-charset (options/charset)]
-
-    (bridge-join ch ch* "aleph.http.core/expand-writes"
-      (fn [m]
-        (let [{:keys [msg chunks write-callback]} (f m)
-              result (enqueue ch* msg)
-              final-stage (fn [_]
-                            (when write-callback
-                              (write-callback))
-                            (if (and honor-keep-alive? (not (:keep-alive? m)))
-                              (close ch*)
-                              true))]
-
-          (if-not chunks
-
-            ;; non-streaming response
-            (run-pipeline result
-              {:error-handler (fn [_])}
-              final-stage)
-
-            ;; streaming response
-            (let [callback #(close chunks)]
-
-              (on-closed ch callback)
-
-              (run-pipeline nil
-                {:error-handler (fn [_])}
-                (fn [_]
-                  (siphon
-                    (map*
-                      #(DefaultHttpChunk.
-                         (formats/bytes->channel-buffer %
-                           (or (:character-encoding m) default-charset)))
-                      chunks)
-                    ch*)
-                  (drained-result chunks))
-                (fn [_]
-                  (cancel-callback ch callback)
-                  (enqueue ch* HttpChunk/LAST_CHUNK))
-                final-stage))))))
-    ch*))
-
-(defn collapse-reads [netty-channel ch]
-  (let [executor (options/executor)
-        ch* (channel)
-        current-stream (atom nil)]
-    (on-closed ch
-      #(when-let [stream @current-stream]
-         (close stream)))
-    (bridge-join ch ch* "aleph.http.core/collapse-reads"
-      (fn [msg]
-        (if (instance? HttpMessage msg)
-
-          ;; headers
-          (if-not (.isChunked ^HttpMessage msg)
-            (enqueue ch* {:msg msg})
-            (let [chunks (netty/wrap-network-channel netty-channel (channel))]
-              (reset! current-stream chunks)
-              (enqueue ch*
-                {:msg msg,
-                 :chunks chunks})))
-
-          ;; chunk
-          (if (.isLast ^HttpChunk msg)
-            (close @current-stream)
-            (enqueue @current-stream msg)))))
-    ch*))
-
-;;;
-
-(def-derived-map RequestMap
-  [^HttpRequest netty-request
-   ^Channel netty-channel
-   headers
+(p/def-derived-map NettyRequest
+  [^HttpRequest req
+   ssl?
+   ^Channel ch
+   ^AtomicBoolean websocket?
+   question-mark-index
    body]
-
-  :scheme :http
-  :keep-alive? (HttpHeaders/isKeepAlive netty-request)
-  :remote-addr (netty/channel-remote-host-address netty-channel)
-  :server-name (netty/channel-local-host-name netty-channel)
-  :server-port (netty/channel-local-port netty-channel)
-  :request-method (request-method netty-request)
-  :headers @headers
-  :content-type (http-content-type netty-request)
-  :character-encoding (http-character-encoding netty-request)
-  :uri (request-uri netty-request)
-  :query-string (request-query-string netty-request)
-  :content-length (http-content-length netty-request)
+  :scheme (if ssl? :https :http)
+  :keep-alive? (HttpHeaders/isKeepAlive req)
+  :request-method (-> req .getMethod .name str/lower-case keyword)
+  :headers (-> req .headers headers->map)
+  :uri (let [idx (long question-mark-index)]
+         (if (neg? idx)
+           (.getUri req)
+           (.substring (.getUri req) 0 idx)))
+  :query-string (let [idx (long question-mark-index)
+                      uri (.getUri req)]
+                  (if (neg? idx)
+                    nil
+                    (.substring uri (unchecked-inc idx))))
+  :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
+  :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
+  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
   :body body)
 
-(defn netty-request->ring-map
-  ([req]
-     (netty-request->ring-map req (netty/current-channel)))
-  ([{netty-request :msg, chunks :chunks} netty-channel]
-     (->RequestMap
-       netty-request
-       netty-channel
-       (delay (http-headers netty-request))
-       (if chunks
-         (map* #(.getContent ^HttpChunk %) chunks)
-         (let [content (.getContent ^HttpMessage netty-request)]
-           (when (pos? (.readableBytes content))
-             content))))))
-
-;;;
-
-(def-derived-map ResponseMap
-  [^HttpRequest netty-response
-   headers
-   body]
-
-  :keep-alive? (HttpHeaders/isKeepAlive netty-response)
-  :headers @headers
-  :character-encoding (http-character-encoding netty-response)
-  :content-type (http-content-type netty-response)
-  :content-length (http-content-length netty-response)
-  :status (response-code netty-response)
+(p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
+  :status (-> rsp .getStatus .code)
+  :keep-alive? (HttpHeaders/isKeepAlive rsp)
+  :headers (-> rsp .headers headers->map)
+  :aleph/complete complete
   :body body)
 
-(defn netty-response->ring-map [{netty-response :msg, chunks :chunks}]
-  (->ResponseMap
-    netty-response
-    (delay (http-headers netty-response))
-    (if chunks
-      (map* #(.getContent ^HttpChunk %) chunks)
-      (let [content (.getContent ^HttpMessage netty-response)]
-        (when (pos? (.readableBytes content))
-          content)))))
+(defn netty-request->ring-request [^HttpRequest req ssl? ch body]
+  (->NettyRequest
+    req
+    ssl?
+    ch
+    (AtomicBoolean. false)
+    (-> req .getUri (.indexOf (int 63))) body))
 
-(defn populate-netty-msg [m ^HttpMessage msg]
-  (let [body (:body m)]
-
-    ;; populate headers
-    (doseq [[k v] (:headers m)]
-      (when v
-        (if (string? v)
-          (.addHeader msg k v)
-          (doseq [x v]
-            (.addHeader msg k x)))))
-
-    ;; populate body
-    (cond
-
-      (channel? body)
-      (do
-        (.setHeader msg "Transfer-Encoding" "chunked")
-        {:msg msg
-         :chunks body})
-
-      (instance? InputStream body)
-      (do
-        (.setHeader msg "Transfer-Encoding" "chunked")
-        {:msg msg
-         :chunks (formats/input-stream->channel body)
-         :write-callback #(.close ^InputStream body)})
-
-      (instance? File body)
-      (let [fc (.getChannel (RandomAccessFile. ^File body "r"))
-            buf (ByteBuffer/allocate (.size fc))]
-        (.read fc buf)
-        (.rewind buf)
-        (.setContent msg (ChannelBuffers/wrappedBuffer buf))
-        (HttpHeaders/setContentLength msg (.size fc))
-        {:msg msg
-         :write-callback #(.close fc)})
-
-      :else
-      (do
-        (when body
-          (let [encode #(formats/bytes->channel-buffer %
-                          (or (:character-encoding m) (options/charset)))
-                body (if (coll? body)
-                       (->> body
-                         (map str)
-                         (map encode)
-                         encode)
-                       (encode body))]
-            (.setContent msg body))
-          (HttpHeaders/setContentLength msg
-           (or (http-content-length msg)
-               (.readableBytes (.getContent msg)))))
-        {:msg msg}))))
-
-(defn valid-ring-response? [rsp]
-  (contains? rsp :status))
-
-(defn ring-map->netty-response [m]
-  (let [m (if-not (valid-ring-response? m)
-            (do
-              (log/error "Invalid HTTP response:" (pr-str m))
-              {:status 500})
-            m)
-        m (normalize-ring-map m)
-        m (update-in m [:body] #(if (nil? %) "" %))
-        response (DefaultHttpResponse.
-                   HttpVersion/HTTP_1_1
-                   (HttpResponseStatus/valueOf (:status m)))]
-    (.setHeader response "Server" "aleph/0.3.0")
-    (.setHeader response "Date" (rfc-1123-date-string))
-    (populate-netty-msg m response)))
-
-(defn elide-port? [m]
-  (let [port (:port m)
-        scheme (:scheme m)]
-    (or
-      (not port)
-      (and (= "http" scheme) (= 80 port))
-      (and (= "https" scheme) (= 443 port)))))
-
-(defn valid-ring-request? [rsp]
-  (contains? rsp :request-method))
-
-(defn ring-map->netty-request [m]
-  (when-not (valid-ring-request? m)
-    (throw (IllegalArgumentException. (str "Invalid HTTP request: " (pr-str m)))))
-  (let [m (normalize-ring-map m)
-        request (DefaultHttpRequest.
-                  HttpVersion/HTTP_1_1
-                  (-> m :request-method keyword->netty-method)
-                  (str
-                    (if (empty? (:uri m))
-                      "/"
-                      (:uri m))
-                    (when-not (empty? (:query-string m))
-                      (str "?" (:query-string m)))))
-        port (:port m)
-        server-name (:server-name m)]
-    (.setHeader request "Host"
-      (str server-name
-        (when-not (elide-port? m)
-          (str ":" port))))
-    (populate-netty-msg m request)))
+(defn netty-response->ring-response [rsp complete body]
+  (->NettyResponse rsp complete body))
 
 ;;;
+
+(def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
+
+(let [ary-class (class (byte-array 0))]
+  (defn coerce-element [ch x]
+    (if (or
+          (instance? String x)
+          (instance? ary-class x)
+          (instance? ByteBuffer x)
+          (instance? ByteBuf x))
+      x
+      (str x))))
+
+(defn send-streaming-body [ch ^HttpMessage msg body]
+
+  (HttpHeaders/setTransferEncodingChunked msg)
+  (netty/write ch msg)
+
+  (if-let [body' (if (sequential? body)
+
+                   (let [buf (netty/allocate ch)
+                         pending? (instance? clojure.lang.IPending body)]
+                     (loop [s (map (partial coerce-element ch) body)]
+                       (cond
+
+                         (and pending? (not (realized? s)))
+                         (do
+                           (netty/write-and-flush ch buf)
+                           s)
+
+                         (empty? s)
+                         (do
+                           (netty/write-and-flush ch buf)
+                           nil)
+
+                         (or (not pending?) (realized? s))
+                         (let [x (first s)]
+                           (netty/append-to-buf! buf x)
+                           (recur (rest s)))
+
+                         :else
+                         (do
+                           (netty/write-and-flush ch buf)
+                           s))))
+
+                   (do
+                     (netty/flush ch)
+                     body))]
+
+    (let [src (if (or (sequential? body') (s/stream? body'))
+                (->> body'
+                  s/->source
+                  (s/map (fn [x]
+                           (try
+                             (netty/to-byte-buf x)
+                             (catch Throwable e
+                               (log/error e "error converting " (.getName (class x)) " to ByteBuf")
+                               (netty/close ch))))))
+                (netty/to-byte-buf-stream body' 8192))
+
+          sink (netty/sink ch false #(DefaultHttpContent. %))]
+
+      (s/connect src sink)
+
+      (let [d (d/deferred)]
+        (s/on-closed sink #(d/success! d true))
+        (d/chain' d
+          (fn [_]
+            (when (instance? Closeable body)
+              (.close ^Closeable body))
+            (netty/write-and-flush ch empty-last-content)))))
+
+    (netty/write-and-flush ch empty-last-content)))
+
+(defn send-file-body [ch ^HttpMessage msg ^File file]
+  (let [raf (RandomAccessFile. file "r")
+        len (.length raf)
+        fc (.getChannel raf)
+        fr (DefaultFileRegion. fc 0 len)]
+    (HttpHeaders/setContentLength msg len)
+    (netty/write ch msg)
+    (netty/write ch fr)
+    (netty/write-and-flush ch empty-last-content)))
+
+(defn send-contiguous-body [ch ^HttpMessage msg body]
+  (let [body (if body
+               (DefaultLastHttpContent. (netty/to-byte-buf ch body))
+               empty-last-content)]
+    (HttpHeaders/setContentLength msg (-> ^HttpContent body .content .readableBytes))
+    (netty/write ch msg)
+    (netty/write-and-flush ch body)))
+
+(let [ary-class (class (byte-array 0))]
+  (defn send-message
+    [ch keep-alive? ^HttpMessage msg body]
+
+    (let [^HttpHeaders headers (.headers msg)
+          f (cond
+
+              (or
+                (nil? body)
+                (instance? String body)
+                (instance? ary-class body)
+                (instance? ByteBuffer body)
+                (instance? ByteBuf body))
+              (send-contiguous-body ch msg body)
+
+              (instance? File body)
+              (send-file-body ch msg body)
+
+              :else
+              (let [class-name (.getName (class body))]
+                (try
+                  (send-streaming-body ch msg body)
+                  (catch Throwable e
+                    (log/error e "error sending body of type " class-name)))))]
+
+      (when-not keep-alive?
+        (-> f
+          (d/chain'
+            (fn [^ChannelFuture f]
+              (if f
+                (.addListener f ChannelFutureListener/CLOSE)
+                (netty/close ch))))
+          (d/catch (fn [_]))))
+
+      f)))

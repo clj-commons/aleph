@@ -1,54 +1,82 @@
-;;   Copyright (c) Zachary Tellman. All rights reserved.
-;;   The use and distribution terms for this software are covered by the
-;;   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
-;;   which can be found in the file epl-v10.html at the root of this distribution.
-;;   By using this software in any fashion, you are agreeing to be bound by
-;;   the terms of this license.
-;;   You must not remove this notice, or any other, from this software.
-
 (ns aleph.udp
   (:require
-    [aleph.netty :as netty])
+    [potemkin :as p]
+    [aleph.netty :as netty]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
-    [org.jboss.netty.handler.codec.serialization
-     ObjectEncoder
-     ObjectDecoder]))
+    [java.net
+     SocketAddress
+     InetSocketAddress]
+    [io.netty.channel
+     ChannelOption]
+    [io.netty.bootstrap
+     Bootstrap]
+    [io.netty.channel.nio
+     NioEventLoopGroup]
+    [io.netty.channel.socket
+     DatagramPacket]
+    [io.netty.channel.socket.nio
+     NioDatagramChannel]))
 
-(defn udp-socket
-  "Returns a result-channel that emits a channel if it successfully opens
-  a UDP socket.  Send messages by enqueuing maps containing:
+(p/def-derived-map UdpPacket [^DatagramPacket packet content]
+  :host (-> packet ^InetSocketAddress (.sender) .getHostName)
+  :port (-> packet ^InetSocketAddress (.sender) .getPort)
+  :message content)
 
-  {:host :port :message}
+(alter-meta! #'->UdpPacket assoc :private true)
 
-  and if bound to a port you can listen by receiving equivalent messages on
-  the channel returned.
+(defn socket
+  "Returns a deferred which yields a duplex stream that can be used to send and receive UDP datagrams.
 
-  Optional parameters include:
-    :frame           ; a Gloss frame for encoding and decoding UDP packets
-    :decoder         ; a Gloss frame for decoding packets - overrides :frame
-    :encoder         ; a Gloss frame for encoding packets - overrides :frame
-    :port <int>      ; to listen on a specific local port and
-    :broadcast? true ; to broadcast from this socket
-    :buf-size <int>  ; to set the receive buffer size
-  "
-  ([]
-     (udp-socket nil))
-  ([options]
-     (let [name (or (:name options) "udp-socket")]
-       (netty/create-udp-socket
-         name
-         (fn [_] (netty/create-netty-pipeline name nil nil))
-         (assoc options :auto-encode? true)))))
+   |:---|:---
+   | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
+   | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `broadcast?` | if true, all UDP datagrams are broadcast.
+   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+  [{:keys [socket-address port broadcast? raw-stream?]}]
+  (let [in (s/stream)
+        d (d/deferred)
+        g (NioEventLoopGroup.)
+        b (doto (Bootstrap.)
+            (.group g)
+            (.channel NioDatagramChannel)
+            (.option ChannelOption/SO_BROADCAST (boolean broadcast?))
+            (.handler
+              (netty/channel-handler
+                :exception-caught
+                ([_ ctx ex]
+                  (when-not (d/error! d ex)
+                    (log/warn ex "error in UDP socket")))
 
-(defn udp-object-socket
-  ([]
-     (udp-object-socket nil))
-  ([options]
-     (let [name (or (:name options) "udp-object-socket")]
-       (netty/create-udp-socket
-         name
-         (fn [_]
-           (netty/create-netty-pipeline name false nil
-             :encoder (ObjectEncoder.)
-             :decoder (ObjectDecoder.)))
-         (assoc options :auto-encode? false)))))
+                :channel-active
+                ([_ ctx]
+                  (let [ch (.channel ctx)
+                        out (netty/sink ch true
+                              (fn [msg]
+                                (let [{:keys [host port message socket-address]} msg]
+                                  (DatagramPacket.
+                                    (netty/to-byte-buf message)
+                                    (or socket-address
+                                      (InetSocketAddress. ^String host (int port)))))))
+                        in (s/map
+                             (fn [^DatagramPacket packet]
+                               (->UdpPacket
+                                 packet
+                                 (if raw-stream?
+                                   (.content packet)
+                                   (netty/release-buf->array (.content packet)))))
+                             in)]
+                    (d/success! d
+                      (s/splice out in))))
+
+                :channel-read
+                ([_ ctx msg]
+                  (netty/put! (.channel ctx) in msg)))))
+        socket-address (or socket-address (InetSocketAddress. (or port 0)))]
+    (try
+      (-> b (.bind ^SocketAddress socket-address))
+      d
+      (catch Throwable e
+        (d/error-deferred e)))))

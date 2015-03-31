@@ -2,30 +2,35 @@
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
-  :license {:name "Eclipse Public License - v 1.0"
-            :url "http://www.eclipse.org/legal/epl-v10.html"
-            :distribution :repo}
-  :dependencies [[org.clojure/tools.logging "0.3.0"]
-                 [org.clojure/data.xml "0.0.7"]
-                 [io.netty/netty "3.9.0.Final"]
-                 [lamina "0.5.2"]
-                 [gloss "0.2.2"]
-                 [potemkin "0.3.4"]
-                 [cheshire "5.3.1"]
-                 [commons-codec/commons-codec "1.9"]
-                 [org.apache.commons/commons-compress "1.8.1"]]
-  :exclusions [org.clojure/contrib
-               org.clojure/clojure-contrib]
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.4.0"]
-                                  [criterium "0.4.3"]]}
-             :1.3 {:dependencies [[org.clojure/clojure "1.3.0"]]}
-             :1.5 {:dependencies [[org.clojure/clojure "1.5.1"]]}
-             :1.6 {:dependencies [[org.clojure/clojure "1.6.0-master-SNAPSHOT"]]}}
-  :aliases {"all" ["with-profile" "1.3,dev:dev:1.5,dev:1.6,dev"]}
-  :plugins [[codox "0.6.2"]]
-  :test-selectors {:default #(not (some #{:benchmark :redis} (cons (:tag %) (keys %))))
-                   :integration :redis
+  :license {:name "MIT License"}
+  :dependencies [[org.clojure/tools.logging "0.3.1"]
+                 [io.netty/netty-all "4.1.0.Beta3"]
+                 [io.aleph/dirigiste "0.1.0-alpha8"]
+                 [manifold "0.1.0-SNAPSHOT"]
+                 [byte-streams "0.2.0-alpha8"]
+                 [potemkin "0.3.11"]]
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0-alpha5"]
+                                  [criterium "0.4.3"]
+                                  [org.clojure/tools.trace "0.7.8"]
+                                  #_[codox-md "0.2.0" :exclusions [org.clojure/clojure]]]}}
+  :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/0.4.0/"
+          :src-linenum-anchor-prefix "L"
+          :defaults {:doc/format :markdown}
+          :include [aleph.tcp
+                    aleph.udp
+                    aleph.http
+                    aleph.flow]
+          :output-dir "doc"}
+  :plugins [[codox "0.8.10"]
+            [ztellman/lein-cljfmt "0.1.10"]]
+  :cljfmt {:indents {#".*" [[:inner 0]]}}
+  :test-selectors {:default (complement :benchmark)
                    :benchmark :benchmark
                    :all (constantly true)}
-  :jvm-opts ["-server" "-XX:+UseConcMarkSweepGC" "-Xmx4g"]
-  :warn-on-reflection true)
+  :jvm-opts ^:replace ["-server"
+                       "-XX:+UseConcMarkSweepGC"
+                       "-Xmx4g"
+                       #_"-XX:+PrintCompilation"
+                       #_"-XX:+UnlockDiagnosticVMOptions"
+                       #_"-XX:+PrintInlining"]
+  :global-vars {*warn-on-reflection* true})

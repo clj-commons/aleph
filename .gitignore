@@ -1,4 +1,4 @@
-pom.xml
+pom.xml*
 *jar
 lib
 classes
@@ -10,3 +10,4 @@ doc
 dump.rdb
 target/**
 .nrepl*
+/doc

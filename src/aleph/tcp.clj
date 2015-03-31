@@ -1,53 +1,152 @@
-;;   Copyright (c) Zachary Tellman. All rights reserved.
-;;   The use and distribution terms for this software are covered by the
-;;   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
-;;   which can be found in the file epl-v10.html at the root of this distribution.
-;;   By using this software in any fashion, you are agreeing to be bound by
-;;   the terms of this license.
-;;   You must not remove this notice, or any other, from this software.
-
 (ns aleph.tcp
-  (:use
-    [lamina core trace]
-    [aleph netty formats])
+  (:require
+    [potemkin :as p]
+    [manifold.stream :as s]
+    [manifold.deferred :as d]
+    [aleph.netty :as netty]
+    [clojure.tools.logging :as log])
   (:import
-    [java.nio.channels
-     ClosedChannelException]))
+    [java.io
+     IOException]
+    [java.net
+     InetSocketAddress]
+    [io.netty.channel
+     Channel
+     ChannelHandler
+     ChannelPipeline]))
 
-(defn- wrap-tcp-channel [options ch]
-  (with-meta
-    (wrap-socket-channel
-      options
-      (let [ch* (channel)]
-        (join (map* bytes->channel-buffer ch*) ch)
-        (splice ch ch*)))
-    (meta ch)))
+(p/def-derived-map TcpConnection [^Channel ch]
+  :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
+  :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
+  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
-(defn start-tcp-server [handler options]
-  (let [server-name (or
-                      (:name options)
-                      (-> options :server :name)
-                      "tcp-server")]
-    (start-server
-      server-name
-      (fn [channel-group]
-        (create-netty-pipeline server-name true channel-group
-          :handler (server-message-handler
-                     (fn [ch x]
-                       (handler (wrap-tcp-channel options ch) x)))))
-      options)))
+(alter-meta! #'->TcpConnection assoc :private true)
 
-(defn tcp-client [options]
-  (let [client-name (or
-                      (:name options)
-                      (-> options :client :name)
-                      "tcp-client")]
-    (run-pipeline nil
-      {:error-handler (fn [_])}
-      (fn [_]
-        (create-client
-          client-name
-          (fn [channel-group]
-            (create-netty-pipeline client-name false channel-group))
-          options))
-      (partial wrap-tcp-channel options))))
+(defn- ^ChannelHandler server-channel-handler
+  [handler {:keys [raw-stream?] :as options}]
+  (let [in (s/stream)]
+    (netty/channel-handler
+
+      :exception-caught
+      ([_ ctx ex]
+        (when-not (instance? IOException ex)
+          (log/warn ex "error in TCP server")))
+
+      :channel-inactive
+      ([_ ctx]
+        (s/close! in))
+
+      :channel-active
+      ([_ ctx]
+        (let [ch (.channel ctx)]
+          (handler
+            (s/splice
+              (netty/sink ch true netty/to-byte-buf)
+              in)
+            (->TcpConnection ch))))
+
+      :channel-read
+      ([_ ctx msg]
+        (netty/put! (.channel ctx) in
+          (if raw-stream?
+            msg
+            (netty/release-buf->array msg)))))))
+
+(defn start-server
+  "Takes a two-arg handler function which for each connection will be called with a duplex
+   stream and a map containing information about the client.  Returns a server object that can
+   be shutdown via `java.io.Closeable.close()`, and whose port can be discovered via `aleph.netty.port`.
+
+   |:---|:-----
+   | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
+   | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
+   | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
+   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+  [handler
+   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform]
+    :or {bootstrap-transform identity
+         pipeline-transform identity}
+    :as options}]
+  (netty/start-server
+    (fn [^ChannelPipeline pipeline]
+      (.addLast pipeline "handler" (server-channel-handler handler options))
+      (pipeline-transform pipeline))
+    ssl-context
+    bootstrap-transform
+    nil
+    (if socket-address
+      socket-address
+      (InetSocketAddress. port))))
+
+(defn- ^ChannelHandler client-channel-handler
+  [{:keys [raw-stream?] :as options}]
+  (let [d (d/deferred)
+        in (s/stream)]
+    [d
+
+     (netty/channel-handler
+
+       :exception-caught
+       ([_ ctx ex]
+         (when-not (d/error! d ex)
+           (log/warn ex "error in TCP client")))
+
+       :channel-inactive
+       ([_ ctx]
+         (s/close! in))
+
+       :channel-active
+       ([_ ctx]
+         (let [ch (.channel ctx)]
+           (d/success! d
+             (s/splice
+               (netty/sink ch true netty/to-byte-buf)
+               in))))
+
+       :channel-read
+       ([_ ctx msg]
+         (netty/put! (.channel ctx) in
+           (if raw-stream?
+             msg
+             (netty/release-buf->array msg))))
+
+       :close
+       ([_ ctx promise]
+         (.close ctx promise)
+         (d/error! d (IllegalStateException. "unable to connect"))))]))
+
+(defn client
+  "Given a host and port, returns a deferred which yields a duplex stream that can be used
+   to communicate with the server.
+
+   |:---|:----
+   | `host` | the hostname of the server.
+   | `port` | the port of the server.
+   | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
+   | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
+   | `ssl?` | if true, the client attempts to establish a secure connection with the server.
+   | `insecure?` | if true, the client will ignore the server's certificate.
+   | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
+   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+  [{:keys [host port remote-address local-address ssl? insecure? pipeline-transform bootstrap-transform raw-stream?]
+    :or {bootstrap-transform identity}
+    :as options}]
+  (let [[s handler] (client-channel-handler options)]
+    (->
+      (netty/create-client
+        (fn [^ChannelPipeline pipeline]
+          (.addLast pipeline "handler" ^ChannelHandler handler)
+          (when pipeline-transform
+            (pipeline-transform pipeline)))
+        (when ssl?
+          (if insecure?
+            (netty/insecure-ssl-client-context)
+            (netty/ssl-client-context)))
+        bootstrap-transform
+        (or remote-address (InetSocketAddress. ^String host (int port)))
+        local-address)
+      (d/catch #(d/error! s %)))
+    s))
