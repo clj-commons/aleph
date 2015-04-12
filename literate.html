@@ -3052,7 +3052,7 @@ will take and emit arbitrary Clojure data, via the protocol we've just defined.<
 messages from <code>out</code> and encode them before passing them onto the raw stream.</p>
 
 <p>Then, we <code>splice</code> together a separate sink and source, so that they can be presented as a
-single duplex stream.  We've already defined our sink, which will enocde all outgoing
+single duplex stream.  We've already defined our sink, which will encode all outgoing
 messages.  We must combine that with a decoded view of the incoming stream, which is
 accomplished via <code>gloss.io/decode-stream</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn wrap-duplex-stream
