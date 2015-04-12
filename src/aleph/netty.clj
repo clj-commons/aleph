@@ -13,7 +13,7 @@
     [io.netty.channel
      Channel ChannelFuture ChannelOption
      ChannelPipeline EventLoopGroup
-     ChannelHandler
+     ChannelHandler FileRegion
      ChannelInboundHandler
      ChannelOutboundHandler
      ChannelHandlerContext]
@@ -35,7 +35,10 @@
     [java.io InputStream]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
-    [java.util.concurrent CancellationException]
+    [java.util.concurrent
+     ConcurrentHashMap CancellationException ScheduledFuture TimeUnit]
+    [java.util.concurrent.atomic
+     AtomicLong]
     [io.netty.util.internal.logging
      InternalLoggerFactory
      Log4JLoggerFactory
@@ -249,16 +252,30 @@
 
 ;;;
 
-(manifold/def-sink ChannelSink [coerce-fn downstream? ch]
+(def ^ConcurrentHashMap channel-inbound-counter     (ConcurrentHashMap.))
+(def ^ConcurrentHashMap channel-outbound-counter    (ConcurrentHashMap.))
+(def ^ConcurrentHashMap channel-inbound-throughput  (ConcurrentHashMap.))
+(def ^ConcurrentHashMap channel-outbound-throughput (ConcurrentHashMap.))
+
+(manifold/def-sink ChannelSink
+  [coerce-fn
+   ^AtomicLong throughput
+   downstream?
+   ch]
   (close [this]
     (when downstream?
       (close ch))
     (.markClosed this)
     true)
   (description [_]
-    {:type "netty"
-     :sink? true
-     :closed? (not (.isOpen (channel ch)))})
+    (let [ch (channel ch)]
+      {:type "netty"
+       :sink? true
+       :throughput (.get throughput)
+       :local-address (str (.localAddress ch))
+       :remote-address (str (.remoteAddress ch))
+       :writable? (.isWritable ch)
+       :closed? (not (.isOpen ch))}))
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
@@ -282,11 +299,48 @@
   ([ch]
     (sink ch true identity))
   ([ch downstream? coerce-fn]
-    (let [sink (->ChannelSink coerce-fn downstream? ch)]
+     (let [count (AtomicLong. 0)
+           last-count (AtomicLong. 0)
+           sink (->ChannelSink
+                  coerce-fn
+                  (.get channel-outbound-throughput ch)
+                  downstream?
+                  ch)]
+
       (d/chain' (.closeFuture (channel ch))
         wrap-future
         (fn [_] (s/close! sink)))
+
       sink)))
+
+(defn source
+  [^Channel ch]
+  (let [^AtomicLong throughput (.get channel-inbound-throughput ch)]
+    (s/stream*
+      {:description
+       (fn [m]
+         (assoc m
+           :type "netty"
+           :throughput (.get throughput)
+           :local-address (str (.localAddress ch))
+           :remote-address (str (.remoteAddress ch))
+           :writable? (.isWritable ch)
+           :closed? (not (.isOpen ch))))})))
+
+(defn buffered-source
+  [^Channel ch metric capacity]
+  (let [^AtomicLong throughput (.get channel-inbound-throughput ch)]
+    (s/buffered-stream
+      metric
+      capacity
+      (fn [m]
+        (assoc m
+          :type "netty"
+          :throughput (.get throughput)
+          :local-address (str (.localAddress ch))
+          :remote-address (str (.remoteAddress ch))
+          :writable? (.isWritable ch)
+          :closed? (not (.isOpen ch)))))))
 
 ;;;
 
@@ -364,7 +418,54 @@
      (flush
        ~@(or (:flush handlers)
            `([_ ctx#]
-              (.flush ctx#))))))
+               (.flush ctx#))))))
+
+(defn ^ChannelHandler bandwidth-tracker [^Channel ch]
+  (let [inbound-counter (AtomicLong. 0)
+        outbound-counter (AtomicLong. 0)
+        inbound-throughput (AtomicLong. 0)
+        outbound-throughput (AtomicLong. 0)
+
+        ^ScheduledFuture future
+        (.scheduleAtFixedRate (-> ch .eventLoop .parent)
+          (fn []
+            (.set inbound-throughput (.getAndSet inbound-counter 0))
+            (.set outbound-throughput (.getAndSet outbound-counter 0)))
+          1000
+          1000
+          TimeUnit/MILLISECONDS)]
+
+    (.put channel-inbound-counter ch inbound-counter)
+    (.put channel-outbound-counter ch outbound-counter)
+    (.put channel-inbound-throughput ch inbound-throughput)
+    (.put channel-outbound-throughput ch outbound-throughput)
+
+    (channel-handler
+
+      :channel-inactive
+      ([_ ctx]
+         (.cancel future true)
+         (.remove channel-inbound-counter ch)
+         (.remove channel-outbound-counter ch)
+         (.remove channel-inbound-throughput ch)
+         (.remove channel-outbound-throughput ch)
+         (.fireChannelInactive ctx))
+
+      :channel-read
+      ([_ ctx msg]
+         (.addAndGet inbound-counter
+           (if (instance? FileRegion msg)
+             (.count ^FileRegion msg)
+             (.readableBytes ^ByteBuf msg)))
+         (.fireChannelRead ctx msg))
+
+      :write
+      ([_ ctx msg promise]
+         (.addAndGet outbound-counter
+           (if (instance? FileRegion msg)
+             (.count ^FileRegion msg)
+             (.readableBytes ^ByteBuf msg)))
+         (.write ctx msg promise)))))
 
 (defn pipeline-initializer [pipeline-builder]
   (channel-handler
@@ -375,6 +476,7 @@
         (try
           (.remove pipeline this)
           (pipeline-builder pipeline)
+          (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker (channel ctx)))
           (.fireChannelRegistered ctx)
           (catch Throwable e
             (log/warn e "Failed to initialize channel")

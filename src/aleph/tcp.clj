@@ -24,7 +24,7 @@
 
 (defn- ^ChannelHandler server-channel-handler
   [handler {:keys [raw-stream?] :as options}]
-  (let [in (s/stream)]
+  (let [in (atom nil)]
     (netty/channel-handler
 
       :exception-caught
@@ -34,20 +34,20 @@
 
       :channel-inactive
       ([_ ctx]
-        (s/close! in))
+        (s/close! @in))
 
       :channel-active
       ([_ ctx]
-        (let [ch (.channel ctx)]
-          (handler
-            (s/splice
-              (netty/sink ch true netty/to-byte-buf)
-              in)
-            (->TcpConnection ch))))
+         (let [ch (.channel ctx)]
+           (handler
+             (s/splice
+               (netty/sink ch true netty/to-byte-buf)
+               (reset! in (netty/source ch)))
+             (->TcpConnection ch))))
 
       :channel-read
       ([_ ctx msg]
-        (netty/put! (.channel ctx) in
+        (netty/put! (.channel ctx) @in
           (if raw-stream?
             msg
             (netty/release-buf->array msg)))))))
@@ -83,7 +83,7 @@
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?] :as options}]
   (let [d (d/deferred)
-        in (s/stream)]
+        in (atom nil)]
     [d
 
      (netty/channel-handler
@@ -95,19 +95,19 @@
 
        :channel-inactive
        ([_ ctx]
-         (s/close! in))
+         (s/close! @in))
 
        :channel-active
        ([_ ctx]
-         (let [ch (.channel ctx)]
-           (d/success! d
-             (s/splice
-               (netty/sink ch true netty/to-byte-buf)
-               in))))
+          (let [ch (.channel ctx)]
+            (d/success! d
+              (s/splice
+                (netty/sink ch true netty/to-byte-buf)
+                (reset! in (netty/source ch))))))
 
        :channel-read
        ([_ ctx msg]
-         (netty/put! (.channel ctx) in
+         (netty/put! (.channel ctx) @in
            (if raw-stream?
              msg
              (netty/release-buf->array msg))))

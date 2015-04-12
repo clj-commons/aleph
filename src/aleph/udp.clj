@@ -36,7 +36,7 @@
    | `broadcast?` | if true, all UDP datagrams are broadcast.
    | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [{:keys [socket-address port broadcast? raw-stream?]}]
-  (let [in (s/stream)
+  (let [in (atom nil)
         d (d/deferred)
         g (NioEventLoopGroup.)
         b (doto (Bootstrap.)
@@ -52,28 +52,29 @@
 
                 :channel-active
                 ([_ ctx]
-                  (let [ch (.channel ctx)
-                        out (netty/sink ch true
-                              (fn [msg]
-                                (let [{:keys [host port message socket-address]} msg]
-                                  (DatagramPacket.
-                                    (netty/to-byte-buf message)
-                                    (or socket-address
-                                      (InetSocketAddress. ^String host (int port)))))))
-                        in (s/map
-                             (fn [^DatagramPacket packet]
-                               (->UdpPacket
-                                 packet
-                                 (if raw-stream?
-                                   (.content packet)
-                                   (netty/release-buf->array (.content packet)))))
-                             in)]
-                    (d/success! d
-                      (s/splice out in))))
+                   (let [ch (.channel ctx)
+                         in (reset! in (netty/source ch))
+                         out (netty/sink ch true
+                               (fn [msg]
+                                 (let [{:keys [host port message socket-address]} msg]
+                                   (DatagramPacket.
+                                     (netty/to-byte-buf message)
+                                     (or socket-address
+                                       (InetSocketAddress. ^String host (int port)))))))
+                         in (s/map
+                              (fn [^DatagramPacket packet]
+                                (->UdpPacket
+                                  packet
+                                  (if raw-stream?
+                                    (.content packet)
+                                    (netty/release-buf->array (.content packet)))))
+                              in)]
+                     (d/success! d
+                       (s/splice out in))))
 
                 :channel-read
                 ([_ ctx msg]
-                  (netty/put! (.channel ctx) in msg)))))
+                   (netty/put! (.channel ctx) @in msg)))))
         socket-address (or socket-address (InetSocketAddress. (or port 0)))]
     (try
       (-> b (.bind ^SocketAddress socket-address))

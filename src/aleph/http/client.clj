@@ -105,7 +105,7 @@
           (instance? HttpResponse msg)
           (let [rsp msg]
 
-            (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)
+            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
                   c (d/deferred)]
               (reset! stream s)
               (reset! complete c)
@@ -156,7 +156,7 @@
           (let [rsp msg]
 
             (if (HttpHeaders/isTransferEncodingChunked rsp)
-              (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)
+              (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                     c (d/deferred)]
                 (reset! stream s)
                 (reset! complete c)
@@ -206,7 +206,7 @@
                     (when (< buffer-capacity size)
                       (let [bufs @buffer
                             c (d/deferred)
-                            s (doto (s/buffered-stream #(alength ^bytes %) 16384)
+                            s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) 16384)
                                 (s/put! (netty/bufs->array bufs)))]
 
                         (doseq [b bufs]
@@ -355,7 +355,7 @@
 
 (defn websocket-client-handler [raw-stream? uri headers]
   (let [d (d/deferred)
-        in (s/stream 16)
+        in (atom nil)
         handshaker (websocket-handshaker uri headers)]
 
     [d
@@ -366,7 +366,7 @@
        ([_ ctx ex]
          (when-not (d/error! d ex)
            (log/warn ex "error in websocket client"))
-         (s/close! in)
+         (s/close! @in)
          (netty/close ctx))
 
        :channel-inactive
@@ -376,8 +376,9 @@
 
        :channel-active
        ([_ ctx]
-         (let [ch (.channel ctx)]
-           (.handshake handshaker ch)))
+          (let [ch (.channel ctx)]
+            (reset! in (netty/buffered-source ch (constantly 1) 16))
+            (.handshake handshaker ch)))
 
        :channel-read
        ([_ ctx msg]
@@ -393,9 +394,9 @@
                                 (TextWebSocketFrame. (bs/to-string %))
                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx %))))]
 
-                   (d/success! d (s/splice out in))
+                   (d/success! d (s/splice out @in))
 
-                   (s/on-drained in
+                   (s/on-drained @in
                      #(d/chain (.writeAndFlush ch (CloseWebSocketFrame.))
                         netty/wrap-future
                         (fn [_] (netty/close ctx))))))
@@ -411,11 +412,11 @@
                        "'"))))
 
                (instance? TextWebSocketFrame msg)
-               (netty/put! ch in (.text ^TextWebSocketFrame msg))
+               (netty/put! ch @in (.text ^TextWebSocketFrame msg))
 
                (instance? BinaryWebSocketFrame msg)
                (let [frame (netty/acquire (.content ^BinaryWebSocketFrame msg))]
-                 (netty/put! ch in
+                 (netty/put! ch @in
                    (if raw-stream?
                      frame
                      (netty/buf->array frame))))

@@ -83,7 +83,7 @@
     (.get ref)
     (let [ref (AtomicReference. (HttpHeaders/newEntity (rfc-1123-date-string)))]
       (.set date-value ref)
-      (.scheduleWithFixedDelay (.executor ctx)
+      (.scheduleAtFixedRate (.executor ctx)
         #(.set ref (HttpHeaders/newEntity (rfc-1123-date-string)))
         1000
         1000
@@ -215,7 +215,7 @@
                 HttpResponseStatus/CONTINUE)))
 
           (if (HttpHeaders/isTransferEncodingChunked req)
-            (let [s (s/buffered-stream #(alength ^bytes %) buffer-capacity)]
+            (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
               (reset! stream s)
               (handle-request ctx req s))
             (reset! request req)))
@@ -269,7 +269,7 @@
                   ;; buffer size exceeded, flush it as a stream
                   (when (< buffer-capacity size)
                     (let [bufs @buffer
-                          s (doto (s/buffered-stream #(alength ^bytes %) buffer-capacity)
+                          s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                               (s/put! (netty/bufs->array bufs)))]
 
                       (doseq [b bufs]
@@ -350,7 +350,7 @@
                   HttpVersion/HTTP_1_1
                   HttpResponseStatus/CONTINUE)))
 
-            (let [s (s/buffered-stream #(.readableBytes ^ByteBuf %) buffer-capacity)]
+            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
               (reset! stream s)
               (handle-request ctx req s)))
 
@@ -456,7 +456,7 @@
               #(if (instance? CharSequence %)
                  (TextWebSocketFrame. (bs/to-string %))
                  (BinaryWebSocketFrame. (netty/to-byte-buf ch %))))
-        in (s/stream 16)]
+        in (netty/buffered-source ch (constantly 1) 16)]
 
     (s/on-drained in
       #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))

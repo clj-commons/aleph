@@ -163,8 +163,8 @@
     (Executor.
       (or thread-factory (create-thread-factory))
       (if (and queue-length (pos? queue-length))
-        (ArrayBlockingQueue. queue-length)
-        (SynchronousQueue.))
+        (ArrayBlockingQueue. queue-length false)
+        (SynchronousQueue. false))
       (if stats-callback
         (reify Executor$Controller
           (shouldIncrement [_ n]
