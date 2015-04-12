@@ -267,10 +267,10 @@
   ([method url]
     (req method url nil))
   ([method url options]
-     (request
-       (assoc options
-         :request-method method
-         :url url))))
+    (request
+      (assoc options
+        :request-method method
+        :url url))))
 
 (def ^:private arglists
   '[[url]

@@ -376,9 +376,9 @@
 
        :channel-active
        ([_ ctx]
-          (let [ch (.channel ctx)]
-            (reset! in (netty/buffered-source ch (constantly 1) 16))
-            (.handshake handshaker ch)))
+         (let [ch (.channel ctx)]
+           (reset! in (netty/buffered-source ch (constantly 1) 16))
+           (.handshake handshaker ch)))
 
        :channel-read
        ([_ ctx msg]

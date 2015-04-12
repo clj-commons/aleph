@@ -38,12 +38,12 @@
 
       :channel-active
       ([_ ctx]
-         (let [ch (.channel ctx)]
-           (handler
-             (s/splice
-               (netty/sink ch true netty/to-byte-buf)
-               (reset! in (netty/source ch)))
-             (->TcpConnection ch))))
+        (let [ch (.channel ctx)]
+          (handler
+            (s/splice
+              (netty/sink ch true netty/to-byte-buf)
+              (reset! in (netty/source ch)))
+            (->TcpConnection ch))))
 
       :channel-read
       ([_ ctx msg]
@@ -99,11 +99,11 @@
 
        :channel-active
        ([_ ctx]
-          (let [ch (.channel ctx)]
-            (d/success! d
-              (s/splice
-                (netty/sink ch true netty/to-byte-buf)
-                (reset! in (netty/source ch))))))
+         (let [ch (.channel ctx)]
+           (d/success! d
+             (s/splice
+               (netty/sink ch true netty/to-byte-buf)
+               (reset! in (netty/source ch))))))
 
        :channel-read
        ([_ ctx msg]

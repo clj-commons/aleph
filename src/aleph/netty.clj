@@ -299,13 +299,13 @@
   ([ch]
     (sink ch true identity))
   ([ch downstream? coerce-fn]
-     (let [count (AtomicLong. 0)
-           last-count (AtomicLong. 0)
-           sink (->ChannelSink
-                  coerce-fn
-                  (.get channel-outbound-throughput ch)
-                  downstream?
-                  ch)]
+    (let [count (AtomicLong. 0)
+          last-count (AtomicLong. 0)
+          sink (->ChannelSink
+                 coerce-fn
+                 (.get channel-outbound-throughput ch)
+                 downstream?
+                 ch)]
 
       (d/chain' (.closeFuture (channel ch))
         wrap-future
@@ -418,7 +418,7 @@
      (flush
        ~@(or (:flush handlers)
            `([_ ctx#]
-               (.flush ctx#))))))
+              (.flush ctx#))))))
 
 (defn ^ChannelHandler bandwidth-tracker [^Channel ch]
   (let [inbound-counter (AtomicLong. 0)
@@ -444,28 +444,28 @@
 
       :channel-inactive
       ([_ ctx]
-         (.cancel future true)
-         (.remove channel-inbound-counter ch)
-         (.remove channel-outbound-counter ch)
-         (.remove channel-inbound-throughput ch)
-         (.remove channel-outbound-throughput ch)
-         (.fireChannelInactive ctx))
+        (.cancel future true)
+        (.remove channel-inbound-counter ch)
+        (.remove channel-outbound-counter ch)
+        (.remove channel-inbound-throughput ch)
+        (.remove channel-outbound-throughput ch)
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
-         (.addAndGet inbound-counter
-           (if (instance? FileRegion msg)
-             (.count ^FileRegion msg)
-             (.readableBytes ^ByteBuf msg)))
-         (.fireChannelRead ctx msg))
+        (.addAndGet inbound-counter
+          (if (instance? FileRegion msg)
+            (.count ^FileRegion msg)
+            (.readableBytes ^ByteBuf msg)))
+        (.fireChannelRead ctx msg))
 
       :write
       ([_ ctx msg promise]
-         (.addAndGet outbound-counter
-           (if (instance? FileRegion msg)
-             (.count ^FileRegion msg)
-             (.readableBytes ^ByteBuf msg)))
-         (.write ctx msg promise)))))
+        (.addAndGet outbound-counter
+          (if (instance? FileRegion msg)
+            (.count ^FileRegion msg)
+            (.readableBytes ^ByteBuf msg)))
+        (.write ctx msg promise)))))
 
 (defn pipeline-initializer [pipeline-builder]
   (channel-handler
