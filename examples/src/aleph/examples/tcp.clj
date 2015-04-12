@@ -35,7 +35,7 @@
 ;; messages from `out` and encode them before passing them onto the raw stream.
 ;;
 ;; Then, we `splice` together a separate sink and source, so that they can be presented as a
-;; single duplex stream.  We've already defined our sink, which will enocde all outgoing
+;; single duplex stream.  We've already defined our sink, which will encode all outgoing
 ;; messages.  We must combine that with a decoded view of the incoming stream, which is
 ;; accomplished via `gloss.io/decode-stream`.
 (defn wrap-duplex-stream
