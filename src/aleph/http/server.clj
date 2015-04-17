@@ -530,7 +530,7 @@
               h (DefaultHttpHeaders.)]
           (http/map->headers! h headers)
           (-> (try
-                (.handshake handshaker ch req h p)
+                (.handshake handshaker ch ^HttpRequest req h p)
                 (netty/wrap-future p)
                 (catch Throwable e
                   (d/error-deferred e)))
