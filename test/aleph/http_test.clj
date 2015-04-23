@@ -265,3 +265,15 @@
     (Thread/sleep (* 1000 600))
     (println "stopping server")
     (.close ^java.io.Closeable server)))
+
+(deftest ^:benchmark benchmark-websockets
+  (println "starting WebSocket benchmark server on 8080")
+  (netty/leak-detector-level! :disabled)
+  (let [server (http/start-server
+                 (fn [req]
+                   (d/let-flow [s (http/websocket-connection req)]
+                     (s/consume #(s/put! s %) s)))
+                 {:port 8080})]
+    (Thread/sleep (* 1000 600))
+    (println "stopping server")
+    (.close ^java.io.Closeable server)))

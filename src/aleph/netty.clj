@@ -257,6 +257,13 @@
 (def ^ConcurrentHashMap channel-inbound-throughput  (ConcurrentHashMap.))
 (def ^ConcurrentHashMap channel-outbound-throughput (ConcurrentHashMap.))
 
+(defn- connection-stats [^Channel ch]
+  {:local-address (str (.localAddress ch))
+   :remote-address (str (.remoteAddress ch))
+   :writable? (.isWritable ch)
+   :readable? (-> ch .config .getAutoRead)
+   :closed? (not (.isOpen ch))})
+
 (manifold/def-sink ChannelSink
   [coerce-fn
    ^AtomicLong throughput
@@ -270,12 +277,11 @@
   (description [_]
     (let [ch (channel ch)]
       {:type "netty"
+       :closed? (not (.isOpen ch))
        :sink? true
-       :throughput (.get throughput)
-       :local-address (str (.localAddress ch))
-       :remote-address (str (.remoteAddress ch))
-       :writable? (.isWritable ch)
-       :closed? (not (.isOpen ch))}))
+       :connection (assoc (connection-stats ch)
+                     :direction :outbound
+                     :througput (.get throughput))}))
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
@@ -321,11 +327,10 @@
        (fn [m]
          (assoc m
            :type "netty"
-           :throughput (.get throughput)
-           :local-address (str (.localAddress ch))
-           :remote-address (str (.remoteAddress ch))
-           :writable? (.isWritable ch)
-           :closed? (not (.isOpen ch))))})))
+           :direction :inbound
+           :connection (assoc (connection-stats ch)
+                         :direction :inbound
+                         :throughput (.get throughput))))})))
 
 (defn buffered-source
   [^Channel ch metric capacity]
@@ -336,11 +341,9 @@
       (fn [m]
         (assoc m
           :type "netty"
-          :throughput (.get throughput)
-          :local-address (str (.localAddress ch))
-          :remote-address (str (.remoteAddress ch))
-          :writable? (.isWritable ch)
-          :closed? (not (.isOpen ch)))))))
+          :connection (assoc (connection-stats ch)
+                        :direction :inbound
+                        :throughput (.get throughput)))))))
 
 ;;;
 
