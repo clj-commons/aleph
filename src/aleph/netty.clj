@@ -261,7 +261,7 @@
   {:local-address (str (.localAddress ch))
    :remote-address (str (.remoteAddress ch))
    :writable? (.isWritable ch)
-   :readable? (-> ch .config .getAutoRead)
+   :readable? (-> ch .config .isAutoRead)
    :closed? (not (.isOpen ch))})
 
 (manifold/def-sink ChannelSink
