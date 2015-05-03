@@ -3,7 +3,7 @@
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/tools.logging "0.3.1"]
+  :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
                  [io.netty/netty-all "4.1.0.Beta4"]
                  [io.aleph/dirigiste "0.1.0"]
                  [manifold "0.1.0"]
