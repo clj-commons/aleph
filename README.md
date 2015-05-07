@@ -1,4 +1,4 @@
-<img src="/docs/aleph.png" alt="" align="left" style="max-width:33%;">
+<img src="/docs/aleph.png" align="left" height="200px"/>
 
 Aleph exposes data from the network as a [Manifold](https://github.com/ztellman/manifold) stream, which can easily be transformed into a `java.io.InputStream`, [core.async](https://github.com/clojure/core.async) channel, Clojure sequence, or [many other byte representations](https://github.com/ztellman/byte-streams).  It exposes simple default wrappers for HTTP, TCP, and UDP, but allows access to full performance and flexibility of the underlying [Netty](https://github.com/netty/netty) library.
 
