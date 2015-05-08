@@ -233,20 +233,32 @@
 
 (defn put! [^Channel ch s msg]
   (let [d (s/put! s msg)]
-    (if (d/realized? d)
-      (if @d
-        true
-        (do
-          (.close ch)
-          false))
+    (d/success-error-unrealized d
+
+      val (if val
+            true
+            (do
+              (release msg)
+              (.close ch)
+              false))
+
+      err  (do
+             (release msg)
+             (.close ch)
+             false)
+
       (do
+        ;; enable backpressure
         (-> ch .config (.setAutoRead false))
-        #_(prn 'backpressure)
+
         (d/chain' d
           (fn [result]
+
             (when-not result
+              (release msg)
               (.close ch))
-            #_(prn 'backpressure-off)
+
+            ;; disable backpressure
             (-> ch .config (.setAutoRead true))))
         d))))
 
@@ -322,28 +334,30 @@
 (defn source
   [^Channel ch]
   (let [^AtomicLong throughput (.get channel-inbound-throughput ch)]
-    (s/stream*
-      {:description
-       (fn [m]
-         (assoc m
-           :type "netty"
-           :direction :inbound
-           :connection (assoc (connection-stats ch)
-                         :direction :inbound
-                         :throughput (.get throughput))))})))
+    (let [src (s/stream*
+                {:description
+                 (fn [m]
+                   (assoc m
+                     :type "netty"
+                     :direction :inbound
+                     :connection (assoc (connection-stats ch)
+                                   :direction :inbound
+                                   :throughput (.get throughput))))})]
+      src)))
 
 (defn buffered-source
   [^Channel ch metric capacity]
   (let [^AtomicLong throughput (.get channel-inbound-throughput ch)]
-    (s/buffered-stream
-      metric
-      capacity
-      (fn [m]
-        (assoc m
-          :type "netty"
-          :connection (assoc (connection-stats ch)
-                        :direction :inbound
-                        :throughput (.get throughput)))))))
+    (let [src (s/buffered-stream
+                metric
+                capacity
+                (fn [m]
+                  (assoc m
+                    :type "netty"
+                    :connection (assoc (connection-stats ch)
+                                  :direction :inbound
+                                  :throughput (.get throughput)))))]
+      src)))
 
 ;;;
 
