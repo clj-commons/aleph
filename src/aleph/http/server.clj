@@ -450,7 +450,10 @@
 
 ;;;
 
-(defn websocket-server-handler [raw-stream? ^Channel ch ^WebSocketServerHandshaker handshaker]
+(defn websocket-server-handler
+  [raw-stream?
+   ^Channel ch
+   ^WebSocketServerHandshaker handshaker]
   (let [d (d/deferred)
         out (netty/sink ch false
               #(if (instance? CharSequence %)
@@ -463,7 +466,9 @@
          netty/wrap-future
          (fn [_] (.close ch))))
 
-    [(s/splice out in)
+    [(doto
+       (s/splice out in)
+       (reset-meta! {:aleph/channel ch}))
 
      (netty/channel-handler
 

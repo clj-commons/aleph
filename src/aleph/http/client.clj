@@ -394,7 +394,10 @@
                                 (TextWebSocketFrame. (bs/to-string %))
                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx %))))]
 
-                   (d/success! d (s/splice out @in))
+                   (d/success! d
+                     (doto
+                       (s/splice out @in)
+                       (reset-meta! {:aleph/channel ch})))
 
                    (s/on-drained @in
                      #(d/chain (.writeAndFlush ch (CloseWebSocketFrame.))

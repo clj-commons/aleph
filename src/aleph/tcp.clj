@@ -40,9 +40,11 @@
       ([_ ctx]
         (let [ch (.channel ctx)]
           (handler
-            (s/splice
-              (netty/sink ch true netty/to-byte-buf)
-              (reset! in (netty/source ch)))
+            (doto
+              (s/splice
+                (netty/sink ch true netty/to-byte-buf)
+                (reset! in (netty/source ch)))
+              (reset-meta! {:aleph/channel ch}))
             (->TcpConnection ch))))
 
       :channel-read
@@ -101,9 +103,11 @@
        ([_ ctx]
          (let [ch (.channel ctx)]
            (d/success! d
-             (s/splice
-               (netty/sink ch true netty/to-byte-buf)
-               (reset! in (netty/source ch))))))
+             (doto
+               (s/splice
+                 (netty/sink ch true netty/to-byte-buf)
+                 (reset! in (netty/source ch)))
+               (reset-meta! {:aleph/channel ch})))))
 
        :channel-read
        ([_ ctx msg]

@@ -269,18 +269,23 @@
 (def ^ConcurrentHashMap channel-inbound-throughput  (ConcurrentHashMap.))
 (def ^ConcurrentHashMap channel-outbound-throughput (ConcurrentHashMap.))
 
-(defn- connection-stats [^Channel ch]
-  {:local-address (str (.localAddress ch))
-   :remote-address (str (.remoteAddress ch))
-   :writable? (.isWritable ch)
-   :readable? (-> ch .config .isAutoRead)
-   :closed? (not (.isOpen ch))})
+(defn- connection-stats [^Channel ch inbound?]
+  (merge
+    {:local-address (str (.localAddress ch))
+     :remote-address (str (.remoteAddress ch))
+     :writable? (.isWritable ch)
+     :readable? (-> ch .config .isAutoRead)
+     :closed? (not (.isActive ch))}
+    (let [^ConcurrentHashMap throughput (if inbound?
+                                          channel-inbound-throughput
+                                          channel-outbound-throughput)]
+      (when-let [^AtomicLong throughput (.get throughput ch)]
+        {:throughput (.get throughput)}))))
 
 (manifold/def-sink ChannelSink
   [coerce-fn
-   ^AtomicLong throughput
    downstream?
-   ch]
+   ^Channel ch]
   (close [this]
     (when downstream?
       (close ch))
@@ -289,29 +294,31 @@
   (description [_]
     (let [ch (channel ch)]
       {:type "netty"
-       :closed? (not (.isOpen ch))
+       :closed? (not (.isActive ch))
        :sink? true
-       :connection (assoc (connection-stats ch)
-                     :direction :outbound
-                     :througput (.get throughput))}))
+       :connection (assoc (connection-stats ch false)
+                     :direction :outbound)}))
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
-    (let [msg (try
-                (coerce-fn msg)
-                (catch Exception e
-                  (log/error e
-                    (str "cannot coerce "
-                      (.getName (class msg))
-                      " into binary representation"))
-                  (close ch)))
-          ^ChannelFuture f (write-and-flush ch msg)
-          d (or (wrap-future f) (d/success-deferred true))]
-      (if blocking?
-        @d
-        d)))
+    (when-not (s/closed? this)
+      (let [msg (try
+                  (coerce-fn msg)
+                  (catch Exception e
+                    (log/error e
+                      (str "cannot coerce "
+                        (.getName (class msg))
+                        " into binary representation"))
+                    (close ch)))
+            ^ChannelFuture f (write-and-flush ch msg)
+            d (or (wrap-future f) (d/success-deferred true))]
+        (if blocking?
+          @d
+          d))))
   (put [this msg blocking? timeout timeout-value]
     (.put this msg blocking?)))
+
+
 
 (defn sink
   ([ch]
@@ -321,7 +328,6 @@
           last-count (AtomicLong. 0)
           sink (->ChannelSink
                  coerce-fn
-                 (.get channel-outbound-throughput ch)
                  downstream?
                  ch)]
 
@@ -329,35 +335,31 @@
         wrap-future
         (fn [_] (s/close! sink)))
 
-      sink)))
+      (doto sink (reset-meta! {:aleph/channel ch})))))
 
 (defn source
   [^Channel ch]
-  (let [^AtomicLong throughput (.get channel-inbound-throughput ch)]
-    (let [src (s/stream*
-                {:description
-                 (fn [m]
-                   (assoc m
-                     :type "netty"
-                     :direction :inbound
-                     :connection (assoc (connection-stats ch)
-                                   :direction :inbound
-                                   :throughput (.get throughput))))})]
-      src)))
+  (let [src (s/stream*
+              {:description
+               (fn [m]
+                 (assoc m
+                   :type "netty"
+                   :direction :inbound
+                   :connection (assoc (connection-stats ch true)
+                                 :direction :inbound)))})]
+    (doto src (reset-meta! {:aleph/channel ch}))))
 
 (defn buffered-source
   [^Channel ch metric capacity]
-  (let [^AtomicLong throughput (.get channel-inbound-throughput ch)]
-    (let [src (s/buffered-stream
-                metric
-                capacity
-                (fn [m]
-                  (assoc m
-                    :type "netty"
-                    :connection (assoc (connection-stats ch)
-                                  :direction :inbound
-                                  :throughput (.get throughput)))))]
-      src)))
+  (let [src (s/buffered-stream
+              metric
+              capacity
+              (fn [m]
+                (assoc m
+                  :type "netty"
+                  :connection (assoc (connection-stats ch true)
+                                :direction :inbound))))]
+    (doto src (reset-meta! {:aleph/channel ch}))))
 
 ;;;
 
@@ -493,11 +495,23 @@
         (try
           (.remove pipeline this)
           (pipeline-builder pipeline)
-          (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker (channel ctx)))
           (.fireChannelRegistered ctx)
           (catch Throwable e
             (log/warn e "Failed to initialize channel")
             (.close ctx)))))))
+
+(defn instrument!
+  [stream]
+  (if-let [^Channel ch (->> stream meta :aleph/channel)]
+    (do
+      (safe-execute ch
+        (let [pipeline (.pipeline ch)]
+          (when (and
+                  (.isActive ch)
+                  (nil? (.get pipeline "bandwidth-tracker")))
+            (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
+      true)
+    false))
 
 ;;;
 

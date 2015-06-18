@@ -70,7 +70,9 @@
                                    (netty/release-buf->array (.content packet)))))
                              in)]
                     (d/success! d
-                      (s/splice out in))))
+                      (doto
+                        (s/splice out in)
+                        (reset-meta! {:aleph/channel ch})))))
 
                 :channel-read
                 ([_ ctx msg]
