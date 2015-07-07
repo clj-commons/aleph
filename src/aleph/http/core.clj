@@ -190,11 +190,10 @@
          (if (neg? idx)
            (.getUri req)
            (.substring (.getUri req) 0 idx)))
-  :query-string (let [idx (long question-mark-index)
-                      uri (.getUri req)]
-                  (if (neg? idx)
+  :query-string (let [uri (.getUri req)]
+                  (if (neg? question-mark-index)
                     nil
-                    (.substring uri (unchecked-inc idx))))
+                    (.substring uri (unchecked-inc question-mark-index))))
   :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
   :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
@@ -311,7 +310,18 @@
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
-(let [ary-class (class (byte-array 0))]
+(let [ary-class (class (byte-array 0))
+
+      ;; extracted to make `send-message` more inlineable
+      handle-cleanup
+      (fn [ch f]
+        (-> f
+          (d/chain'
+            (fn [^ChannelFuture f]
+              (if f
+                (.addListener f ChannelFutureListener/CLOSE)
+                (netty/close ch))))
+          (d/catch (fn [_]))))]
   (defn send-message
     [ch keep-alive? ^HttpMessage msg body]
 
@@ -337,12 +347,6 @@
                     (log/error e "error sending body of type " class-name)))))]
 
       (when-not keep-alive?
-        (-> f
-          (d/chain'
-            (fn [^ChannelFuture f]
-              (if f
-                (.addListener f ChannelFutureListener/CLOSE)
-                (netty/close ch))))
-          (d/catch (fn [_]))))
+        (handle-cleanup ch f))
 
       f)))

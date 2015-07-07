@@ -70,6 +70,17 @@
 
 ;;;
 
+(defn channel-server-name [^Channel ch]
+  (some-> ch ^InetSocketAddress (.localAddress) .getHostName))
+
+(defn channel-server-port [^Channel ch]
+  (some-> ch ^InetSocketAddress (.localAddress) .getPort))
+
+(defn channel-remote-address [^Channel ch]
+  (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+
+;;;
+
 (def ^:const array-class (class (clojure.core/byte-array 0)))
 
 (defn buf->array [^ByteBuf buf]
@@ -151,7 +162,6 @@
 (defn to-byte-buf-stream [x chunk-size]
   (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
 
-
 (defn wrap-future
   [^Future f]
   (when f
@@ -191,16 +201,8 @@
 (defn write-and-flush
   [x msg]
   (if (instance? Channel x)
-    (if (.isWritable ^Channel x)
-      (do
-        (.writeAndFlush ^Channel x msg (.voidPromise ^Channel x))
-        nil)
-      (.writeAndFlush ^Channel x msg))
-    (if (-> ^ChannelHandlerContext x .channel .isWritable)
-      (do
-        (.writeAndFlush ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x))
-        nil)
-      (.writeAndFlush ^ChannelHandlerContext x msg))))
+    (.writeAndFlush ^Channel x msg)
+    (.writeAndFlush ^ChannelHandlerContext x msg)))
 
 (defn flush [x]
   (if (instance? Channel x)

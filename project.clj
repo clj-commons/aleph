@@ -30,6 +30,6 @@
                        "-XX:+UseConcMarkSweepGC"
                        "-Xmx4g"
                        #_"-XX:+PrintCompilation"
-                       #_"-XX:+UnlockDiagnosticVMOptions"
-                       #_"-XX:+PrintInlining"]
+                       "-XX:+UnlockDiagnosticVMOptions"
+                       "-XX:+PrintInlining"]
   :global-vars {*warn-on-reflection* true})
