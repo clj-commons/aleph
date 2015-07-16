@@ -210,7 +210,7 @@
                    (maybe-timeout! connection-timeout)
 
                    ;; connection failed, bail out
-                   (d/catch
+                   (d/catch'
                      (fn [e]
                        (flow/dispose pool k conn)
                        (d/error-deferred e)))
@@ -235,7 +235,7 @@
                              (maybe-timeout! request-timeout)
 
                              ;; request failed, if it was due to a timeout close the connection
-                             (d/catch
+                             (d/catch'
                                (fn [e]
                                  (if (instance? TimeoutException e)
                                    (flow/dispose pool k conn)

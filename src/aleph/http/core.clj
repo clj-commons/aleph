@@ -182,10 +182,6 @@
    ^AtomicBoolean websocket?
    question-mark-index
    body]
-  :scheme (if ssl? :https :http)
-  :keep-alive? (HttpHeaders/isKeepAlive req)
-  :request-method (-> req .getMethod .name str/lower-case keyword)
-  :headers (-> req .headers headers->map)
   :uri (let [idx (long question-mark-index)]
          (if (neg? idx)
            (.getUri req)
@@ -194,10 +190,14 @@
                   (if (neg? question-mark-index)
                     nil
                     (.substring uri (unchecked-inc question-mark-index))))
+  :headers (-> req .headers headers->map)
+  :request-method (-> req .getMethod .name str/lower-case keyword)
+  :body body
+  :scheme (if ssl? :https :http)
+  :keep-alive? (HttpHeaders/isKeepAlive req)
   :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
-  :body body)
+  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
   :status (-> rsp .getStatus .code)
@@ -321,7 +321,8 @@
               (if f
                 (.addListener f ChannelFutureListener/CLOSE)
                 (netty/close ch))))
-          (d/catch (fn [_]))))]
+          (d/catch' (fn [_]))))]
+
   (defn send-message
     [ch keep-alive? ^HttpMessage msg body]
 

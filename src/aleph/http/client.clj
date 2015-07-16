@@ -52,25 +52,28 @@
 
 ;;;
 
-(defn req->domain [req]
-  (if-let [url (:url req)]
-    (let [^URI uri (URI. url)]
-      (URI.
-        (.getScheme uri)
-        nil
-        (.getHost uri)
-        (.getPort uri)
-        nil
-        nil
-        nil))
-    (URI.
-      (name (or (:scheme req) :http))
-      "nil"
-      (:host req)
-      (or (:port req) -1)
-      nil
-      nil
-      nil)))
+(let [no-url (fn [req]
+               (URI.
+                 (name (or (:scheme req) :http))
+                 "nil"
+                 (:host req)
+                 (or (:port req) -1)
+                 nil
+                 nil
+                 nil))]
+
+  (defn req->domain [req]
+    (if-let [url (:url req)]
+      (let [^URI uri (URI. url)]
+        (URI.
+          (.getScheme uri)
+          nil
+          (.getHost uri)
+          (.getPort uri)
+          nil
+          nil
+          nil))
+      (no-url req))))
 
 (defn raw-client-handler
   [response-stream buffer-capacity]
@@ -268,10 +271,12 @@
            insecure?
            response-buffer-size
            on-closed
-           response-executor]
+           response-executor
+           epoll?]
     :or {bootstrap-transform identity
          keep-alive? true
-         response-buffer-size 65536}
+         response-buffer-size 65536
+         epoll? false}
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024)
@@ -288,8 +293,9 @@
                 (netty/ssl-client-context)))
             bootstrap-transform
             remote-address
-            local-address)]
-    (d/chain c
+            local-address
+            epoll?)]
+    (d/chain' c
       (fn [^Channel ch]
 
         (s/consume
@@ -315,7 +321,7 @@
                   rsp (locking ch
                         (s/put! requests req)
                         (s/take! responses ::closed))]
-              (d/chain rsp
+              (d/chain' rsp
                 (fn [rsp]
                   (cond
                     (identical? ::closed rsp)
@@ -325,7 +331,7 @@
                     rsp
 
                     :else
-                    (d/chain rsp
+                    (d/chain' rsp
                       (fn [rsp]
                         (let [body (:body rsp)]
 
@@ -400,7 +406,7 @@
                        (reset-meta! {:aleph/channel ch})))
 
                    (s/on-drained @in
-                     #(d/chain (.writeAndFlush ch (CloseWebSocketFrame.))
+                     #(d/chain' (.writeAndFlush ch (CloseWebSocketFrame.))
                         netty/wrap-future
                         (fn [_] (netty/close ctx))))))
 
@@ -434,10 +440,11 @@
 
 (defn websocket-connection
   [uri
-   {:keys [raw-stream? bootstrap-transform insecure? headers local-address]
+   {:keys [raw-stream? bootstrap-transform insecure? headers local-address epoll?]
     :or {bootstrap-transform identity
          keep-alive? true
-         raw-stream? false}
+         raw-stream? false
+         epoll? false}
     :as options}]
   (let [uri (URI. uri)
         ssl? (= "wss" (.getScheme uri))
@@ -445,7 +452,7 @@
 
     (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
-    (d/chain
+    (d/chain'
       (netty/create-client
         (fn [^ChannelPipeline pipeline]
           (doto pipeline
@@ -463,6 +470,7 @@
             (if (neg? (.getPort uri))
               (if ssl? 443 80)
               (.getPort uri))))
-        local-address)
+        local-address
+        epoll?)
       (fn [_]
         s))))

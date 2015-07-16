@@ -157,12 +157,12 @@
   response is used as the message, instead of just the status number."
   [client]
   (fn [req]
-    (d/let-flow [{:keys [status] :as rsp} (client req)]
+    (d/let-flow' [{:keys [status] :as rsp} (client req)]
       (if (unexceptional-status? status)
         rsp
         (if (false? (opt req :throw-exceptions))
           rsp
-          (d/chain rsp :aleph/complete
+          (d/chain' rsp :aleph/complete
             (fn [_]
               (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
 
@@ -455,7 +455,7 @@
   (fn [req]
     (let [start (System/currentTimeMillis)]
       (-> (client req)
-        (d/chain #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
+        (d/chain' #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
 (defn parse-content-type
   "Parse `s` as an RFC 2616 media type."
@@ -580,7 +580,7 @@
   additional coercions."
   [client]
   (fn [req]
-    (d/let-flow [{:keys [body] :as resp} (client req)]
+    (d/let-flow' [{:keys [body] :as resp} (client req)]
       (if body
         (coerce-response-body req resp)
         resp))))

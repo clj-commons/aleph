@@ -67,9 +67,10 @@
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [handler
-   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform]
+   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?]
     :or {bootstrap-transform identity
-         pipeline-transform identity}
+         pipeline-transform identity
+         epoll? false}
     :as options}]
   (netty/start-server
     (fn [^ChannelPipeline pipeline]
@@ -80,7 +81,8 @@
     nil
     (if socket-address
       socket-address
-      (InetSocketAddress. port))))
+      (InetSocketAddress. port))
+    epoll?))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?] :as options}]
@@ -135,8 +137,9 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [host port remote-address local-address ssl? insecure? pipeline-transform bootstrap-transform raw-stream?]
-    :or {bootstrap-transform identity}
+  [{:keys [host port remote-address local-address ssl? insecure? pipeline-transform bootstrap-transform raw-stream? epoll?]
+    :or {bootstrap-transform identity
+         epoll? false}
     :as options}]
   (let [[s handler] (client-channel-handler options)]
     (->
@@ -151,6 +154,7 @@
             (netty/ssl-client-context)))
         bootstrap-transform
         (or remote-address (InetSocketAddress. ^String host (int port)))
-        local-address)
-      (d/catch #(d/error! s %)))
+        local-address
+        epoll?)
+      (d/catch' #(d/error! s %)))
     s))

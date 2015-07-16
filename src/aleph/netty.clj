@@ -6,7 +6,8 @@
     [manifold.deferred :as d]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
-    [primitive-math :as p])
+    [primitive-math :as p]
+    [potemkin :refer [doit doary]])
   (:import
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
@@ -83,9 +84,11 @@
 
 (def ^:const array-class (class (clojure.core/byte-array 0)))
 
+
+
 (defn buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
-    (doseq [^ByteBuffer buf (.nioBuffers buf)]
+    (doary [^ByteBuffer buf (.nioBuffers buf)]
       (.put dst buf))
     (.array dst)))
 
@@ -100,7 +103,7 @@
                                    (if (empty? s)
                                      cnt
                                      (recur (p/+ cnt (.remaining ^ByteBuffer (first s))) (rest s)))))]
-    (doseq [^ByteBuffer buf bufs']
+    (doit [^ByteBuffer buf bufs']
       (.put dst buf))
     (.array dst)))
 
@@ -534,7 +537,7 @@
 (defprotocol AlephServer
   (port [_] "Returns the port the server is listening on."))
 
-(defn epoll? []
+(defn epoll-available? []
   (Epoll/isAvailable))
 
 (defn get-default-event-loop-threads
@@ -546,11 +549,16 @@
 
 (def ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
-(def client-group
-  (let [thread-count (get-default-event-loop-threads)
-        thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
-    (if (epoll?)
-      (EpollEventLoopGroup. (long thread-count) thread-factory)
+(def epoll-client-group
+  (delay
+    (let [thread-count (get-default-event-loop-threads)
+          thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
+      (EpollEventLoopGroup. (long thread-count) thread-factory))))
+
+(def nio-client-group
+  (delay
+    (let [thread-count (get-default-event-loop-threads)
+          thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
 (defn create-client
@@ -558,9 +566,10 @@
    ^SslContext ssl-context
    bootstrap-transform
    ^SocketAddress remote-address
-   ^SocketAddress local-address]
+   ^SocketAddress local-address
+   epoll?]
   (let [^Class
-        channel (if (epoll?)
+        channel (if (and epoll? (epoll-available?))
                   EpollSocketChannel
                   NioSocketChannel)
 
@@ -577,7 +586,9 @@
       (let [b (doto (Bootstrap.)
                 (.option ChannelOption/SO_REUSEADDR true)
                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group client-group)
+                (.group (if (and epoll? (epoll-available?))
+                          @epoll-client-group
+                          @nio-client-group))
                 (.channel channel)
                 (.handler (pipeline-initializer pipeline-builder))
                 bootstrap-transform)
@@ -596,14 +607,15 @@
    ^SslContext ssl-context
    bootstrap-transform
    on-close
-   ^SocketAddress socket-address]
+   ^SocketAddress socket-address
+   epoll?]
   (let [^EventLoopGroup
-        group (if (epoll?)
+        group (if (and epoll? (epoll-available?))
                 (EpollEventLoopGroup.)
                 (NioEventLoopGroup.))
 
         ^Class
-        channel (if (epoll?)
+        channel (if (and epoll? (epoll-available?))
                   EpollServerSocketChannel
                   NioServerSocketChannel)
 

@@ -415,10 +415,12 @@
            pipeline-transform
            ssl-context
            shutdown-executor?
-           rejected-handler]
+           rejected-handler
+           epoll?]
     :or {bootstrap-transform identity
          pipeline-transform identity
-         shutdown-executor? true}
+         shutdown-executor? true
+         epoll? false}
     :as options}]
   (let [executor (cond
                    (instance? Executor executor)
@@ -446,7 +448,8 @@
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
-      (if socket-address socket-address (InetSocketAddress. port)))))
+      (if socket-address socket-address (InetSocketAddress. port))
+      epoll?)))
 
 ;;;
 
