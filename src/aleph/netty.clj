@@ -306,7 +306,8 @@
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
-    (when-not (s/closed? this)
+    (if (s/closed? this)
+      (d/success-deferred false)
       (let [msg (try
                   (coerce-fn msg)
                   (catch Exception e
