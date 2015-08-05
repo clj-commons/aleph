@@ -203,7 +203,7 @@
               executor
               req
               @previous-response
-              body
+              (when body (bs/to-input-stream body))
               (HttpHeaders/isKeepAlive req))))
 
         process-request
@@ -356,9 +356,11 @@
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
-            (netty/put! (.channel ctx) @stream content)
-            (when (instance? LastHttpContent msg)
-              (s/close! @stream))))))))
+            (if (instance? LastHttpContent msg)
+              (do
+                (s/put! @stream content)
+                (s/close! @stream))
+              (netty/put! (.channel ctx) @stream content))))))))
 
 (defn pipeline-builder
   [handler
@@ -394,17 +396,6 @@
 
 ;;;
 
-(defn wrap-stream->input-stream
-  [f
-   {:keys [request-buffer-size]
-    :or {request-buffer-size 16384}}]
-  (let [opts {:buffer-size request-buffer-size}]
-    (fn [{:keys [body] :as req}]
-      (f
-        (assoc req :body
-          (when body
-            (bs/to-input-stream body opts)))))))
-
 (defn start-server
   [handler
    {:keys [port
@@ -428,7 +419,9 @@
 
                    (nil? executor)
                    (flow/utilization-executor 0.9 512
-                     {:metrics (EnumSet/of Stats$Metric/UTILIZATION)})
+                     {:metrics (EnumSet/of Stats$Metric/UTILIZATION)
+                      ;;:onto? false
+                      })
 
                    (= :none executor)
                    nil
@@ -439,9 +432,7 @@
                        (str "invalid executor specification: " (pr-str executor)))))]
     (netty/start-server
       (pipeline-builder
-        (if raw-stream?
-          handler
-          (wrap-stream->input-stream handler options))
+        handler
         pipeline-transform
         (assoc options :executor executor :ssl? (boolean ssl-context)))
       ssl-context

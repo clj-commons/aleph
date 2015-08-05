@@ -1,6 +1,9 @@
 (ns aleph.flow
   (:require
-    [manifold.deferred :as d])
+    [potemkin :as p]
+    [manifold
+     [deferred :as d]
+     [executor :as ex]])
   (:import
     [io.aleph.dirigiste
      Pool
@@ -21,39 +24,6 @@
      ArrayBlockingQueue
      ThreadFactory
      TimeUnit]))
-
-(defn- stats->map
-  ([s]
-    (stats->map s [0.5 0.9 0.95 0.99 0.999]))
-  ([^Stats s quantiles]
-    (let [stats (.getMetrics s)
-          q #(zipmap quantiles (mapv % quantiles))]
-      (merge
-        {:num-workers (.getNumWorkers s)}
-        (when (contains? stats Stats$Metric/QUEUE_LENGTH)
-          {:queue-length (q #(.getQueueLength s %))})
-        (when (contains? stats Stats$Metric/QUEUE_LATENCY)
-          {:queue-latency (q #(double (/ (.getQueueLatency s %) 1e6)))})
-        (when (contains? stats Stats$Metric/TASK_LATENCY)
-          {:task-latency (q #(double (/ (.getTaskLatency s %) 1e6)))})
-        (when (contains? stats Stats$Metric/TASK_ARRIVAL_RATE)
-          {:task-arrival-rate (q #(.getTaskArrivalRate s %))})
-        (when (contains? stats Stats$Metric/TASK_COMPLETION_RATE)
-          {:task-completion-rate (q #(.getTaskCompletionRate s %))})
-        (when (contains? stats Stats$Metric/TASK_REJECTION_RATE)
-          {:task-rejection-rate (q #(.getTaskRejectionRate s %))})
-        (when (contains? stats Stats$Metric/UTILIZATION)
-          {:utilization (q #(.getUtilization s %))})))))
-
-(let [factories (atom 0)]
-  (defn- create-thread-factory []
-    (let [factory (swap! factories inc)
-          threads (atom 0)]
-      (reify ThreadFactory
-        (newThread [_ r]
-          (doto
-            (Thread. r (str "aleph-pool-" factory "-" (swap! threads inc)))
-            (.setDaemon true)))))))
 
 (defn instrumented-pool
   "Returns a [Dirigiste](https://github.com/ztellman/dirigiste) object pool, which can be interacted
@@ -97,7 +67,7 @@
             (stats-callback
               (zipmap
                 (map str (keys key->stats))
-                (map stats->map (vals key->stats)))))
+                (map ex/stats->map (vals key->stats)))))
           (.adjustment c key->stats)))
 
       max-queue-size
@@ -130,76 +100,8 @@
   [^IPool p k obj]
   (.dispose p k obj))
 
-(defn instrumented-executor
-  "Returns a `java.util.concurrent.ExecutorService`, using [Dirigiste](https://github.com/ztellman/dirigiste).
-
-   |:---|:----
-   | `thread-factory` | an optional `java.util.concurrent.ThreadFactory` that creates the executor's thrreads. |
-   | `queue-length` | the maximum number of pending tasks before `.execute()` begins throwing `java.util.concurrent.RejectedExecutionException`, defaults to `0`.
-   | `stats-callback` | a function that will be invoked every `control-period` with the relevant statistics for the executor.
-   | `sample-period` | the interval, in milliseconds, between sampling the state of the executor for resizing and gathering statistics, defaults to `25`.
-   | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the executor, defaults to `10000`.
-   | `controller` | the Dirigiste controller that is used to guide the pool's size.
-   | `metrics` | an `EnumSet` of the metrics that should be gathered for the controller, defaults to all.
-   | `initial-thread-count` | the number of threads that the pool should begin with."
-  [{:keys
-    [thread-factory
-     queue-length
-     stats-callback
-     sample-period
-     control-period
-     controller
-     metrics
-     initial-thread-count]
-    :or {initial-thread-count 1
-         sample-period 25
-         control-period 10000
-         metrics (EnumSet/allOf Stats$Metric)}}]
-  (let [^Executor$Controller c controller
-        metrics (if (identical? :none metrics)
-                  (EnumSet/noneOf Stats$Metric)
-                  metrics)]
-    (assert controller "must specify :controller")
-    (Executor.
-      (or thread-factory (create-thread-factory))
-      (if (and queue-length (pos? queue-length))
-        (ArrayBlockingQueue. queue-length false)
-        (SynchronousQueue. false))
-      (if stats-callback
-        (reify Executor$Controller
-          (shouldIncrement [_ n]
-            (.shouldIncrement c n))
-          (adjustment [_ s]
-            (stats-callback (stats->map s))
-            (.adjustment c s)))
-        c)
-      initial-thread-count
-      metrics
-      sample-period
-      control-period
-      TimeUnit/MILLISECONDS)))
-
-(defn fixed-thread-executor
-  "Returns an executor which has a fixed number of threads."
-  ([num-threads]
-    (fixed-thread-executor num-threads nil))
-  ([num-threads options]
-    (instrumented-executor
-      (assoc options
-        :max-threads num-threads
-        :controller (reify Executor$Controller
-                      (shouldIncrement [_ n]
-                        (< n num-threads))
-                      (adjustment [_ s]
-                        (- num-threads (.getNumWorkers s))))))))
-
-(defn utilization-executor
-  "Returns an executor which sizes the thread pool according to target utilization, within
-   `[0,1]`, up to `max-threads`."
-  ([utilization max-threads]
-    (utilization-executor utilization max-threads nil))
-  ([utilization max-threads options]
-    (instrumented-executor
-      (assoc options
-        :max-threads max-threads
-        :controller (Executors/utilizationController utilization max-threads)))))
+(p/import-vars
+  [manifold.executor
+   instrumented-executor
+   utilization-executor
+   fixed-thread-executor])

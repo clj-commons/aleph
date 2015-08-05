@@ -31,7 +31,7 @@
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
     (d/chain #(s/connect % %))
-    (d/catch (fn [_] {}))))
+    (d/catch (fn [e] {}))))
 
 (deftest test-echo-handler
   (with-handler echo-handler

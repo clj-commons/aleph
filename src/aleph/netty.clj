@@ -163,7 +163,8 @@
           (append-to-buf! x))))))
 
 (defn to-byte-buf-stream [x chunk-size]
-  (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size}))
+  (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
+    (s/onto nil)))
 
 (defn wrap-future
   [^Future f]

@@ -74,7 +74,7 @@
   (swap! connection-stats-callbacks disj c))
 
 (def default-response-executor
-  (flow/utilization-executor 0.9 256))
+  (flow/utilization-executor 0.9 256 {:onto? false}))
 
 (defn connection-pool
   "Returns a connection pool which can be used as an argument in `request`.
@@ -301,3 +301,9 @@
 (def-http-method head)
 (def-http-method delete)
 (def-http-method connect)
+
+(defn get-all
+  "Given a header map from an HTTP request or response, returns a collection of values associated with the key,
+   rather than a comma-delimited string."
+  [^aleph.http.core.HeaderMap headers ^String k]
+  (-> headers ^io.netty.handler.codec.http.HttpHeaders (.headers) (.getAll k)))

@@ -3,7 +3,9 @@
     [clojure test])
   (:require
     [clojure.java.io :as io]
-    [aleph.netty :as netty]
+    [aleph
+     [netty :as netty]
+     [flow :as flow]]
     [byte-streams :as bs]
     [manifold.deferred :as d]
     [manifold.stream :as s]
@@ -163,8 +165,10 @@
             body (:body
                    @(http/put "http://localhost:8080/echo"
                       {:body words
-                       :socket-timeout 2000}))]
-        (is (= words (bs/to-string body)))))))
+                       :socket-timeout 2000}))
+            body' (bs/to-string body)]
+        (assert (== (min (count words) len) (count body')))
+        (is (= words body'))))))
 
 (deftest test-redirect
   (with-both-handlers basic-handler
@@ -199,7 +203,7 @@
             body (:body
                    @(http/put "http://localhost:8080/line_echo"
                       {:body words
-                       :socket-timeout 2000}))]
+                       :socket-timeout 1e4}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
 
 (deftest test-connection-timeout

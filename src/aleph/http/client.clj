@@ -153,11 +153,11 @@
 
       :channel-read
       ([_ ctx msg]
+
         (cond
 
           (instance? HttpResponse msg)
           (let [rsp msg]
-
             (if (HttpHeaders/isTransferEncodingChunked rsp)
               (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                     c (d/deferred)]
@@ -279,7 +279,7 @@
          epoll? false}
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
-        requests (s/stream 1024)
+        requests (s/stream 1024 nil nil)
         host (.getHostName ^InetSocketAddress remote-address)
         c (netty/create-client
             (pipeline-builder

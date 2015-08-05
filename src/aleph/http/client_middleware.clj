@@ -3,6 +3,7 @@
    copy/pastery"
   (:refer-clojure :exclude [update])
   (:require
+    [potemkin :as p]
     [clojure.stacktrace :refer [root-cause]]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
@@ -77,21 +78,22 @@
   ([s encoding]
     (URLEncoder/encode s encoding)))
 
-(defn opt
-  "Check the request parameters for a keyword  boolean option, with or without
-  the ?
+(let [param-? (memoize #(keyword (str (name %) "?")))]
+  (defn opt
+    "Check the request parameters for a keyword  boolean option, with or without
+     the ?
 
-  Returns false if either of the values are false, or the value of
-  (or key1 key2) otherwise (truthy)"
-  [req param]
-  (let [param-? (keyword (str (name param) "?"))
-        v1 (clojure.core/get req param)
-        v2 (clojure.core/get req param-?)]
-    (if (false? v1)
-      false
-      (if (false? v2)
+     Returns false if either of the values are false, or the value of
+     (or key1 key2) otherwise (truthy)"
+    [req param]
+    (let [param' (param-? param)
+          v1 (clojure.core/get req param)
+          v2 (clojure.core/get req param')]
+      (if (false? v1)
         false
-        (or v1 v2)))))
+        (if (false? v2)
+          false
+          (or v1 v2))))))
 
 ;;;
 
@@ -116,6 +118,20 @@
      :uri (url-encode-illegal-characters (.getPath url-parsed))
      :user-info (.getUserInfo url-parsed)
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
+
+(defn nest-params
+  [params]
+  (prewalk
+    #(if (and (vector? %) (map? (second %)))
+       (let [[fk m] %]
+         (reduce
+           (fn [m [sk v]]
+             (assoc m
+               (str (name fk) \[ (name sk) \]) v))
+           {}
+           m))
+       %)
+    params))
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
@@ -255,44 +271,37 @@
       :else
       rsp-r)))
 
+;; request decorators, adapted from the clj-http middleware
 
+(defmacro def-decorator [name [key req] & body]
+  `(defn ~(with-meta name {:middleware/key (keyword key)})
+     [{:keys [~key] :as ~req}]
+     (if ~key
+       (do ~@body)
+       ~req)))
 
-(defn wrap-content-type
-  "Middleware converting a `:content-type <keyword>` option to the formal
-  application/<name> format and adding it as a header."
-  [client]
-  (fn [{:keys [content-type character-encoding] :as req}]
-    (if content-type
-      (let [ctv (content-type-value content-type)
-            ct (if character-encoding
-                 (str ctv "; charset=" character-encoding)
-                 ctv)]
-        (client (update-in req [:headers] assoc "content-type" ct)))
-      (client req))))
+(def-decorator decorate-content-type
+  [content-type req]
+  (let [ctv (content-type-value content-type)
+        ct (if-let [encoding (:character-encoding req)]
+             (str ctv "; charset=" encoding)
+             ctv)]
+    (update-in req [:headers] assoc "content-type" ct)))
 
-(defn wrap-accept
-  "Middleware converting the :accept key in a request to application/<type>"
-  [client]
-  (fn [{:keys [accept] :as req}]
-    (if accept
-      (client (-> req (dissoc :accept)
-                (assoc-in [:headers "accept"]
-                  (content-type-value accept))))
-      (client req))))
+(def-decorator decorate-accept
+  [accept req]
+  (-> req (dissoc :accept)
+    (assoc-in [:headers "accept"]
+      (content-type-value accept))))
 
 (defn accept-encoding-value [accept-encoding]
   (str/join ", " (map name accept-encoding)))
 
-(defn wrap-accept-encoding
-  "Middleware converting the :accept-encoding option to an acceptable
-  Accept-Encoding header in the request."
-  [client]
-  (fn [{:keys [accept-encoding] :as req}]
-    (if accept-encoding
-      (client (-> req (dissoc :accept-encoding)
-                (assoc-in [:headers "accept-encoding"]
-                  (accept-encoding-value accept-encoding))))
-      (client req))))
+(def-decorator decorate-accept-encoding
+  [accept-encoding req]
+  (-> req (dissoc :accept-encoding)
+    (assoc-in [:headers "accept-encoding"]
+      (accept-encoding-value accept-encoding))))
 
 (defn detect-charset
   "Given a charset header, detect the charset, returns UTF-8 if not found."
@@ -304,37 +313,31 @@
     "UTF-8"))
 
 (defn generate-query-string [params & [content-type]]
-  (let [encoding (detect-charset content-type)]
-    (str/join "&"
-      (mapcat (fn [[k v]]
-                (if (sequential? v)
-                  (map #(str (url-encode (name %1) encoding)
-                          "="
-                          (url-encode (str %2) encoding))
-                    (repeat k) v)
-                  [(str (url-encode (name k) encoding)
-                     "="
-                     (url-encode (str v) encoding))]))
-        params))))
+  (let [encoding (detect-charset content-type)
+        sb (StringBuffer.)]
+    (p/doit [[k v] params]
+      (let [k' (url-encode (name k) encoding)]
+        (if (sequential? v)
+          (p/doit [x (if (sequential? v) v [v])]
+            (.append sb k')
+            (.append sb "=")
+            (.append sb (url-encode (str x) encoding))
+            (.append sb "&")))))
+    (.substring sb (unchecked-dec (unchecked-long (.length sb))))))
 
-(defn wrap-query-params
-  "Middleware converting the :query-params option to a querystring on
-  the request."
-  [client]
-  (fn [{:keys [query-params content-type]
-        :or {content-type :x-www-form-urlencoded}
-        :as req}]
-    (if query-params
-      (client (-> req (dissoc :query-params)
-                (update-in [:query-string]
-                  (fn [old-query-string new-query-string]
-                    (if-not (empty? old-query-string)
-                      (str old-query-string "&" new-query-string)
-                      new-query-string))
-                  (generate-query-string
-                    query-params
-                    (content-type-value content-type)))))
-      (client req))))
+(def-decorator decorate-query-params
+  [query-params req]
+  (let [content-type (get req :content-type :x-www-form-urlencoded)]
+    (-> req
+      (dissoc :query-params)
+      (update-in [:query-string]
+        (fn [old-query-string new-query-string]
+          (if-not (empty? old-query-string)
+            (str old-query-string "&" new-query-string)
+            new-query-string))
+        (generate-query-string
+          (nest-params query-params)
+          (content-type-value content-type))))))
 
 (defn basic-auth-value [basic-auth]
   (let [basic-auth (if (string? basic-auth)
@@ -346,107 +349,67 @@
         (.getBytes "UTF-8")
         javax.xml.bind.DatatypeConverter/printBase64Binary))))
 
-(defn wrap-basic-auth
-  "Middleware converting the :basic-auth option into an Authorization header."
-  [client]
-  (fn [req]
-    (if-let [basic-auth (:basic-auth req)]
-      (client (-> req (dissoc :basic-auth)
-                (assoc-in [:headers "authorization"]
-                  (basic-auth-value basic-auth))))
-      (client req))))
+(def-decorator decorate-basic-auth
+  [basic-auth req]
+  (-> req
+    (dissoc :basic-auth)
+    (assoc-in [:headers "authorization"]
+      (basic-auth-value basic-auth))))
 
-(defn wrap-oauth
-  "Middleware converting the :oauth-token option into an Authorization header."
-  [client]
-  (fn [req]
-    (if-let [oauth-token (:oauth-token req)]
-      (client (-> req (dissoc :oauth-token)
-                (assoc-in [:headers "authorization"]
-                  (str "Bearer " oauth-token))))
-      (client req))))
+(def-decorator decorate-oauth
+  [oauth-token req]
+  (-> req
+    (dissoc :oauth-token)
+    (assoc-in [:headers "authorization"]
+      (str "Bearer " oauth-token))))
 
 (defn parse-user-info [user-info]
   (when user-info
     (str/split user-info #":")))
 
-(defn wrap-user-info
-  "Middleware converting the :user-info option into a :basic-auth option"
-  [client]
-  (fn [req]
-    (if-let [[user password] (parse-user-info (:user-info req))]
-      (client (assoc req :basic-auth [user password]))
-      (client req))))
+(def-decorator decorate-user-info
+  [user-info req]
+  (if-let [[user password] (parse-user-info user-info)]
+    (assoc req :basic-auth [user password])
+    req))
 
-(defn wrap-method
-  "Middleware converting the :method option into the :request-method option"
-  [client]
-  (fn [req]
-    (if-let [m (:method req)]
-      (client (-> req (dissoc :method)
-                (assoc :request-method m)))
-      (client req))))
+(def-decorator decorate-method
+  [method req]
+  (-> req
+    (dissoc :method)
+    (assoc :request-method method)))
 
-(defn wrap-form-params
-  "Middleware wrapping the submission or form parameters."
-  [client]
-  (fn [{:keys [form-params content-type request-method json-opts]
-        :or {content-type :x-www-form-urlencoded}
-        :as req}]
-    (if (and form-params (#{:post :put :patch} request-method))
-      (client (-> req
-                (dissoc :form-params)
-                (assoc :content-type (content-type-value content-type)
-                  :body (generate-query-string form-params (content-type-value content-type)))))
-      (client req))))
+(def-decorator decorate-form-params
+  [form-params req]
+  (let [{:keys [request-method]} req]
+    (if (#{:post :put :patch} request-method)
+      (let [content-type (get req :content-type :x-www-form-urlencoded)]
+        (-> req
+          (dissoc
+            :form-params)
+          (assoc
+            :content-type (content-type-value content-type)
+            :body (generate-query-string
+                    (nest-params form-params)
+                    (content-type-value content-type)))))
+      req)))
 
-(defn- nest-params
-  [request param-key]
-  (if-let [params (request param-key)]
-    (assoc request param-key (prewalk
-                               #(if (and (vector? %) (map? (second %)))
-                                  (let [[fk m] %]
-                                    (reduce
-                                      (fn [m [sk v]]
-                                        (assoc m (str (name fk)
-                                                   \[ (name sk) \]) v))
-                                      {}
-                                      m))
-                                  %)
-                               params))
-    request))
+(defn decorate-nested-params
+  [{:keys [query-params form-params content-type] :as req}]
+  (if (= :json content-type)
+    req
+    (reduce
+      nest-params
+      req
+      [:query-params :form-params])))
 
-(defn wrap-nested-params
-  "Middleware wrapping nested parameters for query strings."
-  [client]
-  (fn [{:keys [query-params form-params content-type] :as req}]
-    (if (= :json content-type)
-      (client req)
-      (client (reduce
-                nest-params
-                req
-                [:query-params :form-params])))))
-
-(defn wrap-url
-  "Middleware wrapping request URL parsing."
-  [client]
-  (fn [req]
-    (if-let [url (:url req)]
-      (client (-> req (dissoc :url) (merge (parse-url url))))
-      (client req))))
-
-(defn wrap-unknown-host
-  "Middleware ignoring unknown hosts when the :ignore-unknown-host? option
-  is set."
-  [client]
-  (fn [req]
-    (try
-      (client req)
-      (catch Exception e
-        (if (= (type (root-cause e)) UnknownHostException)
-          (when-not (opt req :ignore-unknown-host)
-            (throw (root-cause e)))
-          (throw (root-cause e)))))))
+(defn decorate-url
+  [{:keys [url] :as req}]
+  (if url
+    (-> req
+      (dissoc :url)
+      (merge (parse-url url)))
+    req))
 
 (defn wrap-request-timing
   "Middleware that times the request, putting the total time (in milliseconds)
@@ -477,11 +440,7 @@
   (assoc resp :body (bs/to-byte-array (:body resp))))
 
 (defmethod coerce-response-body :stream [_ resp]
-  (let [body (:body resp)]
-    (cond (instance? InputStream body) resp
-          ;; This shouldn't happen, but we plan for it anyway
-      (instance? (Class/forName "[B") body)
-      (assoc resp :body (bs/to-input-stream body)))))
+  (update-in resp [:body] bs/to-input-stream))
 
 (defn coerce-json-body
   [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
@@ -516,33 +475,6 @@
     (assoc resp :body (parse-transit body type transit-opts))
     resp))
 
-(defmulti coerce-content-type (fn [req resp] (:content-type resp)))
-
-(defmethod coerce-content-type :application/clojure [req resp]
-  (coerce-clojure-body req resp))
-
-(defmethod coerce-content-type :application/edn [req resp]
-  (coerce-clojure-body req resp))
-
-(defmethod coerce-content-type :application/json [req resp]
-  (coerce-json-body req resp true false))
-
-(defmethod coerce-content-type :application/transit+json [req resp]
-  (coerce-transit-body req resp :json))
-
-(defmethod coerce-content-type :application/transit+msgpack [req resp]
-  (coerce-transit-body req resp :msgpack))
-
-(defmethod coerce-content-type :default [req resp]
-  (if-let [charset (-> resp :content-type-params :charset)]
-    (coerce-response-body {:as charset} resp)
-    (coerce-response-body {:as :default} resp)))
-
-(defmethod coerce-response-body :auto [request resp]
-  (let [header (get-in resp [:headers "content-type"])]
-    (->> (merge resp (parse-content-type header))
-      (coerce-content-type request))))
-
 (defmethod coerce-response-body :json [req resp]
   (coerce-json-body req resp true false))
 
@@ -573,47 +505,37 @@
 (defmethod coerce-response-body :default [_ resp]
   resp)
 
-(defn wrap-output-coercion
-  "Middleware converting a response body from a byte-array to a different
-  object. Defaults to a String if no :as key is specified, the
-  `coerce-response-body` multimethod may be extended to add
-  additional coercions."
-  [client]
-  (fn [req]
-    (d/let-flow' [{:keys [body] :as resp} (client req)]
-      (if body
-        (coerce-response-body req resp)
-        resp))))
-
-(def default-middleware
-  "The default list of middleware clj-http uses for wrapping requests."
-  [wrap-request-timing
-   wrap-query-params
-   wrap-basic-auth
-   wrap-oauth
-   wrap-user-info
-   wrap-url
-   wrap-exceptions
-   wrap-accept
-   wrap-accept-encoding
-   wrap-content-type
-   wrap-form-params
-   wrap-nested-params
-   wrap-method
-   wrap-unknown-host
-   wrap-output-coercion])
+(def default-request-decorators
+  [decorate-method
+   decorate-url
+   decorate-query-params
+   decorate-form-params
+   decorate-user-info
+   decorate-basic-auth
+   decorate-oauth
+   decorate-accept
+   decorate-accept-encoding
+   decorate-content-type])
 
 (defn wrap-request
   "Returns a batteries-included HTTP request function corresponding to the given
   core client. See default-middleware for the middleware wrappers that are used
   by default"
   [client]
-  (let [client' (reduce
-                  (fn wrap-request* [request middleware]
-                    (middleware request))
-                  client
-                  default-middleware)]
+  (let [client' (-> client
+                  wrap-exceptions
+                  wrap-request-timing)]
     (fn [req]
       (if (:aleph.http.client/close req)
         (client req)
-        (client' req)))))
+
+        (let [req' (reduce #(%2 %1) req default-request-decorators)]
+          (d/chain' (client' req')
+
+            ;; coerce the response body
+            (fn [{:keys [body] :as rsp}]
+              (if body
+                (coerce-response-body req' rsp)
+                rsp))
+
+            ))))))
