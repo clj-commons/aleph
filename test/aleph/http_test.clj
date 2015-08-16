@@ -206,6 +206,13 @@
                        :socket-timeout 1e4}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
 
+(deftest test-illegal-character-in-url
+  (with-handler hello-handler
+    (is (= "hello"
+           (-> @(http/get "http://localhost:8080/?param=illegal character")
+               :body
+               bs/to-string)))))
+
 (deftest test-connection-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
