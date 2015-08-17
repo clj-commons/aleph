@@ -12,6 +12,7 @@
      IOException]
     [java.net
      URI
+     URL
      InetSocketAddress]
     [io.netty.buffer
      ByteBuf
@@ -55,7 +56,7 @@
 (let [no-url (fn [req]
                (URI.
                  (name (or (:scheme req) :http))
-                 "nil"
+                 nil
                  (:host req)
                  (or (:port req) -1)
                  nil
@@ -64,9 +65,9 @@
 
   (defn req->domain [req]
     (if-let [url (:url req)]
-      (let [^URI uri (URI. url)]
+      (let [^URL uri (URL. url)]
         (URI.
-          (.getScheme uri)
+          (.getProtocol uri)
           nil
           (.getHost uri)
           (.getPort uri)
