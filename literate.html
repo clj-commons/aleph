@@ -2907,10 +2907,11 @@ will be illustrated below.</p>
    <code>manifold.deferred/-&gt;deferred</code>. This is entirely equivalent to the previous implementation.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn delayed-hello-world-handler
   [req]
-  (d/-&gt;deferred
-    (a/go
-      (let [_ (a/&lt;! (a/timeout 1000))]
-        (hello-world-handler req)))))</pre></td></tr><tr><td class="docs"><p>Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
+  (s/take!
+    (s/-&gt;source
+      (a/go
+        (let [_ (a/&lt;! (a/timeout 1000))]
+          (hello-world-handler req))))))</pre></td></tr><tr><td class="docs"><p>Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
    milliseconds.  While this would typically be represented by a lazy sequence, instead we use
    a Manifold stream.  Similar to the use of the deferred above, this means we don't need
    to allocate a thread per-request.</p>
