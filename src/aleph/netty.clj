@@ -7,7 +7,10 @@
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
     [primitive-math :as p]
-    [potemkin :refer [doit doary]])
+    [clojure
+     [string :as str]
+     [set :as set]]
+    [potemkin :as potemkin :refer [doit doary]])
   (:import
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
@@ -21,6 +24,7 @@
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
+    [io.netty.handler.codec TextHeaders]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
     [io.netty.channel.socket.nio NioServerSocketChannel
@@ -378,72 +382,72 @@
      ChannelOutboundHandler
 
      (handlerAdded
-       ~@(or (:handler-added handlers) `([_ _])))
+       ~@(or (:handler-added handlers) `([_# _#])))
      (handlerRemoved
-       ~@(or (:handler-removed handlers) `([_ _])))
+       ~@(or (:handler-removed handlers) `([_# _#])))
      (exceptionCaught
        ~@(or (:exception-caught handlers)
-           `([_ ctx# cause#]
+           `([_# ctx# cause#]
               (.fireExceptionCaught ctx# cause#))))
      (channelRegistered
        ~@(or (:channel-registered handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.fireChannelRegistered ctx#))))
      (channelUnregistered
        ~@(or (:channel-unregistered handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.fireChannelUnregistered ctx#))))
      (channelActive
        ~@(or (:channel-active handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.fireChannelActive ctx#))))
      (channelInactive
        ~@(or (:channel-inactive handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.fireChannelInactive ctx#))))
      (channelRead
        ~@(or (:channel-read handlers)
-           `([_ ctx# msg#]
+           `([_# ctx# msg#]
               (.fireChannelRead ctx# msg#))))
      (channelReadComplete
        ~@(or (:channel-read-complete handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.fireChannelReadComplete ctx#))))
      (userEventTriggered
        ~@(or (:user-event-triggered handlers)
-           `([_ ctx# evt#]
+           `([_# ctx# evt#]
               (.fireUserEventTriggered ctx# evt#))))
      (channelWritabilityChanged
        ~@(or (:channel-writability-changed handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.fireChannelWritabilityChanged ctx#))))
      (bind
        ~@(or (:bind handlers)
-           `([_ ctx# local-address# promise#]
+           `([_# ctx# local-address# promise#]
               (.bind ctx# local-address# promise#))))
      (connect
        ~@(or (:connect handlers)
-           `([_ ctx# remote-address# local-address# promise#]
+           `([_# ctx# remote-address# local-address# promise#]
               (.connect ctx# remote-address# local-address# promise#))))
      (disconnect
        ~@(or (:disconnect handlers)
-           `([_ ctx# promise#]
+           `([_# ctx# promise#]
               (.disconnect ctx# promise#))))
      (close
        ~@(or (:close handlers)
-           `([_ ctx# promise#]
+           `([_# ctx# promise#]
               (.close ctx# promise#))))
      (read
        ~@(or (:read handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.read ctx#))))
      (write
        ~@(or (:write handlers)
-           `([_ ctx# msg# promise#]
+           `([_# ctx# msg# promise#]
               (.write ctx# msg# promise#))))
      (flush
        ~@(or (:flush handlers)
-           `([_ ctx#]
+           `([_# ctx#]
               (.flush ctx#))))))
 
 (defn ^ChannelHandler bandwidth-tracker [^Channel ch]
@@ -519,6 +523,61 @@
             (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
+
+;;;
+
+(potemkin/def-map-type TextHeaderMap
+  [^TextHeaders headers
+   added
+   removed
+   mta]
+  (meta [_]
+    mta)
+  (with-meta [_ m]
+    (TextHeaderMap.
+      headers
+      added
+      removed
+      m))
+  (keys [_]
+    (set/difference
+      (set/union
+        (set (map str/lower-case (.names headers)))
+        (set (keys added)))
+      (set removed)))
+  (assoc [_ k v]
+    (TextHeaderMap.
+      headers
+      (assoc added k v)
+      (disj removed k)
+      mta))
+  (dissoc [_ k]
+    (TextHeaderMap.
+      headers
+      (dissoc added k)
+      (conj (or removed #{}) k)
+      mta))
+  (get [_ k default-value]
+    (if (contains? removed k)
+      default-value
+      (if-let [e (find added k)]
+        (val e)
+        (let [k' (str/lower-case (name k))
+              vs (.getAll headers k')]
+          (if (.isEmpty vs)
+            default-value
+            (if (p/== 1 (.size vs))
+              (.get vs 0)
+              (reduce
+                (fn [v s]
+                  (if v
+                    (str v "," s)
+                    s)
+                  vs)
+                nil))))))))
+
+(defn text-headers [^TextHeaders headers]
+  (TextHeaderMap. headers nil nil nil))
 
 ;;;
 

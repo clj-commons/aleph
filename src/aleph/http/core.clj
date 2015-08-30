@@ -114,19 +114,13 @@
       default-value
       (if-let [e (find added k)]
         (val e)
-        (let [k' (str/lower-case (name k))]
-          (if-let [v (->> headers
-                       .entries
-                       (reduce
-                         (fn [v ^Map$Entry e]
-                           (if (= k' (str/lower-case (.getKey e)))
-                             (if v
-                               (str v "," (.getValue e))
-                               (.getValue e))
-                             v))
-                         nil))]
-            v
-            default-value))))))
+        (let [k' (str/lower-case (name k))
+              vs (.getAll headers k')]
+          (if (.isEmpty vs)
+            default-value
+            (if (== 1 (.size vs))
+              (.get vs 0)
+              (str/join "," vs))))))))
 
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
