@@ -213,6 +213,10 @@
 
 ;;;
 
+(defn try-set-content-length! [^HttpMessage msg ^long length]
+  (when-not (-> msg .headers (.contains "Content-Length"))
+    (HttpHeaders/setContentLength msg length)))
+
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
 (let [ary-class (class (byte-array 0))]
@@ -291,7 +295,7 @@
         len (.length raf)
         fc (.getChannel raf)
         fr (DefaultFileRegion. fc 0 len)]
-    (HttpHeaders/setContentLength msg len)
+    (try-set-content-length! msg len)
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
@@ -300,7 +304,7 @@
   (let [body (if body
                (DefaultLastHttpContent. (netty/to-byte-buf ch body))
                empty-last-content)]
-    (HttpHeaders/setContentLength msg (-> ^HttpContent body .content .readableBytes))
+    (try-set-content-length! msg (-> ^HttpContent body .content .readableBytes))
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 

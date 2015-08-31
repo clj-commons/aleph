@@ -46,10 +46,11 @@
    create our response, and convert the channel it returns using
    `manifold.deferred/->deferred`. This is entirely equivalent to the previous implementation."
   [req]
-  (d/->deferred
-    (a/go
-      (let [_ (a/<! (a/timeout 1000))]
-        (hello-world-handler req)))))
+  (s/take!
+    (s/->source
+      (a/go
+        (let [_ (a/<! (a/timeout 1000))]
+          (hello-world-handler req))))))
 
 (defn streaming-numbers-handler
   "Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
