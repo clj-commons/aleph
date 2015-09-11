@@ -4,7 +4,7 @@
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
-                 [io.netty/netty-all "4.1.0.Beta5"]
+                 [io.netty/netty-all "4.1.0.Beta6"]
                  [manifold "0.1.1-SNAPSHOT"]
                  [byte-streams "0.2.1-SNAPSHOT"]
                  [potemkin "0.4.1"]]
