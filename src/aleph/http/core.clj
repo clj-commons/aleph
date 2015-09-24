@@ -306,7 +306,12 @@
   (let [body (if body
                (DefaultLastHttpContent. (netty/to-byte-buf ch body))
                empty-last-content)]
-    (HttpHeaders/setContentLength msg (-> ^HttpContent body .content .readableBytes))
+    (let [code (-> msg .getStatus .code)]
+      (cond
+        (<= 100 code 199) nil
+        (= 204 code) nil
+        :else
+        (HttpHeaders/setContentLength msg (-> ^HttpContent body .content .readableBytes))))
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
