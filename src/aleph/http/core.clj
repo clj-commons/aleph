@@ -305,8 +305,13 @@
 (defn send-contiguous-body [ch ^HttpMessage msg body]
   (let [body (if body
                (DefaultLastHttpContent. (netty/to-byte-buf ch body))
-               empty-last-content)]
-    (HttpHeaders/setContentLength msg (-> ^HttpContent body .content .readableBytes))
+               empty-last-content)
+        length (-> ^HttpContent body .content .readableBytes)]
+    (if (instance? HttpResponse msg)
+      (let [code (-> msg .getStatus .code)]
+        (when-not (or (<= 100 code 199) (= 204 code))
+          (HttpHeaders/setContentLength msg length)))
+      (HttpHeaders/setContentLength msg length))
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
