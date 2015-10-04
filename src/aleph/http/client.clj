@@ -356,8 +356,8 @@
   (WebSocketClientHandshakerFactory/newHandshaker
     uri
     WebSocketVersion/V13
-    extensions?
     sub-protocols
+    extensions?
     (doto (DefaultHttpHeaders.) (http/map->headers! headers))))
 
 (defn websocket-client-handler [raw-stream? uri extensions? sub-protocols headers]
