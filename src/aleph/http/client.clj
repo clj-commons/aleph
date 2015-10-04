@@ -452,7 +452,7 @@
     :as options}]
   (let [uri (URI. uri)
         ssl? (= "wss" (.getScheme uri))
-        [s handler] (websocket-client-handler raw-stream? uri subprotocols extensions? headers)]
+        [s handler] (websocket-client-handler raw-stream? uri sub-protocols extensions? headers)]
 
     (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
