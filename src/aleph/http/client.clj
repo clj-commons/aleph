@@ -352,7 +352,7 @@
 (defn websocket-frame-size [^WebSocketFrame frame]
   (-> frame .content .readableBytes))
 
-(defn ^WebSocketClientHandshaker websocket-handshaker [uri extensions? sub-protocols headers]
+(defn ^WebSocketClientHandshaker websocket-handshaker [uri sub-protocols extensions? headers]
   (WebSocketClientHandshakerFactory/newHandshaker
     uri
     WebSocketVersion/V13
@@ -360,10 +360,10 @@
     extensions?
     (doto (DefaultHttpHeaders.) (http/map->headers! headers))))
 
-(defn websocket-client-handler [raw-stream? uri extensions? sub-protocols headers]
+(defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers]
   (let [d (d/deferred)
         in (atom nil)
-        handshaker (websocket-handshaker uri extensions? sub-protocols headers)]
+        handshaker (websocket-handshaker uri sub-protocols extensions? headers)]
 
     [d
 
@@ -442,17 +442,17 @@
 (defn websocket-connection
   [uri
    {:keys [raw-stream? bootstrap-transform insecure? headers local-address epoll?
-           extensions? sub-protocols]
+           sub-protocols extensions?]
     :or {bootstrap-transform identity
          keep-alive? true
          raw-stream? false
          epoll? false
-         extensions? false
-         sub-protocols nil}
+         sub-protocols nil
+         extensions? false}
     :as options}]
   (let [uri (URI. uri)
         ssl? (= "wss" (.getScheme uri))
-        [s handler] (websocket-client-handler raw-stream? uri extensions? subprotocols headers)]
+        [s handler] (websocket-client-handler raw-stream? uri subprotocols extensions? headers)]
 
     (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
