@@ -34,8 +34,9 @@
    | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `broadcast?` | if true, all UDP datagrams are broadcast.
+   | `bootstrap-transform` | a function which takes the Netty `Bootstrap` object, and makes any desired changes before it's bound to a socket.
    | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [socket-address port broadcast? raw-stream?]}]
+  [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform]}]
   (let [in (atom nil)
         d (d/deferred)
         g (NioEventLoopGroup.)
@@ -79,6 +80,8 @@
                   (netty/put! (.channel ctx) @in msg)))))
         socket-address (or socket-address (InetSocketAddress. (or port 0)))]
     (try
+      (when bootstrap-transform
+        (bootstrap-transform b))
       (-> b (.bind ^SocketAddress socket-address))
       d
       (catch Throwable e
