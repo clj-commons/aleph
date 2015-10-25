@@ -110,7 +110,7 @@
 ;; ### end demonstration
 
 ;; While we can do trivial computation on the same thread we receive messages, longer computation
-;; or blocking operaitons should be done elsewhere.  To accomplish this, we need something a
+;; or blocking operations should be done elsewhere.  To accomplish this, we need something a
 ;; little more complicated than `connect`ing a stream to itself.
 ;;
 ;; Here, we define an asynchronous loop via `manifold.deferred/loop`.  In this loop, we take a
