@@ -27,6 +27,14 @@
 
 (alter-meta! #'->UdpPacket assoc :private true)
 
+(defn- set-netty-options [bootstrap options]
+  (dorun
+    (map
+      (fn[option-args]
+        (let [[option value] option-args]
+          (.option bootstrap option value)))
+         options)))
+
 (defn socket
   "Returns a deferred which yields a duplex stream that can be used to send and receive UDP datagrams.
 
@@ -34,8 +42,9 @@
    | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `broadcast?` | if true, all UDP datagrams are broadcast.
-   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [socket-address port broadcast? raw-stream?]}]
+   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `netty-options` | extra options as list of tuples to pass for netty"
+  [{:keys [socket-address port broadcast? raw-stream? netty-options]}]
   (let [in (atom nil)
         d (d/deferred)
         g (NioEventLoopGroup.)
@@ -43,6 +52,7 @@
             (.group g)
             (.channel NioDatagramChannel)
             (.option ChannelOption/SO_BROADCAST (boolean broadcast?))
+            (set-netty-options netty-options)
             (.handler
               (netty/channel-handler
                 :exception-caught
