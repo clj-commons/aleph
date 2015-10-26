@@ -2904,7 +2904,8 @@ will be illustrated below.</p>
     1000
     (hello-world-handler req)))</pre></td></tr><tr><td class="docs"><p>Alternately, we can use a <a href="https://github.com/clojure/core.async">core.async</a> goroutine to
    create our response, and convert the channel it returns using
-   <code>manifold.deferred/-&gt;deferred</code>. This is entirely equivalent to the previous implementation.</p>
+   <code>manifold.deferred/-&gt;source</code>, and then take the first message from it. This is entirely equivalent
+   to the previous implementation.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn delayed-hello-world-handler
   [req]
   (s/take!
@@ -3106,7 +3107,7 @@ while in transit between the server and client.  The bytes are consumed and pars
 </td><td class="codes"><pre class="brush: clojure">@(s/take! c)   ; =&gt; 2</pre></td></tr><tr><td class="docs"><p>The server implements <code>java.io.Closeable</code>, and can be stopped by calling <code>close()</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(.close s)</pre></td></tr><tr><td class="docs"><h3>end demonstration</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>While we can do trivial computation on the same thread we receive messages, longer computation
-or blocking operaitons should be done elsewhere.  To accomplish this, we need something a
+or blocking operations should be done elsewhere.  To accomplish this, we need something a
 little more complicated than <code>connect</code>ing a stream to itself.</p>
 
 <p>Here, we define an asynchronous loop via <code>manifold.deferred/loop</code>.  In this loop, we take a
