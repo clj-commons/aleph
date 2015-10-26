@@ -273,7 +273,7 @@
   (println "starting HTTP benchmark server on 8080")
   (netty/leak-detector-level! :disabled)
   (let [server (http/start-server hello-handler {:port 8080})]
-    (Thread/sleep (* 1000 600))
+    (Thread/sleep (* 1000 60))
     (println "stopping server")
     (.close ^java.io.Closeable server)))
 
@@ -285,6 +285,6 @@
                    (d/let-flow [s (http/websocket-connection req)]
                      (s/consume #(s/put! s %) s)))
                  {:port 8080})]
-    (Thread/sleep (* 1000 600))
+    (Thread/sleep (* 1000 60))
     (println "stopping server")
     (.close ^java.io.Closeable server)))

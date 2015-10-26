@@ -24,7 +24,7 @@
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
-    [io.netty.handler.codec TextHeaders]
+    [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
     [io.netty.channel.socket.nio NioServerSocketChannel
@@ -526,15 +526,15 @@
 
 ;;;
 
-(potemkin/def-map-type TextHeaderMap
-  [^TextHeaders headers
+(potemkin/def-map-type HeaderMap
+  [^Headers headers
    added
    removed
    mta]
   (meta [_]
     mta)
   (with-meta [_ m]
-    (TextHeaderMap.
+    (HeaderMap.
       headers
       added
       removed
@@ -546,13 +546,13 @@
         (set (keys added)))
       (set removed)))
   (assoc [_ k v]
-    (TextHeaderMap.
+    (HeaderMap.
       headers
       (assoc added k v)
       (disj removed k)
       mta))
   (dissoc [_ k]
-    (TextHeaderMap.
+    (HeaderMap.
       headers
       (dissoc added k)
       (conj (or removed #{}) k)
@@ -576,8 +576,8 @@
                   vs)
                 nil))))))))
 
-(defn text-headers [^TextHeaders headers]
-  (TextHeaderMap. headers nil nil nil))
+(defn headers [^Headers h]
+  (HeaderMap. h nil nil nil))
 
 ;;;
 
