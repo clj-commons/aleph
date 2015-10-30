@@ -317,13 +317,12 @@
         sb (StringBuffer.)]
     (p/doit [[k v] params]
       (let [k' (url-encode (name k) encoding)]
-        (if (sequential? v)
-          (p/doit [x (if (sequential? v) v [v])]
-            (.append sb k')
-            (.append sb "=")
-            (.append sb (url-encode (str x) encoding))
-            (.append sb "&")))))
-    (.substring sb (unchecked-dec (unchecked-long (.length sb))))))
+        (p/doit [x (if (sequential? v) v [v])]
+          (.append sb k')
+          (.append sb "=")
+          (.append sb (url-encode (str x) encoding))
+          (.append sb "&"))))
+    (.substring sb 0 (unchecked-dec (unchecked-long (.length sb))))))
 
 (def-decorator decorate-query-params
   [query-params req]
