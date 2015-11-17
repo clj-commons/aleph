@@ -72,7 +72,7 @@
   (let [^DateFormat format
         (or
           (.get date-format)
-          (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z")]
+          (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)]
             (.setTimeZone format (TimeZone/getTimeZone "GMT"))
             (.set date-format format)
             format))]
@@ -102,7 +102,7 @@
       (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
 
       [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.0" "Keep-Alive" "Close"])]
+      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.1" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? rsp]
     (let [[^HttpResponse rsp body]

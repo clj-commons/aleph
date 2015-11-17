@@ -270,6 +270,7 @@
            pipeline-transform
            keep-alive?
            insecure?
+           ssl-context
            response-buffer-size
            on-closed
            response-executor
@@ -289,9 +290,10 @@
                 (assoc options :pipeline-transform pipeline-transform)
                 options))
             (when ssl?
-              (if insecure?
-                (netty/insecure-ssl-client-context)
-                (netty/ssl-client-context)))
+              (or ssl-context
+                (if insecure?
+                  (netty/insecure-ssl-client-context)
+                  (netty/ssl-client-context))))
             bootstrap-transform
             remote-address
             local-address
