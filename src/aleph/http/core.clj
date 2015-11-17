@@ -281,16 +281,16 @@
       (s/connect src sink)
 
       (let [d (d/deferred)]
-        (s/on-closed sink #(d/success! d true))
-        (d/chain' d
-          (fn [_]
+        (s/on-closed sink
+          (fn []
+
             (when (instance? Closeable body)
               (.close ^Closeable body))
 
-            ;; enqueue this onto the channel, since other messages
-            ;; may already be in flight
             (.execute (-> ch aleph.netty/channel .eventLoop)
-              #(netty/write-and-flush ch empty-last-content))))))
+              #(d/success! d
+                 (netty/write-and-flush ch empty-last-content)))))
+        d))
 
     (netty/write-and-flush ch empty-last-content)))
 
