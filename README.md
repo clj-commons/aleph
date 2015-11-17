@@ -42,7 +42,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
   prn)
 ```
 
-To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.http).
+While Aleph attempts to mimic the clj-http API and capabilities fully, it does not currently support multipart requests, cookie stores, or proxy servers.  To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.http).
 
 ### WebSockets
 
