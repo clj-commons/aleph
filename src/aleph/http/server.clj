@@ -11,7 +11,8 @@
     [java.util
      EnumSet
      TimeZone
-     Date]
+     Date
+     Locale]
     [java.text
      DateFormat
      SimpleDateFormat]
