@@ -251,7 +251,7 @@
                                 ;; only release the connection back once the response is complete
                                  (d/chain' (:aleph/complete rsp)
                                    (fn [early?]
-                                     (if early?
+                                     (if (or early? (not (:keep-alive? rsp)))
                                        (flow/dispose pool k conn)
                                        (flow/release pool k conn))))
                                  (-> rsp
