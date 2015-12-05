@@ -313,16 +313,18 @@
     "UTF-8"))
 
 (defn generate-query-string [params & [content-type]]
-  (let [encoding (detect-charset content-type)
-        sb (StringBuffer.)]
-    (p/doit [[k v] params]
-      (let [k' (url-encode (name k) encoding)]
-        (p/doit [x (if (sequential? v) v [v])]
-          (.append sb k')
-          (.append sb "=")
-          (.append sb (url-encode (str x) encoding))
-          (.append sb "&"))))
-    (.substring sb 0 (unchecked-dec (unchecked-long (.length sb))))))
+  (if (seq params)
+    (let [encoding (detect-charset content-type)
+          sb (StringBuffer.)]
+      (p/doit [[k v] params]
+        (let [k' (url-encode (name k) encoding)]
+          (p/doit [x (if (sequential? v) v [v])]
+            (.append sb k')
+            (.append sb "=")
+            (.append sb (url-encode (str x) encoding))
+            (.append sb "&"))))
+      (.substring sb 0 (unchecked-dec (unchecked-long (.length sb)))))
+    ""))
 
 (def-decorator decorate-query-params
   [query-params req]
