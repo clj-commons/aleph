@@ -129,8 +129,15 @@
   (doseq [e m]
     (let [k (normalize-header-key (key e))
           v (val e)]
-      (if (sequential? v)
+
+      (cond
+        (nil? v)
+        (throw (IllegalArgumentException. (str "nil value for header key '" k "'")))
+
+        (sequential? v)
         (.add h ^CharSequence k ^Iterable v)
+
+        :else
         (.add h ^CharSequence k ^Object v)))))
 
 (defn ring-response->netty-response [m]
