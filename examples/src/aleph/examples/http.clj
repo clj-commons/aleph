@@ -3,6 +3,7 @@
     [compojure.core :as compojure :refer [GET]]
     [ring.middleware.params :as params]
     [compojure.route :as route]
+    [compojure.response :refer [Renderable]]
     [aleph.http :as http]
     [byte-streams :as bs]
     [manifold.stream :as s]
@@ -40,6 +41,15 @@
     (d/deferred)
     1000
     (hello-world-handler req)))
+
+;; Compojure will normally dereference deferreds and return the realized value.
+;; This unfortunately blocks the thread. Since aleph can accept the un-realized
+;; deferred, we extend compojure's Renderable protocol to pass the deferred
+;; through unchanged so that the thread won't be blocked.
+
+(extend-protocol Renderable
+  manifold.deferred.Deferred
+  (render [d _] d))
 
 (defn delayed-hello-world-handler
   "Alternately, we can use a [core.async](https://github.com/clojure/core.async) goroutine to
