@@ -225,6 +225,15 @@
           @(http/get "http://localhost:8080/slow"
              {:request-timeout 5})))))
 
+(deftest test-explicit-url
+  (with-handler hello-handler
+    (is (= "hello" (-> @(http/request {:method :get
+                                       :scheme :http
+                                       :server-name "localhost"
+                                       :server-port 8080})
+                       :body
+                       bs/to-string)))))
+
 (defn get-netty-client-event-threads []
   (->> (Thread/getAllStackTraces)
     .keySet
