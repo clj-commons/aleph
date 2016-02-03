@@ -57,8 +57,8 @@
                (URI.
                  (name (or (:scheme req) :http))
                  nil
-                 (:host req)
-                 (or (:port req) -1)
+                 (or (:host req) (:server-name req))
+                 (or (:port req) (:server-port req) -1)
                  nil
                  nil
                  nil))]
