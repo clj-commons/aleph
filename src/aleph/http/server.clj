@@ -508,8 +508,8 @@
 
 (defn initialize-websocket-handler
   [^NettyRequest req
-   {:keys [raw-stream? headers]
-    :or {raw-stream? false}
+   {:keys [raw-stream? headers max-frame-payload]
+    :or {raw-stream? false, max-frame-payload 65536}
     :as options}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
@@ -522,7 +522,7 @@
               (get-in req [:headers "host"])
               (:uri req))
         req (http/ring-request->full-netty-request req)
-        factory (WebSocketServerHandshakerFactory. url nil false)]
+        factory (WebSocketServerHandshakerFactory. url nil false max-frame-payload)]
     (if-let [handshaker (.newHandshaker factory req)]
       (try
         (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
