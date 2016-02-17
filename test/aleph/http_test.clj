@@ -62,6 +62,11 @@
   {:status 200
    :body "hello"})
 
+(defn big-handler [request]
+  {:status 200
+   :body (->> (s/periodically 0.1 #(byte-array 1024))
+           (s/transform (take 100)))})
+
 (defn redirect-handler [{:keys [query-string] :as request}]
   (let [count (-> (.split #"[?=]" query-string) second Integer/parseInt)
         host (-> request :headers (get "host"))]
@@ -79,7 +84,8 @@
 (def browser-server (atom nil))
 
 (def route-map
-  {"/redirect" redirect-handler
+  {"/big" big-handler
+   "/redirect" redirect-handler
    "/stream" stream-handler
    "/slow" slow-handler
    "/file" file-handler
@@ -266,6 +272,18 @@
     (if initial-threads-property
       (set-prop initial-threads-property)
       (clear-prop))))
+
+;;;
+
+(deftest ^:stress handle-large-responses []
+  (with-handler basic-handler
+    (let [pool (http/connection-pool {:connection-options {:response-buffer-size 16}})]
+      (dotimes [_ 1e6]
+        (-> @(http/get (str "http://localhost:" 8080 "/big")
+               {:pool pool
+                :as :byte-array})
+          :body
+          count)))))
 
 ;;;
 

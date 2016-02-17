@@ -25,8 +25,11 @@
             [lein-jammin "0.1.1"]
             [ztellman/lein-cljfmt "0.1.10"]]
   :cljfmt {:indents {#".*" [[:inner 0]]}}
-  :test-selectors {:default (complement :benchmark)
+  :test-selectors {:default #(not
+                               (some #{:benchmark :stress}
+                                 (cons (:tag %) (keys %))))
                    :benchmark :benchmark
+                   :stress :stress
                    :all (constantly true)}
   :jvm-opts ^:replace ["-server"
                        "-XX:+UseConcMarkSweepGC"
