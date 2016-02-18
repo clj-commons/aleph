@@ -357,11 +357,9 @@
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
-            (if (instance? LastHttpContent msg)
-              (do
-                (s/put! @stream content)
-                (s/close! @stream))
-              (netty/put! (.channel ctx) @stream content))))))))
+            (netty/put! (.channel ctx) @stream content)
+            (when (instance? LastHttpContent msg)
+              (s/close! @stream))))))))
 
 (defn pipeline-builder
   [handler
