@@ -2872,6 +2872,7 @@ net.brehaut.ClojureTools = (function (SH) {
     [compojure.core :as compojure :refer [GET]]
     [ring.middleware.params :as params]
     [compojure.route :as route]
+    [compojure.response :refer [Renderable]]
     [aleph.http :as http]
     [byte-streams :as bs]
     [manifold.stream :as s]
@@ -2902,7 +2903,14 @@ will be illustrated below.</p>
   (d/timeout!
     (d/deferred)
     1000
-    (hello-world-handler req)))</pre></td></tr><tr><td class="docs"><p>Alternately, we can use a <a href="https://github.com/clojure/core.async">core.async</a> goroutine to
+    (hello-world-handler req)))</pre></td></tr><tr><td class="docs"><p>Compojure will normally dereference deferreds and return the realized value.
+This unfortunately blocks the thread. Since aleph can accept the un-realized
+deferred, we extend compojure's Renderable protocol to pass the deferred
+through unchanged so that the thread won't be blocked.</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(extend-protocol Renderable
+  manifold.deferred.Deferred
+  (render [d _] d))</pre></td></tr><tr><td class="docs"><p>Alternately, we can use a <a href="https://github.com/clojure/core.async">core.async</a> goroutine to
    create our response, and convert the channel it returns using
    <code>manifold.deferred/-&gt;source</code>, and then take the first message from it. This is entirely equivalent
    to the previous implementation.</p>
