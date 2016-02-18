@@ -21,6 +21,8 @@
 
 (netty/leak-detector-level! :paranoid)
 
+(def port 8082)
+
 (def string-response "String!")
 (def seq-response (map identity ["sequence: " 1 " two " 3.0]))
 (def file-response (File. (str (System/getProperty "user.dir") "/test/file.txt")))
@@ -65,7 +67,7 @@
 (defn big-handler [request]
   {:status 200
    :body (->> (s/periodically 0.1 #(byte-array 1024))
-           (s/transform (take 100)))})
+           (s/transform (take 1e3)))})
 
 (defn redirect-handler [{:keys [query-string] :as request}]
   (let [count (-> (.split #"[?=]" query-string) second Integer/parseInt)
@@ -77,7 +79,8 @@
                               (if (= "localhost" host)
                                 "127.0.0.1"
                                 "localhost")
-                              ":8080/redirect?count=" (dec count))}
+                              ":" port
+                              "/redirect?count=" (dec count))}
        :body "redirected!"})))
 
 (def latch (promise))
@@ -126,11 +129,11 @@
          (.close ^java.io.Closeable server#)))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080})
+  `(with-server (http/start-server ~handler {:port port})
      ~@body))
 
 (defmacro with-raw-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080, :raw-stream? true})
+  `(with-server (http/start-server ~handler {:port port, :raw-stream? true})
      ~@body))
 
 (defmacro with-both-handlers [handler & body]
@@ -147,7 +150,7 @@
         (= result
           (bs/to-string
             (:body
-              @(http/get (str "http://localhost:8080/" path)
+              @(http/get (str "http://localhost:" port "/" path)
                  {:socket-timeout 1000}))))))))
 
 (def words (slurp "/usr/share/dict/words"))
@@ -155,21 +158,21 @@
 (deftest test-bulk-requests
   (with-handler basic-handler
     (->> (range 1e3)
-      (map (fn [_] (http/get "http://localhost:8080/string")))
+      (map (fn [_] (http/get (str "http://localhost:" port "/string"))))
       (apply d/zip)
       deref)
     (dotimes [_ 1e2]
       (->> (range 1e2)
-        (map (fn [_] (http/get "http://localhost:8080/string")))
+        (map (fn [_] (http/get (str "http://localhost:" port "/string"))))
         (apply d/zip)
         deref))))
 
 (deftest test-echo
-  (with-both-handlers basic-handler
+  (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5 1e6 1e7]]
       (let [words (->> words (take len) (apply str))
             body (:body
-                   @(http/put "http://localhost:8080/echo"
+                   @(http/put (str "http://localhost:" port "/echo")
                       {:body words
                        :socket-timeout 2000}))
             body' (bs/to-string body)]
@@ -179,26 +182,26 @@
 (deftest test-redirect
   (with-both-handlers basic-handler
     (is (= "ok"
-          (-> @(http/get "http://localhost:8080/redirect?count=10")
+          (-> @(http/get (str "http://localhost:" port "/redirect?count=10"))
             :body
             bs/to-string)))
     (is (= "redirected!"
-          (-> @(http/get "http://localhost:8080/redirect?count=25")
+          (-> @(http/get (str "http://localhost:" port "/redirect?count=25"))
             :body
             bs/to-string)))
     (is (= "ok"
-          (-> @(http/get "http://localhost:8080/redirect?count=25" {:max-redirects 30})
+          (-> @(http/get (str "http://localhost:" port "/redirect?count=25") {:max-redirects 30})
             :body
             bs/to-string)))))
 
 (deftest test-middleware
   (with-both-handlers basic-handler
     (is (= "String!"
-          (-> @(http/get "http://localhost:8080/stream"
+          (-> @(http/get (str "http://localhost:" port "/stream")
                  {:middleware
                   (fn [client]
                     (fn [req]
-                      (client (assoc req :url "http://localhost:8080/string"))))})
+                      (client (assoc req :url (str "http://localhost:" port "/string")))))})
             :body
             bs/to-string)))))
 
@@ -207,7 +210,7 @@
     (doseq [len [1e3 1e4 1e5]]
       (let [words (->> words (take len) (apply str))
             body (:body
-                   @(http/put "http://localhost:8080/line_echo"
+                   @(http/put (str "http://localhost:" port "/line_echo")
                       {:body words
                        :socket-timeout 1e4}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
@@ -215,7 +218,7 @@
 (deftest test-illegal-character-in-url
   (with-handler hello-handler
     (is (= "hello"
-           (-> @(http/get "http://localhost:8080/?param=illegal character")
+           (-> @(http/get (str "http://localhost:" port "/?param=illegal character"))
                :body
                bs/to-string)))))
 
@@ -228,7 +231,7 @@
 (deftest test-request-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
-          @(http/get "http://localhost:8080/slow"
+          @(http/get (str "http://localhost:" port "/slow")
              {:request-timeout 5})))))
 
 (deftest test-explicit-url
@@ -236,7 +239,7 @@
     (is (= "hello" (-> @(http/request {:method :get
                                        :scheme :http
                                        :server-name "localhost"
-                                       :server-port 8080})
+                                       :server-port port})
                        :body
                        bs/to-string)))))
 
@@ -252,7 +255,7 @@
       (= string-response
         (bs/to-string
           (:body
-            @(http/get "http://localhost:8080/string")))))
+            @(http/get (str "http://localhost:" port "/string"))))))
     (let [client-threads (get-netty-client-event-threads)]
       (is (> (count client-threads) 0))
       (is (every? #(.isDaemon ^Thread %) client-threads)))))
@@ -287,8 +290,10 @@
 (deftest ^:stress handle-large-responses []
   (with-handler basic-handler
     (let [pool (http/connection-pool {:connection-options {:response-buffer-size 16}})]
-      (dotimes [_ 1e6]
-        (-> @(http/get (str "http://localhost:" 8080 "/big")
+      (dotimes [i 1e6]
+        (when (zero? (rem i 1e2))
+          (prn i))
+        (-> @(http/get (str "http://localhost:" port "/big")
                {:pool pool
                 :as :byte-array})
           :body

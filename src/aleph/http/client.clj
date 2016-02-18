@@ -262,7 +262,7 @@
      ::close true}))
 
 (defn http-connection
-  [remote-address
+  [^InetSocketAddress remote-address
    ssl?
    {:keys [local-address
            raw-stream?
@@ -282,7 +282,9 @@
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
-        host (.getHostName ^InetSocketAddress remote-address)
+        host (.getHostName remote-address)
+        port (.getPort remote-address)
+        explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         c (netty/create-client
             (pipeline-builder
               responses
@@ -305,7 +307,7 @@
           (fn [req]
             (let [^HttpRequest req' (http/ring-request->netty-request req)]
               (when-not (.get (.headers req') "Host")
-                (HttpHeaders/setHost req' ^String host))
+                (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
               (when-not (.get (.headers req') "Connection")
                 (HttpHeaders/setKeepAlive req' keep-alive?))
               (netty/safe-execute ch
