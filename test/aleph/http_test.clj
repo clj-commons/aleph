@@ -218,9 +218,9 @@
 (deftest test-illegal-character-in-url
   (with-handler hello-handler
     (is (= "hello"
-           (-> @(http/get (str "http://localhost:" port "/?param=illegal character"))
-               :body
-               bs/to-string)))))
+          (-> @(http/get (str "http://localhost:" port "/?param=illegal character"))
+            :body
+            bs/to-string)))))
 
 (deftest test-connection-timeout
   (with-handler basic-handler
@@ -240,8 +240,8 @@
                                        :scheme :http
                                        :server-name "localhost"
                                        :server-port port})
-                       :body
-                       bs/to-string)))))
+                     :body
+                     bs/to-string)))))
 
 (defn get-netty-client-event-threads []
   (->> (Thread/getAllStackTraces)

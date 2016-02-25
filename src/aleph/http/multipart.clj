@@ -27,10 +27,7 @@
     {:name name
      :content (bs/to-byte-buffer content)
      :mime-type (mime-type-descriptor
-                  (or mime-type (URLConnection/guessContentTypeFromName (.getName ^File content))))}
-
-    ))
+                  (or mime-type (URLConnection/guessContentTypeFromName (.getName ^File content))))}))
 
 
-(defn multipart-body [boundary parts]
-  )
+(defn multipart-body [boundary parts])

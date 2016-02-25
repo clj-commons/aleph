@@ -261,15 +261,15 @@
         ;; enable backpressure
         (-> ch .config (.setAutoRead false))
 
-        (d/chain' d
-          (fn [result]
-
-            (when-not result
-              (release msg)
-              (.close ch))
-
-            ;; disable backpressure
-            (-> ch .config (.setAutoRead true))))
+        (-> d
+          (d/finally'
+            (fn []
+              (-> ch .config (.setAutoRead true))))
+          (d/chain'
+            (fn [result]
+              (when-not result
+                (release msg)
+                (.close ch)))))
         d))))
 
 ;;;

@@ -537,6 +537,4 @@
             (fn [{:keys [body] :as rsp}]
               (if body
                 (coerce-response-body req' rsp)
-                rsp))
-
-            ))))))
+                rsp))))))))
