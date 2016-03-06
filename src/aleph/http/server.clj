@@ -528,18 +528,15 @@
               h (DefaultHttpHeaders.)]
           (http/map->headers! h headers)
           (-> (try
-                (.handshake handshaker ch ^HttpRequest req h p)
-                (netty/wrap-future p)
+                (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                 (catch Throwable e
                   (d/error-deferred e)))
             (d/chain'
-              (fn [x]
-                (if x
-                  (let [pipeline (.pipeline ch)]
-                    (.remove pipeline "request-handler")
-                    (.addLast pipeline "websocket-handler" handler)
-                    s)
-                  (.await p))))
+              (fn [_]
+                (let [pipeline (.pipeline ch)]
+                  (.remove pipeline "request-handler")
+                  (.addLast pipeline "websocket-handler" handler)
+                  s)))
             (d/catch'
               (fn [e]
                 (http/send-message

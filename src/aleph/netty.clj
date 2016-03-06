@@ -174,14 +174,14 @@
   [^Future f]
   (when f
     (if (.isSuccess f)
-      (d/success-deferred true)
+      (d/success-deferred (.getNow f))
       (let [d (d/deferred)]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
               (cond
                 (.isSuccess f)
-                (d/success! d true)
+                (d/success! d (.getNow f))
 
                 (.isCancelled f)
                 (d/error! d (CancellationException. "future is cancelled."))
@@ -258,12 +258,14 @@
              false)
 
       (do
+
         ;; enable backpressure
         (-> ch .config (.setAutoRead false))
 
         (-> d
           (d/finally'
             (fn []
+              ;; disable backpressure
               (-> ch .config (.setAutoRead true))))
           (d/chain'
             (fn [result]
