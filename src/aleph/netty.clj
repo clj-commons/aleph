@@ -690,25 +690,30 @@
                              (pipeline-builder p))
                            pipeline-builder)]
 
-    (let [b (doto (ServerBootstrap.)
-              (.option ChannelOption/SO_BACKLOG (int 1024))
-              (.option ChannelOption/SO_REUSEADDR true)
-              (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-              (.group group)
-              (.channel channel)
-              (.childHandler (pipeline-initializer pipeline-builder))
-              (.childOption ChannelOption/SO_REUSEADDR true)
-              (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-              bootstrap-transform)
+    (try
+      (let [b (doto (ServerBootstrap.)
+                (.option ChannelOption/SO_BACKLOG (int 1024))
+                (.option ChannelOption/SO_REUSEADDR true)
+                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                (.group group)
+                (.channel channel)
+                (.childHandler (pipeline-initializer pipeline-builder))
+                (.childOption ChannelOption/SO_REUSEADDR true)
+                (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                bootstrap-transform)
 
-          ^ServerSocketChannel
-          ch (-> b (.bind socket-address) .sync .channel)]
-      (reify
-        java.io.Closeable
-        (close [_]
-          (when on-close (on-close))
-          (-> ch .close .sync)
-          (-> group .shutdownGracefully wrap-future))
-        AlephServer
-        (port [_]
-          (-> ch .localAddress .getPort))))))
+            ^ServerSocketChannel
+            ch (-> b (.bind socket-address) .sync .channel)]
+        (reify
+          java.io.Closeable
+          (close [_]
+            (when on-close (on-close))
+            (-> ch .close .sync)
+            (-> group .shutdownGracefully wrap-future))
+          AlephServer
+          (port [_]
+            (-> ch .localAddress .getPort))))
+      
+      (catch Exception e
+        @(.shutdownGracefully group)
+        (throw e)))))
