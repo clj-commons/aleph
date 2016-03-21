@@ -21,6 +21,25 @@
 
 (netty/leak-detector-level! :paranoid)
 
+(def pool (http/connection-pool {:connection-options {:keep-alive? false}}))
+
+(def default-options
+  {:pool pool
+   :socket-timeout 1e3
+   :request-timeout 1e4})
+
+(defn http-get
+  ([url]
+   (http-get url nil))
+  ([url options]
+   (http/get url (merge default-options options))))
+
+(defn http-put
+  ([url]
+   (http-put url nil))
+  ([url options]
+   (http/put url (merge default-options options))))
+
 (def port 8082)
 
 (def string-response "String!")
@@ -150,31 +169,32 @@
         (= result
           (bs/to-string
             (:body
-              @(http/get (str "http://localhost:" port "/" path)
-                 {:socket-timeout 1000}))))))))
+              @(http-get (str "http://localhost:" port "/" path)))))))))
 
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-bulk-requests
-  (with-handler basic-handler
-    (->> (range 1e3)
-      (map (fn [_] (http/get (str "http://localhost:" port "/string"))))
-      (apply d/zip)
-      deref)
-    (dotimes [_ 1e2]
-      (->> (range 1e2)
-        (map (fn [_] (http/get (str "http://localhost:" port "/string"))))
+  (with-open [pool (http/connection-pool nil)]
+    (with-handler basic-handler
+      (->> (range 1e3)
+        (map (fn [_] (http-get (str "http://localhost:" port "/string")
+                       {:pool pool})))
         (apply d/zip)
-        deref))))
+        deref)
+      (dotimes [_ 1e2]
+        (->> (range 1e2)
+          (map (fn [_] (http-get (str "http://localhost:" port "/string")
+                         {:pool pool})))
+          (apply d/zip)
+          deref)))))
 
 (deftest test-echo
   (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5 1e6 1e7]]
       (let [words (->> words (take len) (apply str))
             body (:body
-                   @(http/put (str "http://localhost:" port "/echo")
-                      {:body words
-                       :socket-timeout 2000}))
+                   @(http-put (str "http://localhost:" port "/echo")
+                      {:body words}))
             body' (bs/to-string body)]
         (assert (== (min (count words) len) (count body')))
         (is (= words body'))))))
@@ -182,22 +202,23 @@
 (deftest test-redirect
   (with-both-handlers basic-handler
     (is (= "ok"
-          (-> @(http/get (str "http://localhost:" port "/redirect?count=10"))
+          (-> @(http-get (str "http://localhost:" port "/redirect?count=10"))
             :body
             bs/to-string)))
     (is (= "redirected!"
-          (-> @(http/get (str "http://localhost:" port "/redirect?count=25"))
+          (-> @(http-get (str "http://localhost:" port "/redirect?count=25"))
             :body
             bs/to-string)))
     (is (= "ok"
-          (-> @(http/get (str "http://localhost:" port "/redirect?count=25") {:max-redirects 30})
+          (-> @(http-get (str "http://localhost:" port "/redirect?count=25")
+                 {:max-redirects 30})
             :body
             bs/to-string)))))
 
 (deftest test-middleware
   (with-both-handlers basic-handler
     (is (= "String!"
-          (-> @(http/get (str "http://localhost:" port "/stream")
+          (-> @(http-get (str "http://localhost:" port "/stream")
                  {:middleware
                   (fn [client]
                     (fn [req]
@@ -210,28 +231,27 @@
     (doseq [len [1e3 1e4 1e5]]
       (let [words (->> words (take len) (apply str))
             body (:body
-                   @(http/put (str "http://localhost:" port "/line_echo")
-                      {:body words
-                       :socket-timeout 1e4}))]
+                   @(http-put (str "http://localhost:" port "/line_echo")
+                      {:body words}))]
         (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
 
 (deftest test-illegal-character-in-url
   (with-handler hello-handler
     (is (= "hello"
-          (-> @(http/get (str "http://localhost:" port "/?param=illegal character"))
+          (-> @(http-get (str "http://localhost:" port "/?param=illegal character"))
             :body
             bs/to-string)))))
 
 (deftest test-connection-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
-          @(http/get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
+          @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
              {:connection-timeout 2})))))
 
 (deftest test-request-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
-          @(http/get (str "http://localhost:" port "/slow")
+          @(http-get (str "http://localhost:" port "/slow")
              {:request-timeout 5})))))
 
 (deftest test-explicit-url
@@ -239,7 +259,9 @@
     (is (= "hello" (-> @(http/request {:method :get
                                        :scheme :http
                                        :server-name "localhost"
-                                       :server-port port})
+                                       :server-port port
+                                       :pool pool
+                                       :request-timeout 1e3})
                      :body
                      bs/to-string)))))
 
