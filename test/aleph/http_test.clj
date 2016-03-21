@@ -174,7 +174,7 @@
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-bulk-requests
-  (with-open [pool (http/connection-pool nil)]
+  (let [pool (http/connection-pool nil)]
     (with-handler basic-handler
       (->> (range 1e3)
         (map (fn [_] (http-get (str "http://localhost:" port "/string")
