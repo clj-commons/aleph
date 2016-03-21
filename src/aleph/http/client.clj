@@ -5,6 +5,7 @@
     [manifold.deferred :as d]
     [manifold.stream :as s]
     [aleph.http.core :as http]
+    [aleph.http.multipart :as multipart]
     [aleph.http.client-middleware :as middleware]
     [aleph.netty :as netty])
   (:import
@@ -310,8 +311,13 @@
                 (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
               (when-not (.get (.headers req') "Connection")
                 (HttpHeaders/setKeepAlive req' keep-alive?))
-              (netty/safe-execute ch
-                (http/send-message ch true req' (get req :body)))))
+
+              ;; TODO: uncomment this once the multipart implmenetation is validated
+              (let [body (if-let [parts (comment (get req :multipart))]
+                           (multipart/encode-body parts)
+                           (get req :body))]
+                (netty/safe-execute ch
+                  (http/send-message ch true req' body)))))
           requests)
 
         (s/on-closed responses

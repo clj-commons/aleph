@@ -149,10 +149,11 @@
    | `insecure?` | if `true`, the certificates for `wss://` will be ignored.
    | `extensions?` | if `true`, the websocket extensions will be supported.
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocls.
-   | `headers` | the headers that should be included in the handshake"
+   | `headers` | the headers that should be included in the handshake
+   | `max-frame-payload` | maximum allowable frame payload length, in bytes"
   ([url]
     (websocket-client url nil))
-  ([url {:keys [raw-stream? insecure? sub-protocols extensions? headers] :as options}]
+  ([url {:keys [raw-stream? insecure? sub-protocols extensions? headers max-frame-payload] :as options}]
     (client/websocket-connection url options)))
 
 (defn websocket-connection
@@ -294,7 +295,8 @@
    | `pool` | the `connection-pool` that should be used, defaults to the `default-connection-pool`
    | `middleware` | any additional middleware that should be used for handling requests and responses
    | `headers` | the HTTP headers for the request
-   | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)")
+   | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)
+   | `multipart` | a vector of bodies")
        :arglists arglists)))
 
 (def-http-method get)

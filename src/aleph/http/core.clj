@@ -288,6 +288,7 @@
       (s/connect src sink)
 
       (-> ch
+        netty/channel
         .closeFuture
         netty/wrap-future
         (d/chain (fn [_] (s/close! src))))
