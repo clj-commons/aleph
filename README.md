@@ -42,7 +42,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
   prn)
 ```
 
-While Aleph attempts to mimic the clj-http API and capabilities fully, it does not currently support multipart requests, cookie stores, or proxy servers.  To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.http).
+While Aleph attempts to mimic the clj-http API and capabilities fully, it does not currently support multipart requests, cookie stores, or proxy servers.  To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.http).
 
 ### WebSockets
 
@@ -60,7 +60,7 @@ This takes all messages from the client, and feeds them back into the duplex soc
 
 WebSocket clients can be created via `(aleph.http/websocket-client url)`, which returns a deferred which yields a duplex stream that can send and receive messages from the server.
 
-To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.websocket).
+To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.websocket).
 
 ### TCP
 
@@ -79,7 +79,7 @@ An echo TCP server is very similar to the above WebSocket example:
 
 A TCP client can be created via `(aleph.tcp/client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
-To learn more, [read the example code](http://ideolalia.com/aleph/literate.html#aleph.examples.tcp).
+To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.tcp).
 
 ### UDP
 
@@ -93,7 +93,7 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
 
 Where incoming packets will have a `:message` that is a byte-array, which can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
 
-To learn more, [read the documentation](http://ideolalia.com/aleph/aleph.udp.html).
+To learn more, [read the documentation](http://aleph.io/examples/literate.html).
 
 ### license
 
