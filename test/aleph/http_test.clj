@@ -30,15 +30,15 @@
 
 (defn http-get
   ([url]
-   (http-get url nil))
+    (http-get url nil))
   ([url options]
-   (http/get url (merge default-options options))))
+    (http/get url (merge default-options options))))
 
 (defn http-put
   ([url]
-   (http-put url nil))
+    (http-put url nil))
   ([url options]
-   (http/put url (merge default-options options))))
+    (http/put url (merge default-options options))))
 
 (def port 8082)
 
@@ -174,7 +174,7 @@
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-bulk-requests
-  (let [pool (http/connection-pool nil)]
+  ([pool (http/connection-pool nil)]
     (with-handler basic-handler
       (->> (range 1e3)
         (map (fn [_] (http-get (str "http://localhost:" port "/string")

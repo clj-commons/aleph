@@ -19,6 +19,8 @@
   ([scheme host port path]
     (str scheme "://" host ":" port path)))
 
+(def pool (http/connection-pool {:connection-options {:keep-alive? false}}))
+
 (defn request
   ([& {:as options}]
     (let [options (merge
@@ -26,7 +28,8 @@
                      :method :get}
                     options)]
       (->> @(http/request
-              {:method (:method options)
+              {:pool pool
+               :method (:method options)
                :url (:url options)
                :headers (:headers options)
                :body (:body options)})

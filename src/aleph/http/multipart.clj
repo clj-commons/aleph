@@ -31,8 +31,8 @@
   "Generates a part map of the appropriate format"
   [{:keys [name content mime-type charset transfer-encoding] :or {:transfer-encoding :quoted-printable}}]
   (let [mt (or mime-type
-               (when (instance? File content)
-                 (URLConnection/guessContentTypeFromName (.getName ^File content))))]
+             (when (instance? File content)
+               (URLConnection/guessContentTypeFromName (.getName ^File content))))]
     {:name name :content (bs/to-byte-buffer content)
      :mime-type (mime-type-descriptor mt charset)
      :transfer-encoding transfer-encoding}))
@@ -67,18 +67,18 @@
 
 (defn encode-body
   ([parts]
-   (encode-body (boundary) parts))
+    (encode-body (boundary) parts))
   ([^String boundary parts]
-   (let [b (bs/to-byte-buffer boundary)
-         b-len (+ 2 (.length boundary))
-         ps (map #(-> % populate-part encode-part) parts)
-         boundaries-len (* (inc (count parts)) b-len)
-         part-len (reduce (fn [acc ^String p] (+ acc (.length p))) 0 ps)
-         buf (ByteBuffer/allocate (+ boundaries-len part-len))]
-     (.put buf 0 b)
-     (reduce (fn [idx part]
-               (let [p-len (.length ^String part)]
-                 (.put buf idx part)
-                 (.put buf (+ idx part-len) b)
-                 (+ idx part-len b-len))) b-len ps)
-     buf)))
+    (let [b (bs/to-byte-buffer boundary)
+          b-len (+ 2 (.length boundary))
+          ps (map #(-> % populate-part encode-part) parts)
+          boundaries-len (* (inc (count parts)) b-len)
+          part-len (reduce (fn [acc ^String p] (+ acc (.length p))) 0 ps)
+          buf (ByteBuffer/allocate (+ boundaries-len part-len))]
+      (.put buf 0 b)
+      (reduce (fn [idx part]
+                (let [p-len (.length ^String part)]
+                  (.put buf idx part)
+                  (.put buf (+ idx part-len) b)
+                  (+ idx part-len b-len))) b-len ps)
+      buf)))
