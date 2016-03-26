@@ -1,4 +1,4 @@
-(defproject aleph "0.4.1-beta6"
+(defproject aleph "0.4.1-beta7"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -7,7 +7,7 @@
                  [io.netty/netty-all "4.1.0.CR3"]
                  [io.aleph/dirigiste "0.1.3"]
                  [manifold "0.1.4-alpha1"]
-                 [byte-streams "0.2.1"]
+                 [byte-streams "0.2.2-alpha1"]
                  [potemkin "0.4.3"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]
                                   [criterium "0.4.4"]]}}
@@ -31,7 +31,8 @@
                    :all (constantly true)}
   :jvm-opts ^:replace ["-server"
                        "-XX:+UseConcMarkSweepGC"
-                       "-Xmx4g"
+                       "-Xmx256m"
+                       "-XX:+HeapDumpOnOutOfMemoryError"
                        #_"-XX:+PrintCompilation"
                        #_"-XX:+UnlockDiagnosticVMOptions"
                        #_"-XX:+PrintInlining"]
