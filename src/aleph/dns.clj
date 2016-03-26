@@ -1,4 +1,5 @@
 (ns aleph.dns
+  (:refer-clojure :exclude [resolve])
   (:require
     [aleph.netty :as netty])
   (:import
@@ -7,14 +8,19 @@
     [io.netty.channel
      EventLoop
      EventLoopGroup]
+    [io.netty.channel.nio
+     NioEventLoopGroup]
     [io.netty.channel.socket.nio
      NioDatagramChannel]
     [io.netty.resolver.dns
      DnsCache
      DnsServerAddresses
      DnsAddressResolverGroup
+     DnsNameResolver
+     DnsNameResolverContext
      DnsNameResolverBuilder]
     [io.netty.resolver
+     AddressResolver
      DefaultAddressResolverGroup
      AddressResolverGroup]))
 

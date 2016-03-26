@@ -324,7 +324,7 @@
                         " into binary representation"))
                     (close ch)))
             ^ChannelFuture f (write-and-flush ch msg)
-            d (or (wrap-future f) (d/success-deferred true))]
+            d (d/chain (wrap-future f) (fn [_] true))]
         (if blocking?
           @d
           d))))
@@ -713,7 +713,7 @@
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))))
-      
+
       (catch Exception e
         @(.shutdownGracefully group)
         (throw e)))))
