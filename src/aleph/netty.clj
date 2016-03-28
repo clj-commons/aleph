@@ -672,10 +672,13 @@
    on-close
    ^SocketAddress socket-address
    epoll?]
-  (let [^EventLoopGroup
+  (let [num-cores (.availableProcessors (Runtime/getRuntime))
+        num-threads (* 2 num-cores)
+        thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" true)
+        ^EventLoopGroup
         group (if (and epoll? (epoll-available?))
-                (EpollEventLoopGroup.)
-                (NioEventLoopGroup.))
+                (EpollEventLoopGroup. num-threads thread-factory)
+                (NioEventLoopGroup. num-threads thread-factory))
 
         ^Class
         channel (if (and epoll? (epoll-available?))

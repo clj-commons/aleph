@@ -39,7 +39,7 @@
   [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform]}]
   (let [in (atom nil)
         d (d/deferred)
-        g (NioEventLoopGroup.)
+        g @netty/nio-client-group
         b (doto (Bootstrap.)
             (.group g)
             (.channel NioDatagramChannel)
