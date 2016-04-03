@@ -32,6 +32,7 @@
   :jvm-opts ^:replace ["-server"
                        "-XX:+UseConcMarkSweepGC"
                        #_"-Xmx256m"
+                       "-Xmx2g"
                        "-XX:+HeapDumpOnOutOfMemoryError"
                        #_"-XX:+PrintCompilation"
                        #_"-XX:+UnlockDiagnosticVMOptions"
