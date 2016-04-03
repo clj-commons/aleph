@@ -23,7 +23,7 @@
 
 (def pool (http/connection-pool {:connection-options {:keep-alive? false}}))
 
-(def default-options
+(defn default-options []
   {:pool pool
    :socket-timeout 1e3
    :request-timeout 1e4})
@@ -32,13 +32,13 @@
   ([url]
     (http-get url nil))
   ([url options]
-    (http/get url (merge default-options options))))
+    (http/get url (merge (default-options) options))))
 
 (defn http-put
   ([url]
     (http-put url nil))
   ([url options]
-    (http/put url (merge default-options options))))
+    (http/put url (merge (default-options) options))))
 
 (def port 8082)
 
@@ -175,18 +175,21 @@
 
 (deftest test-bulk-requests
   (let [pool (http/connection-pool nil)]
-    (with-handler basic-handler
-      (->> (range 1e3)
-        (map (fn [_] (http-get (str "http://localhost:" port "/string")
-                       {:pool pool})))
-        (apply d/zip)
-        deref)
-      (dotimes [_ 10]
-        (->> (range 1e2)
+    (try
+      (with-handler basic-handler
+        (->> (range 1e3)
           (map (fn [_] (http-get (str "http://localhost:" port "/string")
                          {:pool pool})))
           (apply d/zip)
-          deref)))))
+          deref)
+        (dotimes [_ 10]
+          (->> (range 1e2)
+            (map (fn [_] (http-get (str "http://localhost:" port "/string")
+                           {:pool pool})))
+            (apply d/zip)
+            deref)))
+      (finally
+        (.shutdown pool)))))
 
 (deftest test-echo
   (with-handler basic-handler
