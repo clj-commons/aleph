@@ -181,7 +181,7 @@
                        {:pool pool})))
         (apply d/zip)
         deref)
-      (dotimes [_ 1e2]
+      (dotimes [_ 10]
         (->> (range 1e2)
           (map (fn [_] (http-get (str "http://localhost:" port "/string")
                          {:pool pool})))
