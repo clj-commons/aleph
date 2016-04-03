@@ -4,7 +4,7 @@ Aleph exposes data from the network as a [Manifold](https://github.com/ztellman/
 
 ```clj
 [org.clojure/clojure "1.6.0"] ;; you must use 1.6.0 or later
-[aleph "0.4.1-beta7"]
+[aleph "0.4.1"]
 ```
 
 ### HTTP
