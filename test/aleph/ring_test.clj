@@ -91,3 +91,7 @@
 (deftest test-remote-addr
   (with-server [:remote-addr]
     (is (= "127.0.0.1" (request)))))
+
+(deftest test-host-header
+  (with-server [:headers :host]
+    (is (= "localhost:8080" (request)))))

@@ -21,6 +21,7 @@
           :output-dir "doc"}
   :plugins [[codox "0.8.10"]
             [lein-jammin "0.1.1"]
+            [lein-marginalia "0.9.0"]
             [ztellman/lein-cljfmt "0.1.10"]]
   :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default #(not

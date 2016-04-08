@@ -1,5 +1,5 @@
 (ns aleph.examples.tcp
-  (require
+  (:require
     [manifold.deferred :as d]
     [manifold.stream :as s]
     [clojure.edn :as edn]
