@@ -712,7 +712,7 @@
           (close [_]
             (when on-close (on-close))
             (-> ch .close .sync)
-            (-> group .shutdownGracefully wrap-future))
+            @(.shutdownGracefully group))
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))))
