@@ -70,6 +70,7 @@
                                    (.content packet)
                                    (netty/release-buf->array (.content packet)))))
                              in)]
+
                     (d/success! d
                       (doto
                         (s/splice out in)
@@ -82,7 +83,11 @@
     (try
       (when bootstrap-transform
         (bootstrap-transform b))
-      (-> b (.bind ^SocketAddress socket-address))
+      (let [cf (.bind b ^SocketAddress socket-address)]
+        (d/chain
+          (d/zip (netty/wrap-future cf) d)
+          (fn [[_ s]]
+            (s/on-closed s #(netty/close (.channel cf))))))
       d
       (catch Throwable e
         (d/error-deferred e)))))

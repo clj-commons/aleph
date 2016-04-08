@@ -71,3 +71,5 @@
 (send-metric! "b" 2)
 
 @(s/take! server)     ; => {"a" 1, "b" 2}
+
+(s/close! server)
