@@ -178,13 +178,13 @@
   (let [pool (http/connection-pool nil)]
     (try
       (with-handler basic-handler
-        (->> (range 1e3)
+        (->> (range 1e2)
           (map (fn [_] (http-get (str "http://localhost:" port "/string")
                          {:pool pool})))
           (apply d/zip)
           deref)
         (dotimes [_ 10]
-          (->> (range 1e2)
+          (->> (range 10)
             (map (fn [_] (http-get (str "http://localhost:" port "/string")
                            {:pool pool})))
             (apply d/zip)
