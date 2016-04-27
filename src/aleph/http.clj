@@ -302,6 +302,7 @@
 (def-http-method get)
 (def-http-method post)
 (def-http-method put)
+(def-http-method patch)
 (def-http-method options)
 (def-http-method trace)
 (def-http-method head)
