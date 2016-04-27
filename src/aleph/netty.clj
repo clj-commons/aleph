@@ -712,10 +712,11 @@
           (close [_]
             (when on-close (on-close))
             (-> ch .close .sync)
-            (-> group .shutdownGracefully wrap-future))
+            (-> group .shutdownGracefully))
           clojure.lang.IDeref
           (deref [_]
             (-> ch .closeFuture .await)
+            (-> group .terminationFuture .await)
             nil)
           AlephServer
           (port [_]

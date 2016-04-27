@@ -45,6 +45,7 @@
          bootstrap-transform identity}}]
   (let [in (atom nil)
         d (d/deferred)
+        epoll? (and epoll? (netty/epoll-available?))
         g (if epoll?
             @netty/epoll-client-group
             @netty/nio-client-group)

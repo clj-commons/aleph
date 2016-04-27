@@ -145,7 +145,8 @@
      (try
        ~@body
        (finally
-         (.close ^java.io.Closeable server#)))))
+         (.close ^java.io.Closeable server#)
+         @server#))))
 
 (defmacro with-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port})
