@@ -18,7 +18,9 @@
     [io.netty.channel.socket
      DatagramPacket]
     [io.netty.channel.socket.nio
-     NioDatagramChannel]))
+     NioDatagramChannel]
+    [io.netty.channel.epoll
+     EpollDatagramChannel]))
 
 (p/def-derived-map UdpPacket [^DatagramPacket packet content]
   :host (-> packet ^InetSocketAddress (.sender) .getHostName)
@@ -36,13 +38,19 @@
    | `broadcast?` | if true, all UDP datagrams are broadcast.
    | `bootstrap-transform` | a function which takes the Netty `Bootstrap` object, and makes any desired changes before it's bound to a socket.
    | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform]}]
+  [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform epoll?]
+    :or {epoll? false
+         broadcast? false
+         raw-stream? false
+         bootstrap-transform identity}}]
   (let [in (atom nil)
         d (d/deferred)
-        g @netty/nio-client-group
+        g (if epoll?
+            @netty/epoll-client-group
+            @netty/nio-client-group)
         b (doto (Bootstrap.)
             (.group g)
-            (.channel NioDatagramChannel)
+            (.channel (if epoll? EpollDatagramChannel NioDatagramChannel))
             (.option ChannelOption/SO_BROADCAST (boolean broadcast?))
             (.handler
               (netty/channel-handler
@@ -81,8 +89,7 @@
                   (netty/put! (.channel ctx) @in msg)))))
         socket-address (or socket-address (InetSocketAddress. (or port 0)))]
     (try
-      (when bootstrap-transform
-        (bootstrap-transform b))
+      (bootstrap-transform b)
       (let [cf (.bind b ^SocketAddress socket-address)]
         (d/chain
           (d/zip (netty/wrap-future cf) d)

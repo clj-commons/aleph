@@ -127,9 +127,9 @@
 (def handler
   (params/wrap-params
     (compojure/routes
-      (GET "/hello" [] hello-world-handler)
+      (GET "/hello"         [] hello-world-handler)
       (GET "/delayed_hello" [] delayed-hello-world-handler)
-      (GET "/numbers" [] streaming-numbers-handler)
+      (GET "/numbers"       [] streaming-numbers-handler)
       (route/not-found "No such page."))))
 
 (def s (http/start-server handler {:port 10000}))

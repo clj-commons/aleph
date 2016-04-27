@@ -33,7 +33,7 @@
   "This is the inverse operation of `send-metrics!`, taking the message, splitting it on the
    colon delimiter, and parsing the `value`."
   [{:keys [message]}]
-  (let [message (bs/to-string message)
+  (let [message        (bs/to-string message)
         [metric value] (str/split message #":")]
     [metric (Long/parseLong value)]))
 

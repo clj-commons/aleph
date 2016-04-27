@@ -713,6 +713,10 @@
             (when on-close (on-close))
             (-> ch .close .sync)
             (-> group .shutdownGracefully wrap-future))
+          clojure.lang.IDeref
+          (deref [_]
+            (-> ch .closeFuture .await)
+            nil)
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))))
