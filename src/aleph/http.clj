@@ -196,6 +196,8 @@
            follow-redirects? true}
       :as req}]
 
+    (log/info connection-timeout request-timeout)
+
     ((middleware
        (fn [req]
          (let [k (client/req->domain req)
@@ -208,6 +210,8 @@
              (maybe-timeout! pool-timeout)
              (d/chain'
                (fn [conn]
+
+                 (log/info 'conn-wrapper!)
 
                  ;; get the wrapper for the connection, which may or may not be realized yet
                  (-> (first conn)
@@ -225,6 +229,8 @@
                    (d/chain'
 
                      (fn [conn']
+
+                       (log/info 'conn!)
 
                        (cond
 
@@ -253,6 +259,8 @@
                             ;; clean up the response
                              (d/chain'
                                (fn [rsp]
+
+                                 (log/info 'rsp!)
 
                                  ;; only release the connection back once the response is complete
                                  (d/chain' (:aleph/complete rsp)
