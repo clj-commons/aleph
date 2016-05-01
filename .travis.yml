@@ -1,3 +1,5 @@
+sudo: required
+dist: trusty
 language: clojure
 lein: lein2
 script: lein2 do clean, jammin 300 test
