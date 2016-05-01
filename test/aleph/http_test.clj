@@ -26,7 +26,7 @@
 (defn default-options []
   {:pool pool
    :socket-timeout 1e3
-   :pool-timeout 2e3
+   :pool-timeout 5e3
    :request-timeout 1e4})
 
 (defn http-get
