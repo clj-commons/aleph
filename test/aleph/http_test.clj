@@ -26,23 +26,20 @@
 (defn default-options []
   {:pool pool
    :socket-timeout 1e3
+   :pool-timeout 2e3
    :request-timeout 1e4})
 
 (defn http-get
   ([url]
     (http-get url nil))
   ([url options]
-   (d/timeout!
-     (http/get url (merge (default-options) options))
-     1e4)))
+   (http/get url (merge (default-options) options))))
 
 (defn http-put
   ([url]
     (http-put url nil))
   ([url options]
-   (d/timeout!
-     (http/put url (merge (default-options) options))
-     1e4)))
+   (http/put url (merge (default-options) options))))
 
 (def port 8082)
 
@@ -168,13 +165,14 @@
 ;;;
 
 (deftest test-response-formats
-  (with-handler basic-handler
-    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
-      (is
-        (= result
-          (bs/to-string
-            (:body
-              @(http-get (str "http://localhost:" port "/" path)))))))))
+  (let [pool (http/connection-pool nil)]
+    (with-handler basic-handler
+      (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+        (is
+          (= result
+            (bs/to-string
+              (:body
+               @(http-get (str "http://localhost:" port "/" path) {:pool pool})))))))))
 
 (def words (slurp "/usr/share/dict/words"))
 
@@ -183,14 +181,12 @@
     (try
       (with-handler basic-handler
         (->> (range 1e2)
-          (map (fn [_] (http-get (str "http://localhost:" port "/string")
-                         {:pool pool})))
+          (map (fn [_] (http-get (str "http://localhost:" port "/string") {:pool pool})))
           (apply d/zip)
           deref)
         (dotimes [_ 10]
           (->> (range 10)
-            (map (fn [_] (http-get (str "http://localhost:" port "/string")
-                           {:pool pool})))
+            (map (fn [_] (http-get (str "http://localhost:" port "/string") {:pool pool})))
             (apply d/zip)
             deref)))
       (finally
