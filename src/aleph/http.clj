@@ -1,6 +1,7 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
+    [clojure.tools.logging :as log]
     [clojure.string :as str]
     [manifold.deferred :as d]
     [aleph.flow :as flow]
@@ -195,8 +196,6 @@
            follow-redirects? true}
       :as req}]
 
-    (prn request-timeout)
-
     ((middleware
        (fn [req]
          (let [k (client/req->domain req)
@@ -210,8 +209,6 @@
              (d/chain'
                (fn [conn]
 
-                 (prn 'conn-wrapper! conn)
-
                  ;; get the wrapper for the connection, which may or may not be realized yet
                  (-> (first conn)
 
@@ -220,7 +217,7 @@
                    ;; connection failed, bail out
                    (d/catch'
                        (fn [e]
-                         (prn 'connection-failure e)
+                         (log/error e 'connection-failure)
                          (flow/dispose pool k conn)
                          (d/error-deferred e)))
 
@@ -240,8 +237,6 @@
                          :else
                          (let [end (System/currentTimeMillis)]
 
-                           (prn 'conn! conn')
-
                            (-> (conn' req)
 
                              (maybe-timeout! request-timeout)
@@ -249,7 +244,7 @@
                              ;; request failed, if it was due to a timeout close the connection
                              (d/catch'
                                  (fn [e]
-                                   (prn 'request-failure e)
+                                   (log/error e 'request-failure)
                                    (if (instance? TimeoutException e)
                                      (flow/dispose pool k conn)
                                      (flow/release pool k conn))
@@ -258,8 +253,6 @@
                             ;; clean up the response
                              (d/chain'
                                (fn [rsp]
-
-                                 (prn 'rsp! rsp)
 
                                  ;; only release the connection back once the response is complete
                                  (d/chain' (:aleph/complete rsp)
@@ -271,7 +264,7 @@
                                    (dissoc :aleph/complete)
                                    (assoc :connection-time (- end start)))))))))
 
-                     #_(fn [rsp]
+                     (fn [rsp]
                        (middleware/handle-redirects request req rsp))))))
              (d/connect rsp))
 
