@@ -19,27 +19,26 @@
     [java.util.concurrent
      TimeoutException]))
 
+(def ^:dynamic ^io.aleph.dirigiste.IPool *pool* nil)
+
 (netty/leak-detector-level! :paranoid)
 
-(def pool (http/connection-pool {:connection-options {:keep-alive? false}}))
-
 (defn default-options []
-  {:pool pool
-   :socket-timeout 1e3
-   :pool-timeout 5e3
+  {:socket-timeout 1e3
+   :pool-timeout 1e4
    :request-timeout 1e4})
 
 (defn http-get
   ([url]
     (http-get url nil))
   ([url options]
-   (http/get url (merge (default-options) options))))
+   (http/get url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-put
   ([url]
     (http-put url nil))
   ([url options]
-   (http/put url (merge (default-options) options))))
+   (http/put url (merge (default-options) {:pool *pool*} options))))
 
 (def port 8082)
 
@@ -143,11 +142,13 @@
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (try
-       ~@body
-       (finally
-         (.close ^java.io.Closeable server#)
-         @server#))))
+     (binding [*pool* (http/connection-pool nil)]
+       (try
+         ~@body
+         (finally
+           (.close ^java.io.Closeable server#)
+           (.shutdown *pool*)
+           @server#)))))
 
 (defmacro with-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port})
@@ -165,32 +166,27 @@
 ;;;
 
 (deftest test-response-formats
-  (let [pool (http/connection-pool nil)]
-    (with-handler basic-handler
-      (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
-        (is
-          (= result
-            (bs/to-string
-              (:body
-               @(http-get (str "http://localhost:" port "/" path) {:pool pool})))))))))
+  (with-handler basic-handler
+    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+      (is
+        (= result
+          (bs/to-string
+            (:body
+             @(http-get (str "http://localhost:" port "/" path)))))))))
 
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-bulk-requests
-  (let [pool (http/connection-pool nil)]
-    (try
-      (with-handler basic-handler
-        (->> (range 1e2)
-          (map (fn [_] (http-get (str "http://localhost:" port "/string") {:pool pool})))
-          (apply d/zip)
-          deref)
-        (dotimes [_ 10]
-          (->> (range 10)
-            (map (fn [_] (http-get (str "http://localhost:" port "/string") {:pool pool})))
-            (apply d/zip)
-            deref)))
-      (finally
-        (.shutdown pool)))))
+  (with-handler basic-handler
+    (->> (range 1e2)
+      (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
+      (apply d/zip)
+      deref)
+    (dotimes [_ 10]
+      (->> (range 10)
+        (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
+        (apply d/zip)
+        deref))))
 
 (deftest test-echo
   (with-handler basic-handler
@@ -264,7 +260,6 @@
                                        :scheme :http
                                        :server-name "localhost"
                                        :server-port port
-                                       :pool pool
                                        :request-timeout 1e3})
                      :body
                      bs/to-string)))))
@@ -320,8 +315,7 @@
         (when (zero? (rem i 1e2))
           (prn i))
         (-> @(http/get (str "http://localhost:" port "/big")
-               {:pool pool
-                :as :byte-array})
+               {:as :byte-array})
           :body
           count)))))
 
