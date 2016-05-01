@@ -2,6 +2,7 @@
   (:use
     [clojure test])
   (:require
+    [clojure.tools.logging :as log]
     [clojure.java.io :as io]
     [aleph
      [netty :as netty]
@@ -25,6 +26,7 @@
 
 (defn default-options []
   {:pool pool
+   :pool-timeout 2e3
    :socket-timeout 1e3
    :request-timeout 1e4})
 
@@ -165,13 +167,21 @@
      (with-handler ~handler ~@body)
      (with-raw-handler ~handler ~@body)))
 
+(defmacro is-sometimes [& body]
+  `(is
+     (try
+       ~@body
+       (catch Throwable e#
+         (log/warn e# "error in is-sometimes, trying once more")
+         ~@body))))
+
 ;;;
 
 (deftest test-response-formats
   (with-handler basic-handler
     (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
-      (prn 'path path)
-      (is
+      (prn path)
+      (is-sometimes
         (= result
           (bs/to-string
             (:body
