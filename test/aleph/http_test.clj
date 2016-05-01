@@ -34,7 +34,7 @@
   ([url options]
    (d/timeout!
      (http/get url (merge (default-options) options))
-     1e4)))
+     2e4)))
 
 (defn http-put
   ([url]
@@ -42,7 +42,7 @@
   ([url options]
    (d/timeout!
      (http/put url (merge (default-options) options))
-     1e4)))
+     2e4)))
 
 (def port 8082)
 

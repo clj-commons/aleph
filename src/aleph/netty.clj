@@ -174,8 +174,8 @@
   [^Future f]
   (when f
     (if (.isSuccess f)
-      (d/success-deferred (.getNow f))
-      (let [d (d/deferred)]
+      (d/success-deferred (.getNow f) nil)
+      (let [d (d/deferred nil)]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]

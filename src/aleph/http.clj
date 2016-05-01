@@ -171,8 +171,7 @@
   ([req {:keys [raw-stream? headers max-frame-payload allow-extensions?] :as options}]
     (server/initialize-websocket-handler req options)))
 
-(let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))
-      maybe-connect (fn [a b] (when a (d/connect a b)))]
+(let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
     "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
      by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
@@ -195,6 +194,8 @@
            connection-timeout 6e4 ;; 60 seconds
            follow-redirects? true}
       :as req}]
+
+    (prn request-timeout)
 
     ((middleware
        (fn [req]
@@ -251,7 +252,7 @@
                              (d/chain'
                                (fn [rsp]
 
-                                ;; only release the connection back once the response is complete
+                                 ;; only release the connection back once the response is complete
                                  (d/chain' (:aleph/complete rsp)
                                    (fn [early?]
                                      (if (or early? (not (:keep-alive? rsp)))
@@ -262,7 +263,7 @@
                                    (assoc :connection-time (- end start)))))))))
 
                      (fn [rsp]
-                       (middleware/handle-redirects request req rsp))))))
+                       #_(middleware/handle-redirects request req rsp))))))
              (d/connect rsp))
 
            rsp)))
