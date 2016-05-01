@@ -1,8 +1,7 @@
 sudo: required
 dist: trusty
 language: clojure
-lein: lein2
-script: lein2 do clean, jammin 300 test
+script: lein do clean, jammin 300 test
 jdk:
   - oraclejdk8
   - oraclejdk7
