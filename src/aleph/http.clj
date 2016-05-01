@@ -210,6 +210,8 @@
              (d/chain'
                (fn [conn]
 
+                 (prn 'conn-wrapper! conn)
+
                  ;; get the wrapper for the connection, which may or may not be realized yet
                  (-> (first conn)
 
@@ -237,6 +239,9 @@
 
                          :else
                          (let [end (System/currentTimeMillis)]
+
+                           (prn 'conn! conn')
+
                            (-> (conn' req)
 
                              (maybe-timeout! request-timeout)
@@ -253,6 +258,8 @@
                             ;; clean up the response
                              (d/chain'
                                (fn [rsp]
+
+                                 (prn 'rsp! rsp)
 
                                  ;; only release the connection back once the response is complete
                                  (d/chain' (:aleph/complete rsp)
