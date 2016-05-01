@@ -170,6 +170,7 @@
 (deftest test-response-formats
   (with-handler basic-handler
     (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+      (prn 'path path)
       (is
         (= result
           (bs/to-string

@@ -204,6 +204,8 @@
                start (System/currentTimeMillis)
                rsp (d/deferred)]
 
+           (log/info 'req (hash req))
+
            ;; acquire a connection
            (-> (when-not (realized? rsp)
                  (flow/acquire pool k))
