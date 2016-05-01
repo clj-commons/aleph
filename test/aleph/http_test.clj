@@ -32,13 +32,17 @@
   ([url]
     (http-get url nil))
   ([url options]
-    (http/get url (merge (default-options) options))))
+   (d/timeout!
+     (http/get url (merge (default-options) options))
+     1e4)))
 
 (defn http-put
   ([url]
     (http-put url nil))
   ([url options]
-    (http/put url (merge (default-options) options))))
+   (d/timeout!
+     (http/put url (merge (default-options) options))
+     1e4)))
 
 (def port 8082)
 
@@ -163,7 +167,7 @@
 
 ;;;
 
-#_(deftest test-response-formats
+(deftest test-response-formats
   (with-handler basic-handler
     (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
       (is
