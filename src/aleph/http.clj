@@ -262,8 +262,8 @@
                                    (dissoc :aleph/complete)
                                    (assoc :connection-time (- end start)))))))))
 
-                     (fn [rsp]
-                       #_(middleware/handle-redirects request req rsp))))))
+                     #_(fn [rsp]
+                       (middleware/handle-redirects request req rsp))))))
              (d/connect rsp))
 
            rsp)))
