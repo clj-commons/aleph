@@ -24,6 +24,7 @@
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
+    [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
@@ -273,6 +274,17 @@
                 (release msg)
                 (.close ch)))))
         d))))
+
+;;;
+
+(defn attribute [s]
+  (AttributeKey/valueOf (name s)))
+
+(defn get-attribute [ch attr]
+  (-> ch channel ^Attribute (.attr attr) .get))
+
+(defn set-attribute [ch attr val]
+  (-> ch channel ^Attribute (.attr attr) (.set val)))
 
 ;;;
 

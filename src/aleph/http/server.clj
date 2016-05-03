@@ -105,7 +105,7 @@
       [server-value keep-alive-value close-value]
       (map #(HttpHeaders/newEntity %) ["Aleph/0.4.1" "Keep-Alive" "Close"])]
   (defn send-response
-    [^ChannelHandlerContext ctx keep-alive? rsp]
+    [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
     (let [[^HttpResponse rsp body]
           (try
             [(http/ring-response->netty-response rsp)
@@ -122,7 +122,7 @@
           (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
           (.set ^CharSequence date-name (date-header-value ctx)))
 
-        (http/send-message ctx keep-alive? rsp body)))))
+        (http/send-message ctx keep-alive? ssl? rsp body)))))
 
 ;;;
 
@@ -179,7 +179,7 @@
             (d/chain'
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
-                  (send-response ctx keep-alive?
+                  (send-response ctx keep-alive? ssl?
                     (if (map? rsp)
                       rsp
                       (invalid-value-response req rsp))))))))))))
@@ -513,10 +513,9 @@
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 
   (let [^Channel ch (.ch req)
+        ssl? (identical? :https (:scheme req))
         url (str
-              (if (identical? :https (:scheme req))
-                "wss://"
-                "ws://")
+              (if ssl? "wss://" "ws://")
               (get-in req [:headers "host"])
               (:uri req))
         req (http/ring-request->full-netty-request req)
@@ -542,6 +541,7 @@
                 (http/send-message
                   ch
                   false
+                  ssl?
                   (http/ring-response->netty-response
                     {:status 400
                      :headers {"content-type" "text/plain"}})

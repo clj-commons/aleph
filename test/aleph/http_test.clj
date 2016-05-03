@@ -142,7 +142,7 @@
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool nil)]
+     (binding [*pool* (http/connection-pool {:connection-options {:insecure? true}})]
        (try
          ~@body
          (finally
@@ -152,6 +152,10 @@
 
 (defmacro with-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port})
+     ~@body))
+
+(defmacro with-ssl-handler [handler & body]
+  `(with-server (http/start-server ~handler {:port port, :ssl-context (netty/self-signed-ssl-context)})
      ~@body))
 
 (defmacro with-raw-handler [handler & body]
@@ -173,6 +177,15 @@
           (bs/to-string
             (:body
              @(http-get (str "http://localhost:" port "/" path)))))))))
+
+(deftest test-ssl-response-formats
+  (with-ssl-handler basic-handler
+    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+      (is
+        (= result
+          (bs/to-string
+            (:body
+             @(http-get (str "https://localhost:" port "/" path)))))))))
 
 (def words (slurp "/usr/share/dict/words"))
 

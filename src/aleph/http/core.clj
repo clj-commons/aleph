@@ -6,6 +6,7 @@
     [clojure.tools.logging :as log]
     [clojure.set :as set]
     [clojure.string :as str]
+    [byte-streams :as bs]
     [potemkin :as p])
   (:import
     [io.netty.channel
@@ -307,15 +308,20 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-file-body [ch ^HttpMessage msg ^File file]
-  (let [raf (RandomAccessFile. file "r")
-        len (.length raf)
-        fc (.getChannel raf)
-        fr (DefaultFileRegion. fc 0 len)]
-    (try-set-content-length! msg len)
-    (netty/write ch msg)
-    (netty/write ch fr)
-    (netty/write-and-flush ch empty-last-content)))
+(defn send-file-body [ch ssl? ^HttpMessage msg ^File file]
+  (if ssl?
+    (send-streaming-body ch msg
+      (-> file
+        (bs/to-byte-buffers {:chunk-size 1e6})
+        s/->source))
+    (let [raf (RandomAccessFile. file "r")
+          len (.length raf)
+          fc (.getChannel raf)
+          fr (DefaultFileRegion. fc 0 len)]
+      (try-set-content-length! msg len)
+      (netty/write ch msg)
+      (netty/write ch fr)
+      (netty/write-and-flush ch empty-last-content))))
 
 (defn send-contiguous-body [ch ^HttpMessage msg body]
   (let [body (if body
@@ -344,7 +350,7 @@
           (d/catch' (fn [_]))))]
 
   (defn send-message
-    [ch keep-alive? ^HttpMessage msg body]
+    [ch keep-alive? ssl? ^HttpMessage msg body]
 
     (let [^HttpHeaders headers (.headers msg)
           f (cond
@@ -358,7 +364,7 @@
               (send-contiguous-body ch msg body)
 
               (instance? File body)
-              (send-file-body ch msg body)
+              (send-file-body ch ssl? msg body)
 
               :else
               (let [class-name (.getName (class body))]

@@ -317,7 +317,7 @@
                            (multipart/encode-body parts)
                            (get req :body))]
                 (netty/safe-execute ch
-                  (http/send-message ch true req' body)))))
+                  (http/send-message ch true ssl? req' body)))))
           requests)
 
         (s/on-closed responses
