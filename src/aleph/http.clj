@@ -103,10 +103,12 @@
            connection-options
            stats-callback
            response-executor
+           control-period
            middleware]
     :or {connections-per-host 8
          total-connections 1024
          target-utilization 0.9
+         control-period 60000
          response-executor default-response-executor
          middleware middleware/wrap-request}}]
   (let [p (promise)
@@ -126,6 +128,7 @@
                            (d/chain' c
                              first
                              client/close-connection))
+                :control-period control-period
                 :controller (Pools/utilizationController
                               target-utilization
                               connections-per-host

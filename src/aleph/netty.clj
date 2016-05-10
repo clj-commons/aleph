@@ -610,7 +610,8 @@
 ;;;
 
 (defprotocol AlephServer
-  (port [_] "Returns the port the server is listening on."))
+  (port [_] "Returns the port the server is listening on.")
+  (wait-for-close [_] "Blocks until the server has been closed."))
 
 (defn epoll-available? []
   (Epoll/isAvailable))
@@ -725,14 +726,13 @@
             (when on-close (on-close))
             (-> ch .close .sync)
             (-> group .shutdownGracefully))
-          clojure.lang.IDeref
-          (deref [_]
-            (-> ch .closeFuture .await)
-            (-> group .terminationFuture .await)
-            nil)
           AlephServer
           (port [_]
-            (-> ch .localAddress .getPort))))
+            (-> ch .localAddress .getPort))
+          (wait-for-close [_]
+            (-> ch .closeFuture .await)
+            (-> group .terminationFuture .await)
+            nil)))
 
       (catch Exception e
         @(.shutdownGracefully group)

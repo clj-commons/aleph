@@ -148,7 +148,7 @@
          (finally
            (.close ^java.io.Closeable server#)
            (.shutdown *pool*)
-           @server#)))))
+           (netty/wait-for-close server#))))))
 
 (defmacro with-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port})
