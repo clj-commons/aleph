@@ -46,6 +46,7 @@
      WebSocketClientHandshaker
      WebSocketClientHandshakerFactory
      WebSocketFrame
+     WebSocketFrameAggregator
      WebSocketVersion]
     [java.util.concurrent.atomic
      AtomicInteger]))
@@ -453,14 +454,15 @@
 (defn websocket-connection
   [uri
    {:keys [raw-stream? bootstrap-transform insecure? headers local-address epoll?
-           sub-protocols extensions? max-frame-payload]
+           sub-protocols extensions? max-frame-payload max-frame-size]
     :or {bootstrap-transform identity
          keep-alive? true
          raw-stream? false
          epoll? false
          sub-protocols nil
          extensions? false
-         max-frame-payload 65536}
+         max-frame-payload 65536
+         max-frame-size 1048576}
     :as options}]
   (let [uri (URI. uri)
         ssl? (= "wss" (.getScheme uri))
@@ -474,6 +476,7 @@
           (doto pipeline
             (.addLast "http-client" (HttpClientCodec.))
             (.addLast "aggregator" (HttpObjectAggregator. 16384))
+            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
             (.addLast "handler" ^ChannelHandler handler)))
         (when ssl?
           (if insecure?
