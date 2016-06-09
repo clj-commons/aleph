@@ -46,6 +46,7 @@
      WebSocketClientHandshaker
      WebSocketClientHandshakerFactory
      WebSocketFrame
+     WebSocketFrameAggregator
      WebSocketVersion]
     [java.util.concurrent.atomic
      AtomicInteger]))
@@ -362,18 +363,19 @@
 (defn websocket-frame-size [^WebSocketFrame frame]
   (-> frame .content .readableBytes))
 
-(defn ^WebSocketClientHandshaker websocket-handshaker [uri sub-protocols extensions? headers]
+(defn ^WebSocketClientHandshaker websocket-handshaker [uri sub-protocols extensions? headers max-frame-payload]
   (WebSocketClientHandshakerFactory/newHandshaker
     uri
     WebSocketVersion/V13
     sub-protocols
     extensions?
-    (doto (DefaultHttpHeaders.) (http/map->headers! headers))))
+    (doto (DefaultHttpHeaders.) (http/map->headers! headers))
+    max-frame-payload))
 
-(defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers]
+(defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers max-frame-payload]
   (let [d (d/deferred)
         in (atom nil)
-        handshaker (websocket-handshaker uri sub-protocols extensions? headers)]
+        handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
 
     [d
 
@@ -452,17 +454,19 @@
 (defn websocket-connection
   [uri
    {:keys [raw-stream? bootstrap-transform insecure? headers local-address epoll?
-           sub-protocols extensions?]
+           sub-protocols extensions? max-frame-payload max-frame-size]
     :or {bootstrap-transform identity
          keep-alive? true
          raw-stream? false
          epoll? false
          sub-protocols nil
-         extensions? false}
+         extensions? false
+         max-frame-payload 65536
+         max-frame-size 1048576}
     :as options}]
   (let [uri (URI. uri)
         ssl? (= "wss" (.getScheme uri))
-        [s handler] (websocket-client-handler raw-stream? uri sub-protocols extensions? headers)]
+        [s handler] (websocket-client-handler raw-stream? uri sub-protocols extensions? headers max-frame-payload)]
 
     (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
@@ -472,6 +476,7 @@
           (doto pipeline
             (.addLast "http-client" (HttpClientCodec.))
             (.addLast "aggregator" (HttpObjectAggregator. 16384))
+            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
             (.addLast "handler" ^ChannelHandler handler)))
         (when ssl?
           (if insecure?
