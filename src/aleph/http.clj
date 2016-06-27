@@ -151,10 +151,11 @@
    | `extensions?` | if `true`, the websocket extensions will be supported.
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocols.
    | `headers` | the headers that should be included in the handshake
-   | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to 65536."
+   | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to 65536.
+   | `max-frame-size` | maximum aggregate message size, in bytes, defaults to 1048576."
   ([url]
     (websocket-client url nil))
-  ([url {:keys [raw-stream? insecure? sub-protocols extensions? headers max-frame-payload] :as options}]
+  ([url {:keys [raw-stream? insecure? sub-protocols extensions? headers max-frame-payload max-frame-size] :as options}]
     (client/websocket-connection url options)))
 
 (defn websocket-connection
