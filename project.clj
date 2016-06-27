@@ -4,9 +4,8 @@
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
-                 [io.netty/netty-all "4.1.0.CR7"]
-                 [io.aleph/dirigiste "0.1.3"]
-                 [manifold "0.1.4"]
+                 [io.netty/netty-all "4.1.0.Final"]
+                 [manifold "0.1.5-alpha2"]
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]

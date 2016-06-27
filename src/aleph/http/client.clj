@@ -312,7 +312,7 @@
               (when-not (.get (.headers req') "Connection")
                 (HttpHeaders/setKeepAlive req' keep-alive?))
 
-              ;; TODO: uncomment this once the multipart implmenetation is validated
+              ;; TODO: uncomment this once the multipart implementation is validated
               (let [body (if-let [parts (comment (get req :multipart))]
                            (multipart/encode-body parts)
                            (get req :body))]

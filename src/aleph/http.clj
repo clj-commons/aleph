@@ -3,6 +3,7 @@
   (:require
     [clojure.string :as str]
     [manifold.deferred :as d]
+    [manifold.executor :as executor]
     [aleph.flow :as flow]
     [aleph.http
      [server :as server]
@@ -45,20 +46,21 @@
    will be errors, and a new connection must be created."
   [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
-        ssl? (= "https" scheme)]
-    (d/chain'
-      (client/http-connection
-        (InetSocketAddress.
-          (.getHost uri)
-          (int
-            (or
-              (when (pos? (.getPort uri)) (.getPort uri))
-              (if ssl? 443 80))))
-        ssl?
-        (if on-closed
-          (assoc options :on-closed on-closed)
-          options))
-      middleware)))
+        ssl? (= "https" scheme)
+        response-executor (:response-executor options)]
+    (-> (client/http-connection
+          (InetSocketAddress.
+            (.getHost uri)
+            (int
+              (or
+                (when (pos? (.getPort uri)) (.getPort uri))
+                (if ssl? 443 80))))
+          ssl?
+          (if on-closed
+            (assoc options :on-closed on-closed)
+            options))
+
+      (d/chain' middleware))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -102,18 +104,14 @@
            target-utilization
            connection-options
            stats-callback
-           response-executor
            control-period
            middleware]
     :or {connections-per-host 8
          total-connections 1024
          target-utilization 0.9
          control-period 60000
-         response-executor default-response-executor
          middleware middleware/wrap-request}}]
   (let [p (promise)
-        connection-options (assoc connection-options
-                             :response-executor response-executor)
         pool (flow/instrumented-pool
                {:generate (fn [host]
                             (let [c (promise)
@@ -175,8 +173,7 @@
   ([req {:keys [raw-stream? headers max-frame-payload max-frame-size allow-extensions?] :as options}]
     (server/initialize-websocket-handler req options)))
 
-(let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))
-      maybe-connect (fn [a b] (when a (d/connect a b)))]
+(let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
     "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
      by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
@@ -191,86 +188,75 @@
     [{:keys [pool
              middleware
              pool-timeout
+             response-executor
              connection-timeout
              request-timeout
              follow-redirects?]
       :or {pool default-connection-pool
+           response-executor default-response-executor
            middleware identity
            connection-timeout 6e4 ;; 60 seconds
            follow-redirects? true}
       :as req}]
 
-    ((middleware
-       (fn [req]
-         (let [k (client/req->domain req)
-               start (System/currentTimeMillis)
-               rsp (d/deferred)]
+    (executor/with-executor response-executor
+      ((middleware
+         (fn [req]
+           (let [k (client/req->domain req)
+                 start (System/currentTimeMillis)]
 
-           ;; acquire a connection
-           (-> (when-not (realized? rsp)
-                 (flow/acquire pool k))
-             (maybe-timeout! pool-timeout)
-             (d/chain'
-               (fn [conn]
+             ;; acquire a connection
+             (-> (flow/acquire pool k)
+               (maybe-timeout! pool-timeout)
+               (d/chain'
+                 (fn [conn]
 
-                 ;; get the wrapper for the connection, which may or may not be realized yet
-                 (-> (first conn)
+                   ;; get the wrapper for the connection, which may or may not be realized yet
+                   (-> (first conn)
 
-                   (maybe-timeout! connection-timeout)
+                     (maybe-timeout! connection-timeout)
 
-                   ;; connection failed, bail out
-                   (d/catch'
-                     (fn [e]
-                       (flow/dispose pool k conn)
-                       (d/error-deferred e)))
+                     ;; connection failed, bail out
+                     (d/catch'
+                         (fn [e]
+                           (flow/dispose pool k conn)
+                           (d/error-deferred e)))
 
-                   ;; actually make the request now
-                   (d/chain'
+                     ;; actually make the request now
+                     (d/chain'
 
-                     (fn [conn']
+                       (fn [conn']
 
-                       (cond
+                         (when-not (nil? conn')
+                           (let [end (System/currentTimeMillis)]
+                             (-> (conn' req)
+                               (maybe-timeout! request-timeout)
 
-                         (nil? conn')
-                         nil
-
-                         (realized? rsp)
-                         (flow/release pool k conn)
-
-                         :else
-                         (let [end (System/currentTimeMillis)]
-                           (-> (conn' req)
-
-                             (maybe-timeout! request-timeout)
-
-                             ;; request failed, if it was due to a timeout close the connection
-                             (d/catch'
-                               (fn [e]
-                                 (if (instance? TimeoutException e)
-                                   (flow/dispose pool k conn)
-                                   (flow/release pool k conn))
-                                 (d/error-deferred e)))
-
-                            ;; clean up the response
-                             (d/chain'
-                               (fn [rsp]
-
-                                ;; only release the connection back once the response is complete
-                                 (d/chain' (:aleph/complete rsp)
-                                   (fn [early?]
-                                     (if (or early? (not (:keep-alive? rsp)))
+                               ;; request failed, if it was due to a timeout close the connection
+                               (d/catch'
+                                   (fn [e]
+                                     (if (instance? TimeoutException e)
                                        (flow/dispose pool k conn)
-                                       (flow/release pool k conn))))
-                                 (-> rsp
-                                   (dissoc :aleph/complete)
-                                   (assoc :connection-time (- end start)))))))))
+                                       (flow/release pool k conn))
+                                     (d/error-deferred e)))
 
-                     (fn [rsp]
-                       (middleware/handle-redirects request req rsp))))))
-             (d/connect rsp))
+                               ;; clean up the response
+                               (d/chain'
+                                 (fn [rsp]
 
-           rsp)))
-      req)))
+                                   ;; only release the connection back once the response is complete
+                                   (d/chain' (:aleph/complete rsp)
+                                     (fn [early?]
+                                       (if (or early? (not (:keep-alive? rsp)))
+                                         (flow/dispose pool k conn)
+                                         (flow/release pool k conn))))
+                                   (-> rsp
+                                     (dissoc :aleph/complete)
+                                     (assoc :connection-time (- end start)))))))))
+
+                       (fn [rsp]
+                         (middleware/handle-redirects request req rsp))))))))))
+       req))))
 
 (defn- req
   ([method url]

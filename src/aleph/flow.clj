@@ -79,7 +79,7 @@
   "Acquires an object from the pool for key `k`, returning a deferred containing the object.  May
    throw a `java.util.concurrent.RejectedExecutionException` if there are too many pending acquires."
   [^IPool p k]
-  (let [d (d/deferred)]
+  (let [d (d/deferred nil)]
     (try
       (.acquire p k
         (reify IPool$AcquireCallback

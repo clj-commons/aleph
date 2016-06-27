@@ -65,7 +65,7 @@
 
 (defn slow-handler [request]
   {:status 200
-   :body (cons "1" (lazy-seq (do (Thread/sleep 1000) '("2"))))})
+   :body (cons "1" (lazy-seq (do (Thread/sleep 500) '("2"))))})
 
 (defn manifold-handler [request]
   {:status 200
@@ -276,6 +276,16 @@
                                        :request-timeout 1e3})
                      :body
                      bs/to-string)))))
+
+(deftest test-response-executor-affinity
+  (let [pool (http/connection-pool {})
+        ex (flow/fixed-thread-executor 4)]
+    (with-handler hello-handler
+      @(d/future-with ex
+         (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
+           (is (= http/default-response-executor) (.executor rsp)))))))
+
+;;;
 
 (defn get-netty-client-event-threads []
   (->> (Thread/getAllStackTraces)
