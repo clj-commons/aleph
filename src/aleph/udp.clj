@@ -23,8 +23,7 @@
      EpollDatagramChannel]))
 
 (p/def-derived-map UdpPacket [^DatagramPacket packet content]
-  :host (-> packet ^InetSocketAddress (.sender) .getHostName)
-  :port (-> packet ^InetSocketAddress (.sender) .getPort)
+  :sender (-> packet ^InetSocketAddress (.sender))
   :message content)
 
 (alter-meta! #'->UdpPacket assoc :private true)
