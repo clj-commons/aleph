@@ -12,7 +12,7 @@
     [byte-streams :as bs]
     [clojure.edn :as edn])
   (:import
-    [java.io InputStream]
+    [java.io InputStream ByteArrayOutputStream]
     [java.net URL URLEncoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
@@ -29,13 +29,53 @@
     true
     (catch Throwable _ false)))
 
+(defn- transit-opts-by-type
+  "Return the Transit options by type."
+  [opts type class-name]
+  {:pre [transit-enabled?]}
+  (cond
+    (empty? opts)
+    opts
+    (contains? opts type)
+    (clojure.core/get opts type)
+    :else
+    (let [class (Class/forName class-name)]
+      (println "Deprecated use of :transit-opts found.")
+      (update-in opts [:handlers]
+                 (fn [handlers]
+                   (->> handlers
+                        (filter #(instance? class (second %)))
+                        (into {})))))))
+
+(defn- transit-read-opts
+  "Return the Transit read options."
+  [opts]
+  {:pre [transit-enabled?]}
+  (transit-opts-by-type opts :decode "com.cognitect.transit.ReadHandler"))
+
+(defn- transit-write-opts
+  "Return the Transit write options."
+  [opts]
+  {:pre [transit-enabled?]}
+  (transit-opts-by-type opts :encode "com.cognitect.transit.WriteHandler"))
+
 (defn ^:dynamic parse-transit
   "Resolve and apply Transit's JSON/MessagePack decoding."
   [in type & [opts]]
   {:pre [transit-enabled?]}
   (let [reader (ns-resolve 'cognitect.transit 'reader)
         read (ns-resolve 'cognitect.transit 'read)]
-    (read (reader in type opts))))
+    (read (reader in type (transit-read-opts opts)))))
+
+(defn ^:dynamic transit-encode
+  "Resolve and apply Transit's JSON/MessagePack encoding."
+  [out type & [opts]]
+  {:pre [transit-enabled?]}
+  (let [output (ByteArrayOutputStream.)
+        writer (ns-resolve 'cognitect.transit 'writer)
+        write (ns-resolve 'cognitect.transit 'write)]
+    (write (writer output type (transit-write-opts opts)) out)
+    (.toByteArray output)))
 
 (defn ^:dynamic json-encode
   "Resolve and apply cheshire's json encoding dynamically."
@@ -395,6 +435,24 @@
 (defmethod coerce-form-params :application/edn
   [{:keys [form-params]}]
   (pr-str form-params))
+
+(defn- coerce-transit-form-params [type {:keys [form-params transit-opts]}]
+  (when-not transit-enabled?
+    (throw (ex-info (format (str "Can't encode form params as "
+                                 "\"application/transit+%s\". "
+                                 "Transit dependency not loaded.")
+                            (name type))
+                    {:type :transit-not-loaded
+                     :form-params form-params
+                     :transit-opts transit-opts
+                     :transit-type type})))
+  (transit-encode form-params type transit-opts))
+
+(defmethod coerce-form-params :application/transit+json [req]
+  (coerce-transit-form-params :json req))
+
+(defmethod coerce-form-params :application/transit+msgpack [req]
+  (coerce-transit-form-params :msgpack req))
 
 (defmethod coerce-form-params :application/json
   [{:keys [form-params json-opts]}]
