@@ -37,6 +37,12 @@
         read (ns-resolve 'cognitect.transit 'read)]
     (read (reader in type opts))))
 
+(defn ^:dynamic json-encode
+  "Resolve and apply cheshire's json encoding dynamically."
+  [& args]
+  {:pre [json-enabled?]}
+  (apply (ns-resolve (symbol "cheshire.core") (symbol "encode")) args))
+
 (defn ^:dynamic json-decode
   "Resolve and apply cheshire's json decoding dynamically."
   [& args]
@@ -312,19 +318,22 @@
       (second found))
     "UTF-8"))
 
+(defn generate-query-string-with-encoding [params encoding]
+  (str/join "&"
+            (mapcat (fn [[k v]]
+                      (if (sequential? v)
+                        (map #(str (url-encode (name %1) encoding)
+                                   "="
+                                   (url-encode (str %2) encoding))
+                             (repeat k) v)
+                        [(str (url-encode (name k) encoding)
+                              "="
+                              (url-encode (str v) encoding))]))
+                    params)))
+
 (defn generate-query-string [params & [content-type]]
-  (if (seq params)
-    (let [encoding (detect-charset content-type)
-          sb (StringBuffer.)]
-      (p/doit [[k v] params]
-        (let [k' (url-encode (name k) encoding)]
-          (p/doit [x (if (sequential? v) v [v])]
-            (.append sb k')
-            (.append sb "=")
-            (.append sb (url-encode (str x) encoding))
-            (.append sb "&"))))
-      (.substring sb 0 (unchecked-dec (unchecked-long (.length sb)))))
-    ""))
+  (let [encoding (detect-charset content-type)]
+    (generate-query-string-with-encoding params encoding)))
 
 (def-decorator decorate-query-params
   [query-params req]
@@ -380,6 +389,29 @@
     (dissoc :method)
     (assoc :request-method method)))
 
+(defmulti coerce-form-params
+  (fn [req] (keyword (content-type-value (:content-type req)))))
+
+(defmethod coerce-form-params :application/edn
+  [{:keys [form-params]}]
+  (pr-str form-params))
+
+(defmethod coerce-form-params :application/json
+  [{:keys [form-params json-opts]}]
+  (when-not json-enabled?
+    (throw (ex-info (str "Can't encode form params as \"application/json\". "
+                         "Cheshire dependency not loaded.")
+                    {:type :cheshire-not-loaded
+                     :form-params form-params
+                     :json-opts json-opts})))
+  (json-encode form-params json-opts))
+
+(defmethod coerce-form-params :default [{:keys [content-type form-params
+                                                form-param-encoding]}]
+  (if form-param-encoding
+    (generate-query-string-with-encoding form-params form-param-encoding)
+    (generate-query-string form-params (content-type-value content-type))))
+
 (def-decorator decorate-form-params
   [form-params req]
   (let [{:keys [request-method]} req]
@@ -390,9 +422,7 @@
             :form-params)
           (assoc
             :content-type (content-type-value content-type)
-            :body (generate-query-string
-                    (nest-params form-params)
-                    (content-type-value content-type)))))
+            :body (coerce-form-params req))))
       req)))
 
 (defn decorate-nested-params

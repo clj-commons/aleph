@@ -9,7 +9,8 @@
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]
-                                  [criterium "0.4.4"]]}}
+                                  [criterium "0.4.4"]
+                                  [cheshire "5.6.3"]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
