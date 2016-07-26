@@ -29,7 +29,7 @@
 
 (defn populate-part
   "Generates a part map of the appropriate format"
-  [{:keys [name content mime-type charset transfer-encoding] :or {:transfer-encoding :quoted-printable}}]
+  [{:keys [name content mime-type charset transfer-encoding] :or {transfer-encoding :quoted-printable}}]
   (let [mt (or mime-type
              (when (instance? File content)
                (URLConnection/guessContentTypeFromName (.getName ^File content))))]
