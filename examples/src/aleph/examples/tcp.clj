@@ -7,7 +7,7 @@
     [gloss.core :as gloss]
     [gloss.io :as io]))
 
-;; Complete documentation for the `aleph.tcp` namespace can be found [here](http://ideolalia.com/aleph/aleph.tcp.html).
+;; Complete documentation for the `aleph.tcp` namespace can be found [here](http://aleph.io/codox/aleph/aleph.tcp.html).
 
 ;; ## the basics
 

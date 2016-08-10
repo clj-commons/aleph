@@ -6,6 +6,7 @@
     [clojure.string :as str]
     [byte-streams :as bs]))
 
+;; Full documentation for the `aleph.udp` namespace can be found [here](http://aleph.io/codox/aleph/aleph.udp.html).
 
 ;; This example is a very pared-down version of [statsd](https://github.com/etsy/statsd), which
 ;; takes in UDP packets from the entire system, and does periodic rollups that are typically
