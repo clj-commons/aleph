@@ -612,8 +612,8 @@
   by default"
   [client]
   (let [client' (-> client
-                  wrap-exceptions
-                  wrap-request-timing)]
+                    wrap-exceptions
+                    wrap-request-timing)]
     (fn [req]
       (if (:aleph.http.client/close req)
         (client req)
