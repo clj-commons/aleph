@@ -375,19 +375,24 @@
   (let [encoding (detect-charset content-type)]
     (generate-query-string-with-encoding params encoding)))
 
-(def-decorator decorate-query-params
-  [query-params req]
-  (let [content-type (get req :content-type :x-www-form-urlencoded)]
+(defn wrap-query-params
+  "Middleware converting the :query-params option to a querystring on
+  the request."
+  [{:keys [query-params content-type]
+    :or {content-type :x-www-form-urlencoded}
+    :as req}]
+  (if query-params
     (-> req
-      (dissoc :query-params)
-      (update-in [:query-string]
-        (fn [old-query-string new-query-string]
-          (if-not (empty? old-query-string)
-            (str old-query-string "&" new-query-string)
-            new-query-string))
-        (generate-query-string
-          (nest-params query-params)
-          (content-type-value content-type))))))
+        (dissoc :query-params)
+        (update-in [:query-string]
+                   (fn [old-query-string new-query-string]
+                     (if-not (empty? old-query-string)
+                       (str old-query-string "&" new-query-string)
+                       new-query-string))
+                   (generate-query-string
+                    query-params
+                    (content-type-value content-type))))
+    req))
 
 (defn basic-auth-value [basic-auth]
   (let [basic-auth (if (string? basic-auth)
@@ -592,7 +597,7 @@
 (def default-middleware
   [wrap-method
    wrap-url
-   decorate-query-params
+   wrap-query-params
    wrap-form-params
    decorate-user-info
    decorate-basic-auth
