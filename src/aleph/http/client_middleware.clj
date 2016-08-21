@@ -620,7 +620,9 @@
   core client. See default-middleware for the middleware wrappers that are used
   by default"
   [client]
-  (let [client' client]
+  (let [client' (-> client
+                    wrap-exceptions
+                    wrap-request-timing)]
     (fn [req]
       (if (:aleph.http.client/close req)
         (client req)
