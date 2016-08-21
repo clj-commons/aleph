@@ -326,13 +326,17 @@
        (do ~@body)
        ~req)))
 
-(def-decorator decorate-content-type
-  [content-type req]
-  (let [ctv (content-type-value content-type)
-        ct (if-let [encoding (:character-encoding req)]
-             (str ctv "; charset=" encoding)
-             ctv)]
-    (update-in req [:headers] assoc "content-type" ct)))
+(defn wrap-content-type
+  "Middleware converting a `:content-type <keyword>` option to the formal
+  application/<name> format and adding it as a header."
+  [{:keys [content-type character-encoding] :as req}]
+  (if content-type
+    (let [ctv (content-type-value content-type)
+          ct (if character-encoding
+               (str ctv "; charset=" character-encoding)
+               ctv)]
+      (update-in req [:headers] assoc "content-type" ct))
+    req))
 
 (defn wrap-accept
   "Middleware converting the :accept key in a request to application/<type>"
@@ -618,7 +622,7 @@
    wrap-oauth
    wrap-accept
    wrap-accept-encoding
-   decorate-content-type])
+   wrap-content-type])
 
 (defn wrap-request
   "Returns a batteries-included HTTP request function corresponding to the given
