@@ -317,15 +317,6 @@
       :else
       rsp-r)))
 
-;; request decorators, adapted from the clj-http middleware
-
-(defmacro def-decorator [name [key req] & body]
-  `(defn ~(with-meta name {:middleware/key (keyword key)})
-     [{:keys [~key] :as ~req}]
-     (if ~key
-       (do ~@body)
-       ~req)))
-
 (defn wrap-content-type
   "Middleware converting a `:content-type <keyword>` option to the formal
   application/<name> format and adding it as a header."
