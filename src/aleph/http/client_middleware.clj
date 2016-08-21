@@ -423,12 +423,6 @@
     (assoc req :basic-auth [user password])
     req))
 
-(def-decorator decorate-method
-  [method req]
-  (-> req
-    (dissoc :method)
-    (assoc :request-method method)))
-
 (defn wrap-method
   "Middleware converting the :method option into the :request-method option"
   [req]
