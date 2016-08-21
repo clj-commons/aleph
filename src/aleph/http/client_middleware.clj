@@ -473,27 +473,18 @@
     (generate-query-string-with-encoding form-params form-param-encoding)
     (generate-query-string form-params (content-type-value content-type))))
 
-(def-decorator decorate-form-params
-  [form-params req]
-  (let [{:keys [request-method]} req]
-    (if (#{:post :put :patch} request-method)
-      (let [content-type (get req :content-type :x-www-form-urlencoded)]
-        (-> req
-          (dissoc
-            :form-params)
-          (assoc
-            :content-type (content-type-value content-type)
-            :body (coerce-form-params req))))
-      req)))
+(defn wrap-form-params
+  "Middleware wrapping the submission or form parameters."
+  [{:keys [form-params content-type request-method]
+    :or {content-type :x-www-form-urlencoded}
+    :as req}]
 
-(defn decorate-nested-params
-  [{:keys [query-params form-params content-type] :as req}]
-  (if (= :json content-type)
-    req
-    (reduce
-      nest-params
-      req
-      [:query-params :form-params])))
+  (if (and form-params (#{:post :put :patch} request-method))
+    (-> req
+        (dissoc :form-params)
+        (assoc :content-type (content-type-value content-type)
+               :body (coerce-form-params req)))
+    req))
 
 (defn decorate-url
   [{:keys [url] :as req}]
@@ -601,7 +592,7 @@
   [wrap-method
    decorate-url
    decorate-query-params
-   decorate-form-params
+   wrap-form-params
    decorate-user-info
    decorate-basic-auth
    decorate-oauth
