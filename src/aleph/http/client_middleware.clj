@@ -429,6 +429,15 @@
     (dissoc :method)
     (assoc :request-method method)))
 
+(defn wrap-method
+  "Middleware converting the :method option into the :request-method option"
+  [req]
+  (if-let [m (:method req)]
+    (-> req
+        (dissoc :method)
+        (assoc :request-method m))
+    req))
+
 (defmulti coerce-form-params
   (fn [req] (keyword (content-type-value (:content-type req)))))
 
@@ -594,8 +603,8 @@
 (defmethod coerce-response-body :default [_ resp]
   resp)
 
-(def default-request-decorators
-  [decorate-method
+(def default-middleware
+  [wrap-method
    decorate-url
    decorate-query-params
    decorate-form-params
@@ -611,14 +620,12 @@
   core client. See default-middleware for the middleware wrappers that are used
   by default"
   [client]
-  (let [client' (-> client
-                    wrap-exceptions
-                    wrap-request-timing)]
+  (let [client' client]
     (fn [req]
       (if (:aleph.http.client/close req)
         (client req)
 
-        (let [req' (reduce #(%2 %1) req default-request-decorators)]
+        (let [req' (reduce #(%2 %1) req default-middleware)]
           (d/chain' (client' req')
 
             ;; coerce the response body
