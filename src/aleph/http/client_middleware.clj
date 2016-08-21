@@ -486,12 +486,13 @@
                :body (coerce-form-params req)))
     req))
 
-(defn decorate-url
-  [{:keys [url] :as req}]
-  (if url
+(defn wrap-url
+  "Middleware wrapping request URL parsing."
+  [req]
+  (if-let [url (:url req)]
     (-> req
-      (dissoc :url)
-      (merge (parse-url url)))
+        (dissoc :url)
+        (merge (parse-url url)))
     req))
 
 (defn wrap-request-timing
@@ -590,7 +591,7 @@
 
 (def default-middleware
   [wrap-method
-   decorate-url
+   wrap-url
    decorate-query-params
    wrap-form-params
    decorate-user-info
