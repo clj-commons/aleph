@@ -422,9 +422,10 @@
   (when user-info
     (str/split user-info #":")))
 
-(def-decorator decorate-user-info
-  [user-info req]
-  (if-let [[user password] (parse-user-info user-info)]
+(defn wrap-user-info
+  "Middleware converting the :user-info option into a :basic-auth option"
+  [req]
+  (if-let [[user password] (parse-user-info (:user-info req))]
     (assoc req :basic-auth [user password])
     req))
 
@@ -599,7 +600,7 @@
    wrap-url
    wrap-query-params
    wrap-form-params
-   decorate-user-info
+   wrap-user-info
    decorate-basic-auth
    decorate-oauth
    decorate-accept
