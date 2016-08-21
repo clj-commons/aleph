@@ -334,20 +334,28 @@
              ctv)]
     (update-in req [:headers] assoc "content-type" ct)))
 
-(def-decorator decorate-accept
-  [accept req]
-  (-> req (dissoc :accept)
-    (assoc-in [:headers "accept"]
-      (content-type-value accept))))
+(defn wrap-accept
+  "Middleware converting the :accept key in a request to application/<type>"
+  [{:keys [accept] :as req}]
+  (if accept
+    (-> req
+        (dissoc :accept)
+        (assoc-in [:headers "accept"]
+                  (content-type-value accept)))
+    req))
 
 (defn accept-encoding-value [accept-encoding]
   (str/join ", " (map name accept-encoding)))
 
-(def-decorator decorate-accept-encoding
-  [accept-encoding req]
-  (-> req (dissoc :accept-encoding)
-    (assoc-in [:headers "accept-encoding"]
-      (accept-encoding-value accept-encoding))))
+(defn wrap-accept-encoding
+  "Middleware converting the :accept-encoding option to an acceptable
+  Accept-Encoding header in the request."
+  [{:keys [accept-encoding] :as req}]
+  (if accept-encoding
+    (-> req (dissoc :accept-encoding)
+        (assoc-in [:headers "accept-encoding"]
+                  (accept-encoding-value accept-encoding)))
+    req))
 
 (defn detect-charset
   "Given a charset header, detect the charset, returns UTF-8 if not found."
@@ -608,8 +616,8 @@
    wrap-user-info
    wrap-basic-auth
    wrap-oauth
-   decorate-accept
-   decorate-accept-encoding
+   wrap-accept
+   wrap-accept-encoding
    decorate-content-type])
 
 (defn wrap-request
