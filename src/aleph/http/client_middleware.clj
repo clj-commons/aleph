@@ -404,19 +404,24 @@
         (.getBytes "UTF-8")
         javax.xml.bind.DatatypeConverter/printBase64Binary))))
 
-(def-decorator decorate-basic-auth
-  [basic-auth req]
-  (-> req
-    (dissoc :basic-auth)
-    (assoc-in [:headers "authorization"]
-      (basic-auth-value basic-auth))))
+(defn wrap-basic-auth
+  "Middleware converting the :basic-auth option into an Authorization header."
+  [req]
+  (if-let [basic-auth (:basic-auth req)]
+    (-> req
+        (dissoc :basic-auth)
+        (assoc-in [:headers "authorization"]
+                  (basic-auth-value basic-auth)))
+    req))
 
-(def-decorator decorate-oauth
-  [oauth-token req]
-  (-> req
-    (dissoc :oauth-token)
-    (assoc-in [:headers "authorization"]
-      (str "Bearer " oauth-token))))
+(defn wrap-oauth
+  "Middleware converting the :oauth-token option into an Authorization header."
+  [req]
+  (if-let [oauth-token (:oauth-token req)]
+    (-> req (dissoc :oauth-token)
+        (assoc-in [:headers "authorization"]
+                  (str "Bearer " oauth-token)))
+    req))
 
 (defn parse-user-info [user-info]
   (when user-info
@@ -601,8 +606,8 @@
    wrap-query-params
    wrap-form-params
    wrap-user-info
-   decorate-basic-auth
-   decorate-oauth
+   wrap-basic-auth
+   wrap-oauth
    decorate-accept
    decorate-accept-encoding
    decorate-content-type])
