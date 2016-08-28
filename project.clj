@@ -9,11 +9,18 @@
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]
-                                  [criterium "0.4.4"]]}}
-  :codox {:source-uri "https://github.com/ztellman/aleph/blob/master/{filepath}#L{line}"
-          :metadata {:doc/format :markdown}
-          :namespaces [aleph.tcp aleph.udp aleph.http aleph.flow]}
-  :plugins [[lein-codox "0.9.4"]
+                                  [criterium "0.4.4"]
+                                  [cheshire "5.6.3"]
+                                  [com.cognitect/transit-clj "0.8.285"]]}}
+  :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
+          :src-linenum-anchor-prefix "L"
+          :defaults {:doc/format :markdown}
+          :include [aleph.tcp
+                    aleph.udp
+                    aleph.http
+                    aleph.flow]
+          :output-dir "doc"}
+  :plugins [[codox "0.8.10"]
             [lein-jammin "0.1.1"]
             [lein-marginalia "0.9.0"]
             [ztellman/lein-cljfmt "0.1.10"]]
