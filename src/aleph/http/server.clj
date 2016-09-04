@@ -33,7 +33,7 @@
      HttpContent HttpHeaders
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
-     HttpServerCodec HttpVersion
+     HttpServerCodec HttpVersion HttpMethod
      LastHttpContent]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
@@ -142,11 +142,12 @@
    handler
    rejected-handler
    executor
-   req
+   ^HttpRequest req
    previous-response
    body
    keep-alive?]
   (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
+        head? (identical? HttpMethod/HEAD (.method req))
         rsp (if executor
 
               ;; handle request on a separate thread
@@ -182,7 +183,9 @@
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
                   (send-response ctx keep-alive? ssl?
                     (if (map? rsp)
-                      rsp
+                      (if head?
+                        (assoc rsp :body :aleph/omitted)
+                        rsp)
                       (invalid-value-response req rsp))))))))))))
 
 (defn ring-handler

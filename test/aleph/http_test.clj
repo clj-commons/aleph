@@ -331,11 +331,11 @@
 
 ;;;
 
-(deftest ^:stress handle-large-responses []
+(deftest test-large-responses
   (with-handler basic-handler
     (let [pool (http/connection-pool {:connection-options {:response-buffer-size 16}})]
-      (dotimes [i 1e6]
-        (when (zero? (rem i 1e2))
+      (dotimes [i 1 #_1e6]
+        #_(when (zero? (rem i 1e2))
           (prn i))
         (-> @(http/get (str "http://localhost:" port "/big")
                {:as :byte-array})

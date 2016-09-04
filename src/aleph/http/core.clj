@@ -324,15 +324,19 @@
       (netty/write-and-flush ch empty-last-content))))
 
 (defn send-contiguous-body [ch ^HttpMessage msg body]
-  (let [body (if body
-               (DefaultLastHttpContent. (netty/to-byte-buf ch body))
-               empty-last-content)
+  (let [omitted? (identical? :aleph/omitted body)
+        body (if (or (nil? body) omitted?)
+               empty-last-content
+               (DefaultLastHttpContent. (netty/to-byte-buf ch body)))
         length (-> ^HttpContent body .content .readableBytes)]
-    (if (instance? HttpResponse msg)
-      (let [code (-> ^HttpResponse msg .getStatus .code)]
-        (when-not (or (<= 100 code 199) (= 204 code))
-          (try-set-content-length! msg length)))
-      (try-set-content-length! msg length))
+
+    (when-not omitted?
+      (if (instance? HttpResponse msg)
+        (let [code (-> ^HttpResponse msg .getStatus .code)]
+          (when-not (or (<= 100 code 199) (= 204 code))
+            (try-set-content-length! msg length)))
+        (try-set-content-length! msg length)))
+
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
@@ -357,6 +361,7 @@
 
               (or
                 (nil? body)
+                (identical? :aleph/omitted body)
                 (instance? String body)
                 (instance? ary-class body)
                 (instance? ByteBuffer body)

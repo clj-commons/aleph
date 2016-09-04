@@ -9,6 +9,7 @@
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
     [manifold.stream :as s]
+    [manifold.executor :as ex]
     [byte-streams :as bs]
     [clojure.edn :as edn])
   (:import
@@ -624,14 +625,16 @@
                     wrap-exceptions
                     wrap-request-timing)]
     (fn [req]
-      (if (:aleph.http.client/close req)
-        (client req)
+      (let [executor (ex/executor)]
+        (if (:aleph.http.client/close req)
+          (client req)
 
-        (let [req' (reduce #(%2 %1) req default-middleware)]
-          (d/chain' (client' req')
+          (let [req' (reduce #(%2 %1) req default-middleware)]
+            (d/chain' (client' req')
 
-            ;; coerce the response body
-            (fn [{:keys [body] :as rsp}]
-              (if body
-                (coerce-response-body req' rsp)
-                rsp))))))))
+              ;; coerce the response body
+              (fn [{:keys [body] :as rsp}]
+                (if body
+                  (d/future-with (or executor (ex/wait-pool))
+                    (coerce-response-body req' rsp))
+                  rsp)))))))))
