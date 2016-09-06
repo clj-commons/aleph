@@ -307,18 +307,23 @@
 
         (s/consume
           (fn [req]
-            (let [^HttpRequest req' (http/ring-request->netty-request req)]
-              (when-not (.get (.headers req') "Host")
-                (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
-              (when-not (.get (.headers req') "Connection")
-                (HttpHeaders/setKeepAlive req' keep-alive?))
+            (try
+              (let [^HttpRequest req' (http/ring-request->netty-request req)]
+                (when-not (.get (.headers req') "Host")
+                  (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
+                (when-not (.get (.headers req') "Connection")
+                  (HttpHeaders/setKeepAlive req' keep-alive?))
 
-              ;; TODO: uncomment this once the multipart implementation is validated
-              (let [body (if-let [parts (comment (get req :multipart))]
-                           (multipart/encode-body parts)
-                           (get req :body))]
-                (netty/safe-execute ch
-                  (http/send-message ch true ssl? req' body)))))
+                ;; TODO: uncomment this once the multipart implementation is validated
+                (let [body (if-let [parts (comment (get req :multipart))]
+                             (multipart/encode-body parts)
+                             (get req :body))]
+                  (netty/safe-execute ch
+                    (http/send-message ch true ssl? req' body))))
+
+              ;; this will usually happen because of a malformed request
+              (catch Throwable e
+                (s/put! responses (d/error-deferred e)))))
           requests)
 
         (s/on-closed responses
