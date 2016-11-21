@@ -27,7 +27,9 @@
      HttpResponse HttpResponseStatus
      DefaultHttpContent
      HttpVersion
-     LastHttpContent]
+     LastHttpContent HttpChunkedInput]
+    [io.netty.handler.stream
+     ChunkedFile ChunkedWriteHandler]
     [java.io
      File
      RandomAccessFile
@@ -308,20 +310,37 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
+(defn send-chunked-file [ch ^HttpMessage msg ^File file]
+  (let [raf (RandomAccessFile. file "r")
+        len (.length raf)
+        ci (HttpChunkedInput. (ChunkedFile. raf))]
+    (try-set-content-length! msg len)
+    (netty/write ch msg)
+    (netty/write-and-flush ch ci)))
+
+(defn send-file-region [ch ^HttpMessage msg ^File file]
+  (let [raf (RandomAccessFile. file "r")
+        len (.length raf)
+        fc (.getChannel raf)
+        fr (DefaultFileRegion. fc 0 len)]
+    (try-set-content-length! msg len)
+    (netty/write ch msg)
+    (netty/write ch fr)
+    (netty/write-and-flush ch empty-last-content)))
+
 (defn send-file-body [ch ssl? ^HttpMessage msg ^File file]
-  (if ssl?
+  (cond
+    ssl?
     (send-streaming-body ch msg
       (-> file
         (bs/to-byte-buffers {:chunk-size 1e6})
         s/->source))
-    (let [raf (RandomAccessFile. file "r")
-          len (.length raf)
-          fc (.getChannel raf)
-          fr (DefaultFileRegion. fc 0 len)]
-      (try-set-content-length! msg len)
-      (netty/write ch msg)
-      (netty/write ch fr)
-      (netty/write-and-flush ch empty-last-content))))
+
+    (-> ch (.pipeline) (.get ChunkedWriteHandler))
+    (send-chunked-file ch msg file)
+
+    :else
+    (send-file-region ch msg file)))
 
 (defn send-contiguous-body [ch ^HttpMessage msg body]
   (let [omitted? (identical? :aleph/omitted body)
