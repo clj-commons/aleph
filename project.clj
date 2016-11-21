@@ -1,11 +1,11 @@
-(defproject aleph "0.4.2-alpha8"
+(defproject aleph "0.4.2-alpha9"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
                  [io.netty/netty-all "4.1.0.Final"]
-                 [manifold "0.1.6-alpha1"]
+                 [manifold "0.1.6-alpha4"]
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]
@@ -20,7 +20,7 @@
                     aleph.http
                     aleph.flow]
           :output-dir "doc"}
-  :plugins [[codox "0.8.10"]
+  :plugins [[lein-codox "0.9.4"]
             [lein-jammin "0.1.1"]
             [lein-marginalia "0.9.0"]
             [ztellman/lein-cljfmt "0.1.10"]]
