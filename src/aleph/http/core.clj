@@ -336,7 +336,7 @@
         (bs/to-byte-buffers {:chunk-size 1e6})
         s/->source))
 
-    (-> ch (.pipeline) (.get ChunkedWriteHandler))
+    (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))
     (send-chunked-file ch msg file)
 
     :else

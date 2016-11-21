@@ -8,7 +8,7 @@
                  [manifold "0.1.6-alpha4"]
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.8.0"]
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0-alpha14"]
                                   [criterium "0.4.4"]
                                   [cheshire "5.6.3"]
                                   [com.cognitect/transit-clj "0.8.285"]]}}
