@@ -13,12 +13,15 @@
     [io.netty.channel
      Channel
      ChannelHandler
-     ChannelPipeline]))
+     ChannelPipeline]
+    [io.netty.handler.ssl
+     SslHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
+  :ssl-session (some-> ch ^ChannelPipeline (.pipeline) ^SslHandler (.get "ssl-handler") .engine .getSession))
 
 (alter-meta! #'->TcpConnection assoc :private true)
 
