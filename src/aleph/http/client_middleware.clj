@@ -166,19 +166,41 @@
      :user-info (.getUserInfo url-parsed)
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
-(defn nest-params
-  [params]
-  (prewalk
-    #(if (and (vector? %) (map? (second %)))
-       (let [[fk m] %]
-         (reduce
-           (fn [m [sk v]]
-             (assoc m
-               (str (name fk) \[ (name sk) \]) v))
-           {}
-           m))
-       %)
-    params))
+(defn- nest-params
+  [request param-key]
+  (if-let [params (request param-key)]
+    (assoc request param-key (prewalk
+                              #(if (and (vector? %) (map? (second %)))
+                                 (let [[fk m] %]
+                                   (reduce
+                                    (fn [m [sk v]]
+                                      (assoc m (str (name fk)
+                                                    \[ (name sk) \]) v))
+                                    {}
+                                    m))
+                                 %)
+                              params))
+    request))
+
+(defn- nest-params-request
+  [{:keys [content-type] :as req}]
+  (if (or (nil? content-type)
+          (= content-type :x-www-form-urlencoded))
+    (reduce
+     nest-params
+     req
+     [:query-params :form-params])
+    req))
+
+(defn wrap-nested-params
+  "Middleware wrapping nested parameters for query strings."
+  [client]
+  (fn
+    ([req]
+     (client (nest-params-request req)))
+    ([req respond raise]
+     (client (nest-params-request req) respond raise))))
+
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
@@ -609,6 +631,7 @@
    wrap-url
    wrap-query-params
    wrap-form-params
+   wrap-nested-params
    wrap-user-info
    wrap-basic-auth
    wrap-oauth
