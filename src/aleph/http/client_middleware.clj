@@ -166,19 +166,32 @@
      :user-info (.getUserInfo url-parsed)
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
-(defn nest-params
-  [params]
-  (prewalk
-    #(if (and (vector? %) (map? (second %)))
-       (let [[fk m] %]
-         (reduce
-           (fn [m [sk v]]
-             (assoc m
-               (str (name fk) \[ (name sk) \]) v))
-           {}
-           m))
-       %)
-    params))
+(defn- nest-params
+  [request param-key]
+  (if-let [params (request param-key)]
+    (assoc request param-key (prewalk
+                              #(if (and (vector? %) (map? (second %)))
+                                 (let [[fk m] %]
+                                   (reduce
+                                    (fn [m [sk v]]
+                                      (assoc m (str (name fk)
+                                                    \[ (name sk) \]) v))
+                                    {}
+                                    m))
+                                 %)
+                              params))
+    request))
+
+(defn wrap-nested-params
+  "Middleware wrapping nested parameters for query strings."
+  [{:keys [content-type] :as req}]
+  (if (or (nil? content-type)
+          (= content-type :x-www-form-urlencoded))
+    (reduce
+     nest-params
+     req
+     [:query-params :form-params])
+    req))
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
@@ -607,6 +620,7 @@
 (def default-middleware
   [wrap-method
    wrap-url
+   wrap-nested-params
    wrap-query-params
    wrap-form-params
    wrap-user-info
