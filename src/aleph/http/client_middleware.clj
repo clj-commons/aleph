@@ -169,17 +169,17 @@
 (defn- nest-params
   [request param-key]
   (if-let [params (request param-key)]
-    (assoc request param-key (prewalk
-                              #(if (and (vector? %) (map? (second %)))
-                                 (let [[fk m] %]
-                                   (reduce
-                                    (fn [m [sk v]]
-                                      (assoc m (str (name fk)
-                                                    \[ (name sk) \]) v))
-                                    {}
-                                    m))
-                                 %)
-                              params))
+    (assoc request param-key
+      (prewalk
+        #(if (and (vector? %) (map? (second %)))
+           (let [[fk m] %]
+             (reduce
+               (fn [m [sk v]]
+                 (assoc m (str (name fk) "[" (name sk) "]") v))
+               {}
+               m))
+           %)
+        params))
     request))
 
 (defn wrap-nested-params
