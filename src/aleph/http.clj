@@ -219,9 +219,9 @@
 
                      ;; connection failed, bail out
                      (d/catch'
-                         (fn [e]
-                           (flow/dispose pool k conn)
-                           (d/error-deferred e)))
+                       (fn [e]
+                         (flow/dispose pool k conn)
+                         (d/error-deferred e)))
 
                      ;; actually make the request now
                      (d/chain'
@@ -235,9 +235,9 @@
 
                                ;; request failed, dispose of the connection
                                (d/catch'
-                                   (fn [e]
-                                     (flow/dispose pool k conn)
-                                     (d/error-deferred e)))
+                                 (fn [e]
+                                   (flow/dispose pool k conn)
+                                   (d/error-deferred e)))
 
                                ;; clean up the response
                                (d/chain'
@@ -255,7 +255,7 @@
 
                        (fn [rsp]
                          (middleware/handle-redirects request req rsp))))))))))
-       req))))
+        req))))
 
 (defn- req
   ([method url]

@@ -18,4 +18,4 @@
                                                       :form-params {:foo :bar}})))
   (is (= (middleware/coerce-form-params {:content-type :default
                                          :form-params {:foo :bar}})
-         (middleware/coerce-form-params {:form-params {:foo :bar}}))))
+        (middleware/coerce-form-params {:form-params {:foo :bar}}))))

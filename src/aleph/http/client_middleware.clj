@@ -43,10 +43,10 @@
     (let [class (Class/forName class-name)]
       (println "Deprecated use of :transit-opts found.")
       (update-in opts [:handlers]
-                 (fn [handlers]
-                   (->> handlers
-                        (filter #(instance? class (second %)))
-                        (into {})))))))
+        (fn [handlers]
+          (->> handlers
+            (filter #(instance? class (second %)))
+            (into {})))))))
 
 (defn- transit-read-opts
   "Return the Transit read options."
@@ -335,9 +335,9 @@
   [{:keys [accept] :as req}]
   (if accept
     (-> req
-        (dissoc :accept)
-        (assoc-in [:headers "accept"]
-                  (content-type-value accept)))
+      (dissoc :accept)
+      (assoc-in [:headers "accept"]
+        (content-type-value accept)))
     req))
 
 (defn accept-encoding-value [accept-encoding]
@@ -349,8 +349,8 @@
   [{:keys [accept-encoding] :as req}]
   (if accept-encoding
     (-> req (dissoc :accept-encoding)
-        (assoc-in [:headers "accept-encoding"]
-                  (accept-encoding-value accept-encoding)))
+      (assoc-in [:headers "accept-encoding"]
+        (accept-encoding-value accept-encoding)))
     req))
 
 (defn detect-charset
@@ -364,16 +364,16 @@
 
 (defn generate-query-string-with-encoding [params encoding]
   (str/join "&"
-            (mapcat (fn [[k v]]
-                      (if (sequential? v)
-                        (map #(str (url-encode (name %1) encoding)
-                                   "="
-                                   (url-encode (str %2) encoding))
-                             (repeat k) v)
-                        [(str (url-encode (name k) encoding)
-                              "="
-                              (url-encode (str v) encoding))]))
-                    params)))
+    (mapcat (fn [[k v]]
+              (if (sequential? v)
+                (map #(str (url-encode (name %1) encoding)
+                        "="
+                        (url-encode (str %2) encoding))
+                  (repeat k) v)
+                [(str (url-encode (name k) encoding)
+                   "="
+                   (url-encode (str v) encoding))]))
+      params)))
 
 (defn generate-query-string [params & [content-type]]
   (let [encoding (detect-charset content-type)]
@@ -387,15 +387,15 @@
     :as req}]
   (if query-params
     (-> req
-        (dissoc :query-params)
-        (update-in [:query-string]
-                   (fn [old-query-string new-query-string]
-                     (if-not (empty? old-query-string)
-                       (str old-query-string "&" new-query-string)
-                       new-query-string))
-                   (generate-query-string
-                    query-params
-                    (content-type-value content-type))))
+      (dissoc :query-params)
+      (update-in [:query-string]
+        (fn [old-query-string new-query-string]
+          (if-not (empty? old-query-string)
+            (str old-query-string "&" new-query-string)
+            new-query-string))
+        (generate-query-string
+          query-params
+          (content-type-value content-type))))
     req))
 
 (defn basic-auth-value [basic-auth]
@@ -413,9 +413,9 @@
   [req]
   (if-let [basic-auth (:basic-auth req)]
     (-> req
-        (dissoc :basic-auth)
-        (assoc-in [:headers "authorization"]
-                  (basic-auth-value basic-auth)))
+      (dissoc :basic-auth)
+      (assoc-in [:headers "authorization"]
+        (basic-auth-value basic-auth)))
     req))
 
 (defn wrap-oauth
@@ -423,8 +423,8 @@
   [req]
   (if-let [oauth-token (:oauth-token req)]
     (-> req (dissoc :oauth-token)
-        (assoc-in [:headers "authorization"]
-                  (str "Bearer " oauth-token)))
+      (assoc-in [:headers "authorization"]
+        (str "Bearer " oauth-token)))
     req))
 
 (defn parse-user-info [user-info]
@@ -443,8 +443,8 @@
   [req]
   (if-let [m (:method req)]
     (-> req
-        (dissoc :method)
-        (assoc :request-method m))
+      (dissoc :method)
+      (assoc :request-method m))
     req))
 
 (defmulti coerce-form-params
@@ -457,13 +457,13 @@
 (defn- coerce-transit-form-params [type {:keys [form-params transit-opts]}]
   (when-not transit-enabled?
     (throw (ex-info (format (str "Can't encode form params as "
-                                 "\"application/transit+%s\". "
-                                 "Transit dependency not loaded.")
-                            (name type))
-                    {:type :transit-not-loaded
-                     :form-params form-params
-                     :transit-opts transit-opts
-                     :transit-type type})))
+                              "\"application/transit+%s\". "
+                              "Transit dependency not loaded.")
+                      (name type))
+             {:type :transit-not-loaded
+              :form-params form-params
+              :transit-opts transit-opts
+              :transit-type type})))
   (transit-encode form-params type transit-opts))
 
 (defmethod coerce-form-params :application/transit+json [req]
@@ -476,10 +476,10 @@
   [{:keys [form-params json-opts]}]
   (when-not json-enabled?
     (throw (ex-info (str "Can't encode form params as \"application/json\". "
-                         "Cheshire dependency not loaded.")
-                    {:type :cheshire-not-loaded
-                     :form-params form-params
-                     :json-opts json-opts})))
+                      "Cheshire dependency not loaded.")
+             {:type :cheshire-not-loaded
+              :form-params form-params
+              :json-opts json-opts})))
   (json-encode form-params json-opts))
 
 (defmethod coerce-form-params :default [{:keys [content-type form-params
@@ -496,9 +496,9 @@
 
   (if (and form-params (#{:post :put :patch} request-method))
     (-> req
-        (dissoc :form-params)
-        (assoc :content-type (content-type-value content-type)
-               :body (coerce-form-params req)))
+      (dissoc :form-params)
+      (assoc :content-type (content-type-value content-type)
+        :body (coerce-form-params req)))
     req))
 
 (defn wrap-url
@@ -506,8 +506,8 @@
   [req]
   (if-let [url (:url req)]
     (-> req
-        (dissoc :url)
-        (merge (parse-url url)))
+      (dissoc :url)
+      (merge (parse-url url)))
     req))
 
 (defn wrap-request-timing
@@ -622,8 +622,8 @@
   by default"
   [client]
   (let [client' (-> client
-                    wrap-exceptions
-                    wrap-request-timing)]
+                  wrap-exceptions
+                  wrap-request-timing)]
     (fn [req]
       (let [executor (ex/executor)]
         (if (:aleph.http.client/close req)

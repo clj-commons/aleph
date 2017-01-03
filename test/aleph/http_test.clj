@@ -34,13 +34,13 @@
   ([url]
     (http-get url nil))
   ([url options]
-   (http/get url (merge (default-options) {:pool *pool*} options))))
+    (http/get url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-put
   ([url]
     (http-put url nil))
   ([url options]
-   (http/put url (merge (default-options) {:pool *pool*} options))))
+    (http/put url (merge (default-options) {:pool *pool*} options))))
 
 (def port 8082)
 
@@ -178,7 +178,7 @@
         (= result
           (bs/to-string
             (:body
-             @(http-get (str "http://localhost:" port "/" path)))))))))
+              @(http-get (str "http://localhost:" port "/" path)))))))))
 
 (deftest test-ssl-response-formats
   (with-ssl-handler basic-handler
@@ -187,7 +187,7 @@
         (= result
           (bs/to-string
             (:body
-             @(http-get (str "https://localhost:" port "/" path)))))))))
+              @(http-get (str "https://localhost:" port "/" path)))))))))
 
 (def words (slurp "/usr/share/dict/words"))
 
@@ -338,7 +338,7 @@
     (let [pool (http/connection-pool {:connection-options {:response-buffer-size 16}})]
       (dotimes [i 1 #_1e6]
         #_(when (zero? (rem i 1e2))
-          (prn i))
+            (prn i))
         (-> @(http/get (str "http://localhost:" port "/big")
                {:as :byte-array})
           :body
