@@ -4,12 +4,12 @@
   (:require
     [clojure.java.io :as io]
     [aleph
+     [http :as http]
      [netty :as netty]
      [flow :as flow]]
     [byte-streams :as bs]
     [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [aleph.http :as http])
+    [manifold.stream :as s])
   (:import
     [java.util.concurrent
      Executors]
@@ -18,6 +18,8 @@
      ByteArrayInputStream]
     [java.util.concurrent
      TimeoutException]))
+
+;;;
 
 (def ^:dynamic ^io.aleph.dirigiste.IPool *pool* nil)
 

@@ -1,10 +1,10 @@
-(defproject aleph "0.4.2-alpha10"
+(defproject aleph "0.4.2-alpha11"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
-                 [io.netty/netty-all "4.1.0.Final"]
+                 [io.netty/netty-all "4.1.6.Final"]
                  [manifold "0.1.6-alpha4"]
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
