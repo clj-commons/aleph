@@ -196,6 +196,7 @@
                     (.substring uri (unchecked-inc question-mark-index))))
   :headers (-> req .headers headers->map)
   :request-method (-> req .getMethod .name str/lower-case keyword)
+  :request-arrived (System/nanoTime)
   :body body
   :scheme (if ssl? :https :http)
   :keep-alive? (HttpHeaders/isKeepAlive req)
