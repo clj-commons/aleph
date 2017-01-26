@@ -196,6 +196,7 @@
                     (.substring uri (unchecked-inc question-mark-index))))
   :headers (-> req .headers headers->map)
   :request-method (-> req .getMethod .name str/lower-case keyword)
+  :request-arrived (System/nanoTime)
   :body body
   :scheme (if ssl? :https :http)
   :keep-alive? (HttpHeaders/isKeepAlive req)
@@ -336,7 +337,7 @@
         (bs/to-byte-buffers {:chunk-size 1e6})
         s/->source))
 
-    (-> ch (.pipeline) (.get ChunkedWriteHandler))
+    (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))
     (send-chunked-file ch msg file)
 
     :else
