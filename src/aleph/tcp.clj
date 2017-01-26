@@ -13,12 +13,15 @@
     [io.netty.channel
      Channel
      ChannelHandler
-     ChannelPipeline]))
+     ChannelPipeline]
+    [io.netty.handler.ssl
+     SslHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
+  :ssl-session (some-> ch ^ChannelPipeline (.pipeline) ^SslHandler (.get "ssl-handler") .engine .getSession))
 
 (alter-meta! #'->TcpConnection assoc :private true)
 
@@ -132,12 +135,13 @@
    | `port` | the port of the server.
    | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
+   | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `insecure?` | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [host port remote-address local-address ssl? insecure? pipeline-transform bootstrap-transform raw-stream? epoll?]
+  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform raw-stream? epoll?]
     :or {bootstrap-transform identity
          epoll? false}
     :as options}]
@@ -148,10 +152,12 @@
           (.addLast pipeline "handler" ^ChannelHandler handler)
           (when pipeline-transform
             (pipeline-transform pipeline)))
-        (when ssl?
-          (if insecure?
-            (netty/insecure-ssl-client-context)
-            (netty/ssl-client-context)))
+        (if ssl-context
+          ssl-context
+          (when ssl?
+            (if insecure?
+              (netty/insecure-ssl-client-context)
+              (netty/ssl-client-context))))
         bootstrap-transform
         (or remote-address (InetSocketAddress. ^String host (int port)))
         local-address
