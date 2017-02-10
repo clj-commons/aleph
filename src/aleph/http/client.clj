@@ -380,6 +380,7 @@
 (defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers max-frame-payload]
   (let [d (d/deferred)
         in (atom nil)
+        desc (atom {})
         handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
 
     [d
@@ -416,7 +417,8 @@
                  (let [out (netty/sink ch false
                              #(if (instance? CharSequence %)
                                 (TextWebSocketFrame. (bs/to-string %))
-                                (BinaryWebSocketFrame. (netty/to-byte-buf ctx %))))]
+                                (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
+                             (fn [] @desc))]
 
                    (d/success! d
                      (doto
@@ -452,7 +454,12 @@
                nil
 
                (instance? CloseWebSocketFrame msg)
-               (netty/close ctx)))
+               (let [frame ^CloseWebSocketFrame msg]
+                 (when (realized? d)
+                   (swap! desc assoc
+                          :websocket-close-code (.statusCode frame)
+                          :websocket-close-msg (.reasonText frame)))
+                 (netty/close ctx))))
            (finally
              (netty/release msg)))))]))
 
