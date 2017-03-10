@@ -311,7 +311,8 @@
 (manifold/def-sink ChannelSink
   [coerce-fn
    downstream?
-   ^Channel ch]
+   ^Channel ch
+   additional-description]
   (close [this]
     (when downstream?
       (close ch))
@@ -319,11 +320,13 @@
     true)
   (description [_]
     (let [ch (channel ch)]
-      {:type "netty"
-       :closed? (not (.isActive ch))
-       :sink? true
-       :connection (assoc (connection-stats ch false)
-                     :direction :outbound)}))
+      (merge
+       {:type       "netty"
+        :closed?    (not (.isActive ch))
+        :sink?      true
+        :connection (assoc (connection-stats ch false)
+                           :direction :outbound)}
+       (additional-description))))
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
@@ -349,20 +352,23 @@
 
 (defn sink
   ([ch]
-    (sink ch true identity))
+   (sink ch true identity (fn [])))
   ([ch downstream? coerce-fn]
-    (let [count (AtomicLong. 0)
-          last-count (AtomicLong. 0)
-          sink (->ChannelSink
-                 coerce-fn
-                 downstream?
-                 ch)]
+   (sink ch downstream? coerce-fn (fn [])))
+  ([ch downstream? coerce-fn additional-description]
+   (let [count (AtomicLong. 0)
+         last-count (AtomicLong. 0)
+         sink (->ChannelSink
+               coerce-fn
+               downstream?
+               ch
+               additional-description)]
 
-      (d/chain' (.closeFuture (channel ch))
-        wrap-future
-        (fn [_] (s/close! sink)))
+     (d/chain' (.closeFuture (channel ch))
+               wrap-future
+               (fn [_] (s/close! sink)))
 
-      (doto sink (reset-meta! {:aleph/channel ch})))))
+     (doto sink (reset-meta! {:aleph/channel ch})))))
 
 (defn source
   [^Channel ch]
