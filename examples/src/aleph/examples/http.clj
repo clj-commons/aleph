@@ -43,10 +43,9 @@
     (hello-world-handler req)))
 
 ;; Compojure will normally dereference deferreds and return the realized value.
-;; This unfortunately blocks the thread. Since aleph can accept the un-realized
-;; deferred, we extend compojure's Renderable protocol to pass the deferred
-;; through unchanged so that the thread won't be blocked.
-
+;; Unfortunately, this blocks the thread. Since Aleph can accept the unrealized
+;; deferred, we extend Compojure's `Renderable` protocol to pass the deferred
+;; through unchanged so it can be handled asynchronously.
 (extend-protocol Renderable
   manifold.deferred.Deferred
   (render [d _] d))
@@ -86,7 +85,8 @@
 
 (defn streaming-numbers-handler
   "However, we can always still use lazy sequences. This is still useful when the upstream
-   data provider exposes the stream of data as an `Iterator` or a similar blocking mechanism."
+   data provider exposes the stream of data as an `Iterator` or a similar blocking mechanism.
+   This will, however, hold onto a thread until the sequence is exhausted."
   [{:keys [params]}]
   (let [cnt (Integer/parseInt (get params "count" "0"))]
     {:status 200

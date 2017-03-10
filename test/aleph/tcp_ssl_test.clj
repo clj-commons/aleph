@@ -3,6 +3,7 @@
     [clojure test])
   (:require [aleph.tcp-test :refer [with-server]]
             [aleph.tcp :as tcp]
+            [aleph.netty :as netty]
             [manifold.stream :as s]
             [byte-streams :as bs])
   (:import [java.security KeyFactory PrivateKey]
@@ -11,6 +12,8 @@
            [java.security.spec RSAPrivateCrtKeySpec]
            [io.netty.handler.ssl SslContextBuilder ClientAuth]
            [org.apache.commons.codec.binary Base64]))
+
+(set! *warn-on-reflection* false)
 
 (defn ^PrivateKey gen-key
   [k]
@@ -95,10 +98,10 @@
       .build))
 
 (def client-ssl-context
-  (-> (SslContextBuilder/forClient)
-      (.keyManager client-key (into-array X509Certificate [client-cert]))
-      (.trustManager (into-array X509Certificate [ca-cert]))
-      .build))
+  (netty/ssl-client-context
+    {:private-key client-key
+     :certificate-chain (into-array X509Certificate [client-cert])
+     :trust-store (into-array X509Certificate [ca-cert])}))
 
 (defn ssl-echo-handler
   [s c]

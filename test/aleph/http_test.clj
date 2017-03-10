@@ -21,6 +21,8 @@
 
 ;;;
 
+(set! *warn-on-reflection* false)
+
 (def ^:dynamic ^io.aleph.dirigiste.IPool *pool* nil)
 
 (netty/leak-detector-level! :paranoid)

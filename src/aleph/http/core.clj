@@ -196,17 +196,17 @@
                     (.substring uri (unchecked-inc question-mark-index))))
   :headers (-> req .headers headers->map)
   :request-method (-> req .getMethod .name str/lower-case keyword)
-  :request-arrived (System/nanoTime)
+  :aleph/request-arrived (System/nanoTime)
   :body body
   :scheme (if ssl? :https :http)
-  :keep-alive? (HttpHeaders/isKeepAlive req)
+  :aleph/keep-alive? (HttpHeaders/isKeepAlive req)
   :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
   :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
   :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
   :status (-> rsp .getStatus .code)
-  :keep-alive? (HttpHeaders/isKeepAlive rsp)
+  :aleph/keep-alive? (HttpHeaders/isKeepAlive rsp)
   :headers (-> rsp .headers headers->map)
   :aleph/complete complete
   :body body)

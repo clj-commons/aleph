@@ -182,10 +182,17 @@
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
                   (send-response ctx keep-alive? ssl?
-                    (if (map? rsp)
+                    (cond
+
+                      (map? rsp)
                       (if head?
                         (assoc rsp :body :aleph/omitted)
                         rsp)
+
+                      (nil? rsp)
+                      {:status 204}
+
+                      :else
                       (invalid-value-response req rsp))))))))))))
 
 (defn ring-handler

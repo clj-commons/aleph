@@ -19,7 +19,7 @@
   ([scheme host port path]
     (str scheme "://" host ":" port path)))
 
-(def pool (http/connection-pool {:connection-options {:keep-alive? false}}))
+(def pool (http/connection-pool {:connection-options {:aleph/keep-alive? false}}))
 
 (defn request
   ([& {:as options}]
