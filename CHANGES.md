@@ -19,3 +19,9 @@ Thanks to Zak Kristjanson, Elana Hashman, Casey Marshall, Jeroen van Dijk, Camer
 * target manifold 0.1.6
 * make all threads daemon by default
 * add `aleph.netty/wait-for-close` method, to prevent the process from closing prematurely
+
+### 0.4.3
+
+Thanks to Dominic Monroe
+
+* fix bug in client ssl-context creation
