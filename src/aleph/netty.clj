@@ -637,25 +637,26 @@
   Note that if specified, the types of `private-key` and `certificate-chain` must be
   \"compatible\": either both input streams, both files, or a private key and an array
   of certificates."
-    [{:keys [private-key private-key-password certificate-chain trust-store]}]
-    (-> (SslContextBuilder/forClient)
-      (#(if (and private-key certificate-chain)
-          (do
-            (check-ssl-args private-key certificate-chain)
-            (if (instance? (class (into-array X509Certificate [])) certificate-chain)
-              (.keyManager %
-                private-key
-                private-key-password
-                certificate-chain)
-              (.keyManager %
-                certificate-chain
-                private-key
-                private-key-password)))
-          %))
-      (#(if trust-store
-          (.trustManager % trust-store)
-          %))
-      .build)))
+    ([] (ssl-client-context {}))
+    ([{:keys [private-key private-key-password certificate-chain trust-store]}]
+     (-> (SslContextBuilder/forClient)
+         (#(if (and private-key certificate-chain)
+             (do
+               (check-ssl-args private-key certificate-chain)
+               (if (instance? (class (into-array X509Certificate [])) certificate-chain)
+                 (.keyManager %
+                              private-key
+                              private-key-password
+                              certificate-chain)
+                 (.keyManager %
+                              certificate-chain
+                              private-key
+                              private-key-password)))
+             %))
+         (#(if trust-store
+             (.trustManager % trust-store)
+             %))
+         .build))))
 
 ;;;
 
