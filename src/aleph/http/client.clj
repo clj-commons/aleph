@@ -96,7 +96,8 @@
 
       :exception-caught
       ([_ ctx ex]
-        (log/warn ex "error in HTTP client"))
+       (when-not (instance? IOException ex)
+         (log/warn ex "error in HTTP client")))
 
       :channel-inactive
       ([_ ctx]
@@ -238,8 +239,8 @@
     :or
     {pipeline-transform identity
      response-buffer-size 65536
-     max-initial-line-length 4098
-     max-header-size 8196
+     max-initial-line-length 65536
+     max-header-size 65536
      max-chunk-size 65536}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?

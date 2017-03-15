@@ -91,8 +91,6 @@
 
 (def ^:const array-class (class (clojure.core/byte-array 0)))
 
-
-
 (defn buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
     (doary [^ByteBuffer buf (.nioBuffers buf)]

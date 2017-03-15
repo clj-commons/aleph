@@ -30,7 +30,8 @@
 (defn default-options []
   {:socket-timeout 1e3
    :pool-timeout 1e4
-   :request-timeout 1e4})
+   :request-timeout 1e4
+   :throw-exceptions? false})
 
 (defn http-get
   ([url]
@@ -204,6 +205,10 @@
         (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
         (apply d/zip)
         deref))))
+
+(deftest test-overly-long-request
+  (with-handler basic-handler
+    (= 414 @(http-get (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))))))
 
 (deftest test-echo
   (with-handler basic-handler

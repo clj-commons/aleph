@@ -195,6 +195,23 @@
                       :else
                       (invalid-value-response req rsp))))))))))))
 
+(defn exception-handler [ctx ex]
+  (when-not (instance? IOException ex)
+    (log/warn ex "error in HTTP server")))
+
+(defn invalid-request? [^HttpRequest req]
+  (-> req .decoderResult .isFailure))
+
+(defn reject-invalid-request [ctx ^HttpRequest req]
+  (d/chain
+    (netty/write-and-flush ctx
+      (DefaultFullHttpResponse.
+        HttpVersion/HTTP_1_1
+        HttpResponseStatus/REQUEST_URI_TOO_LONG
+        (-> req .decoderResult .cause .getMessage netty/to-byte-buf)))
+    netty/wrap-future
+    (fn [_] (netty/close ctx))))
+
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
   (let [buffer-capacity (long buffer-capacity)
@@ -296,8 +313,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in HTTP server")))
+       (exception-handler ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -311,7 +327,9 @@
         (cond
 
           (instance? HttpRequest msg)
-          (process-request ctx msg)
+          (if (invalid-request? msg)
+            (reject-invalid-request ctx msg)
+            (process-request ctx msg))
 
           (instance? HttpContent msg)
           (if (instance? LastHttpContent msg)
@@ -341,8 +359,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in HTTP server")))
+       (exception-handler ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -351,20 +368,22 @@
 
       :channel-read
       ([_ ctx msg]
-        (cond
+       (cond
 
           (instance? HttpRequest msg)
-          (let [req msg]
+          (if (invalid-request? msg)
+            (reject-invalid-request ctx msg)
+            (let [req msg]
 
-            (when (HttpHeaders/is100ContinueExpected req)
-              (.writeAndFlush ctx
-                (DefaultFullHttpResponse.
-                  HttpVersion/HTTP_1_1
-                  HttpResponseStatus/CONTINUE)))
+              (when (HttpHeaders/is100ContinueExpected req)
+                (.writeAndFlush ctx
+                  (DefaultFullHttpResponse.
+                    HttpVersion/HTTP_1_1
+                    HttpResponseStatus/CONTINUE)))
 
-            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
-              (reset! stream s)
-              (handle-request ctx req s)))
+              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
+                (reset! stream s)
+                (handle-request ctx req s))))
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
@@ -386,9 +405,9 @@
      ssl?]
     :or
     {request-buffer-size 16384
-     max-initial-line-length 4098
-     max-header-size 8196
-     max-chunk-size 8196}}]
+     max-initial-line-length 8192
+     max-header-size 8192
+     max-chunk-size 16384}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)

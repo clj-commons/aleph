@@ -1,4 +1,4 @@
-(defproject aleph "0.4.3"
+(defproject aleph "0.4.4-alpha1"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -11,6 +11,7 @@
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0-alpha14"]
                                   [criterium "0.4.4"]
                                   [cheshire "5.6.3"]
+                                  [org.slf4j/slf4j-simple "1.7.24"]
                                   [com.cognitect/transit-clj "0.8.285"]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
