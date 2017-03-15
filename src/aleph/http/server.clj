@@ -501,10 +501,10 @@
                    (netty/put! ch in (.text ^TextWebSocketFrame msg))
 
                    (instance? BinaryWebSocketFrame msg)
-                   (let [body (.content ^BinaryWebSocketFrame (netty/acquire msg))]
+                   (let [body (.content ^BinaryWebSocketFrame msg)]
                      (netty/put! ch in
                        (if raw-stream?
-                         body
+                         (netty/acquire body)
                          (netty/buf->array body))))
 
                    (instance? PingWebSocketFrame msg)
