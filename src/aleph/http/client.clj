@@ -445,10 +445,10 @@
                (netty/put! ch @in (.text ^TextWebSocketFrame msg))
 
                (instance? BinaryWebSocketFrame msg)
-               (let [frame (netty/acquire (.content ^BinaryWebSocketFrame msg))]
+               (let [frame (.content ^BinaryWebSocketFrame msg)]
                  (netty/put! ch @in
                    (if raw-stream?
-                     frame
+                     (netty/acquire frame)
                      (netty/buf->array frame))))
 
                (instance? PongWebSocketFrame msg)
