@@ -25,3 +25,8 @@ Thanks to Zak Kristjanson, Elana Hashman, Casey Marshall, Jeroen van Dijk, Camer
 Thanks to Dominic Monroe
 
 * fix bug in client ssl-context creation
+
+### 0.4.4
+
+* fix memory lead in handling of binary websocket frames
+* fix handling of decoder errors in Netty's HTTP stack
