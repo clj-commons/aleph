@@ -52,7 +52,7 @@
 ;; deferred, we extend Compojure's `Renderable` protocol to pass the deferred
 ;; through unchanged so it can be handled asynchronously.
 (extend-protocol Renderable
-  manifold.deferred.Deferred
+  manifold.deferred.IDeferred
   (render [d _] d))
 
 (defn delayed-hello-world-handler
