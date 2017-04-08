@@ -35,7 +35,8 @@
    | `rejected-handler` | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
    | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `4096`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `8192`"
+   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `8192`
+   | `compression?` | when `true` enables http compression, defaults to `false`"
   [handler
    {:keys [port socket-address executor raw-stream? bootstrap-transform pipeline-transform ssl-context request-buffer-size shutdown-executor? rejected-handler]
     :as options}]

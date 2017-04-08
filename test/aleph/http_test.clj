@@ -159,6 +159,10 @@
   `(with-server (http/start-server ~handler {:port port})
      ~@body))
 
+(defmacro with-compressed-handler [handler & body]
+  `(with-server (http/start-server ~handler {:port port :compression? true})
+     ~@body))
+
 (defmacro with-ssl-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port, :ssl-context (netty/self-signed-ssl-context)})
      ~@body))
@@ -182,6 +186,15 @@
           (bs/to-string
             (:body
               @(http-get (str "http://localhost:" port "/" path)))))))))
+
+(deftest test-compressed-response
+  (with-compressed-handler basic-handler
+    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+      (is
+       (= "gzip"
+          (get-in @(http-get (str "http://localhost:" port "/" path)
+                             {:headers {:accept-encoding "gzip"}})
+                  [:headers :content-encoding]))))))
 
 (deftest test-ssl-response-formats
   (with-ssl-handler basic-handler
