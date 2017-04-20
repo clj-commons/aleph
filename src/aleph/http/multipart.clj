@@ -79,10 +79,8 @@
         buf (ByteBuffer/allocate size)]
     (doto buf
       (.put ^ByteBuffer headers)
-      (.put ^ByteBuffer body))))
-
-(def ^ByteBuffer newline-bytes-buffer (bs/to-byte-buffer "\n"))
-(def ^ByteBuffer dashes-bytes-buffer (bs/to-byte-buffer "--"))
+      (.put ^ByteBuffer body)
+      (.flip))))
 
 (defn encode-body
   ([parts]
@@ -96,13 +94,12 @@
          buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
      (.put buf b)
      (doseq [^ByteBuffer part ps]
-       (.put buf newline-bytes-buffer)
-       (.flip part)
+       (.put buf (bs/to-byte-buffer "\n"))
        (.put buf part)
-       (.put buf newline-bytes-buffer)
-       (.put buf newline-bytes-buffer)
+       (.put buf (bs/to-byte-buffer "\n"))
+       (.put buf (bs/to-byte-buffer "\n"))
        (.flip b)
        (.put buf b))
-     (.put buf dashes-bytes-buffer)
+     (.put buf (bs/to-byte-buffer "--"))
      (.flip buf)
      (bs/to-byte-array buf))))
