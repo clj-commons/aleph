@@ -29,56 +29,80 @@
 
 (defn populate-part
   "Generates a part map of the appropriate format"
-  [{:keys [name content mime-type charset transfer-encoding] :or {transfer-encoding :quoted-printable}}]
+  [{:keys [name content mime-type charset transfer-encoding filename]}]
   (let [mt (or mime-type
              (when (instance? File content)
                (URLConnection/guessContentTypeFromName (.getName ^File content))))]
-    {:name name :content (bs/to-byte-buffer content)
+    {:name name
+     :content (bs/to-byte-buffer content)
      :mime-type (mime-type-descriptor mt charset)
-     :transfer-encoding transfer-encoding}))
+     :transfer-encoding transfer-encoding
+     :filename filename}))
 
-(defn part-headers [name mime-type transfer-encoding]
-  (let [te (cc/name transfer-encoding)
-        cd (str "content-disposition: form-data; name=\"" (encode name :qp) \newline)
+;; Omit "content-transfer-encoding" when not provided
+;;
+;; RFC 2388, section 3:
+;; Each part may be encoded and the "content-transfer-encoding" header
+;; supplied if the value of that part does not conform to the default
+;; encoding.
+;;
+;; Include local filename when provided. It might be required by a server
+;; when dealing with users' file uploads.
+;;
+;; RFC 2388, section 4.4:
+;; The original local file name may be supplied as well...
+(defn part-headers [^String name ^String mime-type transfer-encoding filename]
+  (let [te (when transfer-encoding (cc/name transfer-encoding))
+        cd (str "content-disposition: form-data; name=\"" (encode name :qp) "\""
+                (when filename (str "; filename=\"" (encode filename :qp) "\""))
+                \newline)
         ct (str "content-type: " mime-type \newline)
-        cte (str "content-transfer-encoding: " te "\n\n")
+        cte (if-not te "" (str "content-transfer-encoding: " te \newline \newline))
         lcd (.length cd)
         lct (.length ct)
         lcte (.length cte)
         size (+ lcd lct lcte)
         buf (ByteBuffer/allocate size)]
     (doto buf
-      (.put 0 (bs/to-byte-buffer cd))
-      (.put lcd (bs/to-byte-buffer ct))
-      (.put (+ lcd lct) (bs/to-byte-buffer cte)))))
+      (.put (bs/to-byte-buffer cd))
+      (.put (bs/to-byte-buffer ct))
+      (.put (bs/to-byte-buffer cte))
+      (.flip))))
 
 (defn encode-part
   "Generates the byte representation of a part for the bytebuffer"
-  [{:keys [name content mime-type charset transfer-encoding] :as part}]
-  ;; encode name, content`
-  (let [headers (part-headers name mime-type transfer-encoding)
-        body (encode content transfer-encoding)
-        header-len (.length ^String headers)
-        size (+ header-len (.length ^String body))
+  [{:keys [name content mime-type charset transfer-encoding filename] :as part}]
+  (let [headers (part-headers name mime-type transfer-encoding filename)
+        body (bs/to-byte-buffer (encode content (or transfer-encoding :qp)))
+        header-len (.limit ^ByteBuffer headers)
+        size (+ header-len (.limit ^ByteBuffer body))
         buf (ByteBuffer/allocate size)]
     (doto buf
-      (.put 0 headers)
-      (.put header-len body))))
+      (.put ^ByteBuffer headers)
+      (.put ^ByteBuffer body))))
+
+(def ^ByteBuffer newline-bytes-buffer (bs/to-byte-buffer "\n"))
+(def ^ByteBuffer dashes-bytes-buffer (bs/to-byte-buffer "--"))
 
 (defn encode-body
   ([parts]
-    (encode-body (boundary) parts))
+   (encode-body (boundary) parts))
   ([^String boundary parts]
-    (let [b (bs/to-byte-buffer boundary)
-          b-len (+ 2 (.length boundary))
-          ps (map #(-> % populate-part encode-part) parts)
-          boundaries-len (* (inc (count parts)) b-len)
-          part-len (reduce (fn [acc ^String p] (+ acc (.length p))) 0 ps)
-          buf (ByteBuffer/allocate (+ boundaries-len part-len))]
-      (.put buf 0 b)
-      (reduce (fn [idx part]
-                (let [p-len (.length ^String part)]
-                  (.put buf idx part)
-                  (.put buf (+ idx part-len) b)
-                  (+ idx part-len b-len))) b-len ps)
-      buf)))
+   (let [b (bs/to-byte-buffer (str "--" boundary))
+         b-len (+ 5 (.length boundary))
+         ps (map #(-> % populate-part encode-part) parts)
+         boundaries-len (* (inc (count parts)) b-len)
+         part-len (reduce (fn [acc ^ByteBuffer p] (+ acc (.limit p))) 0 ps)
+         buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
+     (.put buf b)
+     (doseq [^ByteBuffer part ps]
+       (.put buf newline-bytes-buffer)
+       (.flip part)
+       (.put buf part)
+       (.put buf newline-bytes-buffer)
+       (.put buf newline-bytes-buffer)
+       (.flip b)
+       (.put buf b))
+     (.put buf dashes-bytes-buffer)
+     (.flip buf)
+     (bs/to-byte-array buf))))
