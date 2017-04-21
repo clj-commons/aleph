@@ -36,11 +36,12 @@
                (when file?
                  (URLConnection/guessContentTypeFromName (.getName ^File content))))
         ;; populate file name when working with file object
-        filename (or name (when file? (.getName ^File content)))]
-    {:part-name part-name
+        filename (or name (when file? (.getName ^File content)))
+        ;; use "name" as a part name when the last is not provided
+        part-name-to-use (or part-name name filename)]
+    {:part-name part-name-to-use
      :content (bs/to-byte-buffer content)
-     ;; do not need to specify charset when sending file
-     :mime-type (mime-type-descriptor mt (when-not file? charset))
+     :mime-type (mime-type-descriptor mt charset)
      :transfer-encoding transfer-encoding
      :name filename}))
 
