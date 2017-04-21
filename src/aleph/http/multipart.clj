@@ -27,17 +27,22 @@
     (when encoding
       (str ";charset=" encoding))))
 
+;; Omit "charset=*" when working with files
 (defn populate-part
   "Generates a part map of the appropriate format"
-  [{:keys [name content mime-type charset transfer-encoding filename]}]
-  (let [mt (or mime-type
-             (when (instance? File content)
-               (URLConnection/guessContentTypeFromName (.getName ^File content))))]
-    {:name name
+  [{:keys [part-name content mime-type charset transfer-encoding name]}]
+  (let [file? (instance? File content)
+        mt (or mime-type
+               (when file?
+                 (URLConnection/guessContentTypeFromName (.getName ^File content))))
+        ;; populate file name when working with file object
+        filename (or name (when file? (.getName ^File content)))]
+    {:part-name part-name
      :content (bs/to-byte-buffer content)
-     :mime-type (mime-type-descriptor mt charset)
+     ;; do not need to specify charset when sending file
+     :mime-type (mime-type-descriptor mt (when-not file? charset))
      :transfer-encoding transfer-encoding
-     :filename filename}))
+     :name filename}))
 
 ;; Omit "content-transfer-encoding" when not provided
 ;;
@@ -51,10 +56,12 @@
 ;;
 ;; RFC 2388, section 4.4:
 ;; The original local file name may be supplied as well...
-(defn part-headers [^String name ^String mime-type transfer-encoding filename]
+(defn part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [te (when transfer-encoding (cc/name transfer-encoding))
-        cd (str "content-disposition: form-data; name=\"" (encode name :qp) "\""
-                (when filename (str "; filename=\"" (encode filename :qp) "\""))
+        names-encoding (or transfer-encoding :qp)
+        pne (encode part-name names-encoding)
+        cd (str "content-disposition: form-data; name=\"" pne "\""
+                (when name (str "; filename=\"" (encode name names-encoding) "\""))
                 \newline)
         ct (str "content-type: " mime-type \newline)
         cte (if-not te "" (str "content-transfer-encoding: " te \newline \newline))
@@ -71,8 +78,8 @@
 
 (defn encode-part
   "Generates the byte representation of a part for the bytebuffer"
-  [{:keys [name content mime-type charset transfer-encoding filename] :as part}]
-  (let [headers (part-headers name mime-type transfer-encoding filename)
+  [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
+  (let [headers (part-headers part-name mime-type transfer-encoding name)
         body (bs/to-byte-buffer (encode content (or transfer-encoding :qp)))
         header-len (.limit ^ByteBuffer headers)
         size (+ header-len (.limit ^ByteBuffer body))
