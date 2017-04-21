@@ -27,7 +27,6 @@
     (when encoding
       (str ";charset=" encoding))))
 
-;; Omit "charset=*" when working with files
 (defn populate-part
   "Generates a part map of the appropriate format"
   [{:keys [part-name content mime-type charset transfer-encoding name]}]
