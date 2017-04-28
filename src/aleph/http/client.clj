@@ -315,12 +315,11 @@
                 (when-not (.get (.headers req') "Connection")
                   (HttpHeaders/setKeepAlive req' keep-alive?))
 
-                ;; TODO: uncomment this once the multipart implementation is validated
-                (let [body (if-let [parts (comment (get req :multipart))]
+                (let [body (if-let [parts (get req :multipart)]
                              (multipart/encode-body parts)
                              (get req :body))]
                   (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' body))))
+                                      (http/send-message ch true ssl? req' body))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
