@@ -31,6 +31,7 @@
      DefaultHttpContent
      DefaultLastHttpContent
      HttpContent HttpHeaders
+     HttpContentCompressor
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
@@ -402,16 +403,22 @@
      max-header-size
      max-chunk-size
      raw-stream?
-     ssl?]
+     ssl?
+     compression?]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
      max-header-size 8192
-     max-chunk-size 16384}}]
+     max-chunk-size 16384
+     compression? false}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))]
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+          compression-transform (if compression?
+                                  #(doto %
+                                     (.addAfter "http-server" "deflater" (HttpContentCompressor. 1)))
+                                  identity)]
 
       (doto pipeline
         (.addLast "http-server"
@@ -421,6 +428,7 @@
             max-chunk-size
             false))
         (.addLast "request-handler" ^ChannelHandler handler)
+        compression-transform
         pipeline-transform))))
 
 ;;;
@@ -436,11 +444,13 @@
            ssl-context
            shutdown-executor?
            rejected-handler
-           epoll?]
+           epoll?
+           compression?]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
-         epoll? false}
+         epoll? false
+         compression? false}
     :as options}]
   (let [executor (cond
                    (instance? Executor executor)
