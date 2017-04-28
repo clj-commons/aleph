@@ -414,11 +414,7 @@
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
-          compression-transform (if compression?
-                                  #(doto %
-                                     (.addAfter "http-server" "deflater" (HttpContentCompressor. 1)))
-                                  identity)]
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))]
 
       (doto pipeline
         (.addLast "http-server"
@@ -428,7 +424,8 @@
             max-chunk-size
             false))
         (.addLast "request-handler" ^ChannelHandler handler)
-        compression-transform
+        (#(when compression?
+            (.addAfter ^ChannelPipeline % "http-server" "deflater" (HttpContentCompressor.))))
         pipeline-transform))))
 
 ;;;

@@ -735,26 +735,31 @@
    on-close
    ^SocketAddress socket-address
    epoll?]
-  (let [num-cores (.availableProcessors (Runtime/getRuntime))
-        num-threads (* 2 num-cores)
-        thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" true)
-        ^EventLoopGroup
-        group (if (and epoll? (epoll-available?))
-                (EpollEventLoopGroup. num-threads thread-factory)
-                (NioEventLoopGroup. num-threads thread-factory))
+  (let [num-cores      (.availableProcessors (Runtime/getRuntime))
+        num-threads    (* 2 num-cores)
+        thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" false)
+        closed?        (atom false)
 
-        ^Class
-        channel (if (and epoll? (epoll-available?))
-                  EpollServerSocketChannel
-                  NioServerSocketChannel)
+        ^EventLoopGroup group
+        (if (and epoll? (epoll-available?))
+          (EpollEventLoopGroup. num-threads thread-factory)
+          (NioEventLoopGroup. num-threads thread-factory))
 
-        pipeline-builder (if ssl-context
-                           (fn [^ChannelPipeline p]
-                             (.addLast p "ssl-handler"
-                               (.newHandler ssl-context
-                                 (-> p .channel .alloc)))
-                             (pipeline-builder p))
-                           pipeline-builder)]
+        ^Class channel
+        (if (and epoll? (epoll-available?))
+          EpollServerSocketChannel
+          NioServerSocketChannel)
+
+        pipeline-builder
+        (if ssl-context
+          (fn [^ChannelPipeline p]
+            (.addLast p "ssl-handler"
+              (.newHandler ssl-context
+                (-> p .channel .alloc)))
+            (pipeline-builder p))
+          pipeline-builder)
+
+        ]
 
     (try
       (let [b (doto (ServerBootstrap.)
@@ -773,9 +778,10 @@
         (reify
           java.io.Closeable
           (close [_]
-            (when on-close (on-close))
-            (-> ch .close .sync)
-            (-> group .shutdownGracefully))
+            (when (compare-and-set! closed? false true)
+              (-> ch .close .sync)
+              (-> group .shutdownGracefully)
+              (when on-close (on-close))))
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))
