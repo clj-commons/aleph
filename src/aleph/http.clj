@@ -87,6 +87,8 @@
    | `total-connections` | the maximum number of connections across all hosts
    | `target-utilization` | the target utilization of connections per host, within `[0,1]`, defaults to `0.9`
    | `stats-callback` | an optional callback which is invoked with a map of hosts onto usage statistics every ten seconds
+   | `max-queue-size` | the maximum number of pending acquires from the pool that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`, defaults to `65536`
+   | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -107,12 +109,14 @@
            connection-options
            stats-callback
            control-period
-           middleware]
+           middleware
+           max-queue-size]
     :or {connections-per-host 8
          total-connections 1024
          target-utilization 0.9
          control-period 60000
-         middleware middleware/wrap-request}}]
+         middleware middleware/wrap-request
+         max-queue-size 65536}}]
   (let [p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
@@ -129,6 +133,7 @@
                              first
                              client/close-connection))
                 :control-period control-period
+                :max-queue-size max-queue-size
                 :controller (Pools/utilizationController
                               target-utilization
                               connections-per-host
