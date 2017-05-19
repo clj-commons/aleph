@@ -22,7 +22,7 @@
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders DefaultHttpHeaders HttpContent
+     HttpHeaders HttpUtil  DefaultHttpHeaders HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
      DefaultHttpContent
@@ -228,6 +228,9 @@
   (when-not (-> msg .headers (.contains "Content-Length"))
     (HttpHeaders/setContentLength msg length)))
 
+(defn has-content-length? [^HttpMessage msg]
+  (-> msg .headers (.contains "Content-Length")))
+
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
 (let [ary-class (class (byte-array 0))]
@@ -242,7 +245,7 @@
 
 (defn send-streaming-body [ch ^HttpMessage msg body]
 
-  (HttpHeaders/setTransferEncodingChunked msg)
+  (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
   (netty/write ch msg)
 
   (if-let [body' (if (sequential? body)
