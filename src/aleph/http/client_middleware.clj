@@ -539,7 +539,7 @@
   (fn [req]
     (-> (client req)
         (d/chain' (fn [resp]
-                    (if (and (= 204 (:status resp)) (= 0 (.available (:body resp))))
+                    (if (and (= 204 (:status resp)) (= 0 (.available ^InputStream (:body resp))))
                       (dissoc resp :body)
                       resp))))))
 
