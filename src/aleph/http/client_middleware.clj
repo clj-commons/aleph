@@ -532,6 +532,17 @@
       (-> (client req)
         (d/chain' #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
+(defn wrap-204-empty-body
+  "Middleware which removes a body from a 204 request when the body is actually not there.
+  If the 204 response erroneously has a body with data, the body will be preserved."
+  [client]
+  (fn [req]
+    (-> (client req)
+        (d/chain' (fn [resp]
+                    (if (and (= 204 (:status resp)) (= 0 (.available (:body resp))))
+                      (dissoc resp :body)
+                      resp))))))
+
 (defn parse-content-type
   "Parse `s` as an RFC 2616 media type."
   [s]
@@ -637,7 +648,8 @@
   [client]
   (let [client' (-> client
                   wrap-exceptions
-                  wrap-request-timing)]
+                  wrap-request-timing
+                  wrap-204-empty-body)]
     (fn [req]
       (let [executor (ex/executor)]
         (if (:aleph.http.client/close req)
