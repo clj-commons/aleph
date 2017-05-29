@@ -60,8 +60,7 @@
                (URI.
                  (name (or (:scheme req) :http))
                  nil
-                 (when-some [host (or (:host req) (:server-name req))]
-                   (IDN/toASCII host))
+                 (some-> (or (:host req) (:server-name req)) IDN/toASCII)
                  (or (:port req) (:server-port req) -1)
                  nil
                  nil
