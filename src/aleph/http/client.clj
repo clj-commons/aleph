@@ -14,7 +14,8 @@
     [java.net
      URI
      URL
-     InetSocketAddress]
+     InetSocketAddress
+     IDN]
     [io.netty.buffer
      ByteBuf
      Unpooled]
@@ -59,19 +60,19 @@
                (URI.
                  (name (or (:scheme req) :http))
                  nil
-                 (or (:host req) (:server-name req))
+                 (some-> (or (:host req) (:server-name req)) IDN/toASCII)
                  (or (:port req) (:server-port req) -1)
                  nil
                  nil
                  nil))]
 
-  (defn req->domain [req]
+  (defn ^java.net.URI req->domain [req]
     (if-let [url (:url req)]
       (let [^URL uri (URL. url)]
         (URI.
           (.getProtocol uri)
           nil
-          (.getHost uri)
+          (IDN/toASCII (.getHost uri))
           (.getPort uri)
           nil
           nil
