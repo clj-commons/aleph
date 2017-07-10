@@ -317,7 +317,10 @@
                   (HttpHeaders/setKeepAlive req' keep-alive?))
 
                 (let [body (if-let [parts (get req :multipart)]
-                             (multipart/encode-body parts)
+                             (let [boundary (multipart/boundary)
+                                   content-type (str "multipart/form-data; boundary=" boundary)]
+                               (HttpHeaders/setHeader req' "Content-Type" content-type)
+                               (multipart/encode-body boundary parts))
                              (get req :body))]
                   (netty/safe-execute ch
                                       (http/send-message ch true ssl? req' body))))
