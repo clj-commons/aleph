@@ -60,11 +60,11 @@
   (let [te (when transfer-encoding (cc/name transfer-encoding))
         names-encoding (or transfer-encoding :qp)
         pne (encode part-name names-encoding)
-        cd (str "content-disposition: form-data; name=\"" pne "\""
+        cd (str "Content-Disposition: form-data; name=\"" pne "\""
                 (when name (str "; filename=\"" (encode name names-encoding) "\""))
                 \newline)
-        ct (str "content-type: " mime-type \newline)
-        cte (if-not te "" (str "content-transfer-encoding: " te \newline \newline))
+        ct (str "Content-Type: " mime-type \newline)
+        cte (str (if-not te "" (str "Content-Transfer-Encoding: " te \newline)) \newline)
         lcd (.length cd)
         lct (.length ct)
         lcte (.length cte)
@@ -103,7 +103,6 @@
      (doseq [^ByteBuffer part ps]
        (.put buf (bs/to-byte-buffer "\n"))
        (.put buf part)
-       (.put buf (bs/to-byte-buffer "\n"))
        (.put buf (bs/to-byte-buffer "\n"))
        (.flip b)
        (.put buf b))

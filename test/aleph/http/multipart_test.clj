@@ -37,13 +37,13 @@
     (is (.contains body-str "name=\"part6\""))
     (is (.contains body-str "content1"))
     (is (.contains body-str "content2"))
-    (is (.contains body-str "content-disposition: form-data;"))
+    (is (.contains body-str "Content-Disposition: form-data;"))
     ;; default mime-type
-    (is (.contains body-str "content-type: application/octet-stream;charset=UTF-8"))
+    (is (.contains body-str "Content-Type: application/octet-stream;charset=UTF-8"))
     ;; omitting charset
-    (is (.contains body-str "content-type: application/json\n"))
+    (is (.contains body-str "Content-Type: application/json\n"))
     ;; mime-type + charset
-    (is (.contains body-str "content-type: application/xml;charset=ISO-8859-1"))
+    (is (.contains body-str "Content-Type: application/xml;charset=ISO-8859-1"))
     ;; filename header
     (is (.contains body-str "filename=\"content5.pdf\""))))
 
@@ -74,6 +74,6 @@
     (is (.contains body-str "name=\"file.txt\""))
     (is (.contains body-str "filename=\"file.txt\""))
     (is (.contains body-str "filename=\"text-file-to-send.txt\""))
-    (is (.contains body-str "content-type: text/plain\n"))
-    (is (.contains body-str "content-type: text/plain;charset=UTF-8\n"))
-    (is (.contains body-str "content-type: application/png\n"))))
+    (is (.contains body-str "Content-Type: text/plain\n"))
+    (is (.contains body-str "Content-Type: text/plain;charset=UTF-8\n"))
+    (is (.contains body-str "Content-Type: application/png\n"))))
