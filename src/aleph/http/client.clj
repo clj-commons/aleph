@@ -331,37 +331,41 @@
             (when on-closed (on-closed))
             (s/close! requests)))
 
-        (fn [req]
-          (if (contains? req ::close)
-            (netty/wrap-future (netty/close ch))
-            (let [raw-stream? (get req :raw-stream? raw-stream?)
-                  rsp (locking ch
-                        (s/put! requests req)
-                        (s/take! responses ::closed))]
-              (d/chain' rsp
-                (fn [rsp]
-                  (cond
-                    (identical? ::closed rsp)
-                    (d/error-deferred (ex-info "connection was closed" {:request req}))
+        (let [t0 (System/nanoTime)]
+          (fn [req]
+            (if (contains? req ::close)
+              (netty/wrap-future (netty/close ch))
+              (let [raw-stream? (get req :raw-stream? raw-stream?)
+                    rsp (locking ch
+                          (s/put! requests req)
+                          (s/take! responses ::closed))]
+                (d/chain' rsp
+                  (fn [rsp]
+                    (cond
+                      (identical? ::closed rsp)
+                      (d/error-deferred
+                        (ex-info
+                          (format "connection was closed after %.3f seconds" (/ (- (System/nanoTime) t0) 1e9))
+                          {:request req}))
 
-                    raw-stream?
-                    rsp
+                      raw-stream?
+                      rsp
 
-                    :else
-                    (d/chain' rsp
-                      (fn [rsp]
-                        (let [body (:body rsp)]
+                      :else
+                      (d/chain' rsp
+                        (fn [rsp]
+                          (let [body (:body rsp)]
 
-                          ;; handle connection life-cycle
-                          (when-not keep-alive?
-                            (if (s/stream? body)
-                              (s/on-closed body #(netty/close ch))
-                              (netty/close ch)))
+                            ;; handle connection life-cycle
+                            (when-not keep-alive?
+                              (if (s/stream? body)
+                                (s/on-closed body #(netty/close ch))
+                                (netty/close ch)))
 
-                          (assoc rsp
-                            :body
-                            (bs/to-input-stream body
-                              {:buffer-size response-buffer-size})))))))))))))))
+                            (assoc rsp
+                              :body
+                              (bs/to-input-stream body
+                                {:buffer-size response-buffer-size}))))))))))))))))
 
 ;;;
 

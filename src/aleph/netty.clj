@@ -104,10 +104,11 @@
 
 (defn bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
-        dst (ByteBuffer/allocate (loop [cnt 0, s bufs']
-                                   (if (empty? s)
-                                     cnt
-                                     (recur (p/+ cnt (.remaining ^ByteBuffer (first s))) (rest s)))))]
+        dst (ByteBuffer/allocate
+              (loop [cnt 0, s bufs']
+                (if (empty? s)
+                  cnt
+                  (recur (p/+ cnt (.remaining ^ByteBuffer (first s))) (rest s)))))]
     (doit [^ByteBuffer buf bufs']
       (.put dst buf))
     (.array dst)))

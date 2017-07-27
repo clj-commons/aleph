@@ -100,7 +100,7 @@
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
    | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
-   | `raw-stream?` | if `true`, bodies of respnoses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`"
   [{:keys [connections-per-host
