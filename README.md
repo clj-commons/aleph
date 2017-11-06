@@ -52,7 +52,7 @@ On any HTTP request which has the proper `Upgrade` headers, you may call `(aleph
 
 (defn echo-handler [req]
   (let [s @(http/websocket-connection req)]
-    (s/connect s s))))
+    (s/connect s s)))
 ```
 
 This takes all messages from the client, and feeds them back into the duplex socket, returning them to the client.  WebSocket text messages will be emitted as strings, and binary messages as byte arrays.
