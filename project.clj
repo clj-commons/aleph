@@ -4,7 +4,11 @@
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
-                 [io.netty/netty-all "4.1.11.Final"]
+                 [io.netty/netty-transport "4.1.11.Final"]
+                 [io.netty/netty-transport-native-epoll "4.1.11.Final"]
+                 [io.netty/netty-codec "4.1.11.Final"]
+                 [io.netty/netty-codec-http "4.1.11.Final"]
+                 [io.netty/netty-handler "4.1.11.Final"]
                  [manifold "0.1.6"]
                  [byte-streams "0.2.2"]
                  [potemkin "0.4.3"]]
