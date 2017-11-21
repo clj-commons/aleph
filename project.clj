@@ -1,6 +1,6 @@
 (defproject aleph "0.4.4"
   :description "a framework for asynchronous communication"
-  :repositories {"jboss" "http://repository.jboss.org/nexus/content/groups/public/"
+  :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
