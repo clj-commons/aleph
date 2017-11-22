@@ -13,9 +13,11 @@
     [byte-streams :as bs]
     [clojure.edn :as edn])
   (:import
-    [java.io InputStream ByteArrayOutputStream]
-    [java.util Base64]
-    [java.net URL URLEncoder UnknownHostException]))
+   [io.netty.buffer ByteBuf Unpooled]
+   [io.netty.handler.codec.base64 Base64]
+   [java.io InputStream ByteArrayOutputStream]
+   [java.nio.charset StandardCharsets]
+   [java.net URL URLEncoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -418,8 +420,12 @@
   (let [basic-auth (if (string? basic-auth)
                      basic-auth
                      (str (first basic-auth) ":" (second basic-auth)))
-        bytes (.getBytes ^String basic-auth "UTF-8")]
-    (str "Basic " (.encodeToString (Base64/getEncoder) bytes))))
+        input-bytebuf (Unpooled/wrappedBuffer (.getBytes ^String basic-auth "UTF-8"))
+        base64-bytebuf (Base64/encode input-bytebuf)
+        base64-string (.toString ^ByteBuf base64-bytebuf StandardCharsets/UTF_8)]
+    (.release ^ByteBuf input-bytebuf)
+    (.release ^ByteBuf base64-bytebuf)
+    (str "Basic " base64-string)))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
