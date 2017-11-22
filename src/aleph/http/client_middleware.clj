@@ -412,13 +412,14 @@
           (content-type-value content-type))))
     req))
 
-(defn basic-auth-value [basic-auth]
+(defn basic-auth-value
+  "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)" 
+  [basic-auth]
   (let [basic-auth (if (string? basic-auth)
                      basic-auth
                      (str (first basic-auth) ":" (second basic-auth)))
         bytes (.getBytes ^String basic-auth "UTF-8")]
-    (str "Basic "
-      (.encodeToString (Base64/getEncoder) (.getBytes ^String basic-auth "UTF-8")))))
+    (str "Basic " (.encodeToString (Base64/getEncoder) bytes))))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
