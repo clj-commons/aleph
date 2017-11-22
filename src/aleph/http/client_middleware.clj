@@ -14,6 +14,7 @@
     [clojure.edn :as edn])
   (:import
     [java.io InputStream ByteArrayOutputStream]
+    [java.util Base64]
     [java.net URL URLEncoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
@@ -417,9 +418,7 @@
                      (str (first basic-auth) ":" (second basic-auth)))
         bytes (.getBytes ^String basic-auth "UTF-8")]
     (str "Basic "
-      (-> ^String basic-auth
-        (.getBytes "UTF-8")
-        javax.xml.bind.DatatypeConverter/printBase64Binary))))
+      (.encodeToString (Base64/getEncoder) (.getBytes ^String basic-auth "UTF-8")))))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
