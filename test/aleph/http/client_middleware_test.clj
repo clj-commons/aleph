@@ -8,6 +8,16 @@
   (is (= "" (middleware/generate-query-string {} "text/plain; charset=utf-8")))
   (is (= "" (middleware/generate-query-string {} "text/html;charset=ISO-8859-1"))))
 
+(deftest test-basic-auth-value-encoding
+  ;; see https://tools.ietf.org/html/rfc2617#page-5
+  (is (= "Basic Og==" (middleware/basic-auth-value nil)))
+  (is (= "Basic Og==" (middleware/basic-auth-value [])))
+  (is (= "Basic " (middleware/basic-auth-value "")))
+  (is (= "Basic dXNlcm5hbWU6cGFzc3dvcmQ=" (middleware/basic-auth-value "username:password")))
+  (is (= "Basic dXNlcm5hbWU6cGFzc3dvcmQ=" (middleware/basic-auth-value ["username" "password"])))
+  (is (= "Basic dXNlcm5hbWU6" (middleware/basic-auth-value ["username"])))
+  (is (= "Basic dXNlcm5hbWU=" (middleware/basic-auth-value "username"))))
+
 (deftest test-coerce-form-params
   (is (= "{\"foo\":\"bar\"}" (middleware/coerce-form-params {:content-type :json
                                                              :form-params {:foo :bar}})))

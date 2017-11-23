@@ -13,8 +13,11 @@
     [byte-streams :as bs]
     [clojure.edn :as edn])
   (:import
-    [java.io InputStream ByteArrayOutputStream]
-    [java.net URL URLEncoder UnknownHostException]))
+   [io.netty.buffer ByteBuf Unpooled]
+   [io.netty.handler.codec.base64 Base64]
+   [java.io InputStream ByteArrayOutputStream]
+   [java.nio.charset StandardCharsets]
+   [java.net URL URLEncoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -411,15 +414,18 @@
           (content-type-value content-type))))
     req))
 
-(defn basic-auth-value [basic-auth]
+(defn basic-auth-value
+  "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)" 
+  [basic-auth]
   (let [basic-auth (if (string? basic-auth)
                      basic-auth
                      (str (first basic-auth) ":" (second basic-auth)))
-        bytes (.getBytes ^String basic-auth "UTF-8")]
-    (str "Basic "
-      (-> ^String basic-auth
-        (.getBytes "UTF-8")
-        javax.xml.bind.DatatypeConverter/printBase64Binary))))
+        input-bytebuf (Unpooled/wrappedBuffer (.getBytes ^String basic-auth "UTF-8"))
+        base64-bytebuf (Base64/encode input-bytebuf)
+        base64-string (.toString ^ByteBuf base64-bytebuf StandardCharsets/UTF_8)]
+    (.release ^ByteBuf input-bytebuf)
+    (.release ^ByteBuf base64-bytebuf)
+    (str "Basic " base64-string)))
 
 (defn wrap-basic-auth
   "Middleware converting the :basic-auth option into an Authorization header."
