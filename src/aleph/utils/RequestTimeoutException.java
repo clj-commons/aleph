@@ -10,4 +10,14 @@ public class RequestTimeoutException extends TimeoutException {
         super(message);
     }
 
+    public RequestTimeoutException(Throwable cause) {
+        super(cause.getMessage());
+        initCause(cause);
+    }
+    
+    public RequestTimeoutException(String message, Throwable cause) {
+        super(message);
+        initCause(cause);
+    }
+    
 }

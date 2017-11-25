@@ -10,4 +10,14 @@ public class PoolTimeoutException extends TimeoutException {
         super(message);
     }
 
+    public PoolTimeoutException(Throwable cause) {
+        super(cause.getMessage());
+        initCause(cause);
+    }
+
+    public PoolTimeoutException(String message, Throwable cause) {
+        super(message);
+        initCause(cause);
+    }
+    
 }

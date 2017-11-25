@@ -224,7 +224,7 @@
                ;; pool timeout triggered
                (d/catch' TimeoutException
                  (fn [^Throwable e]
-                   (d/error-deferred (PoolTimeoutException. (.getMessage e)))))
+                   (d/error-deferred (PoolTimeoutException. e))))
 
                (d/chain'
                  (fn [conn]
@@ -238,7 +238,7 @@
                      (d/catch' TimeoutException
                        (fn [^Throwable e]
                          (flow/dispose pool k conn)
-                         (d/error-deferred (ConnectionTimeoutException. (.getMessage e)))))
+                         (d/error-deferred (ConnectionTimeoutException. e))))
 
                      ;; connection failed, bail out
                      (d/catch'
@@ -260,8 +260,8 @@
                                (d/catch' TimeoutException
                                  (fn [^Throwable e]
                                    (flow/dispose pool k conn)
-                                   (d/error-deferred (RequestTimeoutException. (.getMessage e)))))
-
+                                   (d/error-deferred (RequestTimeoutException. e))))
+                               
                                ;; request failed, dispose of the connection
                                (d/catch'
                                  (fn [e]
