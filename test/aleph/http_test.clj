@@ -17,7 +17,10 @@
      File
      ByteArrayInputStream]
     [java.util.concurrent
-     TimeoutException]))
+     TimeoutException]
+    [aleph.utils
+     ConnectionTimeoutException
+     RequestTimeoutException]))
 
 ;;;
 
@@ -281,11 +284,21 @@
   (with-handler basic-handler
     (is (thrown? TimeoutException
           @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
+             {:connection-timeout 2}))))
+
+  (with-handler basic-handler
+    (is (thrown? ConnectionTimeoutException
+          @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
              {:connection-timeout 2})))))
 
 (deftest test-request-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
+          @(http-get (str "http://localhost:" port "/slow")
+             {:request-timeout 5}))))
+
+  (with-handler basic-handler
+    (is (thrown? RequestTimeoutException
           @(http-get (str "http://localhost:" port "/slow")
              {:request-timeout 5})))))
 

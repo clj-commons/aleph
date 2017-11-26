@@ -11,6 +11,10 @@
      [client-middleware :as middleware]])
   (:import
     [io.aleph.dirigiste Pools]
+    [aleph.utils
+     PoolTimeoutException
+     ConnectionTimeoutException
+     RequestTimeoutException]
     [java.net
      URI
      InetSocketAddress]
@@ -216,6 +220,12 @@
              ;; acquire a connection
              (-> (flow/acquire pool k)
                (maybe-timeout! pool-timeout)
+
+               ;; pool timeout triggered
+               (d/catch' TimeoutException
+                 (fn [^Throwable e]
+                   (d/error-deferred (PoolTimeoutException. e))))
+
                (d/chain'
                  (fn [conn]
 
@@ -223,6 +233,12 @@
                    (-> (first conn)
 
                      (maybe-timeout! connection-timeout)
+
+                     ;; connection timeout triggered, dispose of the connetion
+                     (d/catch' TimeoutException
+                       (fn [^Throwable e]
+                         (flow/dispose pool k conn)
+                         (d/error-deferred (ConnectionTimeoutException. e))))
 
                      ;; connection failed, bail out
                      (d/catch'
@@ -240,6 +256,12 @@
                              (-> (conn' req)
                                (maybe-timeout! request-timeout)
 
+                               ;; request timeout triggered, dispose of the connection
+                               (d/catch' TimeoutException
+                                 (fn [^Throwable e]
+                                   (flow/dispose pool k conn)
+                                   (d/error-deferred (RequestTimeoutException. e))))
+                               
                                ;; request failed, dispose of the connection
                                (d/catch'
                                  (fn [e]
