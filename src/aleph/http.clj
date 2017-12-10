@@ -14,7 +14,8 @@
     [aleph.utils
      PoolTimeoutException
      ConnectionTimeoutException
-     RequestTimeoutException]
+     RequestTimeoutException
+     ReadTimeoutException]
     [java.net
      URI
      InetSocketAddress]
@@ -196,13 +197,15 @@
      | `middleware` | custom client middleware for the request
      | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
      | `connection-timeout` | timeout in milliseconds for the connection to become established
-     | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection"
+     | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection
+     | `read-timeout` | timeout in milliseconds for the response to be completed"
     [{:keys [pool
              middleware
              pool-timeout
              response-executor
              connection-timeout
              request-timeout
+             read-timeout
              follow-redirects?]
       :or {pool default-connection-pool
            response-executor default-response-executor
@@ -273,13 +276,21 @@
                                  (fn [rsp]
 
                                    ;; only release the connection back once the response is complete
-                                   (d/chain' (:aleph/complete rsp)
-                                     (fn [early?]
-                                       (if (or early?
-                                             (not (:aleph/keep-alive? rsp))
-                                             (<= 400 (:status rsp)))
+                                   (-> (:aleph/complete rsp)
+                                     (maybe-timeout! read-timeout)
+
+                                     (d/catch' TimeoutException
+                                       (fn [^Throwable e]
                                          (flow/dispose pool k conn)
-                                         (flow/release pool k conn))))
+                                         (d/error-deferred (ReadTimeoutException. e))))
+
+                                     (d/chain'
+                                      (fn [early?]
+                                        (if (or early?
+                                                (not (:aleph/keep-alive? rsp))
+                                                (<= 400 (:status rsp)))
+                                          (flow/dispose pool k conn)
+                                          (flow/release pool k conn)))))
                                    (-> rsp
                                      (dissoc :aleph/complete)
                                      (assoc :connection-time (- end start)))))))))
