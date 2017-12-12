@@ -53,13 +53,28 @@
         body-str (bs/to-string body)]
     (is (.endsWith body-str (str b "--")))))
 
-(deftest test-base64-encoding
+(deftest test-base64-content-transfer-encoding
   (let [body (mp/encode-body [{:part-name "part1"
                                :content "content1"
                                :transfer-encoding :base64}])
         body-str (bs/to-string body)]
     (is (.contains body-str "base64"))
     (is (.contains body-str "Y29udGVudDE="))))
+
+(deftest test-binary-content-transfer-encoding
+  (let [body (mp/encode-body [{:part-name "part1"
+                               :content "content1"
+                               :transfer-encoding :binary}
+                              {:part-name "part2"
+                               :content "content2"
+                               :transfer-encoding :none}])
+        body-str (bs/to-string body)]
+    (is (.contains body-str "content1"))
+    (is (.contains body-str "content2"))
+    (testing "specify 'binary' in headers"
+      (is (.contains body-str "Content-Transfer-Encoding: binary")))
+    (testing "omits content-transfer-encoding for :none"
+      (is (false? (.contains body-str "none"))))))
 
 (deftest test-content-as-file
   (let [body (mp/encode-body [{:part-name "part1"

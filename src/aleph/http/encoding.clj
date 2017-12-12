@@ -47,4 +47,7 @@
     :base64 (encode-base64 val)
     :quoted-printable (encode-qp val)
     :qp (encode-qp val)
+    ;; both "binary" and "none" effectively mean "do nothing"
+    :binary val
+    :none val
     nil))

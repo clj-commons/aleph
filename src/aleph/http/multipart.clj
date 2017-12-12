@@ -56,6 +56,9 @@
 ;;
 ;; RFC 2388, section 4.4:
 ;; The original local file name may be supplied as well...
+;;
+;; Note, that you can use transfer-encoding=:none or :binary to leave data "as is".
+;; transfer-encoding=:none omits "Content-Transfer-Encoding" header.
 (defn part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [te (when transfer-encoding (cc/name transfer-encoding))
         names-encoding (or transfer-encoding :qp)
@@ -64,7 +67,10 @@
                 (when name (str "; filename=\"" (encode name names-encoding) "\""))
                 \newline)
         ct (str "Content-Type: " mime-type \newline)
-        cte (str (if-not te "" (str "Content-Transfer-Encoding: " te \newline)) \newline)
+        cte (str (if (or (nil? transfer-encoding) (= :none transfer-encoding))
+                   ""
+                   (str "Content-Transfer-Encoding: " te \newline))
+                 \newline)
         lcd (.length cd)
         lct (.length ct)
         lcte (.length cte)
