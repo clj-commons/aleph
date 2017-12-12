@@ -86,7 +86,7 @@
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
   (let [headers (part-headers part-name mime-type transfer-encoding name)
-        body (bs/to-byte-buffer (encode content (or transfer-encoding :qp)))
+        body (bs/to-byte-buffer (encode content (or transfer-encoding :none)))
         header-len (.limit ^ByteBuffer headers)
         size (+ header-len (.limit ^ByteBuffer body))
         buf (ByteBuffer/allocate size)]
