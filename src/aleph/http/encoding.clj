@@ -50,4 +50,5 @@
     ;; both "binary" and "none" effectively mean "do nothing"
     :binary val
     :none val
-    nil))
+    (throw (IllegalArgumentException.
+            (str "unsupported encodiing given:" (pr-str encoding))))))

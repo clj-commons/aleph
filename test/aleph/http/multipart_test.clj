@@ -76,6 +76,12 @@
     (testing "omits content-transfer-encoding for :none"
       (is (false? (.contains body-str "none"))))))
 
+(deftest reject-unknown-transfer-encoding
+  (is (thrown? IllegalArgumentException
+               (mp/encode-body [{:part-name "part1"
+                                 :content "content1"
+                                 :transfer-encoding :uknown-transfer-encoding}]))))
+
 (deftest test-content-as-file
   (let [body (mp/encode-body [{:part-name "part1"
                                :content file-to-send}
