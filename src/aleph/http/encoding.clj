@@ -1,11 +1,14 @@
 (ns aleph.http.encoding
   (:require
-    [byte-streams :as bs]
-    [primitive-math :as p]
-    [potemkin :refer [doary]])
+   [byte-streams :as bs]
+   [primitive-math :as p]
+   [potemkin :refer [doary]])
   (:import
-    [io.netty.handler.codec.base64
-     Base64]))
+   [io.netty.buffer
+    ByteBuf
+    Unpooled]
+   [io.netty.handler.codec.base64
+    Base64]))
 
 (set! *unchecked-math* true)
 
@@ -31,7 +34,13 @@
       (str sb))))
 
 (defn encode-base64 [val]
-  (-> val bs/to-byte-buffer Base64/decode))
+  (let [cb (-> val bs/to-byte-buffer Unpooled/wrappedBuffer)
+        encoded (Base64/encode cb)
+        r (byte-array (.capacity ^ByteBuf encoded))
+        _ (.getBytes ^ByteBuf encoded 0 r)]
+    (.release ^ByteBuf cb)
+    (.release encoded)
+    (bs/to-byte-buffer r)))
 
 (defn encode [val encoding]
   (case encoding
