@@ -53,6 +53,14 @@
         body-str (bs/to-string body)]
     (is (.endsWith body-str (str b "--")))))
 
+(deftest test-base64-encoding
+  (let [body (mp/encode-body [{:part-name "part1"
+                               :content "content1"
+                               :transfer-encoding :base64}])
+        body-str (bs/to-string body)]
+    (is (.contains body-str "base64"))
+    (is (.contains body-str "Y29udGVudDE="))))
+
 (deftest test-content-as-file
   (let [body (mp/encode-body [{:part-name "part1"
                                :content file-to-send}
