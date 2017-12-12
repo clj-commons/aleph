@@ -61,25 +61,15 @@
 ;; transfer-encoding=:none omits "Content-Transfer-Encoding" header.
 (defn part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [te (when transfer-encoding (cc/name transfer-encoding))
-        pne (encode part-name :qp)
-        cd (str "Content-Disposition: form-data; name=\"" pne "\""
-                (when name (str "; filename=\"" (encode name :qp) "\""))
+        cd (str "Content-Disposition: form-data; name=\"" part-name "\""
+                (when name (str "; filename=\"" name "\""))
                 \newline)
         ct (str "Content-Type: " mime-type \newline)
         cte (str (if (or (nil? transfer-encoding) (= :none transfer-encoding))
                    ""
                    (str "Content-Transfer-Encoding: " te \newline))
-                 \newline)
-        lcd (.length cd)
-        lct (.length ct)
-        lcte (.length cte)
-        size (+ lcd lct lcte)
-        buf (ByteBuffer/allocate size)]
-    (doto buf
-      (.put (bs/to-byte-buffer cd))
-      (.put (bs/to-byte-buffer ct))
-      (.put (bs/to-byte-buffer cte))
-      (.flip))))
+                 \newline)]
+    (bs/to-byte-buffer (str cd ct cte))))
 
 (defn encode-part
   "Generates the byte representation of a part for the bytebuffer"
