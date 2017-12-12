@@ -94,7 +94,9 @@
                               {:part-name "part4"
                                :charset "UTF-8"
                                :content file-to-send}
-                              {:content file-to-send}])
+                              {:content file-to-send}
+                              {:content file-to-send
+                               :transfer-encoding :base64}])
         body-str (bs/to-string body)]
     (is (.contains body-str "name=\"part1\""))
     (is (.contains body-str "name=\"part2\""))
@@ -105,4 +107,5 @@
     (is (.contains body-str "filename=\"text-file-to-send.txt\""))
     (is (.contains body-str "Content-Type: text/plain\n"))
     (is (.contains body-str "Content-Type: text/plain;charset=UTF-8\n"))
-    (is (.contains body-str "Content-Type: application/png\n"))))
+    (is (.contains body-str "Content-Type: application/png\n"))
+    (is (.contains body-str "Content-Transfer-Encoding: base64\n"))))
