@@ -57,25 +57,25 @@
 ;; RFC 2388, section 4.4:
 ;; The original local file name may be supplied as well...
 ;;
-;; Note, that you can use transfer-encoding=:none or :binary to leave data "as is".
-;; transfer-encoding=:none omits "Content-Transfer-Encoding" header.
+;; Note, that you can use transfer-encoding=nil or :binary to leave data "as is".
+;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
 (defn part-headers [^String part-name ^String mime-type transfer-encoding name]
-  (let [te (when transfer-encoding (cc/name transfer-encoding))
-        cd (str "Content-Disposition: form-data; name=\"" part-name "\""
+  (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
                 (when name (str "; filename=\"" name "\""))
                 \newline)
         ct (str "Content-Type: " mime-type \newline)
-        cte (str (if (or (nil? transfer-encoding) (= :none transfer-encoding))
-                   ""
-                   (str "Content-Transfer-Encoding: " te \newline))
-                 \newline)]
-    (bs/to-byte-buffer (str cd ct cte))))
+        cte (if (nil? transfer-encoding)
+              ""
+              (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) \newline))]
+    (bs/to-byte-buffer (str cd ct cte \newline))))
 
 (defn encode-part
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
   (let [headers (part-headers part-name mime-type transfer-encoding name)
-        body (bs/to-byte-buffer (encode content (or transfer-encoding :none)))
+        body (bs/to-byte-buffer (if (some? transfer-encoding)
+                                  (encode content transfer-encoding)
+                                  content))
         header-len (.limit ^ByteBuffer headers)
         size (+ header-len (.limit ^ByteBuffer body))
         buf (ByteBuffer/allocate size)]

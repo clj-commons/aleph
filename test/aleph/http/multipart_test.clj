@@ -62,19 +62,20 @@
     (is (.contains body-str "Y29udGVudDE="))))
 
 (deftest test-binary-content-transfer-encoding
-  (let [body (mp/encode-body [{:part-name "part1"
-                               :content "content1"
-                               :transfer-encoding :binary}
-                              {:part-name "part2"
-                               :content "content2"
-                               :transfer-encoding :none}])
-        body-str (bs/to-string body)]
-    (is (.contains body-str "content1"))
-    (is (.contains body-str "content2"))
-    (testing "specify 'binary' in headers"
-      (is (.contains body-str "Content-Transfer-Encoding: binary")))
-    (testing "omits content-transfer-encoding for :none"
-      (is (false? (.contains body-str "none"))))))
+  (testing "specify 'binary' in headers"
+    (let [body (mp/encode-body [{:part-name "part1"
+                                 :content "content1"
+                                 :transfer-encoding :binary}])
+          body-str (bs/to-string body)]
+      (is (.contains body-str "content1"))
+      (is (.contains body-str "Content-Transfer-Encoding: binary"))))
+  (testing "omits content-transfer-encoding for nil"
+    (let [body (mp/encode-body [{:part-name "part2"
+                                 :content "content2"
+                                 :transfer-encoding nil}])
+          body-str (bs/to-string body)]
+      (is (.contains body-str "content2"))
+      (is (false? (.contains body-str "Content-Transfer-Encoding"))))))
 
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
