@@ -39,7 +39,7 @@
         r (byte-array (.capacity ^ByteBuf encoded))
         _ (.getBytes ^ByteBuf encoded 0 r)]
     (.release ^ByteBuf cb)
-    (.release encoded)
+    (.release ^ByteBuf encoded)
     (bs/to-byte-buffer r)))
 
 (defn encode [val encoding]
