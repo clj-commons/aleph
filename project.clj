@@ -1,22 +1,22 @@
-(defproject aleph "0.4.4"
+(defproject aleph "0.4.5-alpha1"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/tools.logging "0.3.1" :exclusions [org.clojure/clojure]]
+  :dependencies [[org.clojure/tools.logging "0.4.0" :exclusions [org.clojure/clojure]]
                  [io.netty/netty-transport "4.1.17.Final"]
                  [io.netty/netty-transport-native-epoll "4.1.17.Final"]
                  [io.netty/netty-codec "4.1.17.Final"]
                  [io.netty/netty-codec-http "4.1.17.Final"]
                  [io.netty/netty-handler "4.1.17.Final"]
                  [manifold "0.1.6"]
-                 [byte-streams "0.2.2"]
-                 [potemkin "0.4.3"]]
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0-RC1"]
+                 [byte-streams "0.2.3"]
+                 [potemkin "0.4.4"]]
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]
                                   [criterium "0.4.4"]
-                                  [cheshire "5.6.3"]
-                                  [org.slf4j/slf4j-simple "1.7.24"]
-                                  [com.cognitect/transit-clj "0.8.285"]]}}
+                                  [cheshire "5.8.0"]
+                                  [org.slf4j/slf4j-simple "1.7.25"]
+                                  [com.cognitect/transit-clj "0.8.300"]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
