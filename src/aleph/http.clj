@@ -6,6 +6,7 @@
     [manifold.executor :as executor]
     [aleph.flow :as flow]
     [aleph.http
+     [core :as http]
      [server :as server]
      [client :as client]
      [client-middleware :as middleware]])
@@ -206,7 +207,8 @@
              connection-timeout
              request-timeout
              read-timeout
-             follow-redirects?]
+             follow-redirects?
+             cookie-store]
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
@@ -217,7 +219,7 @@
     (executor/with-executor response-executor
       ((middleware
          (fn [req]
-           (let [k (client/req->domain req)
+           (let [k (http/req->domain req)
                  start (System/currentTimeMillis)]
 
              ;; acquire a connection
@@ -255,8 +257,12 @@
                        (fn [conn']
 
                          (when-not (nil? conn')
-                           (let [end (System/currentTimeMillis)]
-                             (-> (conn' req)
+                           (let [end (System/currentTimeMillis)
+                                 req' (-> req
+                                          ;; try to avoid parsing URI twice
+                                          (assoc :aleph/uri k)
+                                          (middleware/add-cookie-header cookie-store))]
+                             (-> (conn' req')
                                (maybe-timeout! request-timeout)
 
                                ;; request timeout triggered, dispose of the connection
@@ -296,7 +302,9 @@
                                      (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
-                         (middleware/handle-redirects request req rsp))))))))))
+                         (->> rsp
+                              (middleware/handle-cookies cookie-store req)
+                              (middleware/handle-redirects request req)))))))))))
         req))))
 
 (defn- req
@@ -311,7 +319,7 @@
 (def ^:private arglists
   '[[url]
     [url
-     {:keys [pool middleware headers body]
+     {:keys [pool middleware headers body multipart cookie-store]
       :or {pool default-connection-pool middleware identity}
       :as options}]])
 
@@ -327,7 +335,8 @@
    | `middleware` | any additional middleware that should be used for handling requests and responses
    | `headers` | the HTTP headers for the request
    | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)
-   | `multipart` | a vector of bodies")
+   | `multipart` | a vector of bodies
+   | `cookie-store` | an optional instance of cookie store to maintain cookies across requests")
        :arglists arglists)))
 
 (def-http-method get)

@@ -11,10 +11,19 @@
     [manifold.stream :as s]
     [manifold.executor :as ex]
     [byte-streams :as bs]
-    [clojure.edn :as edn])
+    [clojure.edn :as edn]
+    [aleph.http.core :as http])
   (:import
    [io.netty.buffer ByteBuf Unpooled]
    [io.netty.handler.codec.base64 Base64]
+   [io.netty.handler.codec.http
+    HttpHeaders
+    HttpHeaderNames]
+   [io.netty.handler.codec.http.cookie
+    ClientCookieDecoder
+    ClientCookieEncoder
+    DefaultCookie
+    Cookie]
    [java.io InputStream ByteArrayOutputStream]
    [java.nio.charset StandardCharsets]
    [java.net URL URLEncoder UnknownHostException]))
@@ -658,3 +667,98 @@
                   (d/future-with (or executor (ex/wait-pool))
                     (coerce-response-body req' rsp))
                   rsp)))))))))
+
+(def cookie-header-name (.toString HttpHeaderNames/COOKIE))
+(def set-cookie-header-name (.toString HttpHeaderNames/SET_COOKIE))
+
+;; xxx: check path
+;; xxx: check expiration
+(defn accept-cookie? [^java.net.URI uri {:keys [domain path secure?]}]
+  (cond
+    (and secure? (not= "https" (.getScheme uri)))
+    false
+
+    ;; xxx: check when port is given (including 80/443)
+    ;; xxx: check domain starting with a dot
+    (and (some? domain) (not= domain (.getHost uri)))
+    false
+
+    :else
+    true))
+
+(defprotocol CookieStore
+  (all-cookies [this])
+  ;; xxx: find better name
+  ;; xxx: replace with pluggable policy?
+  (cookies-to-send [this req] "Implement rules for accepting and returing cookies")
+  (add-cookies! [this cookies]))
+
+(defn in-memory-cookie-store
+  "In-memory storage to maintaine cookies across requests"
+  ([] (in-memory-cookie-store []))
+  ([seed-cookies]
+   (let [store (atom (->> seed-cookies
+                          (map (juxt :name identity))
+                          (into {})))]
+     (reify CookieStore
+       (all-cookies [_]
+         (vals @store))
+       (cookies-to-send [_ req]
+         (let [uri (or (:aleph/uri req) (http/req->domain req))]
+           (->> @store
+                vals
+                (filter (partial accept-cookie? uri)))))
+       (add-cookies! [_ cookies]
+         (swap! store merge (->> cookies
+                                 (map (juxt :name identity))
+                                 ;; xxx: would not work for different paths
+                                 (into {}))))))))
+
+(defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
+  (doto (DefaultCookie. name value)
+    (.setDomain domain)
+    (.setHttpOnly http-only?)
+    (.setSecure secure?)
+    (.setMaxAge (or max-age Cookie/UNDEFINED_MAX_AGE))
+    (.setPath path)))
+
+;; xxx: replace with def-map-type
+(defn netty-cookie->cookie [^DefaultCookie cookie]
+  {:domain (.domain cookie)
+   :http-only? (.isHttpOnly cookie)
+   :secure? (.isSecure cookie)
+   :max-age (let [max-age (.maxAge cookie)]
+              (if (= max-age Cookie/UNDEFINED_MAX_AGE) nil max-age))
+   :name (.name cookie)
+   :path (.path cookie)
+   :value (.value cookie)})
+
+(defn decode-set-cookie-header [header]
+  (netty-cookie->cookie (.decode ClientCookieDecoder/LAX header)))
+
+;; we might want to use here http/get-all helper,
+;; but it would result in circular dependencies
+(defn extract-cookies-from-response-headers [headers]
+  ;; xxx: solve issue with reflaction
+  (let [^HttpHeaders raw-headers (.headers headers)]
+    (->> (.getAll raw-headers set-cookie-header-name)
+         (map decode-set-cookie-header))))
+
+(defn handle-cookies [cookie-store req {:keys [headers] :as rsp}]
+  (if (nil? cookie-store)
+    rsp
+    (let [cookies (extract-cookies-from-response-headers headers)]
+      (when-not (empty? cookies)
+        (add-cookies! cookie-store cookies))
+      rsp)))
+
+(defn add-cookie-header [cookie-store req]
+  (if (or (nil? cookie-store)
+          (some? (get-in req [:headers cookie-header-name])))
+    req
+    (let [cookies (->> (cookies-to-send cookie-store req)
+                       (map cookie->netty-cookie))]
+      (if (empty? cookies)
+        req
+        (let [header (.encode ClientCookieEncoder/LAX ^java.lang.Iterable cookies)]
+          (assoc-in req [:headers cookie-header-name] header))))))
