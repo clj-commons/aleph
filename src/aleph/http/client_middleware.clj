@@ -11,8 +11,7 @@
     [manifold.stream :as s]
     [manifold.executor :as ex]
     [byte-streams :as bs]
-    [clojure.edn :as edn]
-    [aleph.http.core :as http])
+    [clojure.edn :as edn])
   (:import
    [io.netty.buffer ByteBuf Unpooled]
    [io.netty.handler.codec.base64 Base64]
@@ -26,7 +25,7 @@
     Cookie]
    [java.io InputStream ByteArrayOutputStream]
    [java.nio.charset StandardCharsets]
-   [java.net URL URLEncoder UnknownHostException]))
+   [java.net IDN URL URLEncoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -691,15 +690,20 @@
              (= (count origin-path) (count norm-path))
              (= \/ (-> origin-path (subs (count norm-path)) first))))))
 
-(defn uri->cookie-origin [^java.net.URI uri]
-  {:host (.getHost uri)
-   :port (.getPort uri)
-   :secure? (= "https" (.getScheme uri))
-   :path (let [path (.getPath uri)]
-           (cond
-             (nil? path) "/"
-             (str/starts-with? path "/") path
-             :else (str "/" path)))})
+(defn req->cookie-origin [{:keys [url] :as req}]
+  (if (some? url)
+    (let [{:keys [server-name server-port uri scheme]} (parse-url url)]
+      {:host server-name
+       :port server-port
+       :secure? (= :https scheme)
+       :path (cond
+               (nil? uri) "/"
+               (str/starts-with? uri "/") uri
+               :else (str "/" uri))})
+    {:host (some-> (or (:host req) (:server-name req)) IDN/toASCII)
+     :port (or (:port req) (:server-port req) -1)
+     :secure? (= :https (or (:scheme req) :http))
+     :path "/"}))
 
 (defprotocol CookieSpec
   "Implement rules for accepting and returing cookies"
@@ -745,7 +749,11 @@
    (let [store (atom (merge-cookies {} seed-cookies))]
      (reify CookieStore
        (get-cookies [_]
-         (->> @store (mapcat second) (mapcat second) (map second)))
+         (->> @store
+              (mapcat (fn [[domain cookies]]
+                        (sort-by first cookies)))
+              (mapcat second) ;; unwrap by path
+              (map second)))
        (add-cookies! [_ cookies]
          (swap! store merge-cookies cookies))))))
 
@@ -800,8 +808,7 @@
   (if (or (nil? cookie-store)
           (some? (get-in req [:headers cookie-header-name])))
     req
-    (let [uri (or (:aleph/uri req) (http/req->domain req))
-          origin (uri->cookie-origin uri)
+    (let [origin (req->cookie-origin req)
           cookies (->> (get-cookies cookie-store)
                        (filter (partial match-cookie-origin? cookie-spec origin))
                        (map cookie->netty-cookie))]

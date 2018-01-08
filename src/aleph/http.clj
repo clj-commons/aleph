@@ -221,7 +221,7 @@
     (executor/with-executor response-executor
       ((middleware
          (fn [req]
-           (let [k (http/req->domain req)
+           (let [k (client/req->domain req)
                  start (System/currentTimeMillis)]
 
              ;; acquire a connection
@@ -260,9 +260,7 @@
 
                          (when-not (nil? conn')
                            (let [end (System/currentTimeMillis)
-                                 ;; try to avoid parsing URI twice
-                                 req' (->> (assoc req :aleph/uri k)
-                                           (middleware/add-cookie-header cookie-store cookie-spec))]
+                                 req' (middleware/add-cookie-header cookie-store cookie-spec req)]
                              (-> (conn' req')
                                (maybe-timeout! request-timeout)
 

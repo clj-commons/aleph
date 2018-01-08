@@ -54,9 +54,28 @@
 
 ;;;
 
-;; moved to http.core to be reused in http.clint-middlware
-(defn ^java.net.URI req->domain [req]
-  (http/req->domain req))
+(let [no-url (fn [req]
+               (URI.
+                 (name (or (:scheme req) :http))
+                 nil
+                 (some-> (or (:host req) (:server-name req)) IDN/toASCII)
+                 (or (:port req) (:server-port req) -1)
+                 nil
+                 nil
+                 nil))]
+
+  (defn ^java.net.URI req->domain [req]
+    (if-let [url (:url req)]
+      (let [^URL uri (URL. url)]
+        (URI.
+          (.getProtocol uri)
+          nil
+          (IDN/toASCII (.getHost uri))
+          (.getPort uri)
+          nil
+          nil
+          nil))
+      (no-url req))))
 
 (defn raw-client-handler
   [response-stream buffer-capacity]
