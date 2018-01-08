@@ -35,9 +35,6 @@
      RandomAccessFile
      Closeable]
     [java.net
-     URI
-     URL
-     IDN
      InetSocketAddress]
     [java.util
      Map$Entry]

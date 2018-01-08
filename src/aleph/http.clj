@@ -336,7 +336,7 @@
    | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)
    | `multipart` | a vector of bodies
    | `cookie-store` | an optional instance of cookie store to maintain cookies across requests
-   | `cookie-spec` | an optional instance of a cookie management specification to enforce rules of parrsing, formatting and choosing cookies to be send with the request, defaults to the `middleware/default-cookies-spec`")
+   | `cookie-spec` | an optional instance of a cookie management specification to enforce rules of parsing, formatting and choosing cookies to be send with the request, defaults to the `middleware/default-cookies-spec`")
        :arglists arglists)))
 
 (def-http-method get)

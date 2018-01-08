@@ -52,6 +52,7 @@
     (clojure.core/get opts type)
     :else
     (let [class (Class/forName class-name)]
+      (println "Deprecated use of :transit-opts found.")
       (update-in opts [:handlers]
         (fn [handlers]
           (->> handlers
