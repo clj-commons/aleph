@@ -671,23 +671,48 @@
 (def cookie-header-name (.toString HttpHeaderNames/COOKIE))
 (def set-cookie-header-name (.toString HttpHeaderNames/SET_COOKIE))
 
-;; xxx: check path
+;; That's a pretty liberal domain check.
+;; Under RFC2965 your domain should contain leading "." to match successors,
+;; but this extra dot is ignored by more recent specifications.
+;; So, if you need obsolete RFC2965 compatible behavior, feel free to
+;; plug your one `CookieSpec` with redefined `match-cookie` impl.
+(defn match-cookie-domain? [origin domain]
+  (let [origin' (if (str/starts-with? origin ".") origin (str "." origin))
+        domain' (if (str/starts-with? domain ".") domain (str "." domain))]
+    (str/ends-with? origin' domain')))
+
+;; xxx: impl.
+(defn match-cookie-path? [origin path]
+  true)
+
+(defn uri->cookie-origin [^java.net.URI uri]
+  {:domain (.getHost uri)
+   :secure? (= "https" (.getScheme uri))
+   :path (let [path (.getPath uri)] ;; xxx: should we use getRawPath instead?
+           (cond
+             (nil? path) "/"
+             (str/starts-with? path "/") path
+             :else (str "/" path)))})
+
 ;; xxx: check expiration
-(defn accept-cookie? [^java.net.URI uri {:keys [domain path secure?]}]
+(defn match-cookie-origin? [origin {:keys [domain path secure?]}]
   (cond
-    (and secure? (not= "https" (.getScheme uri)))
+    (and secure? (not (:secure? origin)))
     false
 
-    ;; xxx: check when port is given (including 80/443)
-    ;; xxx: check domain starting with a dot
-    (and (some? domain) (not= domain (.getHost uri)))
+    (and (some? domain)
+         (not (match-cookie-domain? (:domain origin) domain)))
+    false
+
+    (and (some? path)
+         (not (match-cookie-path? (:path origin) path)))
     false
 
     :else
     true))
 
 (defprotocol CookieStore
-  (all-cookies [this])
+  (get-cookies [this])
   ;; xxx: find better name
   ;; xxx: replace with pluggable policy?
   (cookies-to-send [this req] "Implement rules for accepting and returing cookies")
@@ -697,17 +722,19 @@
   "In-memory storage to maintaine cookies across requests"
   ([] (in-memory-cookie-store []))
   ([seed-cookies]
+   ;; xxx: use set with custom comparator instead of map
    (let [store (atom (->> seed-cookies
                           (map (juxt :name identity))
                           (into {})))]
      (reify CookieStore
-       (all-cookies [_]
+       (get-cookies [_]
          (vals @store))
        (cookies-to-send [_ req]
-         (let [uri (or (:aleph/uri req) (http/req->domain req))]
+         (let [uri (or (:aleph/uri req) (http/req->domain req))
+               origin (uri->cookie-origin uri)]
            (->> @store
                 vals
-                (filter (partial accept-cookie? uri)))))
+                (filter (partial match-cookie-origin? origin)))))
        (add-cookies! [_ cookies]
          (swap! store merge (->> cookies
                                  (map (juxt :name identity))
@@ -750,8 +777,13 @@
     (let [cookies (extract-cookies-from-response-headers headers)]
       (when-not (empty? cookies)
         (add-cookies! cookie-store cookies))
-      rsp)))
+      ;; pairing with what clj_http does with parsed cookies
+      ;; (as it's impossible to tell what cookies were parsed
+      ;; from this particular response, you will be forced
+      ;; to parse header twice otherwise)
+      (assoc rsp :cookies cookies))))
 
+;; xxx: add cookies from :cookies param on request
 (defn add-cookie-header [cookie-store req]
   (if (or (nil? cookie-store)
           (some? (get-in req [:headers cookie-header-name])))
