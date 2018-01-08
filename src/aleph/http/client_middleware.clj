@@ -716,7 +716,7 @@
     (get-cookie-encoder [_] ClientCookieEncoder/LAX)
     (get-cookie-decoder [_] ClientCookieDecoder/LAX)
     ;; xxx: check expiration
-    (match-cookie-origin? [origin {:keys [domain path secure?]}]
+    (match-cookie-origin? [_ origin {:keys [domain path secure?]}]
       (cond
         (and secure? (not (:secure? origin)))
         false
@@ -732,22 +732,22 @@
         :else
         true))))
 
+(defn merge-cookies [stored-cookies new-cookies]
+  (reduce (fn [cookies {:keys [domain path name] :as cookie}]
+            (assoc-in cookies [domain path name] cookie))
+          stored-cookies
+          new-cookies))
+
 (defn in-memory-cookie-store
   "In-memory storage to maintain cookies across requests"
   ([] (in-memory-cookie-store []))
   ([seed-cookies]
-   ;; xxx: use set with custom comparator instead of map
-   (let [store (atom (->> seed-cookies
-                          (map (juxt :name identity))
-                          (into {})))]
+   (let [store (atom (merge-cookies {} seed-cookies))]
      (reify CookieStore
        (get-cookies [_]
-         (vals @store))
+         (->> @store (mapcat second) (mapcat second) (map second)))
        (add-cookies! [_ cookies]
-         (swap! store merge (->> cookies
-                                 (map (juxt :name identity))
-                                 ;; xxx: would not work for different paths
-                                 (into {}))))))))
+         (swap! store merge-cookies cookies))))))
 
 (defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
   (doto (DefaultCookie. name value)
@@ -771,7 +771,7 @@
 (defn decode-set-cookie-header
   ([header]
    (decode-set-cookie-header (get-cookie-decoder default-cookie-spec) header))
-  ([^CookieDecoder decoder header]
+  ([^ClientCookieDecoder decoder header]
    (netty-cookie->cookie (.decode decoder header))))
 
 ;; we might want to use here http/get-all helper,

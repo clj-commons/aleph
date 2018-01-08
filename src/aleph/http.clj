@@ -260,10 +260,9 @@
 
                          (when-not (nil? conn')
                            (let [end (System/currentTimeMillis)
-                                 req' (-> req
-                                          ;; try to avoid parsing URI twice
-                                          (assoc :aleph/uri k)
-                                          (middleware/add-cookie-header cookie-store cookie-spec))]
+                                 ;; try to avoid parsing URI twice
+                                 req' (->> (assoc req :aleph/uri k)
+                                           (middleware/add-cookie-header cookie-store cookie-spec))]
                              (-> (conn' req')
                                (maybe-timeout! request-timeout)
 

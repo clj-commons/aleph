@@ -37,9 +37,6 @@
     (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
 
 ;; xxx: test any domain cookie
-;; xxx: test domain with port given explicitely
-;; xxx: test domain starting with "."
-;; xxx: test domain with 80/443 ports are given explicitely
 (deftest test-cookie-store
   (let [c1 {:name "id"
             :value "42"
@@ -63,21 +60,22 @@
             :http-only? true
             :secure? true}
         cs (middleware/in-memory-cookie-store [c1 c2 c3])
+        spec middleware/default-cookie-spec
         dc (middleware/decode-set-cookie-header "id=42; Domain=domain.com; Path=/; HttpOnly")]
     (is (= c1 dc))
-    (is (= "id=42; track=off" (-> (middleware/add-cookie-header cs {:url "https://domain.com/"})
+    (is (= "id=42; track=off" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"})
                                   (get-in  [:headers "cookie"])))
         "emit cookie for /blog path")
-    (is (= "id=42" (-> (middleware/add-cookie-header cs {:url "http://domain.com/"})
+    (is (= "id=42" (-> (middleware/add-cookie-header cs spec {:url "http://domain.com/"})
                        (get-in  [:headers "cookie"])))
         "http request should not set secure cookies")
-    (is (= "id=42; track=on" (-> (middleware/add-cookie-header cs {:url "https://domain.com/blog"})
+    (is (= "id=42; track=on" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/blog"})
                                  (get-in  [:headers "cookie"])))
         "the most specific path")
-    (is (nil? (-> (middleware/add-cookie-header cs {:url "https://anotherdomain.com"})
+    (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://anotherdomain.com"})
                   (get-in  [:headers "cookie"])))
         "domain mistmatch")
-    (is (= "no_override" (-> (middleware/add-cookie-header cs {:url "https://domain.com/"
-                                                               :heades {:cookie "no_override"}})
+    (is (= "no_override" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"
+                                                                    :heades {"cookie" "no_override"}})
                              (get-in  [:headers "cookie"])))
         "no attempts to override when header is already set")))
