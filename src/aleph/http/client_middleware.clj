@@ -11,7 +11,8 @@
     [manifold.stream :as s]
     [manifold.executor :as ex]
     [byte-streams :as bs]
-    [clojure.edn :as edn])
+    [clojure.edn :as edn]
+    [aleph.http.core :as http])
   (:import
    [io.netty.buffer ByteBuf Unpooled]
    [io.netty.handler.codec.base64 Base64]
@@ -667,8 +668,8 @@
                     (coerce-response-body req' rsp))
                   rsp)))))))))
 
-(def cookie-header-name (.toString HttpHeaderNames/COOKIE))
-(def set-cookie-header-name (.toString HttpHeaderNames/SET_COOKIE))
+(def ^String cookie-header-name (.toString HttpHeaderNames/COOKIE))
+(def ^String set-cookie-header-name (.toString HttpHeaderNames/SET_COOKIE))
 
 ;; That's a pretty liberal domain check.
 ;; Under RFC2965 your domain should contain leading "." to match successors,
@@ -787,7 +788,7 @@
 (defn extract-cookies-from-response-headers
   ([headers]
    (extract-cookies-from-response-headers (get-cookie-decoder default-cookie-spec) headers))
-  ([^ClientCookieDecoder cookie-decoder headers]
+  ([^ClientCookieDecoder cookie-decoder ^aleph.http.core.HeaderMap headers]
    (let [^HttpHeaders raw-headers (.headers headers)]
      (->> (.getAll raw-headers set-cookie-header-name)
           (map (partial decode-set-cookie-header cookie-decoder))))))
@@ -824,5 +825,6 @@
                        (map cookie->netty-cookie))]
       (if (empty? cookies)
         req
-        (let [header (.encode (get-cookie-encoder cookie-spec) ^java.lang.Iterable cookies)]
+        (let [header (.encode ^ClientCookieEncoder (get-cookie-encoder cookie-spec)
+                              ^java.lang.Iterable cookies)]
           (assoc-in req [:headers cookie-header-name] header))))))
