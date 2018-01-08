@@ -61,7 +61,8 @@
         c4 {:name "subdomain"
             :value "detect"
             :domain "subdomain.com"}
-        cs (middleware/in-memory-cookie-store [c1 c2 c3 c4])
+        c5 (middleware/decode-set-cookie-header "outdated=val; Domain=outdomain.com; Expires=Wed, 21 Oct 2015 07:28:00 GMT")
+        cs (middleware/in-memory-cookie-store [c1 c2 c3 c4 c5])
         spec middleware/default-cookie-spec
         dc (middleware/decode-set-cookie-header "id=42; Domain=domain.com; Path=/; HttpOnly")]
     (is (= c1 dc))
@@ -77,10 +78,14 @@
     (is (= "subdomain=detect" (-> (middleware/add-cookie-header cs spec {:url "https://www.subdomain.com"})
                                   (get-in [:headers "cookie"])))
         "subdomain should match w/o leading dot under latest specifications")
-    (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://anotherdomain.com"})
+    (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://anotherdomain.com/"})
                   (get-in  [:headers "cookie"])))
         "domain mistmatch")
-    (is (= "no_override" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"
-                                                                    :headers {"cookie" "no_override"}})
-                             (get-in  [:headers "cookie"])))
+    (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://outdomain.com/"})
+                  (get-in [:headers "cookie"])))
+        "should not set expired")
+    (is (= "no_override"
+           (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"
+                                                      :headers {"cookie" "no_override"}})
+               (get-in  [:headers "cookie"])))
         "no attempts to override when header is already set")))

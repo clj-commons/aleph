@@ -52,7 +52,6 @@
     (clojure.core/get opts type)
     :else
     (let [class (Class/forName class-name)]
-      (println "Deprecated use of :transit-opts found.")
       (update-in opts [:handlers]
         (fn [handlers]
           (->> handlers
@@ -705,64 +704,6 @@
      :secure? (= :https (or (:scheme req) :http))
      :path "/"}))
 
-(defprotocol CookieSpec
-  "Implement rules for accepting and returing cookies"
-  (parse-cookie [this cookie-str])
-  (write-cookies [this cookies])
-  (match-cookie-origin? [this origin cookie]))
-
-(defprotocol CookieStore
-  (get-cookies [this])
-  (add-cookies! [this cookies]))
-
-(def default-cookie-spec
-  "Default cookie spec implementation providing RFC6265 compliant behavior
-   with no validation for cookie names and values. In case you need strict validation
-   feel free to create impl. using {ClientCookieDecoder,ClientCookiEncoder}/STRICT
-   instead of LAX instances"
-  (reify CookieSpec
-    (parse-cookie [_ cookie-str]
-      (.decode ClientCookieDecoder/LAX cookie-str))
-    (write-cookies [_ cookies]
-      (.encode ClientCookieEncoder/LAX ^java.lang.Iterable cookies))
-    ;; xxx: check expiration
-    (match-cookie-origin? [_ origin {:keys [domain path secure?]}]
-      (cond
-        (and secure? (not (:secure? origin)))
-        false
-
-        (and (some? domain)
-             (not (match-cookie-domain? (:host origin) domain)))
-        false
-
-        (and (some? path)
-             (not (match-cookie-path? (:path origin) path)))
-        false
-
-        :else
-        true))))
-
-(defn merge-cookies [stored-cookies new-cookies]
-  (reduce (fn [cookies {:keys [domain path name] :as cookie}]
-            (assoc-in cookies [domain path name] cookie))
-          stored-cookies
-          new-cookies))
-
-(defn in-memory-cookie-store
-  "In-memory storage to maintain cookies across requests"
-  ([] (in-memory-cookie-store []))
-  ([seed-cookies]
-   (let [store (atom (merge-cookies {} seed-cookies))]
-     (reify CookieStore
-       (get-cookies [_]
-         (->> @store
-              (mapcat (fn [[domain cookies]]
-                        (sort-by first cookies)))
-              (mapcat second) ;; unwrap by path
-              (map second)))
-       (add-cookies! [_ cookies]
-         (swap! store merge-cookies cookies))))))
-
 (defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
   (doto (DefaultCookie. name value)
     (.setDomain domain)
@@ -785,6 +726,77 @@
 
 (defn netty-cookie->cookie [^DefaultCookie cookie]
   (->Cookie cookie))
+
+(defn cookie-expired? [{:keys [created max-age]}]
+  (cond
+    (nil? max-age) false
+    (>= 0 max-age) true
+    (nil? created) false
+    :else (>= (System/currentTimeMillis) (+ created max-age))))
+
+(defprotocol CookieSpec
+  "Implement rules for accepting and returing cookies"
+  (parse-cookie [this cookie-str])
+  (write-cookies [this cookies])
+  (match-cookie-origin? [this origin cookie]))
+
+(defprotocol CookieStore
+  (get-cookies [this])
+  (add-cookies! [this cookies]))
+
+(def default-cookie-spec
+  "Default cookie spec implementation providing RFC6265 compliant behavior
+   with no validation for cookie names and values. In case you need strict validation
+   feel free to create impl. using {ClientCookieDecoder,ClientCookiEncoder}/STRICT
+   instead of LAX instances"
+  (reify CookieSpec
+    (parse-cookie [_ cookie-str]
+      (.decode ClientCookieDecoder/LAX cookie-str))
+    (write-cookies [_ cookies]
+      (.encode ClientCookieEncoder/LAX ^java.lang.Iterable cookies))
+    (match-cookie-origin? [_ origin {:keys [domain path secure?] :as cookie}]
+      (cond
+        (and secure? (not (:secure? origin)))
+        false
+
+        (and (some? domain)
+             (not (match-cookie-domain? (:host origin) domain)))
+        false
+
+        (and (some? path)
+             (not (match-cookie-path? (:path origin) path)))
+        false
+
+        (cookie-expired? cookie)
+        false
+
+        :else
+        true))))
+
+(defn merge-cookies [stored-cookies new-cookies]
+  (reduce (fn [cookies {:keys [domain path name] :as cookie}]
+            (assoc-in cookies [domain path name] cookie))
+          stored-cookies
+          new-cookies))
+
+(defn enrich-with-current-time [cookies]
+  (let [now (System/currentTimeMillis)]
+    (map #(assoc % :created now) cookies)))
+
+(defn in-memory-cookie-store
+  "In-memory storage to maintain cookies across requests"
+  ([] (in-memory-cookie-store []))
+  ([seed-cookies]
+   (let [store (atom (merge-cookies {} (enrich-with-current-time seed-cookies)))]
+     (reify CookieStore
+       (get-cookies [_]
+         (->> @store
+              (mapcat (fn [[domain cookies]]
+                        (sort-by first cookies)))
+              (mapcat second) ;; unwrap by path
+              (map second)))
+       (add-cookies! [_ cookies]
+         (swap! store merge-cookies (enrich-with-current-time cookies)))))))
 
 (defn decode-set-cookie-header
   ([header]
