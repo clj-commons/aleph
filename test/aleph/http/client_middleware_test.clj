@@ -36,7 +36,6 @@
         {:keys [query-string]} (reduce #(%2 %1) req middleware/default-middleware)]
     (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
 
-;; xxx: test any domain cookie
 (deftest test-cookie-store
   (let [c1 {:name "id"
             :value "42"
@@ -59,7 +58,10 @@
             :max-age nil
             :http-only? true
             :secure? true}
-        cs (middleware/in-memory-cookie-store [c1 c2 c3])
+        c4 {:name "subdomain"
+            :value "detect"
+            :domain "subdomain.com"}
+        cs (middleware/in-memory-cookie-store [c1 c2 c3 c4])
         spec middleware/default-cookie-spec
         dc (middleware/decode-set-cookie-header "id=42; Domain=domain.com; Path=/; HttpOnly")]
     (is (= c1 dc))
@@ -72,10 +74,13 @@
     (is (= "id=42; track=on" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/blog"})
                                  (get-in  [:headers "cookie"])))
         "the most specific path")
+    (is (= "subdomain=detect" (-> (middleware/add-cookie-header cs spec {:url "https://www.subdomain.com"})
+                                  (get-in [:headers "cookie"])))
+        "subdomain should match w/o leading dot under latest specifications")
     (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://anotherdomain.com"})
                   (get-in  [:headers "cookie"])))
         "domain mistmatch")
     (is (= "no_override" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"
-                                                                    :heades {"cookie" "no_override"}})
+                                                                    :headers {"cookie" "no_override"}})
                              (get-in  [:headers "cookie"])))
         "no attempts to override when header is already set")))

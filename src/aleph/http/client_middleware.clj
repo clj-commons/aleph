@@ -752,10 +752,10 @@
 (defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
   (doto (DefaultCookie. name value)
     (.setDomain domain)
-    (.setHttpOnly http-only?)
-    (.setSecure secure?)
-    (.setMaxAge (or max-age Cookie/UNDEFINED_MAX_AGE))
-    (.setPath path)))
+    (.setPath path)
+    (.setHttpOnly (or http-only? false))
+    (.setSecure (or secure? false))
+    (.setMaxAge (or max-age Cookie/UNDEFINED_MAX_AGE))))
 
 ;; xxx: replace with def-map-type
 (defn netty-cookie->cookie [^DefaultCookie cookie]
