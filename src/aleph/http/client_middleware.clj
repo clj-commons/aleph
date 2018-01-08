@@ -804,6 +804,13 @@
       ;; to parse header twice otherwise)
       (assoc rsp :cookies cookies))))
 
+(defn reduce-to-unique-cookie-names [cookies]
+  (when-not (empty? cookies)
+    (->> cookies
+         (map (juxt :name identity))
+         (into {})
+         vals)))
+
 (defn add-cookie-header [cookie-store cookie-spec req]
   (if (or (nil? cookie-store)
           (some? (get-in req [:headers cookie-header-name])))
@@ -811,6 +818,9 @@
     (let [origin (req->cookie-origin req)
           cookies (->> (get-cookies cookie-store)
                        (filter (partial match-cookie-origin? cookie-spec origin))
+                       ;; note that here we rely on cookie store implementation,
+                       ;; which might be not the best idea
+                       (reduce-to-unique-cookie-names)
                        (map cookie->netty-cookie))]
       (if (empty? cookies)
         req
