@@ -707,8 +707,8 @@
 
 (defprotocol CookieSpec
   "Implement rules for accepting and returing cookies"
-  (get-cookie-encoder [this])
-  (get-cookie-decoder [this])
+  (parse-cookie [this cookie-str])
+  (write-cookies [this cookies])
   (match-cookie-origin? [this origin cookie]))
 
 (defprotocol CookieStore
@@ -716,9 +716,15 @@
   (add-cookies! [this cookies]))
 
 (def default-cookie-spec
+  "Default cookie spec implementation providing RFC6265 compliant behavior
+   with no validation for cookie names and values. In case you need strict validation
+   feel free to create impl. using {ClientCookieDecoder,ClientCookiEncoder}/STRICT
+   instead of LAX instances"
   (reify CookieSpec
-    (get-cookie-encoder [_] ClientCookieEncoder/LAX)
-    (get-cookie-decoder [_] ClientCookieDecoder/LAX)
+    (parse-cookie [_ cookie-str]
+      (.decode ClientCookieDecoder/LAX cookie-str))
+    (write-cookies [_ cookies]
+      (.encode ClientCookieEncoder/LAX ^java.lang.Iterable cookies))
     ;; xxx: check expiration
     (match-cookie-origin? [_ origin {:keys [domain path secure?]}]
       (cond
@@ -765,8 +771,6 @@
     (.setSecure (or secure? false))
     (.setMaxAge (or max-age io.netty.handler.codec.http.cookie.Cookie/UNDEFINED_MAX_AGE))))
 
-;; xxx: replace with def-map-type
-
 (p/def-derived-map Cookie
   [^DefaultCookie cookie]
   :domain (.domain cookie)
@@ -784,24 +788,24 @@
 
 (defn decode-set-cookie-header
   ([header]
-   (decode-set-cookie-header (get-cookie-decoder default-cookie-spec) header))
-  ([^ClientCookieDecoder decoder header]
-   (netty-cookie->cookie (.decode decoder header))))
+   (decode-set-cookie-header default-cookie-spec header))
+  ([cookie-spec header]
+   (netty-cookie->cookie (parse-cookie cookie-spec header))))
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
 (defn extract-cookies-from-response-headers
   ([headers]
-   (extract-cookies-from-response-headers (get-cookie-decoder default-cookie-spec) headers))
-  ([^ClientCookieDecoder cookie-decoder ^aleph.http.core.HeaderMap headers]
+   (extract-cookies-from-response-headers default-cookie-spec headers))
+  ([cookie-spec ^aleph.http.core.HeaderMap headers]
    (let [^HttpHeaders raw-headers (.headers headers)]
      (->> (.getAll raw-headers set-cookie-header-name)
-          (map (partial decode-set-cookie-header cookie-decoder))))))
+          (map (partial decode-set-cookie-header cookie-spec))))))
 
 (defn handle-cookies [cookie-store cookie-spec req {:keys [headers] :as rsp}]
   (if (nil? cookie-store)
     rsp
-    (let [cookies (extract-cookies-from-response-headers (get-cookie-decoder cookie-spec) headers)]
+    (let [cookies (extract-cookies-from-response-headers cookie-spec headers)]
       (when-not (empty? cookies)
         (add-cookies! cookie-store cookies))
       ;; pairing with what clj_http does with parsed cookies
@@ -830,6 +834,5 @@
                        (map cookie->netty-cookie))]
       (if (empty? cookies)
         req
-        (let [header (.encode ^ClientCookieEncoder (get-cookie-encoder cookie-spec)
-                              ^java.lang.Iterable cookies)]
+        (let [header (write-cookies cookie-spec cookies)]
           (assoc-in req [:headers cookie-header-name] header))))))
