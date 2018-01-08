@@ -6,7 +6,6 @@
     [manifold.executor :as executor]
     [aleph.flow :as flow]
     [aleph.http
-     [core :as http]
      [server :as server]
      [client :as client]
      [client-middleware :as middleware]])
@@ -318,8 +317,10 @@
 (def ^:private arglists
   '[[url]
     [url
-     {:keys [pool middleware headers body multipart cookie-store]
-      :or {pool default-connection-pool middleware identity}
+     {:keys [pool middleware headers body multipart cookie-store cookie-spec]
+      :or {pool default-connection-pool
+           middleware identity
+           cookie-spec middleware/default-cookie-spec}
       :as options}]])
 
 (defmacro ^:private def-http-method [method]
