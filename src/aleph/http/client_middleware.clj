@@ -691,41 +691,49 @@
              (= (count origin-path) (count norm-path))
              (= \/ (-> origin-path (subs (count norm-path)) first))))))
 
-;; xxx: check expiration
-(defn match-cookie-origin? [origin {:keys [domain path secure?]}]
-  (cond
-    (and secure? (not (:secure? origin)))
-    false
-
-    (and (some? domain)
-         (not (match-cookie-domain? (:domain origin) domain)))
-    false
-
-    (and (some? path)
-         (not (match-cookie-path? (:path origin) path)))
-    false
-
-    :else
-    true))
-
 (defn uri->cookie-origin [^java.net.URI uri]
-  {:domain (.getHost uri)
+  {:host (.getHost uri)
+   :port (.getPort uri)
    :secure? (= "https" (.getScheme uri))
-   :path (let [path (.getPath uri)] ;; xxx: should we use getRawPath instead?
+   :path (let [path (.getPath uri)]
            (cond
              (nil? path) "/"
              (str/starts-with? path "/") path
              :else (str "/" path)))})
 
+(defprotocol CookieSpec
+  "Implement rules for accepting and returing cookies"
+  (get-cookie-encoder [this])
+  (get-cookie-decoder [this])
+  (match-cookie-origin? [this origin cookie]))
+
 (defprotocol CookieStore
   (get-cookies [this])
-  ;; xxx: find better name
-  ;; xxx: replace with pluggable policy?
-  (cookies-to-send [this req] "Implement rules for accepting and returing cookies")
   (add-cookies! [this cookies]))
 
+(def default-cookie-spec
+  (reify CookieSpec
+    (get-cookie-encoder [_] ClientCookieEncoder/LAX)
+    (get-cookie-decoder [_] ClientCookieDecoder/LAX)
+    ;; xxx: check expiration
+    (match-cookie-origin? [origin {:keys [domain path secure?]}]
+      (cond
+        (and secure? (not (:secure? origin)))
+        false
+
+        (and (some? domain)
+             (not (match-cookie-domain? (:host origin) domain)))
+        false
+
+        (and (some? path)
+             (not (match-cookie-path? (:path origin) path)))
+        false
+
+        :else
+        true))))
+
 (defn in-memory-cookie-store
-  "In-memory storage to maintaine cookies across requests"
+  "In-memory storage to maintain cookies across requests"
   ([] (in-memory-cookie-store []))
   ([seed-cookies]
    ;; xxx: use set with custom comparator instead of map
@@ -735,12 +743,6 @@
      (reify CookieStore
        (get-cookies [_]
          (vals @store))
-       (cookies-to-send [_ req]
-         (let [uri (or (:aleph/uri req) (http/req->domain req))
-               origin (uri->cookie-origin uri)]
-           (->> @store
-                vals
-                (filter (partial match-cookie-origin? origin)))))
        (add-cookies! [_ cookies]
          (swap! store merge (->> cookies
                                  (map (juxt :name identity))
@@ -766,21 +768,26 @@
    :path (.path cookie)
    :value (.value cookie)})
 
-(defn decode-set-cookie-header [header]
-  (netty-cookie->cookie (.decode ClientCookieDecoder/LAX header)))
+(defn decode-set-cookie-header
+  ([header]
+   (decode-set-cookie-header (get-cookie-decoder default-cookie-spec) header))
+  ([^CookieDecoder decoder header]
+   (netty-cookie->cookie (.decode decoder header))))
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
-(defn extract-cookies-from-response-headers [headers]
-  ;; xxx: solve issue with reflaction
-  (let [^HttpHeaders raw-headers (.headers headers)]
-    (->> (.getAll raw-headers set-cookie-header-name)
-         (map decode-set-cookie-header))))
+(defn extract-cookies-from-response-headers
+  ([headers]
+   (extract-cookies-from-response-headers (get-cookie-decoder default-cookie-spec) headers))
+  ([^ClientCookieDecoder cookie-decoder headers]
+   (let [^HttpHeaders raw-headers (.headers headers)]
+     (->> (.getAll raw-headers set-cookie-header-name)
+          (map (partial decode-set-cookie-header cookie-decoder))))))
 
-(defn handle-cookies [cookie-store req {:keys [headers] :as rsp}]
+(defn handle-cookies [cookie-store cookie-spec req {:keys [headers] :as rsp}]
   (if (nil? cookie-store)
     rsp
-    (let [cookies (extract-cookies-from-response-headers headers)]
+    (let [cookies (extract-cookies-from-response-headers (get-cookie-decoder cookie-spec) headers)]
       (when-not (empty? cookies)
         (add-cookies! cookie-store cookies))
       ;; pairing with what clj_http does with parsed cookies
@@ -789,14 +796,16 @@
       ;; to parse header twice otherwise)
       (assoc rsp :cookies cookies))))
 
-;; xxx: add cookies from :cookies param on request
-(defn add-cookie-header [cookie-store req]
+(defn add-cookie-header [cookie-store cookie-spec req]
   (if (or (nil? cookie-store)
           (some? (get-in req [:headers cookie-header-name])))
     req
-    (let [cookies (->> (cookies-to-send cookie-store req)
+    (let [uri (or (:aleph/uri req) (http/req->domain req))
+          origin (uri->cookie-origin uri)
+          cookies (->> (get-cookies cookie-store)
+                       (filter (partial match-cookie-origin? cookie-spec origin))
                        (map cookie->netty-cookie))]
       (if (empty? cookies)
         req
-        (let [header (.encode ClientCookieEncoder/LAX ^java.lang.Iterable cookies)]
+        (let [header (.encode (get-cookie-encoder cookie-spec) ^java.lang.Iterable cookies)]
           (assoc-in req [:headers cookie-header-name] header))))))

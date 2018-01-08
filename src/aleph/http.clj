@@ -208,12 +208,14 @@
              request-timeout
              read-timeout
              follow-redirects?
-             cookie-store]
+             cookie-store
+             cookie-spec]
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
            connection-timeout 6e4 ;; 60 seconds
-           follow-redirects? true}
+           follow-redirects? true
+           cookie-spec middleware/default-cookie-spec}
       :as req}]
 
     (executor/with-executor response-executor
@@ -261,7 +263,7 @@
                                  req' (-> req
                                           ;; try to avoid parsing URI twice
                                           (assoc :aleph/uri k)
-                                          (middleware/add-cookie-header cookie-store))]
+                                          (middleware/add-cookie-header cookie-store cookie-spec))]
                              (-> (conn' req')
                                (maybe-timeout! request-timeout)
 
@@ -303,7 +305,7 @@
 
                        (fn [rsp]
                          (->> rsp
-                              (middleware/handle-cookies cookie-store req)
+                              (middleware/handle-cookies cookie-store cookie-spec req)
                               (middleware/handle-redirects request req)))))))))))
         req))))
 
@@ -336,7 +338,8 @@
    | `headers` | the HTTP headers for the request
    | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)
    | `multipart` | a vector of bodies
-   | `cookie-store` | an optional instance of cookie store to maintain cookies across requests")
+   | `cookie-store` | an optional instance of cookie store to maintain cookies across requests
+   | `cookie-spec` | an optional instance of a cookie management specification to enforce rules of parrsing, formatting and choosing cookies to be send with the request, defaults to the `middleware/default-cookies-spec` providing RFC6265 compliant behavior with no validation for cookie names and values")
        :arglists arglists)))
 
 (def-http-method get)
