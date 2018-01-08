@@ -681,18 +681,15 @@
         domain' (if (str/starts-with? domain ".") domain (str "." domain))]
     (str/ends-with? origin' domain')))
 
-;; xxx: impl.
-(defn match-cookie-path? [origin path]
-  true)
-
-(defn uri->cookie-origin [^java.net.URI uri]
-  {:domain (.getHost uri)
-   :secure? (= "https" (.getScheme uri))
-   :path (let [path (.getPath uri)] ;; xxx: should we use getRawPath instead?
-           (cond
-             (nil? path) "/"
-             (str/starts-with? path "/") path
-             :else (str "/" path)))})
+;; Reimplementation of org.apache.http.impl.cookie.BasicPathHandler path match logic
+(defn match-cookie-path? [origin-path cookie-path]
+  (let [norm-path (if (and (not= "/" cookie-path) (= \/ (last cookie-path)))
+                    (subs cookie-path 0 (dec (count cookie-path)))
+                    cookie-path)]
+    (and (str/starts-with? origin-path norm-path)
+         (or (= "/" norm-path)
+             (= (count origin-path) (count norm-path))
+             (= \/ (-> origin-path (subs (count norm-path)) first))))))
 
 ;; xxx: check expiration
 (defn match-cookie-origin? [origin {:keys [domain path secure?]}]
@@ -710,6 +707,15 @@
 
     :else
     true))
+
+(defn uri->cookie-origin [^java.net.URI uri]
+  {:domain (.getHost uri)
+   :secure? (= "https" (.getScheme uri))
+   :path (let [path (.getPath uri)] ;; xxx: should we use getRawPath instead?
+           (cond
+             (nil? path) "/"
+             (str/starts-with? path "/") path
+             :else (str "/" path)))})
 
 (defprotocol CookieStore
   (get-cookies [this])
