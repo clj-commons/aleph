@@ -22,8 +22,7 @@
    [io.netty.handler.codec.http.cookie
     ClientCookieDecoder
     ClientCookieEncoder
-    DefaultCookie
-    Cookie]
+    DefaultCookie]
    [java.io InputStream ByteArrayOutputStream]
    [java.nio.charset StandardCharsets]
    [java.net IDN URL URLEncoder UnknownHostException]))
@@ -764,18 +763,24 @@
     (.setPath path)
     (.setHttpOnly (or http-only? false))
     (.setSecure (or secure? false))
-    (.setMaxAge (or max-age Cookie/UNDEFINED_MAX_AGE))))
+    (.setMaxAge (or max-age io.netty.handler.codec.http.cookie.Cookie/UNDEFINED_MAX_AGE))))
 
 ;; xxx: replace with def-map-type
+
+(p/def-derived-map Cookie
+  [^DefaultCookie cookie]
+  :domain (.domain cookie)
+  :http-only? (.isHttpOnly cookie)
+  :secure? (.isSecure cookie)
+  :max-age (let [max-age (.maxAge cookie)]
+             (when-not (= max-age io.netty.handler.codec.http.cookie.Cookie/UNDEFINED_MAX_AGE)
+               max-age))
+  :name (.name cookie)
+  :path (.path cookie)
+  :value (.value cookie))
+
 (defn netty-cookie->cookie [^DefaultCookie cookie]
-  {:domain (.domain cookie)
-   :http-only? (.isHttpOnly cookie)
-   :secure? (.isSecure cookie)
-   :max-age (let [max-age (.maxAge cookie)]
-              (if (= max-age Cookie/UNDEFINED_MAX_AGE) nil max-age))
-   :name (.name cookie)
-   :path (.path cookie)
-   :value (.value cookie)})
+  (->Cookie cookie))
 
 (defn decode-set-cookie-header
   ([header]
