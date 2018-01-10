@@ -15,7 +15,7 @@
   (:import
    [io.netty.buffer ByteBuf Unpooled]
    [io.netty.handler.codec.base64 Base64]
-   [java.io InputStream ByteArrayOutputStream]
+   [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
    [java.nio.charset StandardCharsets]
    [java.net URL URLEncoder UnknownHostException]))
 
@@ -236,14 +236,30 @@
   response is used as the message, instead of just the status number."
   [client]
   (fn [req]
-    (d/let-flow' [{:keys [status] :as rsp} (client req)]
+    (d/let-flow' [{:keys [status body] :as rsp} (client req)]
       (if (unexceptional-status? status)
         rsp
-        (if (false? (opt req :throw-exceptions))
+        (cond
+
+          (false? (opt req :throw-exceptions))
           rsp
-          (d/chain' rsp :aleph/complete
-            (fn [_]
-              (d/error-deferred (ex-info (str "status: " status) rsp)))))))))
+
+          (instance? InputStream body)
+          (d/chain' (d/future (bs/to-byte-array body))
+            (fn [body]
+              (d/error-deferred
+                (ex-info
+                  (str "status: " status)
+                  (assoc rsp :body (ByteArrayInputStream. body))))))
+
+          :else
+          (d/chain'
+            (s/reduce conj [] body)
+            (fn [body]
+              (d/error-deferred
+                (ex-info
+                  (str "status: " status)
+                  (assoc rsp :body (s/->source body)))))))))))
 
 (defn follow-redirect
   "Attempts to follow the redirects from the \"location\" header, if no such
@@ -415,7 +431,7 @@
     req))
 
 (defn basic-auth-value
-  "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)" 
+  "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)"
   [basic-auth]
   (let [basic-auth (if (string? basic-auth)
                      basic-auth
