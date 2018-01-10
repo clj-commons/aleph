@@ -56,31 +56,26 @@
 ;;
 ;; RFC 2388, section 4.4:
 ;; The original local file name may be supplied as well...
+;;
+;; Note, that you can use transfer-encoding=nil or :binary to leave data "as is".
+;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
 (defn part-headers [^String part-name ^String mime-type transfer-encoding name]
-  (let [te (when transfer-encoding (cc/name transfer-encoding))
-        names-encoding (or transfer-encoding :qp)
-        pne (encode part-name names-encoding)
-        cd (str "Content-Disposition: form-data; name=\"" pne "\""
-                (when name (str "; filename=\"" (encode name names-encoding) "\""))
+  (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
+                (when name (str "; filename=\"" name "\""))
                 \newline)
         ct (str "Content-Type: " mime-type \newline)
-        cte (str (if-not te "" (str "Content-Transfer-Encoding: " te \newline)) \newline)
-        lcd (.length cd)
-        lct (.length ct)
-        lcte (.length cte)
-        size (+ lcd lct lcte)
-        buf (ByteBuffer/allocate size)]
-    (doto buf
-      (.put (bs/to-byte-buffer cd))
-      (.put (bs/to-byte-buffer ct))
-      (.put (bs/to-byte-buffer cte))
-      (.flip))))
+        cte (if (nil? transfer-encoding)
+              ""
+              (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) \newline))]
+    (bs/to-byte-buffer (str cd ct cte \newline))))
 
 (defn encode-part
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
   (let [headers (part-headers part-name mime-type transfer-encoding name)
-        body (bs/to-byte-buffer (encode content (or transfer-encoding :qp)))
+        body (bs/to-byte-buffer (if (some? transfer-encoding)
+                                  (encode content transfer-encoding)
+                                  content))
         header-len (.limit ^ByteBuffer headers)
         size (+ header-len (.limit ^ByteBuffer body))
         buf (ByteBuffer/allocate size)]
