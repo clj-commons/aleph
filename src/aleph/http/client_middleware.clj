@@ -437,7 +437,7 @@
                      basic-auth
                      (str (first basic-auth) ":" (second basic-auth)))
         input-bytebuf (Unpooled/wrappedBuffer (.getBytes ^String basic-auth "UTF-8"))
-        base64-bytebuf (Base64/encode input-bytebuf)
+        base64-bytebuf (Base64/encode input-bytebuf false)
         base64-string (.toString ^ByteBuf base64-bytebuf StandardCharsets/UTF_8)]
     (.release ^ByteBuf input-bytebuf)
     (.release ^ByteBuf base64-bytebuf)
