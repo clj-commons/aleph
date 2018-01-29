@@ -48,7 +48,7 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
     }
     
     public void setAuthInfo(String username, String password) {
-        if (username != null) {        
+        if (username != null) {
             this.username = username;
             this.password = password;
             updateAuthorization();
@@ -57,10 +57,8 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
         }
     }
 
-    // xxx: check if we can send no password at all or an empty one
     public void updateAuthorization() {
-        String info = password == null ? username : username + ':' + password;
-        ByteBuf auth = Unpooled.copiedBuffer(info, CharsetUtil.UTF_8);
+        ByteBuf auth = Unpooled.copiedBuffer(username + ':' + password, CharsetUtil.UTF_8);
         ByteBuf authBase64 = Base64.encode(auth, false);
 
         authorization = new AsciiString("Basic " + authBase64.toString(CharsetUtil.US_ASCII));
@@ -106,7 +104,6 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
         codec.removeInboundHandler();
     }
 
-    // xxx: :thinking: shoud we set Keep-Alive sending CONNECT?
     @Override
     protected Object newInitialMessage(ChannelHandlerContext context) throws Exception {
         if (!useTunnel) {

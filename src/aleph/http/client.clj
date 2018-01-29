@@ -236,17 +236,24 @@
 
                         (handle-response @response c s)))))))))))))
 
-(defn http-proxy-handler [address {:keys [user password headers tunnel?] :or {tunnel? false}}]
+;; setting tunnel? to false by default is kinda tricky moment,
+;; but we can follow other clients, like curl here
+;; (curl uses separate option --proxytunnel flag to switch tunneling on)
+(defn http-proxy-handler [address {:keys [user password http-headers tunnel?]
+                                   :or {tunnel? false}}]
   (when (and (nil? user) (some? password))
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'user' is missing"))
+
+  (when (and (some? user) (nil? password))
+    (IllegalArgumentException. "Could not setup http proxy with basic auth: 'password' is missing"))
 
   (doto (TunnelAwareHttpProxyHandler. address)
     (.setUseTunnel tunnel?)
     (.setAuthInfo user password)
-    (.setHeaders (when (some? headers)
-                   (http/map->headers! (EmptyHttpHeaders/INSTANCE) headers)))))
+    (.setHeaders (when (some? http-headers)
+                   (http/map->headers! (EmptyHttpHeaders/INSTANCE) http-headers)))))
 
-(defn proxy-handler [{:keys [host port protocol user password http-headers connect-timeout]
+(defn proxy-handler [{:keys [host port protocol user password connect-timeout]
                       :or {protocol :http}
                       :as options}]
   {:pre [(some? host)]}
