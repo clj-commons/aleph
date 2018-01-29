@@ -107,7 +107,8 @@
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`"
+   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`
+   | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported."
   [{:keys [connections-per-host
            total-connections
            target-utilization

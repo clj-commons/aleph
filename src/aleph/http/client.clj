@@ -49,6 +49,10 @@
      WebSocketFrame
      WebSocketFrameAggregator
      WebSocketVersion]
+    [io.netty.handler.proxy
+     HttpProxyHandler
+     Socks4ProxyHandler
+     Socks5ProxyHandler]
     [java.util.concurrent.atomic
      AtomicInteger]))
 
@@ -228,6 +232,29 @@
 
                         (handle-response @response c s)))))))))))))
 
+(def supported-proxy-handlers {:http HttpProxyHandler
+                               :socks4 Socks4ProxyHandler
+                               :socks5 Socks5ProxyHandler})
+
+;; xxx: support user/password
+;; xxx: tunneling true/false
+;; xxx: pass http-headers to http proxy
+(defn proxy-handler [{:keys [host port protocol user password http-headers]
+                      :or {protocol :http}}]
+  {:pre [(some? host)]}
+  (let [port' (cond
+                (some? port) port
+                (= :http protocol) 80
+                (= :socks4 protocol) 1080
+                (= :socks5 protocol) 1080)
+        proxy-address (InetSocketAddress. host port')]
+    (case protocol
+      :http (HttpProxyHandler. proxy-address)
+      :socks4 (Socks4ProxyHandler. proxy-address)
+      :socks5 (Socks5ProxyHandler. proxy-address)
+      (IllegalArgumentException.
+       (format "Proxy protocol %s not supported" protocol)))))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -236,7 +263,8 @@
      max-initial-line-length
      max-header-size
      max-chunk-size
-     raw-stream?]
+     raw-stream?
+     proxy-options]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
@@ -247,7 +275,6 @@
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
                     (client-handler response-stream response-buffer-size))]
-
       (doto pipeline
         (.addLast "http-client"
           (HttpClientCodec.
@@ -256,8 +283,10 @@
             max-chunk-size
             false
             false))
-        (.addLast "handler" ^ChannelHandler handler)
-        pipeline-transform))))
+        (.addLast "handler" ^ChannelHandler handler))
+      (when (some? proxy-options)
+        (.addFirst pipeline "proxy" (proxy-handler proxy-options)))
+      (pipeline-transform pipeline))))
 
 (defn close-connection [f]
   (f
@@ -290,11 +319,7 @@
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         c (netty/create-client
-            (pipeline-builder
-              responses
-              (if pipeline-transform
-                (assoc options :pipeline-transform pipeline-transform)
-                options))
+           (pipeline-builder responses options)
             (when ssl?
               (or ssl-context
                 (if insecure?
