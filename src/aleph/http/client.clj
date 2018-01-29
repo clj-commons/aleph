@@ -23,7 +23,6 @@
      HttpMessage
      HttpClientCodec
      DefaultHttpHeaders
-     EmptyHttpHeaders
      HttpHeaders
      HttpRequest
      HttpResponse
@@ -251,7 +250,7 @@
     (.setUseTunnel tunnel?)
     (.setAuthInfo user password)
     (.setHeaders (when (some? http-headers)
-                   (http/map->headers! (EmptyHttpHeaders/INSTANCE) http-headers)))))
+                   (doto (DefaultHttpHeaders.) (http/map->headers! http-headers))))))
 
 (defn proxy-handler [{:keys [host port protocol user password connect-timeout]
                       :or {protocol :http}
