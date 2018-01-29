@@ -51,6 +51,7 @@
      WebSocketFrameAggregator
      WebSocketVersion]
     [io.netty.handler.proxy
+     ProxyHandler
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
@@ -249,12 +250,12 @@
                       :or {protocol :http}
                       :as options}]
   {:pre [(some? host)]}
-  (let [port' (cond
-                (some? port) port
-                (= :http protocol) 80
-                (= :socks4 protocol) 1080
-                (= :socks5 protocol) 1080)
-        proxy-address (InetSocketAddress. host port')
+  (let [port' (int (cond
+                     (some? port) port
+                     (= :http protocol) 80
+                     (= :socks4 protocol) 1080
+                     (= :socks5 protocol) 1080))
+        proxy-address (InetSocketAddress. ^String host port')
         handler (case protocol
                   :http (http-proxy-handler proxy-address options)
                   :socks4 (if (some? user)
@@ -268,7 +269,7 @@
                            protocol)))]
     (when (and (some? connect-timeout)
                (< 0 connect-timeout))
-      (.setConnectTimeoutMillis handler connect-timeout))
+      (.setConnectTimeoutMillis ^ProxyHandler handler connect-timeout))
     handler))
 
 (defn pipeline-builder
@@ -301,7 +302,7 @@
             false))
         (.addLast "handler" ^ChannelHandler handler))
       (when (some? proxy-options)
-        (.addFirst pipeline "proxy" (proxy-handler proxy-options)))
+        (.addFirst pipeline "proxy" ^ChannelHandler (proxy-handler proxy-options)))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
