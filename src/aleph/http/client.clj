@@ -252,7 +252,7 @@
     (.setHeaders (when (some? http-headers)
                    (doto (DefaultHttpHeaders.) (http/map->headers! http-headers))))))
 
-(defn proxy-handler [{:keys [host port protocol user password connect-timeout]
+(defn proxy-handler [{:keys [host port protocol user password connection-timeout]
                       :or {protocol :http}
                       :as options}]
   {:pre [(some? host)]}
@@ -273,9 +273,9 @@
                   (IllegalArgumentException.
                    (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
                            protocol)))]
-    (when (and (some? connect-timeout)
-               (< 0 connect-timeout))
-      (.setConnectTimeoutMillis ^ProxyHandler handler connect-timeout))
+    (when (and (some? connection-timeout)
+               (< 0 connection-timeout))
+      (.setConnectTimeoutMillis ^ProxyHandler handler connection-timeout))
     handler))
 
 (defn pipeline-builder
