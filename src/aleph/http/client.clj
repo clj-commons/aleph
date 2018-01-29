@@ -23,6 +23,7 @@
      HttpMessage
      HttpClientCodec
      DefaultHttpHeaders
+     EmptyHttpHeaders
      HttpHeaders
      HttpRequest
      HttpResponse
@@ -54,7 +55,9 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [java.util.concurrent.atomic
-     AtomicInteger]))
+     AtomicInteger]
+    [aleph.utils
+     TunnelAwareHttpProxyHandler]))
 
 (set! *unchecked-math* true)
 
@@ -232,28 +235,42 @@
 
                         (handle-response @response c s)))))))))))))
 
-(def supported-proxy-handlers {:http HttpProxyHandler
-                               :socks4 Socks4ProxyHandler
-                               :socks5 Socks5ProxyHandler})
+(defn http-proxy-handler [address {:keys [user password headers tunnel?] :or {tunnel? false}}]
+  (when (and (nil? user) (some? password))
+    (IllegalArgumentException. "Could not setup http proxy with basic auth: 'user' is missing"))
 
-;; xxx: support user/password
-;; xxx: tunneling true/false
-;; xxx: pass http-headers to http proxy
-(defn proxy-handler [{:keys [host port protocol user password http-headers]
-                      :or {protocol :http}}]
+  (doto (TunnelAwareHttpProxyHandler. address)
+    (.setUseTunnel tunnel?)
+    (.setAuthInfo user password)
+    (.setHeaders (when (some? headers)
+                   (http/map->headers! (EmptyHttpHeaders/INSTANCE) headers)))))
+
+;; xxx: proxy connection timeout (handle ProxyConnectException)
+(defn proxy-handler [{:keys [host port protocol user password http-headers connect-timeout]
+                      :or {protocol :http}
+                      :as options}]
   {:pre [(some? host)]}
   (let [port' (cond
                 (some? port) port
                 (= :http protocol) 80
                 (= :socks4 protocol) 1080
                 (= :socks5 protocol) 1080)
-        proxy-address (InetSocketAddress. host port')]
-    (case protocol
-      :http (HttpProxyHandler. proxy-address)
-      :socks4 (Socks4ProxyHandler. proxy-address)
-      :socks5 (Socks5ProxyHandler. proxy-address)
-      (IllegalArgumentException.
-       (format "Proxy protocol %s not supported" protocol)))))
+        proxy-address (InetSocketAddress. host port')
+        handler (case protocol
+                  :http (http-proxy-handler proxy-address options)
+                  :socks4 (if (some? user)
+                            (Socks4ProxyHandler. proxy-address user)
+                            (Socks4ProxyHandler. proxy-address))
+                  :socks5 (if (some? user)
+                            (Socks5ProxyHandler. proxy-address user password)
+                            (Socks5ProxyHandler. proxy-address))
+                  (IllegalArgumentException.
+                   (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
+                           protocol)))]
+    (when (and (some? connect-timeout)
+               (< 0 connect-timeout))
+      (.setConnectTimeoutMillis handler connect-timeout))
+    handler))
 
 (defn pipeline-builder
   [response-stream
