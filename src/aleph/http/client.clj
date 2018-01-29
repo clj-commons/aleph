@@ -245,7 +245,6 @@
     (.setHeaders (when (some? headers)
                    (http/map->headers! (EmptyHttpHeaders/INSTANCE) headers)))))
 
-;; xxx: proxy connection timeout (handle ProxyConnectException)
 (defn proxy-handler [{:keys [host port protocol user password http-headers connect-timeout]
                       :or {protocol :http}
                       :as options}]

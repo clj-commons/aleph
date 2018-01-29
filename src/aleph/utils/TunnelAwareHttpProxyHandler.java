@@ -57,6 +57,7 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
         }
     }
 
+    // xxx: check if we can send no password at all or an empty one
     public void updateAuthorization() {
         String info = password == null ? username : username + ':' + password;
         ByteBuf auth = Unpooled.copiedBuffer(info, CharsetUtil.UTF_8);
