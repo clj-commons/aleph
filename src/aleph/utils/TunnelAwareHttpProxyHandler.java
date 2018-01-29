@@ -106,6 +106,7 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
         codec.removeInboundHandler();
     }
 
+    // xxx: :thinking: shoud we set Keep-Alive sending CONNECT?
     @Override
     protected Object newInitialMessage(ChannelHandlerContext context) throws Exception {
         if (!useTunnel) {
@@ -120,26 +121,47 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
                                                          Unpooled.EMPTY_BUFFER,
                                                          false);
 
-        req.headers().set(HttpHeaderNames.HOST, host);
+        HttpHeaders reqHeaders = req.headers();
+        reqHeaders.set(HttpHeaderNames.HOST, host);
 
         if (authorization != null) {
-            req.headers().set(HttpHeaderNames.PROXY_AUTHORIZATION, authorization);
+            reqHeaders.set(HttpHeaderNames.PROXY_AUTHORIZATION, authorization);
         }
 
         if (headers != null) {
-            req.headers().add(headers);
+            reqHeaders.add(headers);
         }
 
         return req;
     }
 
+    // ported from ProxyHandler to use the same errors format
+    public String buildExceptionMessage(String msg) {
+        if (msg == null) {
+            msg = "";
+        }
+
+        StringBuilder buf = new StringBuilder(128 + msg.length())
+            .append(protocol())
+            .append(", ")
+            .append(authScheme())
+            .append(", ")
+            .append(proxyAddress())
+            .append(" => ")
+            .append(destinationAddress());
+        if (!msg.isEmpty()) {
+            buf.append(", ").append(msg);
+        }
+
+        return buf.toString();
+    }
+
     // xxx: :thinking: should we wait for the response here when not using CONNECT?
-    // xxx: exceptionMessage: port?
     @Override
     protected boolean handleResponse(ChannelHandlerContext ctx, Object response) throws Exception {
         if (response instanceof HttpResponse) {
             if (status != null) {
-                throw new ProxyConnectException("too many responses");
+                throw new ProxyConnectException(buildExceptionMessage("too many responses"));
             }
             status = ((HttpResponse) response).status();
         }
@@ -147,10 +169,10 @@ public final class TunnelAwareHttpProxyHandler extends ProxyHandler {
         boolean finished = response instanceof LastHttpContent;
         if (finished) {
             if (status == null) {
-                throw new ProxyConnectException("missing response");
+                throw new ProxyConnectException(buildExceptionMessage("missing response"));
             }
             if (status.code() != 200) {
-                throw new ProxyConnectException("status: " + status);
+                throw new ProxyConnectException(buildExceptionMessage("status: " + status));
             }
         }
 
