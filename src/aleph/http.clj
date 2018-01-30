@@ -15,8 +15,7 @@
      PoolTimeoutException
      ConnectionTimeoutException
      RequestTimeoutException
-     ReadTimeoutException
-     ProxyConnectionTimeoutException]
+     ReadTimeoutException]
     [java.net
      URI
      InetSocketAddress]
@@ -247,16 +246,6 @@
                          (flow/dispose pool k conn)
                          (d/error-deferred (ConnectionTimeoutException. e))))
 
-                     ;; proxy connection failed due to timeout, dispose of the connection
-                     ;; it's pretty fragile as we need to decide based on exception message,
-                     ;; but ProxyHandler implementation just left us with no other options :( 
-                     (d/catch' ProxyConnectException
-                       (fn [^Throwable e]
-                         (flow/dispose pool k conn)
-                         (if (clojure.string/ends-with? (.getMessage e) "timeout")
-                           (d/error-deferred (ProxyConnectionTimeoutException. e))
-                           (d/error-deferred e))))
-                     
                      ;; connection failed, bail out
                      (d/catch'
                        (fn [e]

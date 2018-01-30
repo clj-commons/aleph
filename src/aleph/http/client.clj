@@ -37,7 +37,8 @@
      HttpObjectAggregator]
     [io.netty.channel
      Channel ChannelFuture
-     ChannelFutureListener ChannelHandler
+     ChannelFutureListener
+     ChannelHandler ChannelHandlerContext
      ChannelPipeline]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
@@ -55,9 +56,7 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [java.util.concurrent.atomic
-     AtomicInteger]
-    [aleph.utils
-     TunnelAwareHttpProxyHandler]))
+     AtomicInteger]))
 
 (set! *unchecked-math* true)
 
@@ -238,21 +237,44 @@
 ;; setting tunnel? to false by default is kinda tricky moment,
 ;; but we can follow other clients, like curl here
 ;; (curl uses separate option --proxytunnel flag to switch tunneling on)
-(defn http-proxy-handler [address {:keys [user password http-headers tunnel?]
-                                   :or {tunnel? false}}]
+(defn http-proxy-handler
+  [^InetSocketAddress address
+   {:keys [user password http-headers tunnel?]
+    :or {tunnel? false}}]
   (when (and (nil? user) (some? password))
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'user' is missing"))
 
   (when (and (some? user) (nil? password))
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'password' is missing"))
 
-  (doto (TunnelAwareHttpProxyHandler. address)
-    (.setUseTunnel tunnel?)
-    (.setAuthInfo user password)
-    (.setHeaders (when (some? http-headers)
-                   (doto (DefaultHttpHeaders.) (http/map->headers! http-headers))))))
+  (cond
+    (and (not tunnel?)
+         (nil? user)
+         (nil? http-headers))
+    (netty/channel-handler
+     :connect
+     ([_ ctx remote-address local-address promise]
+      (.connect ^ChannelHandlerContext ctx address promise)))
 
-(defn proxy-handler [{:keys [host port protocol user password connection-timeout]
+    ;; this will send CONNECT request to the proxy server
+    (and (nil? user)
+         (nil? http-headers))
+    (HttpProxyHandler. address)
+    
+    (and (some? user) (nil? http-headers))
+    (HttpProxyHandler. address user password)
+
+    (and (nil? user) (some? http-headers))
+    (HttpProxyHandler. address (doto (DefaultHttpHeaders.) (http/map->headers! http-headers)))
+
+    :else
+    (HttpProxyHandler.
+     address
+     user
+     password
+     (doto (DefaultHttpHeaders.) (http/map->headers! http-headers)))))
+
+(defn proxy-handler [{:keys [host port protocol user password]
                       :or {protocol :http}
                       :as options}]
   {:pre [(some? host)]}
@@ -273,9 +295,9 @@
                   (IllegalArgumentException.
                    (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
                            protocol)))]
-    (when (and (some? connection-timeout)
-               (< 0 connection-timeout))
-      (.setConnectTimeoutMillis ^ProxyHandler handler connection-timeout))
+    (when (instance? ProxyHandler handler)
+      ;; as we will manage this on aleph side anyways
+      (.setConnectTimeoutMillis ^ProxyHandler handler -1))
     handler))
 
 (defn pipeline-builder
@@ -330,7 +352,8 @@
            response-buffer-size
            on-closed
            response-executor
-           epoll?]
+           epoll?
+           proxy-options]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
@@ -357,12 +380,20 @@
 
         (s/consume
           (fn [req]
+
             (try
-              (let [^HttpRequest req' (http/ring-request->netty-request req)]
+              (let [^HttpRequest req' (http/ring-request->netty-request
+                                       (if (nil? proxy-options)
+                                         req
+                                         (assoc req :uri (:request-url req))))]
                 (when-not (.get (.headers req') "Host")
                   (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
                   (HttpHeaders/setKeepAlive req' keep-alive?))
+                (when (and (some? proxy-options)
+                           (get proxy-options :keep-alive? true)
+                           (not (.get (.headers req') "Proxy-Connection")))
+                  (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
                 (let [body (if-let [parts (get req :multipart)]
                              (let [boundary (multipart/boundary)
