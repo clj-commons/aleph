@@ -51,6 +51,7 @@
      WebSocketFrameAggregator
      WebSocketVersion]
     [io.netty.handler.proxy
+     ProxyConnectionEvent
      ProxyHandler
      HttpProxyHandler
      Socks4ProxyHandler
@@ -306,6 +307,22 @@
       (.setConnectTimeoutMillis ^ProxyHandler handler -1))
     handler))
 
+(defn pending-proxy-writes-handler []
+  ;; TODO: unbounded? maybe we need to add a limit here
+  (let [pending-writes (atom [])]
+    (netty/channel-handler
+     :write
+     ([_ ctx msg promise]
+      (swap! pending-writes conj [msg promise]))
+
+     :user-event-triggered
+     ([this ctx evt]
+      (when (instance? ProxyConnectionEvent evt)
+        (doseq [[msg promise] @pending-writes]
+          (.write ^ChannelHandlerContext ctx msg promise))
+        (.remove (.pipeline ctx) this))
+      (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -336,7 +353,16 @@
             false))
         (.addLast "handler" ^ChannelHandler handler))
       (when (some? proxy-options)
-        (.addFirst pipeline "proxy" ^ChannelHandler (proxy-handler proxy-options)))
+        (let [proxy (proxy-handler proxy-options)]
+          (.addFirst pipeline "proxy" ^ChannelHandler proxy)
+          ;; well, we need to wait before the proxy responded with
+          ;; HTTP/1.1 200 Connection established
+          ;; before sending any requests
+          (when (instance? ProxyHandler proxy)
+            (.addLast pipeline
+                      "pending-proxy-writes"
+                      ^ChannelHandler
+                      (pending-proxy-writes-handler)))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
