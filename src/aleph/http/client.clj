@@ -242,13 +242,22 @@
        (nil? user)
        (nil? http-headers)))
 
+(defn http-proxy-headers [{:keys [http-headers keep-alive?]
+                           :or {http-headers {}
+                                keep-alive? true}}]
+  (let [headers (DefaultHttpHeaders.)]
+    (http/map->headers! headers http-headers)
+    (when keep-alive?
+      (.set headers "Proxy-Connection" "Keep-Alive"))
+    headers))
+
 ;; setting tunnel? to false by default is kinda tricky moment,
 ;; but we can follow other clients, like curl here
 ;; (curl uses separate option --proxytunnel flag to switch tunneling on)
 (defn http-proxy-handler
   [^InetSocketAddress address
-   {:keys [user password http-headers tunnel?]
-    :or {tunnel? false}
+   {:keys [user password http-headers tunnel? keep-alive?]
+    :or {tunnel? false keep-alive? true}
     :as options}]
   (when (and (nil? user) (some? password))
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'user' is missing"))
@@ -256,30 +265,17 @@
   (when (and (some? user) (nil? password))
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'password' is missing"))
 
-  (cond
-    (no-tunnel-proxy? options)
+  (if (no-tunnel-proxy? options)
     (netty/channel-handler
      :connect
      ([_ ctx remote-address local-address promise]
       (.connect ^ChannelHandlerContext ctx address promise)))
-
-    ;; this will send CONNECT request to the proxy server
-    (and (nil? user)
-         (nil? http-headers))
-    (HttpProxyHandler. address)
     
-    (and (some? user) (nil? http-headers))
-    (HttpProxyHandler. address user password)
-
-    (and (nil? user) (some? http-headers))
-    (HttpProxyHandler. address (doto (DefaultHttpHeaders.) (http/map->headers! http-headers)))
-
-    :else
-    (HttpProxyHandler.
-     address
-     user
-     password
-     (doto (DefaultHttpHeaders.) (http/map->headers! http-headers)))))
+    ;; this will send CONNECT request to the proxy server
+    (let [headers (http-proxy-headers options)]
+      (if (nil? user)
+        (HttpProxyHandler. address headers)
+        (HttpProxyHandler. address user password headers)))))
 
 (defn proxy-handler [{:keys [host port protocol user password]
                       :or {protocol :http}
