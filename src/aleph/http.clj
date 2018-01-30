@@ -20,9 +20,7 @@
      URI
      InetSocketAddress]
     [java.util.concurrent
-     TimeoutException]
-    [io.netty.handler.proxy
-     ProxyConnectException]))
+     TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
