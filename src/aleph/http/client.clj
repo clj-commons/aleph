@@ -234,13 +234,21 @@
 
                         (handle-response @response c s)))))))))))))
 
+(defn no-tunnel-proxy? [{:keys [tunnel? user http-headers]
+                         :as proxy-options}]
+  (and (some? proxy-options)
+       (not tunnel?)
+       (nil? user)
+       (nil? http-headers)))
+
 ;; setting tunnel? to false by default is kinda tricky moment,
 ;; but we can follow other clients, like curl here
 ;; (curl uses separate option --proxytunnel flag to switch tunneling on)
 (defn http-proxy-handler
   [^InetSocketAddress address
    {:keys [user password http-headers tunnel?]
-    :or {tunnel? false}}]
+    :or {tunnel? false}
+    :as options}]
   (when (and (nil? user) (some? password))
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'user' is missing"))
 
@@ -248,9 +256,7 @@
     (IllegalArgumentException. "Could not setup http proxy with basic auth: 'password' is missing"))
 
   (cond
-    (and (not tunnel?)
-         (nil? user)
-         (nil? http-headers))
+    (no-tunnel-proxy? options)
     (netty/channel-handler
      :connect
      ([_ ctx remote-address local-address promise]
@@ -383,14 +389,14 @@
 
             (try
               (let [^HttpRequest req' (http/ring-request->netty-request
-                                       (if (nil? proxy-options)
-                                         req
-                                         (assoc req :uri (:request-url req))))]
+                                       (if (no-tunnel-proxy? proxy-options)
+                                         (assoc req :uri (:request-url req))
+                                         req))]
                 (when-not (.get (.headers req') "Host")
                   (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
                   (HttpHeaders/setKeepAlive req' keep-alive?))
-                (when (and (some? proxy-options)
+                (when (and (no-tunnel-proxy? proxy-options)
                            (get proxy-options :keep-alive? true)
                            (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
