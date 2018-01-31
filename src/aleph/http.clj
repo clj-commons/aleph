@@ -108,7 +108,18 @@
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`
-   | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported."
+   | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
+
+   Supported `proxy-options` are
+
+   |:---|:---
+   | `host` | host of the proxy server
+   | `port` | an optional port to establish connection (defaults to 80 for http and 1080 for socks proxies)
+   | `protocol` | one of `:http`, `:socks4` or `:socks5` (defaults to `:http`)
+   | `user` | an optional auth username
+   | `password` | an optional auth password
+   | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
+   | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting."
   [{:keys [connections-per-host
            total-connections
            target-utilization

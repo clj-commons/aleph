@@ -251,9 +251,8 @@
       (.set headers "Proxy-Connection" "Keep-Alive"))
     headers))
 
-;; setting tunnel? to false by default is kinda tricky moment,
-;; but we can follow other clients, like curl here
-;; (curl uses separate option --proxytunnel flag to switch tunneling on)
+;; `tunnel?` is set to `false` by default, following `curl`
+;; (`curl` uses separate option `--proxytunnel` flag to switch tunneling on)
 (defn http-proxy-handler
   [^InetSocketAddress address
    {:keys [user password http-headers tunnel? keep-alive?]
