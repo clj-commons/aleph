@@ -268,7 +268,7 @@
     (netty/channel-handler
      :connect
      ([_ ctx remote-address local-address promise]
-      (.connect ^ChannelHandlerContext ctx address promise)))
+      (.connect ^ChannelHandlerContext ctx address local-address promise)))
     
     ;; this will send CONNECT request to the proxy server
     (let [headers (http-proxy-headers options)]
