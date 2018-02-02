@@ -235,10 +235,11 @@
 
                         (handle-response @response c s)))))))))))))
 
-(defn no-tunnel-proxy? [{:keys [tunnel? user http-headers]
-                         :as proxy-options}]
+(defn non-tunnel-proxy? [{:keys [tunnel? user http-headers ssl?]
+                          :as proxy-options}]
   (and (some? proxy-options)
        (not tunnel?)
+       (not ssl?)
        (nil? user)
        (nil? http-headers)))
 
@@ -251,30 +252,48 @@
       (.set headers "Proxy-Connection" "Keep-Alive"))
     headers))
 
-;; `tunnel?` is set to `false` by default, following `curl`
-;; (`curl` uses separate option `--proxytunnel` flag to switch tunneling on)
+;; `tunnel?` is set to `false` by default when not using `ssl?`
+;; Following `curl` in both cases:
+;;
+;;  * `curl` uses separate option `--proxytunnel` flag to switch tunneling on
+;;  * `curl` uses CONNECT when sending request to HTTPS destination through HTTP proxy
+;;
+;; Explicitily setting `tunnel?` to false when it's expected to use CONNECT
+;; throws `IllegalArgumentException` to reduce the confusion
 (defn http-proxy-handler
   [^InetSocketAddress address
-   {:keys [user password http-headers tunnel? keep-alive?]
-    :or {tunnel? false keep-alive? true}
+   {:keys [user password http-headers tunnel? keep-alive? ssl?]
+    :or {keep-alive? true}
     :as options}]
-  (when (and (nil? user) (some? password))
-    (IllegalArgumentException. "Could not setup http proxy with basic auth: 'user' is missing"))
-
-  (when (and (some? user) (nil? password))
-    (IllegalArgumentException. "Could not setup http proxy with basic auth: 'password' is missing"))
-
-  (if (no-tunnel-proxy? options)
-    (netty/channel-handler
-     :connect
-     ([_ ctx remote-address local-address promise]
-      (.connect ^ChannelHandlerContext ctx address local-address promise)))
+  (let [options' (assoc options :tunnel? (or tunnel? ssl?))]
+    (when (and (nil? user) (some? password))
+      (throw (IllegalArgumentException.
+              "Could not setup http proxy with basic auth: 'user' is missing")))
     
-    ;; this will send CONNECT request to the proxy server
-    (let [headers (http-proxy-headers options)]
-      (if (nil? user)
-        (HttpProxyHandler. address headers)
-        (HttpProxyHandler. address user password headers)))))
+    (when (and (some? user) (nil? password))
+      (throw (IllegalArgumentException.
+              "Could not setup http proxy with basic auth: 'password' is missing")))
+
+    (when (and (false? tunnel?)
+               (or (some? user)
+                   (some? http-headers)
+                   (true? ssl?)))
+      (throw (IllegalArgumentException.
+              (str "Proxy options given require sending CONNECT request, "
+                   "but `tunnel?' option is set to 'false' explicitely. "
+                   "Consider setting 'tunnel?' to 'true' or omit it at all"))))
+
+    (if (non-tunnel-proxy? options')
+      (netty/channel-handler
+       :connect
+       ([_ ctx remote-address local-address promise]
+        (.connect ^ChannelHandlerContext ctx address local-address promise)))
+
+      ;; this will send CONNECT request to the proxy server
+      (let [headers (http-proxy-headers options')]
+        (if (nil? user)
+          (HttpProxyHandler. address headers)
+          (HttpProxyHandler. address user password headers))))))
 
 (defn proxy-handler [{:keys [host port protocol user password]
                       :or {protocol :http}
@@ -294,9 +313,10 @@
                   :socks5 (if (some? user)
                             (Socks5ProxyHandler. proxy-address user password)
                             (Socks5ProxyHandler. proxy-address))
-                  (IllegalArgumentException.
-                   (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
-                           protocol)))]
+                  (throw
+                   (IllegalArgumentException.
+                    (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
+                            protocol))))]
     (when (instance? ProxyHandler handler)
       ;; as we will manage this on aleph side anyways
       (.setConnectTimeoutMillis ^ProxyHandler handler -1))
@@ -327,7 +347,8 @@
      max-header-size
      max-chunk-size
      raw-stream?
-     proxy-options]
+     proxy-options
+     ssl?]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
@@ -348,7 +369,7 @@
             false))
         (.addLast "handler" ^ChannelHandler handler))
       (when (some? proxy-options)
-        (let [proxy (proxy-handler proxy-options)]
+        (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
           (.addFirst pipeline "proxy" ^ChannelHandler proxy)
           ;; well, we need to wait before the proxy responded with
           ;; HTTP/1.1 200 Connection established
@@ -392,7 +413,7 @@
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         c (netty/create-client
-           (pipeline-builder responses options)
+           (pipeline-builder responses (assoc options :ssl? ssl?))
             (when ssl?
               (or ssl-context
                 (if insecure?
@@ -409,15 +430,17 @@
           (fn [req]
 
             (try
-              (let [^HttpRequest req' (http/ring-request->netty-request
-                                       (if (no-tunnel-proxy? proxy-options)
+              (let [proxy-options' (when (some? proxy-options)
+                                     (assoc proxy-options :ssl? ssl?))
+                    ^HttpRequest req' (http/ring-request->netty-request
+                                       (if (non-tunnel-proxy? proxy-options')
                                          (assoc req :uri (:request-url req))
                                          req))]
                 (when-not (.get (.headers req') "Host")
                   (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
                   (HttpHeaders/setKeepAlive req' keep-alive?))
-                (when (and (no-tunnel-proxy? proxy-options)
+                (when (and (non-tunnel-proxy? proxy-options')
                            (get proxy-options :keep-alive? true)
                            (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
