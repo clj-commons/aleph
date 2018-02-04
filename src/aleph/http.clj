@@ -313,10 +313,9 @@
 (def ^:private arglists
   '[[url]
     [url
-     {:keys [pool middleware headers body multipart cookie-store cookie-spec]
+     {:keys [pool middleware headers body multipart]
       :or {pool default-connection-pool
-           middleware identity
-           cookie-spec middleware/default-cookie-spec}
+           middleware identity}
       :as options}]])
 
 (defmacro ^:private def-http-method [method]
@@ -331,9 +330,7 @@
    | `middleware` | any additional middleware that should be used for handling requests and responses
    | `headers` | the HTTP headers for the request
    | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)
-   | `multipart` | a vector of bodies
-   | `cookie-store` | an optional instance of cookie store to maintain cookies across requests
-   | `cookie-spec` | an optional instance of a cookie management specification to enforce rules of parsing, formatting and choosing cookies to be send with the request, defaults to the `middleware/default-cookies-spec`")
+   | `multipart` | a vector of bodies")
        :arglists arglists)))
 
 (def-http-method get)
