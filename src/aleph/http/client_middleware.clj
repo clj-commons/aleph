@@ -394,40 +394,53 @@
       (second found))
     "UTF-8"))
 
-(defn generate-query-string-with-encoding [params encoding]
-  (str/join "&"
-    (mapcat (fn [[k v]]
-              (if (sequential? v)
-                (map #(str (url-encode (name %1) encoding)
-                        "="
-                        (url-encode (str %2) encoding))
-                  (repeat k) v)
-                [(str (url-encode (name k) encoding)
-                   "="
-                   (url-encode (str v) encoding))]))
-      params)))
+(defn multi-param-suffix [index multi-param-style]
+  (case multi-param-style
+    :indexed (str "[" index "]")
+    :array "[]"
+    :default ""))
 
-(defn generate-query-string [params & [content-type]]
+(defn generate-query-string-with-encoding
+  ([params encoding]
+   (generate-query-string-with-encoding params encoding :default))
+  ([params encoding multi-param-style]
+   (str/join "&"
+             (mapcat (fn [[k v]]
+                       (if (sequential? v)
+                         (map-indexed
+                          #(str (url-encode (name k) encoding)
+                                (multi-param-suffix %1 multi-param-style)
+                                "="
+                                (url-encode (str %2) encoding))
+                          v)
+                         [(str (url-encode (name k) encoding)
+                               "="
+                               (url-encode (str v) encoding))]))
+                     params))))
+
+(defn generate-query-string [params & [content-type multi-param-style]]
   (let [encoding (detect-charset content-type)]
-    (generate-query-string-with-encoding params encoding)))
+    (generate-query-string-with-encoding params encoding (or multi-param-style :default))))
 
 (defn wrap-query-params
   "Middleware converting the :query-params option to a querystring on
   the request."
-  [{:keys [query-params content-type]
-    :or {content-type :x-www-form-urlencoded}
+  [{:keys [query-params content-type multi-param-style]
+    :or {content-type :x-www-form-urlencoded
+         multi-param-style :default}
     :as req}]
   (if query-params
     (-> req
-      (dissoc :query-params)
-      (update-in [:query-string]
-        (fn [old-query-string new-query-string]
-          (if-not (empty? old-query-string)
-            (str old-query-string "&" new-query-string)
-            new-query-string))
-        (generate-query-string
-          query-params
-          (content-type-value content-type))))
+        (dissoc :query-params)
+        (update-in [:query-string]
+                   (fn [old-query-string new-query-string]
+                     (if-not (empty? old-query-string)
+                       (str old-query-string "&" new-query-string)
+                       new-query-string))
+                   (generate-query-string
+                    query-params
+                    (content-type-value content-type)
+                    multi-param-style)))
     req))
 
 (defn basic-auth-value

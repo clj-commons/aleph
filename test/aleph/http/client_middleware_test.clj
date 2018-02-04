@@ -35,3 +35,13 @@
   (let [req {:query-params {:foo {:bar "baz"}}}
         {:keys [query-string]} (reduce #(%2 %1) req middleware/default-middleware)]
     (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
+
+(deftest test-query-string-multi-param
+  (is (= "name=John" (middleware/generate-query-string {:name "John"})))
+  (is (= "name=John&name=Mark" (middleware/generate-query-string {:name ["John" "Mark"]})))
+  (is (= "name=John&name=Mark"
+         (middleware/generate-query-string {:name ["John" "Mark"]} nil :default)))
+  (is (= "name[]=John&name[]=Mark"
+         (middleware/generate-query-string {:name ["John" "Mark"]} nil :array)))
+  (is (= "name[0]=John&name[1]=Mark"
+         (middleware/generate-query-string {:name ["John" "Mark"]} nil :indexed))))
