@@ -562,127 +562,6 @@
       (-> (client req)
         (d/chain' #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
-(defn parse-content-type
-  "Parse `s` as an RFC 2616 media type."
-  [s]
-  (if-let [m (re-matches #"\s*(([^/]+)/([^ ;]+))\s*(\s*;.*)?" (str s))]
-    {:content-type (keyword (nth m 1))
-     :content-type-params
-     (->> (str/split (str (nth m 4)) #"\s*;\s*")
-       (identity)
-       (remove str/blank?)
-       (map #(str/split % #"="))
-       (mapcat (fn [[k v]] [(keyword (str/lower-case k)) (str/trim v)]))
-       (apply hash-map))}))
-
-;; Multimethods for coercing body type to the :as key
-(defmulti coerce-response-body (fn [req _] (:as req)))
-
-(defmethod coerce-response-body :byte-array [_ resp]
-  (assoc resp :body (bs/to-byte-array (:body resp))))
-
-(defmethod coerce-response-body :stream [_ resp]
-  (update-in resp [:body] bs/to-input-stream))
-
-(defn coerce-json-body
-  [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
-  (let [^String charset (or charset (-> resp :content-type-params :charset)
-                          "UTF-8")
-        body (bs/to-byte-array body)
-        decode-func (if strict? json-decode-strict json-decode)]
-    (if json-enabled?
-      (cond
-        (= coerce :always)
-        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
-
-        (and (unexceptional-status? status)
-          (or (nil? coerce) (= coerce :unexceptional)))
-        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
-
-        (and (not (unexceptional-status? status)) (= coerce :exceptional))
-        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
-
-        :else (assoc resp :body (String. ^"[B" body charset)))
-      (assoc resp :body (String. ^"[B" body charset)))))
-
-(defn coerce-clojure-body
-  [request {:keys [body] :as resp}]
-  (let [^String charset (or (-> resp :content-type-params :charset) "UTF-8")
-        body (bs/to-byte-array body)]
-    (assoc resp :body (edn/read-string (String. ^"[B" body charset)))))
-
-(defn coerce-transit-body
-  [{:keys [transit-opts] :as request} {:keys [body] :as resp} type]
-  (if transit-enabled?
-    (assoc resp :body (parse-transit body type transit-opts))
-    resp))
-
-(defmethod coerce-response-body :json [req resp]
-  (coerce-json-body req resp true false))
-
-(defmethod coerce-response-body :json-strict [req resp]
-  (coerce-json-body req resp true true))
-
-(defmethod coerce-response-body :json-strict-string-keys [req resp]
-  (coerce-json-body req resp false true))
-
-(defmethod coerce-response-body :json-string-keys [req resp]
-  (coerce-json-body req resp false false))
-
-(defmethod coerce-response-body :clojure [req resp]
-  (coerce-clojure-body req resp))
-
-(defmethod coerce-response-body :transit+json [req resp]
-  (coerce-transit-body req resp :json))
-
-(defmethod coerce-response-body :transit+msgpack [req resp]
-  (coerce-transit-body req resp :msgpack))
-
-(defmethod coerce-response-body :string [{:keys [as]} {:keys [body] :as resp}]
-  (let [body-bytes (bs/to-byte-array body)]
-    (if (string? as)
-      (assoc resp :body (bs/to-string body-bytes {:charset as}))
-      (assoc resp :body (bs/to-string body-bytes)))))
-
-(defmethod coerce-response-body :default [_ resp]
-  resp)
-
-(def default-middleware
-  [wrap-method
-   wrap-url
-   wrap-nested-params
-   wrap-query-params
-   wrap-form-params
-   wrap-user-info
-   wrap-basic-auth
-   wrap-oauth
-   wrap-accept
-   wrap-accept-encoding
-   wrap-content-type])
-
-(defn wrap-request
-  "Returns a batteries-included HTTP request function corresponding to the given
-  core client. See default-middleware for the middleware wrappers that are used
-  by default"
-  [client]
-  (let [client' (-> client
-                  wrap-exceptions
-                  wrap-request-timing)]
-    (fn [req]
-      (let [executor (ex/executor)]
-        (if (:aleph.http.client/close req)
-          (client req)
-
-          (let [req' (reduce #(%2 %1) req default-middleware)]
-            (d/chain' (client' req')
-
-              ;; coerce the response body
-              (fn [{:keys [body] :as rsp}]
-                (if body
-                  (d/future-with (or executor (ex/wait-pool))
-                    (coerce-response-body req' rsp))
-                  rsp)))))))))
-
 (def ^String cookie-header-name (.toString HttpHeaderNames/COOKIE))
 (def ^String set-cookie-header-name (.toString HttpHeaderNames/SET_COOKIE))
 
@@ -831,7 +710,9 @@
      (->> (.getAll raw-headers set-cookie-header-name)
           (map (partial decode-set-cookie-header cookie-spec))))))
 
-(defn handle-cookies [cookie-store cookie-spec req {:keys [headers] :as rsp}]
+(defn handle-cookies [{:keys [cookie-store cookie-spec]
+                       :or {cookie-spec default-cookie-spec}}
+                      {:keys [headers] :as rsp}]
   (if (nil? cookie-store)
     rsp
     (let [cookies (extract-cookies-from-response-headers cookie-spec headers)]
@@ -851,17 +732,148 @@
          vals)))
 
 (defn add-cookie-header [cookie-store cookie-spec req]
+  (let [origin (req->cookie-origin req)
+        cookies (->> (get-cookies cookie-store)
+                     (filter (partial match-cookie-origin? cookie-spec origin))
+                     ;; note that here we rely on cookie store implementation,
+                     ;; which might be not the best idea
+                     (reduce-to-unique-cookie-names)
+                     (map cookie->netty-cookie))]
+    (if (empty? cookies)
+      req
+      (let [header (write-cookies cookie-spec cookies)]
+        (assoc-in req [:headers cookie-header-name] header)))))
+
+;; TODO read :cookies from request
+(defn wrap-cookies
+  "Middleware that set Cookie header based on the contentn of cookies passed
+   with the request and from cookies storage (when any)"
+  [{:keys [cookie-store cookie-spec]
+    :or {cookie-spec default-cookie-spec}
+    :as req}]
   (if (or (nil? cookie-store)
           (some? (get-in req [:headers cookie-header-name])))
     req
-    (let [origin (req->cookie-origin req)
-          cookies (->> (get-cookies cookie-store)
-                       (filter (partial match-cookie-origin? cookie-spec origin))
-                       ;; note that here we rely on cookie store implementation,
-                       ;; which might be not the best idea
-                       (reduce-to-unique-cookie-names)
-                       (map cookie->netty-cookie))]
-      (if (empty? cookies)
-        req
-        (let [header (write-cookies cookie-spec cookies)]
-          (assoc-in req [:headers cookie-header-name] header))))))
+    (add-cookie-header cookie-store cookie-spec req)))
+
+(defn parse-content-type
+  "Parse `s` as an RFC 2616 media type."
+  [s]
+  (if-let [m (re-matches #"\s*(([^/]+)/([^ ;]+))\s*(\s*;.*)?" (str s))]
+    {:content-type (keyword (nth m 1))
+     :content-type-params
+     (->> (str/split (str (nth m 4)) #"\s*;\s*")
+       (identity)
+       (remove str/blank?)
+       (map #(str/split % #"="))
+       (mapcat (fn [[k v]] [(keyword (str/lower-case k)) (str/trim v)]))
+       (apply hash-map))}))
+
+;; Multimethods for coercing body type to the :as key
+(defmulti coerce-response-body (fn [req _] (:as req)))
+
+(defmethod coerce-response-body :byte-array [_ resp]
+  (assoc resp :body (bs/to-byte-array (:body resp))))
+
+(defmethod coerce-response-body :stream [_ resp]
+  (update-in resp [:body] bs/to-input-stream))
+
+(defn coerce-json-body
+  [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
+  (let [^String charset (or charset (-> resp :content-type-params :charset)
+                          "UTF-8")
+        body (bs/to-byte-array body)
+        decode-func (if strict? json-decode-strict json-decode)]
+    (if json-enabled?
+      (cond
+        (= coerce :always)
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        (and (unexceptional-status? status)
+          (or (nil? coerce) (= coerce :unexceptional)))
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        (and (not (unexceptional-status? status)) (= coerce :exceptional))
+        (assoc resp :body (decode-func (String. ^"[B" body charset) keyword?))
+
+        :else (assoc resp :body (String. ^"[B" body charset)))
+      (assoc resp :body (String. ^"[B" body charset)))))
+
+(defn coerce-clojure-body
+  [request {:keys [body] :as resp}]
+  (let [^String charset (or (-> resp :content-type-params :charset) "UTF-8")
+        body (bs/to-byte-array body)]
+    (assoc resp :body (edn/read-string (String. ^"[B" body charset)))))
+
+(defn coerce-transit-body
+  [{:keys [transit-opts] :as request} {:keys [body] :as resp} type]
+  (if transit-enabled?
+    (assoc resp :body (parse-transit body type transit-opts))
+    resp))
+
+(defmethod coerce-response-body :json [req resp]
+  (coerce-json-body req resp true false))
+
+(defmethod coerce-response-body :json-strict [req resp]
+  (coerce-json-body req resp true true))
+
+(defmethod coerce-response-body :json-strict-string-keys [req resp]
+  (coerce-json-body req resp false true))
+
+(defmethod coerce-response-body :json-string-keys [req resp]
+  (coerce-json-body req resp false false))
+
+(defmethod coerce-response-body :clojure [req resp]
+  (coerce-clojure-body req resp))
+
+(defmethod coerce-response-body :transit+json [req resp]
+  (coerce-transit-body req resp :json))
+
+(defmethod coerce-response-body :transit+msgpack [req resp]
+  (coerce-transit-body req resp :msgpack))
+
+(defmethod coerce-response-body :string [{:keys [as]} {:keys [body] :as resp}]
+  (let [body-bytes (bs/to-byte-array body)]
+    (if (string? as)
+      (assoc resp :body (bs/to-string body-bytes {:charset as}))
+      (assoc resp :body (bs/to-string body-bytes)))))
+
+(defmethod coerce-response-body :default [_ resp]
+  resp)
+
+(def default-middleware
+  [wrap-method
+   wrap-url
+   wrap-nested-params
+   wrap-query-params
+   wrap-form-params
+   wrap-user-info
+   wrap-basic-auth
+   wrap-oauth
+   wrap-accept
+   wrap-accept-encoding
+   wrap-content-type
+   wrap-cookies])
+
+(defn wrap-request
+  "Returns a batteries-included HTTP request function corresponding to the given
+  core client. See default-middleware for the middleware wrappers that are used
+  by default"
+  [client]
+  (let [client' (-> client
+                  wrap-exceptions
+                  wrap-request-timing)]
+    (fn [req]
+      (let [executor (ex/executor)]
+        (if (:aleph.http.client/close req)
+          (client req)
+
+          (let [req' (reduce #(%2 %1) req default-middleware)]
+            (d/chain' (client' req')
+
+              ;; coerce the response body
+              (fn [{:keys [body] :as rsp}]
+                (if body
+                  (d/future-with (or executor (ex/wait-pool))
+                    (coerce-response-body req' rsp))
+                  rsp)))))))))

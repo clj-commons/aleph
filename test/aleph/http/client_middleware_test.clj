@@ -85,7 +85,9 @@
                   (get-in [:headers "cookie"])))
         "should not set expired")
     (is (= "no_override"
-           (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"
-                                                      :headers {"cookie" "no_override"}})
+           (-> (middleware/wrap-cookies {:cookie-store cs
+                                         :cookie-spec spec
+                                         :url "https://domain.com/"
+                                         :headers {"cookie" "no_override"}})
                (get-in  [:headers "cookie"])))
         "no attempts to override when header is already set")))

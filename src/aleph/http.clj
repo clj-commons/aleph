@@ -206,15 +206,12 @@
              connection-timeout
              request-timeout
              read-timeout
-             follow-redirects?
-             cookie-store
-             cookie-spec]
+             follow-redirects?]
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
            connection-timeout 6e4 ;; 60 seconds
-           follow-redirects? true
-           cookie-spec middleware/default-cookie-spec}
+           follow-redirects? true}
       :as req}]
 
     (executor/with-executor response-executor
@@ -258,9 +255,8 @@
                        (fn [conn']
 
                          (when-not (nil? conn')
-                           (let [end (System/currentTimeMillis)
-                                 req' (middleware/add-cookie-header cookie-store cookie-spec req)]
-                             (-> (conn' req')
+                           (let [end (System/currentTimeMillis)]
+                             (-> (conn' req)
                                (maybe-timeout! request-timeout)
 
                                ;; request timeout triggered, dispose of the connection
@@ -301,7 +297,7 @@
 
                        (fn [rsp]
                          (->> rsp
-                              (middleware/handle-cookies cookie-store cookie-spec req)
+                              (middleware/handle-cookies req)
                               (middleware/handle-redirects request req)))))))))))
         req))))
 
