@@ -760,13 +760,13 @@
    Each cookie should be represented as a map:
 
    |:---|:---
-   | name | name of this cookie
-   | value | value of this cookie
-   | domain | specifies allowed hosts to receive the cookie (including subdomains)
-   | path | indicates a URL path that must exist in the requested URL in order to send the 'Cookie' header
-   | http-only? | when set to `true`, cookie can only be accessed by HTTP. Optional, defaults to `false` 
-   | secure? | when set to `true`, cookie can only be transmitted over an encrypted connection. Optional, defaults to `false`
-   | max-age | set maximum age of this cookie in seconds. Options, defaults to UNDEFINED_MAX_AGE."
+   | `name` | name of this cookie
+   | `value` | value of this cookie
+   | `domain` | specifies allowed hosts to receive the cookie (including subdomains)
+   | `path` | indicates a URL path that must exist in the requested URL in order to send the 'Cookie' header
+   | `http-only?` | when set to `true`, cookie can only be accessed by HTTP. Optional, defaults to `false`
+   | `secure?` | when set to `true`, cookie can only be transmitted over an encrypted connection. Optional, defaults to `false`
+   | `max-age` | set maximum age of this cookie in seconds. Options, defaults to `io.netty.handler.codec.http.cookie.Cookie/UNDEFINED_MAX_AGE`."
   [{:keys [cookie-store cookie-spec cookies]
     :or {cookie-spec default-cookie-spec
          cookies '()}
