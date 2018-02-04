@@ -90,4 +90,15 @@
                                          :url "https://domain.com/"
                                          :headers {"cookie" "no_override"}})
                (get-in  [:headers "cookie"])))
-        "no attempts to override when header is already set")))
+        "no attempts to override when header is already set")
+    (is (= "id=44" (-> (middleware/wrap-cookies {:url "https://domain.com/"
+                                                 :cookies [{:name "id"
+                                                            :value "44"
+                                                            :domain "domain.com"}]})
+                       (get-in [:headers "cookie"])))
+        "accept cookies from req directly")
+    (is (= "name=John" (-> (middleware/wrap-cookies {:url "https://domain.com/"
+                                                     :cookies [{:name "name" :value "John"}]
+                                                     :cookie-store cs})
+                           (get-in [:headers "cookie"])))
+        "explicitly set cookies override cookie-store even when specified")))
