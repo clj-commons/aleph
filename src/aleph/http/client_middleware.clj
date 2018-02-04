@@ -429,9 +429,11 @@
     :or {content-type :x-www-form-urlencoded
          multi-param-style :default}
     :as req}]
-  (if query-params
+  (if (nil? query-params)
+    req
     (-> req
         (dissoc :query-params)
+        (dissoc :multi-param-style)
         (update-in [:query-string]
                    (fn [old-query-string new-query-string]
                      (if-not (empty? old-query-string)
@@ -440,8 +442,7 @@
                    (generate-query-string
                     query-params
                     (content-type-value content-type)
-                    multi-param-style)))
-    req))
+                    multi-param-style)))))
 
 (defn basic-auth-value
   "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)"
