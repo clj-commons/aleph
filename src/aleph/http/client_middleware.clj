@@ -433,7 +433,6 @@
     req
     (-> req
         (dissoc :query-params)
-        (dissoc :multi-param-style)
         (update-in [:query-string]
                    (fn [old-query-string new-query-string]
                      (if-not (empty? old-query-string)
@@ -525,29 +524,31 @@
   [{:keys [form-params json-opts]}]
   (when-not json-enabled?
     (throw (ex-info (str "Can't encode form params as \"application/json\". "
-                      "Cheshire dependency not loaded.")
-             {:type :cheshire-not-loaded
-              :form-params form-params
-              :json-opts json-opts})))
+                         "Cheshire dependency not loaded.")
+                    {:type :cheshire-not-loaded
+                     :form-params form-params
+                     :json-opts json-opts})))
   (json-encode form-params json-opts))
 
-(defmethod coerce-form-params :default [{:keys [content-type form-params
-                                                form-param-encoding]}]
+(defmethod coerce-form-params :default [{:keys [content-type
+                                                form-params
+                                                form-param-encoding
+                                                multi-param-style]
+                                         :or {multi-param-style :default}}]
   (if form-param-encoding
-    (generate-query-string-with-encoding form-params form-param-encoding)
-    (generate-query-string form-params (content-type-value content-type))))
+    (generate-query-string-with-encoding form-params form-param-encoding multi-param-style)
+    (generate-query-string form-params (content-type-value content-type) multi-param-style)))
 
 (defn wrap-form-params
   "Middleware wrapping the submission or form parameters."
   [{:keys [form-params content-type request-method]
     :or {content-type :x-www-form-urlencoded}
     :as req}]
-
   (if (and form-params (#{:post :put :patch} request-method))
     (-> req
-      (dissoc :form-params)
-      (assoc :content-type (content-type-value content-type)
-        :body (coerce-form-params req)))
+        (dissoc :form-params)
+        (assoc :content-type (content-type-value content-type)
+               :body (coerce-form-params req)))
     req))
 
 (defn wrap-url

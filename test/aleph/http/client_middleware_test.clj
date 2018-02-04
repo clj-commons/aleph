@@ -21,12 +21,24 @@
 (deftest test-coerce-form-params
   (is (= "{\"foo\":\"bar\"}" (middleware/coerce-form-params {:content-type :json
                                                              :form-params {:foo :bar}})))
-  (is (= "[\"^ \",\"~:foo\",\"~:bar\"]" (slurp (middleware/coerce-form-params {:content-type :transit+json
-                                                                               :form-params {:foo :bar}}))))
+  (is (= "[\"^ \",\"~:foo\",\"~:bar\"]"
+         (slurp (middleware/coerce-form-params {:content-type :transit+json
+                                                :form-params {:foo :bar}}))))
   (is (= "{:foo :bar}" (middleware/coerce-form-params {:content-type :edn
                                                        :form-params {:foo :bar}})))
   (is (= "foo=%3Abar" (middleware/coerce-form-params {:content-type :default
                                                       :form-params {:foo :bar}})))
+  (is (= "foo=%3Abar&foo=%3Abaz"
+         (middleware/coerce-form-params {:content-type :default
+                                         :form-params {:foo [:bar :baz]}})))
+  (is (= "foo[]=%3Abar&foo[]=%3Abaz"
+         (middleware/coerce-form-params {:content-type :default
+                                         :multi-param-style :array
+                                         :form-params {:foo [:bar :baz]}})))
+  (is (= "foo[0]=%3Abar&foo[1]=%3Abaz"
+         (middleware/coerce-form-params {:content-type :default
+                                         :multi-param-style :indexed
+                                         :form-params {:foo [:bar :baz]}})))
   (is (= (middleware/coerce-form-params {:content-type :default
                                          :form-params {:foo :bar}})
         (middleware/coerce-form-params {:form-params {:foo :bar}}))))
