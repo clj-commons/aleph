@@ -731,30 +731,58 @@
          (into {})
          vals)))
 
+(defn write-cookie-header [cookies cookie-spec req]
+  (if (empty? cookies)
+    req
+    (let [header (->> cookies
+                      (map cookie->netty-cookie)
+                      (write-cookies cookie-spec))]
+      (assoc-in req [:headers cookie-header-name] header))))
+
 (defn add-cookie-header [cookie-store cookie-spec req]
   (let [origin (req->cookie-origin req)
         cookies (->> (get-cookies cookie-store)
                      (filter (partial match-cookie-origin? cookie-spec origin))
                      ;; note that here we rely on cookie store implementation,
                      ;; which might be not the best idea
-                     (reduce-to-unique-cookie-names)
-                     (map cookie->netty-cookie))]
-    (if (empty? cookies)
-      req
-      (let [header (write-cookies cookie-spec cookies)]
-        (assoc-in req [:headers cookie-header-name] header)))))
+                     (reduce-to-unique-cookie-names))]
+    (write-cookie-header cookies cookie-spec req)))
 
-;; TODO read :cookies from request
 (defn wrap-cookies
-  "Middleware that set Cookie header based on the contentn of cookies passed
-   with the request and from cookies storage (when any)"
-  [{:keys [cookie-store cookie-spec]
-    :or {cookie-spec default-cookie-spec}
+  "Middleware that set 'Cookie' header based on the contentn of cookies passed
+   with the request or from cookies storage (when provided). Source for 'Cookie'
+   header content by priorities:
+
+   * 'Cookie' header (already set)
+   * non-empty `:cookies`
+   * non-nil `:cookie-store`
+
+   Each cookie should be represented as a map:
+
+   |:---|:---
+   | name | name of this cookie
+   | value | value of this cookie
+   | domain | specifies allowed hosts to receive the cookie (including subdomains)
+   | path | indicates a URL path that must exist in the requested URL in order to send the 'Cookie' header
+   | http-only? | when set to `true`, cookie can only be accessed by HTTP. Optional, defaults to `false` 
+   | secure? | when set to `true`, cookie can only be transmitted over an encrypted connection. Optional, defaults to `false`
+   | max-age | set maximum age of this cookie in seconds. Options, defaults to UNDEFINED_MAX_AGE."
+  [{:keys [cookie-store cookie-spec cookies]
+    :or {cookie-spec default-cookie-spec
+         cookies '()}
     :as req}]
-  (if (or (nil? cookie-store)
-          (some? (get-in req [:headers cookie-header-name])))
+  (cond
+    (some? (get-in req [:headers cookie-header-name]))
     req
-    (add-cookie-header cookie-store cookie-spec req)))
+
+    (not (empty? cookies))
+    (write-cookie-header cookies cookie-spec req)
+
+    (some? cookie-store)
+    (add-cookie-header cookie-store cookie-spec req)
+
+    :else
+    req))
 
 (defn parse-content-type
   "Parse `s` as an RFC 2616 media type."
