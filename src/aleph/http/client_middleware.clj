@@ -198,7 +198,7 @@
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
-  #{200 201 202 203 204 205 206 207 300 301 302 303 307})
+  #{200 201 202 203 204 205 206 207 300 301 302 303 304 307})
 
 ;; helper methods to determine realm of a response
 (defn success?
