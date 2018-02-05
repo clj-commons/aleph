@@ -17,7 +17,7 @@
    [io.netty.handler.codec.base64 Base64]
    [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
    [java.nio.charset StandardCharsets]
-   [java.net URL URLEncoder UnknownHostException]))
+   [java.net URL URLEncoder URLDecoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -166,7 +166,8 @@
      :server-name (.getHost url-parsed)
      :server-port (when-pos (.getPort url-parsed))
      :uri (url-encode-illegal-characters (.getPath url-parsed))
-     :user-info (.getUserInfo url-parsed)
+     :user-info (when-let [user-info (.getUserInfo url-parsed)]
+                  (URLDecoder/decode user-info))
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 (defn- nest-params
