@@ -35,7 +35,10 @@
     [io.netty.handler.ssl SslContext SslContextBuilder]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
-    [io.netty.resolver AddressResolverGroup NoopAddressResolverGroup]
+    [io.netty.resolver
+     AddressResolverGroup
+     NoopAddressResolverGroup
+     ResolvedAddressTypes]
     [io.netty.resolver.dns DnsNameResolverBuilder]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
@@ -693,6 +696,13 @@
           thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
+(defn convert-address-types [address-types]
+  (case address-types
+    :ipv4-only ResolvedAddressTypes/IPV4_ONLY
+    :ipv6-only ResolvedAddressTypes/IPV6_ONLY
+    :ipv4-preferred ResolvedAddressTypes/IPV4_PREFERRED
+    :ipv6-preferred ResolvedAddressTypes/IPV6_PREFERRED))
+
 ;; xxx: do not require deps when not using?
 ;; xxx: close resolvers when closing connections when necessary
 ;; xxx: accept here event loop instead of event loop group
@@ -704,6 +714,7 @@
    |:--- |:---
    | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to 4096
    | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to 16
+   | `address-types` | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
    | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to 5000
    | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to 0
    | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
@@ -717,7 +728,7 @@
   [^EventLoopGroup client-group
    {:keys [max-payload-size
            max-queries-per-resolve
-           resolved-address-types
+           address-types
            query-timeout
            min-ttl
            max-ttl
@@ -748,7 +759,9 @@
                     (.optResourceEnabled opt-resources-enabled?)
                     (.ndots ndots)
                     (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?))
+                    (.recursionDesired recursion-desired?)
+                    (.resolvedAddressTypes (when (some? address-types)
+                                             (convert-address-types address-types))))
 
             (some? negative-ttl)
             (.negativeTtl negative-ttl)
