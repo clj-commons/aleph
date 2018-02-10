@@ -712,7 +712,8 @@
    | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
    | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to -1
-   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`"
+   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
+   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`"
   [^EventLoopGroup client-group
    {:keys [max-payload-size
            max-queries-per-resolve
@@ -725,7 +726,8 @@
            opt-resources-enabled?
            search-domains
            ndots
-           decode-idn?]
+           decode-idn?
+           recursion-desired?]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -734,7 +736,8 @@
          trace-enabled? false
          opt-resources-enabled? true
          ndots -1
-         decode-idn? true}}]
+         decode-idn? true
+         recursion-desired? true}}]
   (let [b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
                     (.channelType ^Class NioDatagramChannel)
                     (.maxPayloadSize max-payload-size)
@@ -744,7 +747,8 @@
                     (.traceEnabled trace-enabled?)
                     (.optResourceEnabled opt-resources-enabled?)
                     (.ndots ndots)
-                    (.decodeIdn decode-idn?))
+                    (.decodeIdn decode-idn?)
+                    (.recursionDesired recursion-desired?))
 
             (some? negative-ttl)
             (.negativeTtl negative-ttl)
@@ -798,11 +802,9 @@
                            (= :default name-resolver) nil
                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
                            (= :dns name-resolver) (create-dns-resolver client-group {})
-
                            (and (map? name-resolver)
                                 (= :dns (:resolver name-resolver)))
                            (create-dns-resolver client-group name-resolver)
-
                            (instance? name-resolver AddressResolverGroup) name-resolver))
              b (doto (Bootstrap.)
                  (.option ChannelOption/SO_REUSEADDR true)
