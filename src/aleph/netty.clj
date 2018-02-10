@@ -699,7 +699,7 @@
 (defn create-dns-resolver
   "Creates instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
 
-   Options are a map of:
+   DNS options are a map of:
 
    |:--- |:---
    | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to 4096
@@ -797,6 +797,7 @@
                          (cond
                            (= :default name-resolver) nil
                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                           (= :dns name-resolver) (create-dns-resolver client-group {})
 
                            (and (map? name-resolver)
                                 (= :dns (:resolver name-resolver)))
