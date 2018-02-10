@@ -28,11 +28,15 @@
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
-    [io.netty.channel.socket.nio NioServerSocketChannel
-     NioSocketChannel]
+    [io.netty.channel.socket.nio
+     NioServerSocketChannel
+     NioSocketChannel
+     NioDatagramChannel]
     [io.netty.handler.ssl SslContext SslContextBuilder]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
+    [io.netty.resolver AddressResolverGroup NoopAddressResolverGroup]
+    [io.netty.resolver.dns DnsNameResolverBuilder]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
     [java.net SocketAddress InetSocketAddress]
@@ -51,7 +55,8 @@
      Slf4JLoggerFactory
      JdkLoggerFactory]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]))
+    [java.security PrivateKey]
+    [aleph.utils DnsAddressResolverGroup]))
 
 ;;;
 
@@ -688,46 +693,77 @@
           thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
+;; xxx: pass all options
+;; xxx: documentation
+;; xxx: do not require deps when not using?
+;; xxx: close resolvers when closing connections when necessary
+(defn create-dns-resolver [^EventLoopGroup client-group]
+  (let [b (doto (DnsNameResolverBuilder. (.next client-group))
+            (.channelType ^Class NioDatagramChannel))]
+    (DnsAddressResolverGroup. (.build b))))
+
 (defn create-client
-  [pipeline-builder
-   ^SslContext ssl-context
-   bootstrap-transform
-   ^SocketAddress remote-address
-   ^SocketAddress local-address
-   epoll?]
-  (let [^Class
-        channel (if (and epoll? (epoll-available?))
-                  EpollSocketChannel
-                  NioSocketChannel)
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    remote-address
+    local-address
+    epoll?]
+   (create-client pipeline-builder
+                  ssl-context
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  nil))
+  ([pipeline-builder
+    ^SslContext ssl-context
+    bootstrap-transform
+    ^SocketAddress remote-address
+    ^SocketAddress local-address
+    epoll?
+    name-resolver]
+   (let [^Class
+         channel (if (and epoll? (epoll-available?))
+                   EpollSocketChannel
+                   NioSocketChannel)
 
-        pipeline-builder (if ssl-context
-                           (fn [^ChannelPipeline p]
-                             (.addLast p "ssl-handler"
-                               (.newHandler ^SslContext ssl-context
-                                 (-> p .channel .alloc)
-                                 (.getHostName ^InetSocketAddress remote-address)
-                                 (.getPort ^InetSocketAddress remote-address)))
-                             (pipeline-builder p))
-                           pipeline-builder)]
-    (try
-      (let [b (doto (Bootstrap.)
-                (.option ChannelOption/SO_REUSEADDR true)
-                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group (if (and epoll? (epoll-available?))
-                          @epoll-client-group
-                          @nio-client-group))
-                (.channel channel)
-                (.handler (pipeline-initializer pipeline-builder))
-                bootstrap-transform)
+         pipeline-builder (if ssl-context
+                            (fn [^ChannelPipeline p]
+                              (.addLast p "ssl-handler"
+                                        (.newHandler ^SslContext ssl-context
+                                                     (-> p .channel .alloc)
+                                                     (.getHostName ^InetSocketAddress remote-address)
+                                                     (.getPort ^InetSocketAddress remote-address)))
+                              (pipeline-builder p))
+                            pipeline-builder)]
+     (try
+       (let [client-group (if (and epoll? (epoll-available?))
+                            @epoll-client-group
+                            @nio-client-group)
+             resolver' (when (some? name-resolver)
+                         (cond
+                           (= :default name-resolver) nil
+                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                           (= :dns name-resolver) (create-dns-resolver client-group)
+                           (instance? name-resolver AddressResolverGroup) name-resolver))
+             b (doto (Bootstrap.)
+                 (.option ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group client-group)
+                 (.channel channel)
+                 (.handler (pipeline-initializer pipeline-builder))
+                 (.resolver resolver')
+                 bootstrap-transform)
 
-            f (if local-address
-                (.connect b remote-address local-address)
-                (.connect b remote-address))]
+             f (if local-address
+                 (.connect b remote-address local-address)
+                 (.connect b remote-address))]
 
-        (d/chain' (wrap-future f)
-          (fn [_]
-            (let [ch (.channel ^ChannelFuture f)]
-              ch)))))))
+         (d/chain' (wrap-future f)
+                   (fn [_]
+                     (let [ch (.channel ^ChannelFuture f)]
+                       ch))))))))
 
 (defn start-server
   [pipeline-builder

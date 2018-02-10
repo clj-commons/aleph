@@ -272,6 +272,7 @@
    {:keys [local-address
            raw-stream?
            bootstrap-transform
+           name-resolver
            pipeline-transform
            keep-alive?
            insecure?
@@ -283,7 +284,8 @@
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
-         epoll? false}
+         epoll? false
+         name-resolver :default}
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
@@ -304,7 +306,8 @@
             bootstrap-transform
             remote-address
             local-address
-            epoll?)]
+            epoll?
+            name-resolver)]
     (d/chain' c
       (fn [^Channel ch]
 
