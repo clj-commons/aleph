@@ -693,13 +693,65 @@
           thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
-;; xxx: pass all options
-;; xxx: documentation
 ;; xxx: do not require deps when not using?
 ;; xxx: close resolvers when closing connections when necessary
-(defn create-dns-resolver [^EventLoopGroup client-group]
-  (let [b (doto (DnsNameResolverBuilder. (.next client-group))
-            (.channelType ^Class NioDatagramChannel))]
+;; xxx: accept here event loop instead of event loop group
+(defn create-dns-resolver
+  "Creates instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
+
+   Options are a map of:
+
+   |:--- |:---
+   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to 4096
+   | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to 16
+   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to 5000
+   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to 0
+   | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
+   | `negative-ttl` | sets the TTL of the cache for the failed DNS queries (in seconds)
+   | `trace-enabled?` | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
+   | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
+   | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
+   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to -1
+   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`"
+  [^EventLoopGroup client-group
+   {:keys [max-payload-size
+           max-queries-per-resolve
+           resolved-address-types
+           query-timeout
+           min-ttl
+           max-ttl
+           negative-ttl
+           trace-enabled?
+           opt-resources-enabled?
+           search-domains
+           ndots
+           decode-idn?]
+    :or {max-payload-size 4096
+         max-queries-per-resolve 16
+         query-timeout 5000
+         min-ttl 0
+         max-ttl Integer/MAX_VALUE
+         trace-enabled? false
+         opt-resources-enabled? true
+         ndots -1
+         decode-idn? true}}]
+  (let [b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
+                    (.channelType ^Class NioDatagramChannel)
+                    (.maxPayloadSize max-payload-size)
+                    (.maxQueriesPerResolve max-queries-per-resolve)
+                    (.queryTimeoutMillis query-timeout)
+                    (.ttl min-ttl max-ttl)
+                    (.traceEnabled trace-enabled?)
+                    (.optResourceEnabled opt-resources-enabled?)
+                    (.ndots ndots)
+                    (.decodeIdn decode-idn?))
+
+            (some? negative-ttl)
+            (.negativeTtl negative-ttl)
+
+            (and (some? search-domains)
+                 (not (empty? search-domains)))
+            (.searchDomains search-domains))]
     (DnsAddressResolverGroup. (.build b))))
 
 (defn create-client
@@ -745,7 +797,11 @@
                          (cond
                            (= :default name-resolver) nil
                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                           (= :dns name-resolver) (create-dns-resolver client-group)
+
+                           (and (map? name-resolver)
+                                (= :dns (:resolver name-resolver)))
+                           (create-dns-resolver client-group name-resolver)
+
                            (instance? name-resolver AddressResolverGroup) name-resolver))
              b (doto (Bootstrap.)
                  (.option ChannelOption/SO_REUSEADDR true)
