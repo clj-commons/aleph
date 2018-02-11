@@ -703,9 +703,8 @@
     :ipv4-preferred ResolvedAddressTypes/IPV4_PREFERRED
     :ipv6-preferred ResolvedAddressTypes/IPV6_PREFERRED))
 
-;; reuse dns resolver for all connections in the pool
-(defn create-dns-resolver
-  "Creates instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
+(defn dns-resolver
+  "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
 
    DNS options are a map of:
 
@@ -723,8 +722,7 @@
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`"
-  [^EventLoopGroup event-loop-group
-   {:keys [max-payload-size
+  [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
            query-timeout
@@ -747,7 +745,11 @@
          ndots -1
          decode-idn? true
          recursion-desired? true}}]
-  (let [b (cond-> (doto (DnsNameResolverBuilder. (.next event-loop-group))
+  (let [^EventLoopGroup
+        client-group (if (epoll-available?)
+                       @epoll-client-group
+                       @nio-client-group)
+        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
                     (.channelType ^Class NioDatagramChannel)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
@@ -768,8 +770,9 @@
                  (not (empty? search-domains)))
             (.searchDomains search-domains))
         resolver (.build b)]
+    ;; xxx: should be done on pool's shutdown, not here
     (d/chain'
-     (wrap-future (.terminationFuture event-loop-group))
+     (wrap-future (.terminationFuture client-group))
      (fn [_]
        (.close resolver)))
     (DnsAddressResolverGroup. resolver)))
@@ -815,21 +818,9 @@
                             @nio-client-group)
              resolver' (when (some? name-resolver)
                          (cond
-                           (= :default name-resolver)
-                           nil
-
-                           (= :noop name-resolver)
-                           NoopAddressResolverGroup/INSTANCE
-
-                           (= :dns name-resolver)
-                           (create-dns-resolver client-group {})
-
-                           (and (map? name-resolver)
-                                (= :dns (:resolver name-resolver)))
-                           (create-dns-resolver client-group name-resolver)
-
-                           (instance? name-resolver AddressResolverGroup)
-                           name-resolver))
+                           (= :default name-resolver) nil
+                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                           (instance? name-resolver AddressResolverGroup) name-resolver))
              b (doto (Bootstrap.)
                  (.option ChannelOption/SO_REUSEADDR true)
                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)

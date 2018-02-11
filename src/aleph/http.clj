@@ -8,7 +8,8 @@
     [aleph.http
      [server :as server]
      [client :as client]
-     [client-middleware :as middleware]])
+     [client-middleware :as middleware]]
+    [aleph.netty :as netty])
   (:import
     [io.aleph.dirigiste Pools]
     [aleph.utils
@@ -94,6 +95,7 @@
    | `stats-callback` | an optional callback which is invoked with a map of hosts onto usage statistics every ten seconds
    | `max-queue-size` | the maximum number of pending acquires from the pool that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`, defaults to `65536`
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
+   | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/create-dns-resolver`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instace
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -108,12 +110,12 @@
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`
-   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Supportted options are: `:noop` (do not resolve addresses), `:dns` (async DNS resolver with advanced settings) or just pass an instance of `io.netty.resolver.AddressResolverGroup` you need
-   | `dns-options` | async DNS resolver settings, for more infomration check aleph.netty/create-dns-resolver. When set, ignores `name-resolver` setting in favor of `:dns`"
+   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used"
   [{:keys [connections-per-host
            total-connections
            target-utilization
            connection-options
+           dns-options
            stats-callback
            control-period
            middleware
@@ -124,13 +126,16 @@
          control-period 60000
          middleware middleware/wrap-request
          max-queue-size 65536}}]
-  (let [p (promise)
+  (let [conn-options' (cond-> connection-options
+                        (some? dns-options)
+                        (assoc :name-resolver (netty/dns-resolver dns-options)))
+        p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
                             (let [c (promise)
                                   conn (create-connection
                                          host
-                                         connection-options
+                                         conn-options'
                                          middleware
                                          #(flow/dispose @p host [@c]))]
                               (deliver c conn)

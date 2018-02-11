@@ -273,7 +273,6 @@
            raw-stream?
            bootstrap-transform
            name-resolver
-           dns-options
            pipeline-transform
            keep-alive?
            insecure?
@@ -288,11 +287,6 @@
          epoll? false
          name-resolver :default}
     :as options}]
-  (assert (or (nil? dns-options)
-              (or (nil? (:name-resolver options))
-                  (= :dns name-resolver)))
-          (format "`:name-resolver` set to '%s' and `dns-options` are mutually exclusive"
-                  name-resolver))
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
         host (.getHostName remote-address)
@@ -313,9 +307,7 @@
             remote-address
             local-address
             epoll?
-            (if (some? dns-options)
-              (assoc dns-options :resolver :dns)
-              name-resolver))]
+            name-resolver)]
     (d/chain' c
       (fn [^Channel ch]
 
