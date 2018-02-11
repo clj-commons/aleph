@@ -16,7 +16,7 @@
     [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
     [io.netty.channel
      Channel ChannelFuture ChannelOption
-     ChannelPipeline EventLoopGroup
+     ChannelPipeline EventLoop EventLoopGroup
      ChannelHandler FileRegion
      ChannelInboundHandler
      ChannelOutboundHandler
@@ -705,27 +705,26 @@
 
 ;; xxx: do not require deps when not using?
 ;; xxx: close resolvers when closing connections when necessary
-;; xxx: accept here event loop instead of event loop group
 (defn create-dns-resolver
   "Creates instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
 
    DNS options are a map of:
 
    |:--- |:---
-   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to 4096
-   | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to 16
+   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to `4096`
+   | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to `16`
    | `address-types` | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
-   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to 5000
-   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to 0
+   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to `5000`
+   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to `0`
    | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
    | `negative-ttl` | sets the TTL of the cache for the failed DNS queries (in seconds)
    | `trace-enabled?` | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
    | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
    | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
-   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to -1
+   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`"
-  [^EventLoopGroup client-group
+  [^EventLoop event-loop
    {:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -749,7 +748,7 @@
          ndots -1
          decode-idn? true
          recursion-desired? true}}]
-  (let [b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
+  (let [b (cond-> (doto (DnsNameResolverBuilder. event-loop)
                     (.channelType ^Class NioDatagramChannel)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
@@ -812,13 +811,21 @@
                             @nio-client-group)
              resolver' (when (some? name-resolver)
                          (cond
-                           (= :default name-resolver) nil
-                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                           (= :dns name-resolver) (create-dns-resolver client-group {})
+                           (= :default name-resolver)
+                           nil
+
+                           (= :noop name-resolver)
+                           NoopAddressResolverGroup/INSTANCE
+
+                           (= :dns name-resolver)
+                           (create-dns-resolver (.next ^EventLoopGroup client-group) {})
+
                            (and (map? name-resolver)
                                 (= :dns (:resolver name-resolver)))
-                           (create-dns-resolver client-group name-resolver)
-                           (instance? name-resolver AddressResolverGroup) name-resolver))
+                           (create-dns-resolver (.next ^EventLoopGroup client-group) name-resolver)
+
+                           (instance? name-resolver AddressResolverGroup)
+                           name-resolver))
              b (doto (Bootstrap.)
                  (.option ChannelOption/SO_REUSEADDR true)
                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)

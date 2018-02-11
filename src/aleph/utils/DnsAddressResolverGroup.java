@@ -14,7 +14,7 @@ import java.net.InetSocketAddress;
 // this is just a simple workaround of how to create AddressResolverGroup from
 // the given instance of DNS-based NameResolver
 // there is a https://github.com/netty/netty/blob/netty-4.1.17.Final/resolver-dns/src/main/java/io/netty/resolver/dns/DnsAddressResolverGroup.java
-// but it doesn't not provide enough flexibility as it uses DnsNameResolverBuilder internally,
+// but it does not provide enough flexibility as it uses DnsNameResolverBuilder internally,
 // shadowing pretty much all settings that DNS resolver exposes
 public class DnsAddressResolverGroup extends AddressResolverGroup<InetSocketAddress> {
 

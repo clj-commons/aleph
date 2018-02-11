@@ -107,7 +107,9 @@
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`"
+   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`
+   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Supportted options are: `:noop` (do not resolve addresses), `:dns` (async DNS resolver with advanced settings) or just pass an instance of `io.netty.resolver.AddressResolverGroup` you need
+   | `dns-options` | async DNS resolver settings, for more infomration check aleph.netty/create-dns-resolver. When set, ignores `name-resolver` setting in favor of `:dns`"
   [{:keys [connections-per-host
            total-connections
            target-utilization
