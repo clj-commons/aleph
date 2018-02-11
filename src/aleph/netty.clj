@@ -703,8 +703,7 @@
     :ipv4-preferred ResolvedAddressTypes/IPV4_PREFERRED
     :ipv6-preferred ResolvedAddressTypes/IPV6_PREFERRED))
 
-;; xxx: do not require deps when not using?
-;; xxx: close resolvers when closing connections when necessary
+;; reuse dns resolver for all connections in the pool
 (defn create-dns-resolver
   "Creates instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
 
@@ -724,7 +723,7 @@
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`"
-  [^EventLoop event-loop
+  [^EventLoopGroup event-loop-group
    {:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -748,7 +747,7 @@
          ndots -1
          decode-idn? true
          recursion-desired? true}}]
-  (let [b (cond-> (doto (DnsNameResolverBuilder. event-loop)
+  (let [b (cond-> (doto (DnsNameResolverBuilder. (.next event-loop-group))
                     (.channelType ^Class NioDatagramChannel)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
@@ -767,8 +766,13 @@
 
             (and (some? search-domains)
                  (not (empty? search-domains)))
-            (.searchDomains search-domains))]
-    (DnsAddressResolverGroup. (.build b))))
+            (.searchDomains search-domains))
+        resolver (.build b)]
+    (d/chain'
+     (wrap-future (.terminationFuture event-loop-group))
+     (fn [_]
+       (.close resolver)))
+    (DnsAddressResolverGroup. resolver)))
 
 (defn create-client
   ([pipeline-builder
@@ -818,11 +822,11 @@
                            NoopAddressResolverGroup/INSTANCE
 
                            (= :dns name-resolver)
-                           (create-dns-resolver (.next ^EventLoopGroup client-group) {})
+                           (create-dns-resolver client-group {})
 
                            (and (map? name-resolver)
                                 (= :dns (:resolver name-resolver)))
-                           (create-dns-resolver (.next ^EventLoopGroup client-group) name-resolver)
+                           (create-dns-resolver client-group name-resolver)
 
                            (instance? name-resolver AddressResolverGroup)
                            name-resolver))
