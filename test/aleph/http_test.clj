@@ -2,25 +2,28 @@
   (:use
     [clojure test])
   (:require
-    [clojure.java.io :as io]
-    [aleph
-     [http :as http]
-     [netty :as netty]
-     [flow :as flow]]
-    [byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s])
+   [clojure.java.io :as io]
+   [aleph
+    [http :as http]
+    [netty :as netty]
+    [flow :as flow]]
+   [byte-streams :as bs]
+   [manifold.deferred :as d]
+   [manifold.stream :as s])
   (:import
-    [java.util.concurrent
-     Executors]
-    [java.io
-     File
-     ByteArrayInputStream]
-    [java.util.concurrent
-     TimeoutException]
-    [aleph.utils
-     ConnectionTimeoutException
-     RequestTimeoutException]))
+   [java.util.concurrent
+    Executors]
+   [java.io
+    File
+    ByteArrayInputStream]
+   [java.util.zip
+    GZIPInputStream
+    ZipException]
+   [java.util.concurrent
+    TimeoutException]
+   [aleph.utils
+    ConnectionTimeoutException
+    RequestTimeoutException]))
 
 ;;;
 
@@ -38,15 +41,15 @@
 
 (defn http-get
   ([url]
-    (http-get url nil))
+   (http-get url nil))
   ([url options]
-    (http/get url (merge (default-options) {:pool *pool*} options))))
+   (http/get url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-put
   ([url]
-    (http-put url nil))
+   (http-put url nil))
   ([url options]
-    (http/put url (merge (default-options) {:pool *pool*} options))))
+   (http/put url (merge (default-options) {:pool *pool*} options))))
 
 (def port 8082)
 
@@ -192,12 +195,15 @@
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
-    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
-      (is
-       (= "gzip"
-          (get-in @(http-get (str "http://localhost:" port "/" path)
-                             {:headers {:accept-encoding "gzip"}})
-                  [:headers :content-encoding]))))))
+    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)
+            :let [resp @(http-get (str "http://localhost:" port "/" path)
+                                  {:headers {:accept-encoding "gzip"}})
+                  unzipped (try
+                             (bs/to-string (GZIPInputStream. (:body resp)))
+                             (catch ZipException _ nil))]]
+      (is (= "gzip" (get-in resp [:headers :content-encoding])) 'content-encoding-header-is-set)
+      (is (some? unzipped) 'should-be-valid-gzip)
+      (is (= result unzipped) 'decompressed-body-is-correct))))
 
 (deftest test-ssl-response-formats
   (with-ssl-handler basic-handler
