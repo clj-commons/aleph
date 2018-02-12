@@ -26,6 +26,7 @@
      Channel ChannelFuture ChannelHandlerContext
      ChannelFutureListener ChannelHandler
      ChannelPipeline]
+    [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
      DefaultHttpContent
@@ -425,7 +426,8 @@
             false))
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when compression?
-            (.addAfter ^ChannelPipeline % "http-server" "deflater" (HttpContentCompressor.))))
+            (.addAfter ^ChannelPipeline %1 "http-server" "deflater" (HttpContentCompressor.))
+            (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
         pipeline-transform))))
 
 ;;;
