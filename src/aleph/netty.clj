@@ -16,7 +16,7 @@
     [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
     [io.netty.channel
      Channel ChannelFuture ChannelOption
-     ChannelPipeline EventLoop EventLoopGroup
+     ChannelPipeline EventLoopGroup
      ChannelHandler FileRegion
      ChannelInboundHandler
      ChannelOutboundHandler
