@@ -25,7 +25,7 @@
     [io.netty.channel
      Channel ChannelFuture ChannelHandlerContext
      ChannelFutureListener ChannelHandler
-     ChannelPipeline DefaultFileRegion]
+     ChannelPipeline]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
      DefaultHttpContent
