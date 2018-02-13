@@ -70,6 +70,15 @@
   (is (= "foo={:bar \"baz\"}" (req->body-decoded {:method :post
                                                   :flatten-nested-form-params false
                                                   :form-params {:foo {:bar "baz"}}})))
+  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:method :post
+                                                  :flatten-nested-keys []
+                                                  :form-params {:foo {:bar "baz"}}})))
+  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:method :post
+                                                  :flatten-nested-keys [:query-params]
+                                                  :form-params {:foo {:bar "baz"}}})))
+  (is (= "foo[bar]=baz" (req->body-decoded {:method :post
+                                            :flatten-nested-keys [:form-params]
+                                            :form-params {:foo {:bar "baz"}}})))
   (is (= "{\"foo\":{\"bar\":\"baz\"}}"
          (req->body-raw {:method :post
                          :content-type :json

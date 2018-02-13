@@ -187,18 +187,25 @@
 
 (defn wrap-nested-params
   "Middleware wrapping nested parameters for query strings."
-  [{:keys [content-type] :as req}]
-  (let [default-content-type? (or (nil? content-type)
-                                  (= content-type :x-www-form-urlencoded))
+  [{:keys [content-type flatten-nested-keys] :as req}]
+  (when (and (some? flatten-nested-keys)
+             (or (some? (opt req :ignore-nested-query-string))
+                 (some? (opt req :flatten-nested-form-params))))
+    (throw (IllegalArgumentException.
+            (str "only :flatten-nested-keys or :ignore-nested-query-string/"
+                 ":flatten-nested-keys may be specified, not both"))))
+  (let [form-urlencoded? (or (nil? content-type)
+                             (= content-type :x-www-form-urlencoded))
         flatten-form? (opt req :flatten-nested-form-params)
-        nested-keys (cond-> []
-                      (not (opt req :ignore-nested-query-string))
-                      (conj :query-params)
-                      
-                      (and default-content-type?
-                           (or (nil? flatten-form?)
-                               (true? flatten-form?)))
-                      (conj :form-params))]
+        nested-keys (or flatten-nested-keys
+                        (cond-> []
+                          (not (opt req :ignore-nested-query-string))
+                          (conj :query-params)
+
+                          (and form-urlencoded?
+                               (or (nil? flatten-form?)
+                                   (true? flatten-form?)))
+                          (conj :form-params)))]
     (reduce nest-params req nested-keys)))
 
 ;; Statuses for which clj-http will not throw an exception
