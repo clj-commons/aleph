@@ -41,15 +41,15 @@
 
 (defn http-get
   ([url]
-   (http-get url nil))
+    (http-get url nil))
   ([url options]
-   (http/get url (merge (default-options) {:pool *pool*} options))))
+    (http/get url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-put
   ([url]
-   (http-put url nil))
+    (http-put url nil))
   ([url options]
-   (http/put url (merge (default-options) {:pool *pool*} options))))
+    (http/put url (merge (default-options) {:pool *pool*} options))))
 
 (def port 8082)
 
