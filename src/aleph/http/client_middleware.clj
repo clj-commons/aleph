@@ -188,13 +188,12 @@
 (defn wrap-nested-params
   "Middleware wrapping nested parameters for query strings."
   [{:keys [content-type] :as req}]
-  (if (or (nil? content-type)
-          (= content-type :x-www-form-urlencoded))
-    (reduce
-     nest-params
-     req
-     [:query-params :form-params])
-    req))
+  (let [default-content-type? (or (nil? content-type)
+                                  (= content-type :x-www-form-urlencoded))
+        nested-keys (cond-> [:query-params]
+                      default-content-type?
+                      (conj :form-params))]
+    (reduce nest-params req nested-keys)))
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
