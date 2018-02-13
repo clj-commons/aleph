@@ -64,6 +64,12 @@
                                                   :ignore-nested-query-string true})))
   (is (= "foo[bar]=baz" (req->body-decoded {:method :post
                                             :form-params {:foo {:bar "baz"}}})))
+  (is (= "foo[bar]=baz" (req->body-decoded {:method :post
+                                            :flatten-nested-form-params true
+                                            :form-params {:foo {:bar "baz"}}})))
+  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:method :post
+                                                  :flatten-nested-form-params false
+                                                  :form-params {:foo {:bar "baz"}}})))
   (is (= "{\"foo\":{\"bar\":\"baz\"}}"
          (req->body-raw {:method :post
                          :content-type :json
