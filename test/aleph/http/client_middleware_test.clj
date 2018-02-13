@@ -58,6 +58,10 @@
   (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}})))
   (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}
                                             :content-type :json})))
+  (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}
+                                            :ignore-nested-query-string false})))
+  (is (= "foo={:bar \"baz\"}" (req->query-string {:query-params {:foo {:bar "baz"}}
+                                                  :ignore-nested-query-string true})))
   (is (= "foo[bar]=baz" (req->body-decoded {:method :post
                                             :form-params {:foo {:bar "baz"}}})))
   (is (= "{\"foo\":{\"bar\":\"baz\"}}"

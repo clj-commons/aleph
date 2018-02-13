@@ -190,7 +190,10 @@
   [{:keys [content-type] :as req}]
   (let [default-content-type? (or (nil? content-type)
                                   (= content-type :x-www-form-urlencoded))
-        nested-keys (cond-> [:query-params]
+        nested-keys (cond-> []
+                      (not (opt req :ignore-nested-query-string))
+                      (conj :query-params)
+                      
                       default-content-type?
                       (conj :form-params))]
     (reduce nest-params req nested-keys)))
