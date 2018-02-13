@@ -43,10 +43,15 @@
                                          :form-params {:foo :bar}})
         (middleware/coerce-form-params {:form-params {:foo :bar}}))))
 
+(defn req->query-string [req]
+  (-> (reduce #(%2 %1) req middleware/default-middleware)
+      :query-string
+      URLDecoder/decode))
+
 (deftest test-nested-query-params
-  (let [req {:query-params {:foo {:bar "baz"}}}
-        {:keys [query-string]} (reduce #(%2 %1) req middleware/default-middleware)]
-    (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
+  (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}})))
+  (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}
+                                            :content-type :json}))))
 
 (deftest test-query-string-multi-param
   (is (= "name=John" (middleware/generate-query-string {:name "John"})))
