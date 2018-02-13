@@ -48,10 +48,22 @@
       :query-string
       URLDecoder/decode))
 
-(deftest test-nested-query-params
+(defn req->body-raw [req]
+  (:body (reduce #(%2 %1) req middleware/default-middleware)))
+
+(defn req->body-decoded [req]
+  (URLDecoder/decode (req->body-raw req)))
+
+(deftest test-nested-params
   (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}})))
   (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}
-                                            :content-type :json}))))
+                                            :content-type :json})))
+  (is (= "foo[bar]=baz" (req->body-decoded {:method :post
+                                            :form-params {:foo {:bar "baz"}}})))
+  (is (= "{\"foo\":{\"bar\":\"baz\"}}"
+         (req->body-raw {:method :post
+                         :content-type :json
+                         :form-params {:foo {:bar "baz"}}}))))
 
 (deftest test-query-string-multi-param
   (is (= "name=John" (middleware/generate-query-string {:name "John"})))
