@@ -39,10 +39,14 @@
      AddressResolverGroup
      NoopAddressResolverGroup
      ResolvedAddressTypes]
-    [io.netty.resolver.dns DnsNameResolverBuilder]
+    [io.netty.resolver.dns
+     DnsNameResolverBuilder
+     DnsServerAddressStreamProvider
+     SingletonDnsServerAddressStreamProvider
+     SequentialDnsServerAddressStreamProvider]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
-    [java.net SocketAddress InetSocketAddress]
+    [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
      GenericFutureListener Future DefaultThreadFactory]
     [java.io InputStream File]
@@ -703,6 +707,30 @@
     :ipv4-preferred ResolvedAddressTypes/IPV4_PREFERRED
     :ipv6-preferred ResolvedAddressTypes/IPV6_PREFERRED))
 
+(def dns-default-port 53)
+
+(defn dns-name-servers-provider [servers]
+  (let [addresses (->> servers
+                       (map (fn [server]
+                              (cond
+                                (instance? InetSocketAddress server)
+                                server
+
+                                (string? server)
+                                (let [^URI uri (URI. (str "dns://" server))
+                                      port (.getPort uri)
+                                      port' (int (if (= -1 port) dns-default-port port))]
+                                  (InetSocketAddress. (.getHost uri) port'))
+
+                                :else
+                                (throw
+                                 (IllegalArgumentException.
+                                  (format "Don't know how to create InetSocketAddress from '%s'"
+                                          server)))))))]
+    (if (= 1 (count addresses))
+      (SingletonDnsServerAddressStreamProvider. (first addresses))
+      (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
+
 (defn dns-resolver
   "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
 
@@ -721,7 +749,8 @@
    | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
-   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`"
+   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -734,7 +763,8 @@
            search-domains
            ndots
            decode-idn?
-           recursion-desired?]
+           recursion-desired?
+           name-servers]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -749,6 +779,7 @@
         client-group (if (epoll-available?)
                        @epoll-client-group
                        @nio-client-group)
+
         b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
                     (.channelType ^Class NioDatagramChannel)
                     (.maxPayloadSize max-payload-size)
@@ -768,7 +799,12 @@
 
             (and (some? search-domains)
                  (not (empty? search-domains)))
-            (.searchDomains search-domains))
+            (.searchDomains search-domains)
+
+            (and (some? name-servers)
+                 (not (empty? name-servers)))
+            (.nameServerProvider ^DnsServerAddressStreamProvider
+                                 (dns-name-servers-provider name-servers)))
         resolver (.build b)]
     ;; xxx: should be done on pool's shutdown, not here
     (d/chain'
@@ -820,7 +856,7 @@
                          (cond
                            (= :default name-resolver) nil
                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                           (instance? name-resolver AddressResolverGroup) name-resolver))
+                           (instance? AddressResolverGroup name-resolver) name-resolver))
              b (doto (Bootstrap.)
                  (.option ChannelOption/SO_REUSEADDR true)
                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
