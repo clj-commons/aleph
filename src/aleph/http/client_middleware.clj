@@ -17,7 +17,7 @@
    [io.netty.handler.codec.base64 Base64]
    [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
    [java.nio.charset StandardCharsets]
-   [java.net URL URLEncoder UnknownHostException]))
+   [java.net URL URLEncoder URLDecoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -167,7 +167,8 @@
      :server-name (.getHost url-parsed)
      :server-port (when-pos (.getPort url-parsed))
      :uri (url-encode-illegal-characters (.getPath url-parsed))
-     :user-info (.getUserInfo url-parsed)
+     :user-info (when-let [user-info (.getUserInfo url-parsed)]
+                  (URLDecoder/decode user-info))
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 (defn- nest-params
@@ -211,7 +212,7 @@
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
-  #{200 201 202 203 204 205 206 207 300 301 302 303 307})
+  #{200 201 202 203 204 205 206 207 300 301 302 303 304 307})
 
 ;; helper methods to determine realm of a response
 (defn success?
@@ -557,7 +558,8 @@
   [{:keys [form-params content-type request-method]
     :or {content-type :x-www-form-urlencoded}
     :as req}]
-  (if (and form-params (#{:post :put :patch} request-method))
+
+  (if (and form-params (#{:post :put :patch :delete} request-method))
     (-> req
         (dissoc :form-params)
         (assoc :content-type (content-type-value content-type)
