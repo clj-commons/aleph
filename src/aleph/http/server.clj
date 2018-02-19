@@ -35,7 +35,7 @@
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent]
+     LastHttpContent HttpServerExpectContinueHandler]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
      WebSocketServerHandshaker
@@ -238,12 +238,6 @@
 
         process-request
         (fn [ctx req]
-          (when (HttpHeaders/is100ContinueExpected req)
-            (netty/write-and-flush ctx
-              (DefaultFullHttpResponse.
-                HttpVersion/HTTP_1_1
-                HttpResponseStatus/CONTINUE)))
-
           (if (HttpHeaders/isTransferEncodingChunked req)
             (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
               (reset! stream s)
@@ -375,13 +369,6 @@
           (if (invalid-request? msg)
             (reject-invalid-request ctx msg)
             (let [req msg]
-
-              (when (HttpHeaders/is100ContinueExpected req)
-                (.writeAndFlush ctx
-                  (DefaultFullHttpResponse.
-                    HttpVersion/HTTP_1_1
-                    HttpResponseStatus/CONTINUE)))
-
               (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
                 (reset! stream s)
                 (handle-request ctx req s))))
@@ -423,6 +410,7 @@
             max-header-size
             max-chunk-size
             false))
+        (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when compression?
             (.addAfter ^ChannelPipeline % "http-server" "deflater" (HttpContentCompressor.))))
@@ -571,6 +559,7 @@
               (fn [_]
                 (let [pipeline (.pipeline ch)]
                   (.remove pipeline "request-handler")
+                  (.remove pipeline "continue-handler")
                   (.addLast pipeline "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
                   (.addLast pipeline "websocket-handler" handler)
                   s)))
