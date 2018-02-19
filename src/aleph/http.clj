@@ -41,7 +41,8 @@
    | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `4096`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `8192`
-   | `compression?` | when `true` enables http compression, defaults to `false`"
+   | `compression?` | when `true` enables http compression, defaults to `false`
+   | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables comporession regardless of `compression?` flag"
   [handler
    {:keys [port socket-address executor raw-stream? bootstrap-transform pipeline-transform ssl-context request-buffer-size shutdown-executor? rejected-handler]
     :as options}]

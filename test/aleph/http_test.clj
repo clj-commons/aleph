@@ -166,8 +166,11 @@
      ~@body))
 
 (defmacro with-compressed-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port port :compression? true})
-     ~@body))
+  `(do
+     (with-server (http/start-server ~handler {:port port :compression? true})
+       ~@body)
+     (with-server (http/start-server ~handler {:port port :compression-level 3})
+       ~@body)))
 
 (defmacro with-ssl-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port, :ssl-context (netty/self-signed-ssl-context)})
