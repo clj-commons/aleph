@@ -43,6 +43,78 @@
                                          :form-params {:foo :bar}})
         (middleware/coerce-form-params {:form-params {:foo :bar}}))))
 
+(deftest test-nested-query-params
+  (let [req {:query-params {:foo {:bar "baz"}}}
+        {:keys [query-string]} (reduce #(%2 %1) req middleware/default-middleware)]
+    (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
+
+(deftest test-cookie-store
+  (let [c1 {:name "id"
+            :value "42"
+            :domain "domain.com"
+            :path "/"
+            :max-age nil
+            :http-only? true
+            :secure? false}
+        c2 {:name "track"
+            :value "off"
+            :domain "domain.com"
+            :path "/"
+            :max-age nil
+            :http-only? true
+            :secure? true}
+        c3 {:name "track"
+            :value "on"
+            :domain "domain.com"
+            :path "/blog"
+            :max-age nil
+            :http-only? true
+            :secure? true}
+        c4 {:name "subdomain"
+            :value "detect"
+            :domain "subdomain.com"}
+        c5 (middleware/decode-set-cookie-header "outdated=val; Domain=outdomain.com; Expires=Wed, 21 Oct 2015 07:28:00 GMT")
+        cs (middleware/in-memory-cookie-store [c1 c2 c3 c4 c5])
+        spec middleware/default-cookie-spec
+        dc (middleware/decode-set-cookie-header "id=42; Domain=domain.com; Path=/; HttpOnly")]
+    (is (= c1 dc))
+    (is (= "id=42; track=off" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/"})
+                                  (get-in  [:headers "cookie"])))
+        "emit cookie for /blog path")
+    (is (= "id=42" (-> (middleware/add-cookie-header cs spec {:url "http://domain.com/"})
+                       (get-in  [:headers "cookie"])))
+        "http request should not set secure cookies")
+    (is (= "id=42; track=on" (-> (middleware/add-cookie-header cs spec {:url "https://domain.com/blog"})
+                                 (get-in  [:headers "cookie"])))
+        "the most specific path")
+    (is (= "subdomain=detect" (-> (middleware/add-cookie-header cs spec {:url "https://www.subdomain.com"})
+                                  (get-in [:headers "cookie"])))
+        "subdomain should match w/o leading dot under latest specifications")
+    (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://anotherdomain.com/"})
+                  (get-in  [:headers "cookie"])))
+        "domain mistmatch")
+    (is (nil? (-> (middleware/add-cookie-header cs spec {:url "https://outdomain.com/"})
+                  (get-in [:headers "cookie"])))
+        "should not set expired")
+    (is (= "no_override"
+           (-> (middleware/wrap-cookies {:cookie-store cs
+                                         :cookie-spec spec
+                                         :url "https://domain.com/"
+                                         :headers {"cookie" "no_override"}})
+               (get-in  [:headers "cookie"])))
+        "no attempts to override when header is already set")
+    (is (= "id=44" (-> (middleware/wrap-cookies {:url "https://domain.com/"
+                                                 :cookies [{:name "id"
+                                                            :value "44"
+                                                            :domain "domain.com"}]})
+                       (get-in [:headers "cookie"])))
+        "accept cookies from req directly")
+    (is (= "name=John" (-> (middleware/wrap-cookies {:url "https://domain.com/"
+                                                     :cookies [{:name "name" :value "John"}]
+                                                     :cookie-store cs})
+                           (get-in [:headers "cookie"])))
+        "explicitly set cookies override cookie-store even when specified")))
+
 (defn req->query-string [req]
   (-> (reduce #(%2 %1) req middleware/default-middleware)
       :query-string

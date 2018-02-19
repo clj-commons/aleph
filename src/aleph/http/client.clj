@@ -13,9 +13,9 @@
      IOException]
     [java.net
      URI
-     URL
      InetSocketAddress
-     IDN]
+     IDN
+     URL]
     [io.netty.buffer
      ByteBuf
      Unpooled]

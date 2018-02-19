@@ -296,7 +296,9 @@
                                      (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
-                         (middleware/handle-redirects request req rsp))))))))))
+                         (->> rsp
+                              (middleware/handle-cookies req)
+                              (middleware/handle-redirects request req)))))))))))
         req))))
 
 (defn- req
@@ -311,8 +313,9 @@
 (def ^:private arglists
   '[[url]
     [url
-     {:keys [pool middleware headers body]
-      :or {pool default-connection-pool middleware identity}
+     {:keys [pool middleware headers body multipart]
+      :or {pool default-connection-pool
+           middleware identity}
       :as options}]])
 
 (defmacro ^:private def-http-method [method]
