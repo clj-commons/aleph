@@ -13,9 +13,9 @@
      IOException]
     [java.net
      URI
-     URL
      InetSocketAddress
-     IDN]
+     IDN
+     URL]
     [io.netty.buffer
      ByteBuf
      Unpooled]
@@ -41,6 +41,7 @@
      ChannelPipeline]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
+     PingWebSocketFrame
      PongWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
@@ -460,6 +461,10 @@
 
                (instance? PongWebSocketFrame msg)
                nil
+
+               (instance? PingWebSocketFrame msg)
+               (let [frame (.content ^PingWebSocketFrame msg)]
+                 (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire frame))))
 
                (instance? CloseWebSocketFrame msg)
                (let [frame ^CloseWebSocketFrame msg]
