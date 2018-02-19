@@ -25,7 +25,7 @@
     DefaultCookie]
    [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
    [java.nio.charset StandardCharsets]
-   [java.net IDN URL URLEncoder UnknownHostException]))
+   [java.net IDN URL URLEncoder URLDecoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -75,9 +75,10 @@
   "Resolve and apply Transit's JSON/MessagePack decoding."
   [in type & [opts]]
   {:pre [transit-enabled?]}
-  (let [reader (ns-resolve 'cognitect.transit 'reader)
-        read (ns-resolve 'cognitect.transit 'read)]
-    (read (reader in type (transit-read-opts opts)))))
+  (when (pos? (.available in))
+    (let [reader (ns-resolve 'cognitect.transit 'reader)
+          read (ns-resolve 'cognitect.transit 'read)]
+      (read (reader in type (transit-read-opts opts))))))
 
 (defn ^:dynamic transit-encode
   "Resolve and apply Transit's JSON/MessagePack encoding."
@@ -174,7 +175,8 @@
      :server-name (.getHost url-parsed)
      :server-port (when-pos (.getPort url-parsed))
      :uri (url-encode-illegal-characters (.getPath url-parsed))
-     :user-info (.getUserInfo url-parsed)
+     :user-info (when-let [user-info (.getUserInfo url-parsed)]
+                  (URLDecoder/decode user-info))
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 (defn- nest-params
@@ -195,18 +197,30 @@
 
 (defn wrap-nested-params
   "Middleware wrapping nested parameters for query strings."
-  [{:keys [content-type] :as req}]
-  (if (or (nil? content-type)
-          (= content-type :x-www-form-urlencoded))
-    (reduce
-     nest-params
-     req
-     [:query-params :form-params])
-    req))
+  [{:keys [content-type flatten-nested-keys] :as req}]
+  (when (and (some? flatten-nested-keys)
+             (or (some? (opt req :ignore-nested-query-string))
+                 (some? (opt req :flatten-nested-form-params))))
+    (throw (IllegalArgumentException.
+            (str "only :flatten-nested-keys or :ignore-nested-query-string/"
+                 ":flatten-nested-keys may be specified, not both"))))
+  (let [form-urlencoded? (or (nil? content-type)
+                             (= content-type :x-www-form-urlencoded))
+        flatten-form? (opt req :flatten-nested-form-params)
+        nested-keys (or flatten-nested-keys
+                        (cond-> []
+                          (not (opt req :ignore-nested-query-string))
+                          (conj :query-params)
+
+                          (and form-urlencoded?
+                               (or (nil? flatten-form?)
+                                   (true? flatten-form?)))
+                          (conj :form-params)))]
+    (reduce nest-params req nested-keys)))
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
-  #{200 201 202 203 204 205 206 207 300 301 302 303 307})
+  #{200 201 202 203 204 205 206 207 300 301 302 303 304 307})
 
 ;; helper methods to determine realm of a response
 (defn success?
@@ -402,41 +416,54 @@
       (second found))
     "UTF-8"))
 
-(defn generate-query-string-with-encoding [params encoding]
-  (str/join "&"
-    (mapcat (fn [[k v]]
-              (if (sequential? v)
-                (map #(str (url-encode (name %1) encoding)
-                        "="
-                        (url-encode (str %2) encoding))
-                  (repeat k) v)
-                [(str (url-encode (name k) encoding)
-                   "="
-                   (url-encode (str v) encoding))]))
-      params)))
+(defn multi-param-suffix [index multi-param-style]
+  (case multi-param-style
+    :indexed (str "[" index "]")
+    :array "[]"
+    :default ""))
 
-(defn generate-query-string [params & [content-type]]
+(defn generate-query-string-with-encoding
+  ([params encoding]
+   (generate-query-string-with-encoding params encoding :default))
+  ([params encoding multi-param-style]
+   (str/join "&"
+             (mapcat (fn [[k v]]
+                       (if (sequential? v)
+                         (map-indexed
+                          #(str (url-encode (name k) encoding)
+                                (multi-param-suffix %1 multi-param-style)
+                                "="
+                                (url-encode (str %2) encoding))
+                          v)
+                         [(str (url-encode (name k) encoding)
+                               "="
+                               (url-encode (str v) encoding))]))
+                     params))))
+
+(defn generate-query-string [params & [content-type multi-param-style]]
   (let [encoding (detect-charset content-type)]
-    (generate-query-string-with-encoding params encoding)))
+    (generate-query-string-with-encoding params encoding (or multi-param-style :default))))
 
 (defn wrap-query-params
   "Middleware converting the :query-params option to a querystring on
   the request."
-  [{:keys [query-params content-type]
-    :or {content-type :x-www-form-urlencoded}
+  [{:keys [query-params content-type multi-param-style]
+    :or {content-type :x-www-form-urlencoded
+         multi-param-style :default}
     :as req}]
-  (if query-params
+  (if (nil? query-params)
+    req
     (-> req
-      (dissoc :query-params)
-      (update-in [:query-string]
-        (fn [old-query-string new-query-string]
-          (if-not (empty? old-query-string)
-            (str old-query-string "&" new-query-string)
-            new-query-string))
-        (generate-query-string
-          query-params
-          (content-type-value content-type))))
-    req))
+        (dissoc :query-params)
+        (update-in [:query-string]
+                   (fn [old-query-string new-query-string]
+                     (if-not (empty? old-query-string)
+                       (str old-query-string "&" new-query-string)
+                       new-query-string))
+                   (generate-query-string
+                    query-params
+                    (content-type-value content-type)
+                    multi-param-style)))))
 
 (defn basic-auth-value
   "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)"
@@ -445,7 +472,7 @@
                      basic-auth
                      (str (first basic-auth) ":" (second basic-auth)))
         input-bytebuf (Unpooled/wrappedBuffer (.getBytes ^String basic-auth "UTF-8"))
-        base64-bytebuf (Base64/encode input-bytebuf)
+        base64-bytebuf (Base64/encode input-bytebuf false)
         base64-string (.toString ^ByteBuf base64-bytebuf StandardCharsets/UTF_8)]
     (.release ^ByteBuf input-bytebuf)
     (.release ^ByteBuf base64-bytebuf)
@@ -519,17 +546,20 @@
   [{:keys [form-params json-opts]}]
   (when-not json-enabled?
     (throw (ex-info (str "Can't encode form params as \"application/json\". "
-                      "Cheshire dependency not loaded.")
-             {:type :cheshire-not-loaded
-              :form-params form-params
-              :json-opts json-opts})))
+                         "Cheshire dependency not loaded.")
+                    {:type :cheshire-not-loaded
+                     :form-params form-params
+                     :json-opts json-opts})))
   (json-encode form-params json-opts))
 
-(defmethod coerce-form-params :default [{:keys [content-type form-params
-                                                form-param-encoding]}]
+(defmethod coerce-form-params :default [{:keys [content-type
+                                                form-params
+                                                form-param-encoding
+                                                multi-param-style]
+                                         :or {multi-param-style :default}}]
   (if form-param-encoding
-    (generate-query-string-with-encoding form-params form-param-encoding)
-    (generate-query-string form-params (content-type-value content-type))))
+    (generate-query-string-with-encoding form-params form-param-encoding multi-param-style)
+    (generate-query-string form-params (content-type-value content-type) multi-param-style)))
 
 (defn wrap-form-params
   "Middleware wrapping the submission or form parameters."
@@ -537,11 +567,11 @@
     :or {content-type :x-www-form-urlencoded}
     :as req}]
 
-  (if (and form-params (#{:post :put :patch} request-method))
+  (if (and form-params (#{:post :put :patch :delete} request-method))
     (-> req
-      (dissoc :form-params)
-      (assoc :content-type (content-type-value content-type)
-        :body (coerce-form-params req)))
+        (dissoc :form-params)
+        (assoc :content-type (content-type-value content-type)
+               :body (coerce-form-params req)))
     req))
 
 (defn wrap-url
