@@ -165,7 +165,7 @@
    | `headers` | the headers that should be included in the handshake
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to 65536.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to 1048576.
-   | `compression?` | when set to `true`, enables client to use per-message deflate compression, defaults to `false`.
+   | `compression?` | when set to `true`, enables client to use permessage-deflate compression extension, defaults to `false`.
    | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it."
   ([url]
     (websocket-client url nil))
@@ -182,7 +182,9 @@
    | `headers` | the headers that should be included in the handshake
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to 65536.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to 1048576.
-   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol"
+   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol
+   | `compression?` | when set to `true`, enables permessage-deflate compression extention support for the connection, defaults to `false`.
+   | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it."
   ([req]
     (websocket-connection req nil))
   ([req {:keys [raw-stream? headers max-frame-payload max-frame-size allow-extensions?] :as options}]

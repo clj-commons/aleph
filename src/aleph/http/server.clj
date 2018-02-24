@@ -47,6 +47,8 @@
      CloseWebSocketFrame
      WebSocketFrame
      WebSocketFrameAggregator]
+    [io.netty.handler.codec.http.websocketx.extensions.compression
+     WebSocketServerCompressionHandler]
     [java.io
      Closeable File InputStream RandomAccessFile IOException]
     [java.nio
@@ -533,8 +535,17 @@
 
 (defn initialize-websocket-handler
   [^NettyRequest req
-   {:keys [raw-stream? headers max-frame-payload max-frame-size allow-extensions?]
-    :or {raw-stream? false, max-frame-payload 65536, max-frame-size 1048576, allow-extensions? false}
+   {:keys [raw-stream?
+           headers
+           max-frame-payload
+           max-frame-size
+           allow-extensions?
+           compression?]
+    :or {raw-stream? false
+         max-frame-payload 65536
+         max-frame-size 1048576
+         allow-extensions? false
+         compression? false}
     :as options}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
@@ -563,6 +574,8 @@
                   (.remove pipeline "request-handler")
                   (.remove pipeline "continue-handler")
                   (.addLast pipeline "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+                  (when compression?
+                     (.addLast pipeline "websocket-deflater" (WebSocketServerCompressionHandler.)))
                   (.addLast pipeline "websocket-handler" handler)
                   s)))
             (d/catch'
