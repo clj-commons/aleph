@@ -485,6 +485,7 @@
            headers
            local-address
            bootstrap-transform
+           pipeline-transform
            epoll?
            sub-protocols
            extensions?
@@ -492,6 +493,7 @@
            max-frame-size
            compression?]
     :or {bootstrap-transform identity
+         pipeline-transform identity
          raw-stream? false
          epoll? false
          sub-protocols nil
@@ -517,7 +519,8 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
-            (.addLast "handler" ^ChannelHandler handler)))
+            (.addLast "handler" ^ChannelHandler handler)
+            pipeline-transform))
         (when ssl?
           (if insecure?
             (netty/insecure-ssl-client-context)
