@@ -570,28 +570,30 @@
                 (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                 (catch Throwable e
                   (d/error-deferred e)))
-            (d/chain'
-              (fn [_]
-                (let [pipeline (.pipeline ch)]
-                  (.remove pipeline "request-handler")
-                  (.remove pipeline "continue-handler")
-                  (.addLast pipeline "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-                  (when compression?
-                     (.addLast pipeline "websocket-deflater" (WebSocketServerCompressionHandler.)))
-                  (.addLast pipeline "websocket-handler" handler)
-                  (pipeline-transform pipeline)
-                  s)))
-            (d/catch'
-              (fn [e]
-                (http/send-message
-                  ch
-                  false
-                  ssl?
-                  (http/ring-response->netty-response
-                    {:status 400
-                     :headers {"content-type" "text/plain"}})
-                  "expected websocket request")
-                (d/error-deferred e)))))
+              (d/chain'
+               (fn [_]
+                 (doto (.pipeline ch)
+                   (.remove "request-handler")
+                   (.remove "continue-handler")
+                   (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+                   (#(when compression?
+                       (.addLast ^ChannelPipeline %
+                                 "websocket-deflater"
+                                 (WebSocketServerCompressionHandler.))))
+                   (.addLast "websocket-handler" handler)
+                   pipeline-transform)
+                 s))
+              (d/catch'
+                (fn [e]
+                  (http/send-message
+                    ch
+                    false
+                    ssl?
+                    (http/ring-response->netty-response
+                     {:status 400
+                      :headers {"content-type" "text/plain"}})
+                    "expected websocket request")
+                  (d/error-deferred e)))))
         (catch Throwable e
           (d/error-deferred e)))
       (do
