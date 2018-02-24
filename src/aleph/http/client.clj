@@ -501,10 +501,10 @@
          compression? false}
     :as options}]
   (let [uri (URI. uri)
-        ssl? (= "wss" (.getScheme uri))
+        scheme (.getScheme uri)
+        _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
+        ssl? (= "wss" scheme)
         [s handler] (websocket-client-handler raw-stream? uri sub-protocols extensions? headers max-frame-payload)]
-
-    (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
     (d/chain'
       (netty/create-client
