@@ -540,12 +540,14 @@
            max-frame-payload
            max-frame-size
            allow-extensions?
-           compression?]
+           compression?
+           pipeline-transform]
     :or {raw-stream? false
          max-frame-payload 65536
          max-frame-size 1048576
          allow-extensions? false
-         compression? false}
+         compression? false
+         pipeline-transform identity}
     :as options}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
@@ -577,6 +579,7 @@
                   (when compression?
                      (.addLast pipeline "websocket-deflater" (WebSocketServerCompressionHandler.)))
                   (.addLast pipeline "websocket-handler" handler)
+                  (pipeline-transform pipeline)
                   s)))
             (d/catch'
               (fn [e]
