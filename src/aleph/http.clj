@@ -95,7 +95,7 @@
    | `stats-callback` | an optional callback which is invoked with a map of hosts onto usage statistics every ten seconds
    | `max-queue-size` | the maximum number of pending acquires from the pool that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`, defaults to `65536`
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
-   | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instace
+   | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instace
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -128,7 +128,7 @@
          max-queue-size 65536}}]
   (let [conn-options' (cond-> connection-options
                         (some? dns-options)
-                        (assoc :name-resolver (netty/dns-resolver dns-options)))
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options)))
         p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]

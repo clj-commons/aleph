@@ -63,7 +63,7 @@
      JdkLoggerFactory]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
-    [aleph.utils DnsAddressResolverGroup]))
+    [aleph.utils PluggableDnsAddressResolverGroup]))
 
 ;;;
 
@@ -731,7 +731,7 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
-(defn dns-resolver
+(defn dns-resolver-group
   "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
 
    DNS options are a map of:
@@ -804,14 +804,8 @@
             (and (some? name-servers)
                  (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
-                                 (dns-name-servers-provider name-servers)))
-        resolver (.build b)]
-    ;; xxx: should be done on pool's shutdown, not here
-    (d/chain'
-     (wrap-future (.terminationFuture client-group))
-     (fn [_]
-       (.close resolver)))
-    (DnsAddressResolverGroup. resolver)))
+                                 (dns-name-servers-provider name-servers)))]
+    (PluggableDnsAddressResolverGroup. b)))
 
 (defn create-client
   ([pipeline-builder
