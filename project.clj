@@ -9,6 +9,8 @@
                  [io.netty/netty-codec "4.1.17.Final"]
                  [io.netty/netty-codec-http "4.1.17.Final"]
                  [io.netty/netty-handler "4.1.17.Final"]
+                 [io.netty/netty-resolver "4.1.17.Final"]
+                 [io.netty/netty-resolver-dns "4.1.17.Final"]
                  [manifold "0.1.6"]
                  [byte-streams "0.2.4-alpha3"]
                  [potemkin "0.4.4"]]
