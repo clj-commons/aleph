@@ -124,7 +124,6 @@
    | `password` | an optional auth password
    | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
    | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting."
-   "
   [{:keys [connections-per-host
            total-connections
            target-utilization
@@ -285,7 +284,7 @@
                                  (fn [^Throwable e]
                                    (flow/dispose pool k conn)
                                    (d/error-deferred (RequestTimeoutException. e))))
-                               
+
                                ;; request failed, dispose of the connection
                                (d/catch'
                                  (fn [e]

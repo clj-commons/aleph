@@ -42,7 +42,6 @@
                    :stress :stress
                    :all (constantly true)}
   :jvm-opts ^:replace ["-server"
-                       "-XX:+UseConcMarkSweepGC"
                        #_"-Xmx256m"
                        "-Xmx2g"
                        "-XX:+HeapDumpOnOutOfMemoryError"
