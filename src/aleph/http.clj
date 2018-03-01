@@ -8,7 +8,8 @@
     [aleph.http
      [server :as server]
      [client :as client]
-     [client-middleware :as middleware]])
+     [client-middleware :as middleware]]
+    [aleph.netty :as netty])
   (:import
     [io.aleph.dirigiste Pools]
     [aleph.utils
@@ -94,6 +95,7 @@
    | `stats-callback` | an optional callback which is invoked with a map of hosts onto usage statistics every ten seconds
    | `max-queue-size` | the maximum number of pending acquires from the pool that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`, defaults to `65536`
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
+   | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instace
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -108,6 +110,7 @@
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`
+   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
 
    Supported `proxy-options` are
@@ -120,10 +123,12 @@
    | `password` | an optional auth password
    | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
    | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting."
+   "
   [{:keys [connections-per-host
            total-connections
            target-utilization
            connection-options
+           dns-options
            stats-callback
            control-period
            middleware
@@ -134,13 +139,16 @@
          control-period 60000
          middleware middleware/wrap-request
          max-queue-size 65536}}]
-  (let [p (promise)
+  (let [conn-options' (cond-> connection-options
+                        (some? dns-options)
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options)))
+        p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
                             (let [c (promise)
                                   conn (create-connection
                                          host
-                                         connection-options
+                                         conn-options'
                                          middleware
                                          #(flow/dispose @p host [@c]))]
                               (deliver c conn)
@@ -308,7 +316,9 @@
                                      (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
-                         (middleware/handle-redirects request req rsp))))))))))
+                         (->> rsp
+                              (middleware/handle-cookies req)
+                              (middleware/handle-redirects request req)))))))))))
         req))))
 
 (defn- req
@@ -323,8 +333,9 @@
 (def ^:private arglists
   '[[url]
     [url
-     {:keys [pool middleware headers body]
-      :or {pool default-connection-pool middleware identity}
+     {:keys [pool middleware headers body multipart]
+      :or {pool default-connection-pool
+           middleware identity}
       :as options}]])
 
 (defmacro ^:private def-http-method [method]

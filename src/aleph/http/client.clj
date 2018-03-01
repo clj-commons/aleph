@@ -13,9 +13,9 @@
      IOException]
     [java.net
      URI
-     URL
      InetSocketAddress
-     IDN]
+     IDN
+     URL]
     [io.netty.buffer
      ByteBuf
      Unpooled]
@@ -42,6 +42,7 @@
      ChannelPipeline]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
+     PingWebSocketFrame
      PongWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
@@ -393,6 +394,7 @@
    {:keys [local-address
            raw-stream?
            bootstrap-transform
+           name-resolver
            pipeline-transform
            keep-alive?
            insecure?
@@ -405,7 +407,8 @@
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
-         epoll? false}
+         epoll? false
+         name-resolver :default}
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
@@ -422,7 +425,8 @@
             bootstrap-transform
             remote-address
             local-address
-            epoll?)]
+            epoll?
+            name-resolver)]
     (d/chain' c
       (fn [^Channel ch]
 
@@ -589,6 +593,10 @@
 
                (instance? PongWebSocketFrame msg)
                nil
+
+               (instance? PingWebSocketFrame msg)
+               (let [frame (.content ^PingWebSocketFrame msg)]
+                 (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire frame))))
 
                (instance? CloseWebSocketFrame msg)
                (let [frame ^CloseWebSocketFrame msg]
