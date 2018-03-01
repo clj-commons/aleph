@@ -392,7 +392,8 @@
      max-chunk-size
      raw-stream?
      ssl?
-     compression?]
+     compression?
+     compression-level]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -413,8 +414,9 @@
             false))
         (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
         (.addLast "request-handler" ^ChannelHandler handler)
-        (#(when compression?
-            (.addAfter ^ChannelPipeline %1 "http-server" "deflater" (HttpContentCompressor.))
+        (#(when (or compression? (some? compression-level))
+            (let [compressor (HttpContentCompressor. (or compression-level 6))]
+              (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
             (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
         pipeline-transform))))
 
