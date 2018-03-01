@@ -196,7 +196,6 @@
                     (.substring uri (unchecked-inc question-mark-index))))
   :headers (-> req .headers headers->map)
   :request-method (-> req .getMethod .name str/lower-case keyword)
-  :aleph/request-arrived (System/nanoTime)
   :body body
   :scheme (if ssl? :https :http)
   :aleph/keep-alive? (HttpHeaders/isKeepAlive req)
@@ -212,12 +211,14 @@
   :body body)
 
 (defn netty-request->ring-request [^HttpRequest req ssl? ch body]
-  (->NettyRequest
-    req
-    ssl?
-    ch
-    (AtomicBoolean. false)
-    (-> req .getUri (.indexOf (int 63))) body))
+  (assoc
+    (->NettyRequest
+      req
+      ssl?
+      ch
+      (AtomicBoolean. false)
+      (-> req .getUri (.indexOf (int 63))) body)
+    :aleph/request-arrived (System/nanoTime)))
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
