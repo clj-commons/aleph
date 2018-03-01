@@ -305,20 +305,20 @@
                                          (d/error-deferred (ReadTimeoutException. e))))
 
                                      (d/chain'
-                                      (fn [early?]
-                                        (if (or early?
-                                                (not (:aleph/keep-alive? rsp))
-                                                (<= 400 (:status rsp)))
-                                          (flow/dispose pool k conn)
-                                          (flow/release pool k conn)))))
+                                       (fn [early?]
+                                         (if (or early?
+                                               (not (:aleph/keep-alive? rsp))
+                                               (<= 400 (:status rsp)))
+                                           (flow/dispose pool k conn)
+                                           (flow/release pool k conn)))))
                                    (-> rsp
                                      (dissoc :aleph/complete)
                                      (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
                          (->> rsp
-                              (middleware/handle-cookies req)
-                              (middleware/handle-redirects request req)))))))))))
+                           (middleware/handle-cookies req)
+                           (middleware/handle-redirects request req)))))))))))
         req))))
 
 (defn- req

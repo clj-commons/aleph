@@ -105,8 +105,8 @@
 
       :exception-caught
       ([_ ctx ex]
-       (when-not (instance? IOException ex)
-         (log/warn ex "error in HTTP client")))
+        (when-not (instance? IOException ex)
+          (log/warn ex "error in HTTP client")))
 
       :channel-inactive
       ([_ ctx]
@@ -239,10 +239,10 @@
 (defn non-tunnel-proxy? [{:keys [tunnel? user http-headers ssl?]
                           :as proxy-options}]
   (and (some? proxy-options)
-       (not tunnel?)
-       (not ssl?)
-       (nil? user)
-       (nil? http-headers)))
+    (not tunnel?)
+    (not ssl?)
+    (nil? user)
+    (nil? http-headers)))
 
 (defn http-proxy-headers [{:keys [http-headers keep-alive?]
                            :or {http-headers {}
@@ -269,26 +269,26 @@
   (let [options' (assoc options :tunnel? (or tunnel? ssl?))]
     (when (and (nil? user) (some? password))
       (throw (IllegalArgumentException.
-              "Could not setup http proxy with basic auth: 'user' is missing")))
+               "Could not setup http proxy with basic auth: 'user' is missing")))
     
     (when (and (some? user) (nil? password))
       (throw (IllegalArgumentException.
-              "Could not setup http proxy with basic auth: 'password' is missing")))
+               "Could not setup http proxy with basic auth: 'password' is missing")))
 
     (when (and (false? tunnel?)
-               (or (some? user)
-                   (some? http-headers)
-                   (true? ssl?)))
+            (or (some? user)
+              (some? http-headers)
+              (true? ssl?)))
       (throw (IllegalArgumentException.
-              (str "Proxy options given require sending CONNECT request, "
-                   "but `tunnel?' option is set to 'false' explicitely. "
-                   "Consider setting 'tunnel?' to 'true' or omit it at all"))))
+               (str "Proxy options given require sending CONNECT request, "
+                 "but `tunnel?' option is set to 'false' explicitely. "
+                 "Consider setting 'tunnel?' to 'true' or omit it at all"))))
 
     (if (non-tunnel-proxy? options')
       (netty/channel-handler
-       :connect
-       ([_ ctx remote-address local-address promise]
-        (.connect ^ChannelHandlerContext ctx address local-address promise)))
+        :connect
+        ([_ ctx remote-address local-address promise]
+          (.connect ^ChannelHandlerContext ctx address local-address promise)))
 
       ;; this will send CONNECT request to the proxy server
       (let [headers (http-proxy-headers options')]
@@ -315,9 +315,9 @@
                             (Socks5ProxyHandler. proxy-address user password)
                             (Socks5ProxyHandler. proxy-address))
                   (throw
-                   (IllegalArgumentException.
-                    (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
-                            protocol))))]
+                    (IllegalArgumentException.
+                      (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
+                        protocol))))]
     (when (instance? ProxyHandler handler)
       ;; as we will manage this on aleph side anyways
       (.setConnectTimeoutMillis ^ProxyHandler handler -1))
@@ -327,17 +327,17 @@
   ;; TODO: unbounded? maybe we need to add a limit here
   (let [pending-writes (atom [])]
     (netty/channel-handler
-     :write
-     ([_ ctx msg promise]
-      (swap! pending-writes conj [msg promise]))
+      :write
+      ([_ ctx msg promise]
+        (swap! pending-writes conj [msg promise]))
 
-     :user-event-triggered
-     ([this ctx evt]
-      (when (instance? ProxyConnectionEvent evt)
-        (doseq [[msg promise] @pending-writes]
-          (.write ^ChannelHandlerContext ctx msg promise))
-        (.remove (.pipeline ctx) this))
-      (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
+      :user-event-triggered
+      ([this ctx evt]
+        (when (instance? ProxyConnectionEvent evt)
+          (doseq [[msg promise] @pending-writes]
+            (.write ^ChannelHandlerContext ctx msg promise))
+          (.remove (.pipeline ctx) this))
+        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
 
 (defn pipeline-builder
   [response-stream
@@ -377,9 +377,9 @@
           ;; before sending any requests
           (when (instance? ProxyHandler proxy)
             (.addLast pipeline
-                      "pending-proxy-writes"
-                      ^ChannelHandler
-                      (pending-proxy-writes-handler)))))
+              "pending-proxy-writes"
+              ^ChannelHandler
+              (pending-proxy-writes-handler)))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -416,7 +416,7 @@
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         c (netty/create-client
-           (pipeline-builder responses (assoc options :ssl? ssl?))
+            (pipeline-builder responses (assoc options :ssl? ssl?))
             (when ssl?
               (or ssl-context
                 (if insecure?
@@ -437,16 +437,16 @@
               (let [proxy-options' (when (some? proxy-options)
                                      (assoc proxy-options :ssl? ssl?))
                     ^HttpRequest req' (http/ring-request->netty-request
-                                       (if (non-tunnel-proxy? proxy-options')
-                                         (assoc req :uri (:request-url req))
-                                         req))]
+                                        (if (non-tunnel-proxy? proxy-options')
+                                          (assoc req :uri (:request-url req))
+                                          req))]
                 (when-not (.get (.headers req') "Host")
                   (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
                   (HttpHeaders/setKeepAlive req' keep-alive?))
                 (when (and (non-tunnel-proxy? proxy-options')
-                           (get proxy-options :keep-alive? true)
-                           (not (.get (.headers req') "Proxy-Connection")))
+                        (get proxy-options :keep-alive? true)
+                        (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
                 (let [body (if-let [parts (get req :multipart)]
@@ -456,7 +456,7 @@
                                (multipart/encode-body boundary parts))
                              (get req :body))]
                   (netty/safe-execute ch
-                                      (http/send-message ch true ssl? req' body))))
+                    (http/send-message ch true ssl? req' body))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
@@ -602,8 +602,8 @@
                (let [frame ^CloseWebSocketFrame msg]
                  (when (realized? d)
                    (swap! desc assoc
-                          :websocket-close-code (.statusCode frame)
-                          :websocket-close-msg (.reasonText frame)))
+                     :websocket-close-code (.statusCode frame)
+                     :websocket-close-msg (.reasonText frame)))
                  (netty/close ctx))))
            (finally
              (netty/release msg)))))]))

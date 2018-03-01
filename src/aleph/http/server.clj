@@ -309,7 +309,7 @@
 
       :exception-caught
       ([_ ctx ex]
-       (exception-handler ctx ex))
+        (exception-handler ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -355,7 +355,7 @@
 
       :exception-caught
       ([_ ctx ex]
-       (exception-handler ctx ex))
+        (exception-handler ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -364,7 +364,7 @@
 
       :channel-read
       ([_ ctx msg]
-       (cond
+        (cond
 
           (instance? HttpRequest msg)
           (if (invalid-request? msg)

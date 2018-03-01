@@ -332,12 +332,12 @@
   (description [_]
     (let [ch (channel ch)]
       (merge
-       {:type       "netty"
-        :closed?    (not (.isActive ch))
-        :sink?      true
-        :connection (assoc (connection-stats ch false)
-                           :direction :outbound)}
-       (additional-description))))
+        {:type       "netty"
+         :closed?    (not (.isActive ch))
+         :sink?      true
+         :connection (assoc (connection-stats ch false)
+                       :direction :outbound)}
+        (additional-description))))
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
@@ -363,23 +363,23 @@
 
 (defn sink
   ([ch]
-   (sink ch true identity (fn [])))
+    (sink ch true identity (fn [])))
   ([ch downstream? coerce-fn]
-   (sink ch downstream? coerce-fn (fn [])))
+    (sink ch downstream? coerce-fn (fn [])))
   ([ch downstream? coerce-fn additional-description]
-   (let [count (AtomicLong. 0)
-         last-count (AtomicLong. 0)
-         sink (->ChannelSink
-               coerce-fn
-               downstream?
-               ch
-               additional-description)]
+    (let [count (AtomicLong. 0)
+          last-count (AtomicLong. 0)
+          sink (->ChannelSink
+                 coerce-fn
+                 downstream?
+                 ch
+                 additional-description)]
 
-     (d/chain' (.closeFuture (channel ch))
-               wrap-future
-               (fn [_] (s/close! sink)))
+      (d/chain' (.closeFuture (channel ch))
+        wrap-future
+        (fn [_] (s/close! sink)))
 
-     (doto sink (reset-meta! {:aleph/channel ch})))))
+      (doto sink (reset-meta! {:aleph/channel ch})))))
 
 (defn source
   [^Channel ch]
@@ -627,8 +627,8 @@
   [private-key certificate-chain]
   (when-not
     (or (and (instance? File private-key) (instance? File certificate-chain))
-        (and (instance? InputStream private-key) (instance? InputStream certificate-chain))
-        (and (instance? PrivateKey private-key) (instance? (class (into-array X509Certificate [])) certificate-chain)))
+      (and (instance? InputStream private-key) (instance? InputStream certificate-chain))
+      (and (instance? PrivateKey private-key) (instance? (class (into-array X509Certificate [])) certificate-chain)))
     (throw (IllegalArgumentException. "ssl-client-context arguments invalid"))))
 
 (set! *warn-on-reflection* false)
@@ -649,24 +649,24 @@
   of certificates."
   ([] (ssl-client-context {}))
   ([{:keys [private-key private-key-password certificate-chain trust-store]}]
-   (-> (SslContextBuilder/forClient)
-     (#(if (and private-key certificate-chain)
-         (do
-           (check-ssl-args private-key certificate-chain)
-           (if (instance? (class (into-array X509Certificate [])) certificate-chain)
-             (.keyManager %
-               private-key
-               private-key-password
-               certificate-chain)
-             (.keyManager %
-               certificate-chain
-               private-key
-               private-key-password)))
-         %))
-     (#(if trust-store
-         (.trustManager % trust-store)
-         %))
-     .build)))
+    (-> (SslContextBuilder/forClient)
+      (#(if (and private-key certificate-chain)
+          (do
+            (check-ssl-args private-key certificate-chain)
+            (if (instance? (class (into-array X509Certificate [])) certificate-chain)
+              (.keyManager %
+                private-key
+                private-key-password
+                certificate-chain)
+              (.keyManager %
+                certificate-chain
+                private-key
+                private-key-password)))
+          %))
+      (#(if trust-store
+          (.trustManager % trust-store)
+          %))
+      .build)))
 
 (set! *warn-on-reflection* true)
 
@@ -711,22 +711,22 @@
 
 (defn dns-name-servers-provider [servers]
   (let [addresses (->> servers
-                       (map (fn [server]
-                              (cond
-                                (instance? InetSocketAddress server)
-                                server
+                    (map (fn [server]
+                           (cond
+                             (instance? InetSocketAddress server)
+                             server
 
-                                (string? server)
-                                (let [^URI uri (URI. (str "dns://" server))
-                                      port (.getPort uri)
-                                      port' (int (if (= -1 port) dns-default-port port))]
-                                  (InetSocketAddress. (.getHost uri) port'))
+                             (string? server)
+                             (let [^URI uri (URI. (str "dns://" server))
+                                   port (.getPort uri)
+                                   port' (int (if (= -1 port) dns-default-port port))]
+                               (InetSocketAddress. (.getHost uri) port'))
 
-                                :else
-                                (throw
-                                 (IllegalArgumentException.
-                                  (format "Don't know how to create InetSocketAddress from '%s'"
-                                          server)))))))]
+                             :else
+                             (throw
+                               (IllegalArgumentException.
+                                 (format "Don't know how to create InetSocketAddress from '%s'"
+                                   server)))))))]
     (if (= 1 (count addresses))
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
@@ -798,13 +798,13 @@
             (.negativeTtl negative-ttl)
 
             (and (some? search-domains)
-                 (not (empty? search-domains)))
+              (not (empty? search-domains)))
             (.searchDomains search-domains)
 
             (and (some? name-servers)
-                 (not (empty? name-servers)))
+              (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
-                                 (dns-name-servers-provider name-servers)))]
+              (dns-name-servers-provider name-servers)))]
     (PluggableDnsAddressResolverGroup. b)))
 
 (defn create-client
@@ -814,13 +814,13 @@
     remote-address
     local-address
     epoll?]
-   (create-client pipeline-builder
-                  ssl-context
-                  bootstrap-transform
-                  remote-address
-                  local-address
-                  epoll?
-                  nil))
+    (create-client pipeline-builder
+      ssl-context
+      bootstrap-transform
+      remote-address
+      local-address
+      epoll?
+      nil))
   ([pipeline-builder
     ^SslContext ssl-context
     bootstrap-transform
@@ -828,46 +828,46 @@
     ^SocketAddress local-address
     epoll?
     name-resolver]
-   (let [^Class
-         channel (if (and epoll? (epoll-available?))
-                   EpollSocketChannel
-                   NioSocketChannel)
+    (let [^Class
+          channel (if (and epoll? (epoll-available?))
+                    EpollSocketChannel
+                    NioSocketChannel)
 
-         pipeline-builder (if ssl-context
-                            (fn [^ChannelPipeline p]
-                              (.addLast p "ssl-handler"
-                                        (.newHandler ^SslContext ssl-context
-                                                     (-> p .channel .alloc)
-                                                     (.getHostName ^InetSocketAddress remote-address)
-                                                     (.getPort ^InetSocketAddress remote-address)))
-                              (pipeline-builder p))
-                            pipeline-builder)]
-     (try
-       (let [client-group (if (and epoll? (epoll-available?))
-                            @epoll-client-group
-                            @nio-client-group)
-             resolver' (when (some? name-resolver)
-                         (cond
-                           (= :default name-resolver) nil
-                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                           (instance? AddressResolverGroup name-resolver) name-resolver))
-             b (doto (Bootstrap.)
-                 (.option ChannelOption/SO_REUSEADDR true)
-                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                 (.group client-group)
-                 (.channel channel)
-                 (.handler (pipeline-initializer pipeline-builder))
-                 (.resolver resolver')
-                 bootstrap-transform)
+          pipeline-builder (if ssl-context
+                             (fn [^ChannelPipeline p]
+                               (.addLast p "ssl-handler"
+                                 (.newHandler ^SslContext ssl-context
+                                   (-> p .channel .alloc)
+                                   (.getHostName ^InetSocketAddress remote-address)
+                                   (.getPort ^InetSocketAddress remote-address)))
+                               (pipeline-builder p))
+                             pipeline-builder)]
+      (try
+        (let [client-group (if (and epoll? (epoll-available?))
+                             @epoll-client-group
+                             @nio-client-group)
+              resolver' (when (some? name-resolver)
+                          (cond
+                            (= :default name-resolver) nil
+                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                            (instance? AddressResolverGroup name-resolver) name-resolver))
+              b (doto (Bootstrap.)
+                  (.option ChannelOption/SO_REUSEADDR true)
+                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                  (.group client-group)
+                  (.channel channel)
+                  (.handler (pipeline-initializer pipeline-builder))
+                  (.resolver resolver')
+                  bootstrap-transform)
 
-             f (if local-address
-                 (.connect b remote-address local-address)
-                 (.connect b remote-address))]
+              f (if local-address
+                  (.connect b remote-address local-address)
+                  (.connect b remote-address))]
 
-         (d/chain' (wrap-future f)
-                   (fn [_]
-                     (let [ch (.channel ^ChannelFuture f)]
-                       ch))))))))
+          (d/chain' (wrap-future f)
+            (fn [_]
+              (let [ch (.channel ^ChannelFuture f)]
+                ch))))))))
 
 (defn start-server
   [pipeline-builder
@@ -898,9 +898,7 @@
               (.newHandler ssl-context
                 (-> p .channel .alloc)))
             (pipeline-builder p))
-          pipeline-builder)
-
-        ]
+          pipeline-builder)]
 
     (try
       (let [b (doto (ServerBootstrap.)
