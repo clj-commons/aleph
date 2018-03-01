@@ -580,6 +580,7 @@
   (if-let [url (:url req)]
     (-> req
       (dissoc :url)
+      (assoc :request-url url)
       (merge (parse-url url)))
     req))
 
