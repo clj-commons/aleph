@@ -73,7 +73,7 @@
 
 (defn ^:dynamic parse-transit
   "Resolve and apply Transit's JSON/MessagePack decoding."
-  [in type & [opts]]
+  [^InputStream in type & [opts]]
   {:pre [transit-enabled?]}
   (when (pos? (.available in))
     (let [reader (ns-resolve 'cognitect.transit 'reader)
