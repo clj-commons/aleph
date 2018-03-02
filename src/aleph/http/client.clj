@@ -613,7 +613,6 @@
    {:keys [raw-stream? bootstrap-transform insecure? headers local-address epoll?
            sub-protocols extensions? max-frame-payload max-frame-size]
     :or {bootstrap-transform identity
-         keep-alive? true
          raw-stream? false
          epoll? false
          sub-protocols nil
