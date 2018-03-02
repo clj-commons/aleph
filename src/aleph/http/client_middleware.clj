@@ -14,18 +14,18 @@
     [clojure.edn :as edn]
     [aleph.http.core :as http])
   (:import
-   [io.netty.buffer ByteBuf Unpooled]
-   [io.netty.handler.codec.base64 Base64]
-   [io.netty.handler.codec.http
-    HttpHeaders
-    HttpHeaderNames]
-   [io.netty.handler.codec.http.cookie
-    ClientCookieDecoder
-    ClientCookieEncoder
-    DefaultCookie]
-   [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
-   [java.nio.charset StandardCharsets]
-   [java.net IDN URL URLEncoder URLDecoder UnknownHostException]))
+    [io.netty.buffer ByteBuf Unpooled]
+    [io.netty.handler.codec.base64 Base64]
+    [io.netty.handler.codec.http
+     HttpHeaders
+     HttpHeaderNames]
+    [io.netty.handler.codec.http.cookie
+     ClientCookieDecoder
+     ClientCookieEncoder
+     DefaultCookie]
+    [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
+    [java.nio.charset StandardCharsets]
+    [java.net IDN URL URLEncoder URLDecoder UnknownHostException]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
@@ -73,7 +73,7 @@
 
 (defn ^:dynamic parse-transit
   "Resolve and apply Transit's JSON/MessagePack decoding."
-  [in type & [opts]]
+  [^InputStream in type & [opts]]
   {:pre [transit-enabled?]}
   (when (pos? (.available in))
     (let [reader (ns-resolve 'cognitect.transit 'reader)
@@ -199,23 +199,23 @@
   "Middleware wrapping nested parameters for query strings."
   [{:keys [content-type flatten-nested-keys] :as req}]
   (when (and (some? flatten-nested-keys)
-             (or (some? (opt req :ignore-nested-query-string))
-                 (some? (opt req :flatten-nested-form-params))))
+          (or (some? (opt req :ignore-nested-query-string))
+            (some? (opt req :flatten-nested-form-params))))
     (throw (IllegalArgumentException.
-            (str "only :flatten-nested-keys or :ignore-nested-query-string/"
-                 ":flatten-nested-keys may be specified, not both"))))
+             (str "only :flatten-nested-keys or :ignore-nested-query-string/"
+               ":flatten-nested-keys may be specified, not both"))))
   (let [form-urlencoded? (or (nil? content-type)
-                             (= content-type :x-www-form-urlencoded))
+                           (= content-type :x-www-form-urlencoded))
         flatten-form? (opt req :flatten-nested-form-params)
         nested-keys (or flatten-nested-keys
-                        (cond-> []
-                          (not (opt req :ignore-nested-query-string))
-                          (conj :query-params)
+                      (cond-> []
+                        (not (opt req :ignore-nested-query-string))
+                        (conj :query-params)
 
-                          (and form-urlencoded?
-                               (or (nil? flatten-form?)
-                                   (true? flatten-form?)))
-                          (conj :form-params)))]
+                        (and form-urlencoded?
+                          (or (nil? flatten-form?)
+                            (true? flatten-form?)))
+                        (conj :form-params)))]
     (reduce nest-params req nested-keys)))
 
 ;; Statuses for which clj-http will not throw an exception
@@ -424,21 +424,21 @@
 
 (defn generate-query-string-with-encoding
   ([params encoding]
-   (generate-query-string-with-encoding params encoding :default))
+    (generate-query-string-with-encoding params encoding :default))
   ([params encoding multi-param-style]
-   (str/join "&"
-             (mapcat (fn [[k v]]
-                       (if (sequential? v)
-                         (map-indexed
-                          #(str (url-encode (name k) encoding)
-                                (multi-param-suffix %1 multi-param-style)
-                                "="
-                                (url-encode (str %2) encoding))
-                          v)
-                         [(str (url-encode (name k) encoding)
-                               "="
-                               (url-encode (str v) encoding))]))
-                     params))))
+    (str/join "&"
+      (mapcat (fn [[k v]]
+                (if (sequential? v)
+                  (map-indexed
+                    #(str (url-encode (name k) encoding)
+                       (multi-param-suffix %1 multi-param-style)
+                       "="
+                       (url-encode (str %2) encoding))
+                    v)
+                  [(str (url-encode (name k) encoding)
+                     "="
+                     (url-encode (str v) encoding))]))
+        params))))
 
 (defn generate-query-string [params & [content-type multi-param-style]]
   (let [encoding (detect-charset content-type)]
@@ -454,16 +454,16 @@
   (if (nil? query-params)
     req
     (-> req
-        (dissoc :query-params)
-        (update-in [:query-string]
-                   (fn [old-query-string new-query-string]
-                     (if-not (empty? old-query-string)
-                       (str old-query-string "&" new-query-string)
-                       new-query-string))
-                   (generate-query-string
-                    query-params
-                    (content-type-value content-type)
-                    multi-param-style)))))
+      (dissoc :query-params)
+      (update-in [:query-string]
+        (fn [old-query-string new-query-string]
+          (if-not (empty? old-query-string)
+            (str old-query-string "&" new-query-string)
+            new-query-string))
+        (generate-query-string
+          query-params
+          (content-type-value content-type)
+          multi-param-style)))))
 
 (defn basic-auth-value
   "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)"
@@ -546,10 +546,10 @@
   [{:keys [form-params json-opts]}]
   (when-not json-enabled?
     (throw (ex-info (str "Can't encode form params as \"application/json\". "
-                         "Cheshire dependency not loaded.")
-                    {:type :cheshire-not-loaded
-                     :form-params form-params
-                     :json-opts json-opts})))
+                      "Cheshire dependency not loaded.")
+             {:type :cheshire-not-loaded
+              :form-params form-params
+              :json-opts json-opts})))
   (json-encode form-params json-opts))
 
 (defmethod coerce-form-params :default [{:keys [content-type
@@ -569,9 +569,9 @@
 
   (if (and form-params (#{:post :put :patch :delete} request-method))
     (-> req
-        (dissoc :form-params)
-        (assoc :content-type (content-type-value content-type)
-               :body (coerce-form-params req)))
+      (dissoc :form-params)
+      (assoc :content-type (content-type-value content-type)
+        :body (coerce-form-params req)))
     req))
 
 (defn wrap-url
@@ -580,6 +580,7 @@
   (if-let [url (:url req)]
     (-> req
       (dissoc :url)
+      (assoc :request-url url)
       (merge (parse-url url)))
     req))
 
@@ -611,9 +612,9 @@
                     (subs cookie-path 0 (dec (count cookie-path)))
                     cookie-path)]
     (and (str/starts-with? origin-path norm-path)
-         (or (= "/" norm-path)
-             (= (count origin-path) (count norm-path))
-             (= \/ (-> origin-path (subs (count norm-path)) first))))))
+      (or (= "/" norm-path)
+        (= (count origin-path) (count norm-path))
+        (= \/ (-> origin-path (subs (count norm-path)) first))))))
 
 (defn req->cookie-origin [{:keys [url] :as req}]
   (if (some? url)
@@ -686,11 +687,11 @@
         false
 
         (and (some? domain)
-             (not (match-cookie-domain? (:host origin) domain)))
+          (not (match-cookie-domain? (:host origin) domain)))
         false
 
         (and (some? path)
-             (not (match-cookie-path? (:path origin) path)))
+          (not (match-cookie-path? (:path origin) path)))
         false
 
         (cookie-expired? cookie)
@@ -702,8 +703,8 @@
 (defn merge-cookies [stored-cookies new-cookies]
   (reduce (fn [cookies {:keys [domain path name] :as cookie}]
             (assoc-in cookies [domain path name] cookie))
-          stored-cookies
-          new-cookies))
+    stored-cookies
+    new-cookies))
 
 (defn enrich-with-current-time [cookies]
   (let [now (System/currentTimeMillis)]
@@ -713,32 +714,32 @@
   "In-memory storage to maintain cookies across requests"
   ([] (in-memory-cookie-store []))
   ([seed-cookies]
-   (let [store (atom (merge-cookies {} (enrich-with-current-time seed-cookies)))]
-     (reify CookieStore
-       (get-cookies [_]
-         (->> @store
-              (mapcat (fn [[domain cookies]]
-                        (sort-by first cookies)))
-              (mapcat second) ;; unwrap by path
-              (map second)))
-       (add-cookies! [_ cookies]
-         (swap! store merge-cookies (enrich-with-current-time cookies)))))))
+    (let [store (atom (merge-cookies {} (enrich-with-current-time seed-cookies)))]
+      (reify CookieStore
+        (get-cookies [_]
+          (->> @store
+            (mapcat (fn [[domain cookies]]
+                      (sort-by first cookies)))
+            (mapcat second) ;; unwrap by path
+            (map second)))
+        (add-cookies! [_ cookies]
+          (swap! store merge-cookies (enrich-with-current-time cookies)))))))
 
 (defn decode-set-cookie-header
   ([header]
-   (decode-set-cookie-header default-cookie-spec header))
+    (decode-set-cookie-header default-cookie-spec header))
   ([cookie-spec header]
-   (netty-cookie->cookie (parse-cookie cookie-spec header))))
+    (netty-cookie->cookie (parse-cookie cookie-spec header))))
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
 (defn extract-cookies-from-response-headers
   ([headers]
-   (extract-cookies-from-response-headers default-cookie-spec headers))
+    (extract-cookies-from-response-headers default-cookie-spec headers))
   ([cookie-spec ^aleph.http.core.HeaderMap headers]
-   (let [^HttpHeaders raw-headers (.headers headers)]
-     (->> (.getAll raw-headers set-cookie-header-name)
-          (map (partial decode-set-cookie-header cookie-spec))))))
+    (let [^HttpHeaders raw-headers (.headers headers)]
+      (->> (.getAll raw-headers set-cookie-header-name)
+        (map (partial decode-set-cookie-header cookie-spec))))))
 
 (defn handle-cookies [{:keys [cookie-store cookie-spec]
                        :or {cookie-spec default-cookie-spec}}
@@ -757,25 +758,25 @@
 (defn reduce-to-unique-cookie-names [cookies]
   (when-not (empty? cookies)
     (->> cookies
-         (map (juxt :name identity))
-         (into {})
-         vals)))
+      (map (juxt :name identity))
+      (into {})
+      vals)))
 
 (defn write-cookie-header [cookies cookie-spec req]
   (if (empty? cookies)
     req
     (let [header (->> cookies
-                      (map cookie->netty-cookie)
-                      (write-cookies cookie-spec))]
+                   (map cookie->netty-cookie)
+                   (write-cookies cookie-spec))]
       (assoc-in req [:headers cookie-header-name] header))))
 
 (defn add-cookie-header [cookie-store cookie-spec req]
   (let [origin (req->cookie-origin req)
         cookies (->> (get-cookies cookie-store)
-                     (filter (partial match-cookie-origin? cookie-spec origin))
+                  (filter (partial match-cookie-origin? cookie-spec origin))
                      ;; note that here we rely on cookie store implementation,
                      ;; which might be not the best idea
-                     (reduce-to-unique-cookie-names))]
+                  (reduce-to-unique-cookie-names))]
     (write-cookie-header cookies cookie-spec req)))
 
 (defn wrap-cookies

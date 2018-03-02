@@ -32,8 +32,8 @@
   [{:keys [part-name content mime-type charset transfer-encoding name]}]
   (let [file? (instance? File content)
         mt (or mime-type
-               (when file?
-                 (URLConnection/guessContentTypeFromName (.getName ^File content))))
+             (when file?
+               (URLConnection/guessContentTypeFromName (.getName ^File content))))
         ;; populate file name when working with file object
         filename (or name (when file? (.getName ^File content)))
         ;; use "name" as a part name when the last is not provided
@@ -61,8 +61,8 @@
 ;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
 (defn part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
-                (when name (str "; filename=\"" name "\""))
-                \newline)
+             (when name (str "; filename=\"" name "\""))
+             \newline)
         ct (str "Content-Type: " mime-type \newline)
         cte (if (nil? transfer-encoding)
               ""
@@ -86,21 +86,21 @@
 
 (defn encode-body
   ([parts]
-   (encode-body (boundary) parts))
+    (encode-body (boundary) parts))
   ([^String boundary parts]
-   (let [b (bs/to-byte-buffer (str "--" boundary))
-         b-len (+ 5 (.length boundary))
-         ps (map #(-> % populate-part encode-part) parts)
-         boundaries-len (* (inc (count parts)) b-len)
-         part-len (reduce (fn [acc ^ByteBuffer p] (+ acc (.limit p))) 0 ps)
-         buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
-     (.put buf b)
-     (doseq [^ByteBuffer part ps]
-       (.put buf (bs/to-byte-buffer "\n"))
-       (.put buf part)
-       (.put buf (bs/to-byte-buffer "\n"))
-       (.flip b)
-       (.put buf b))
-     (.put buf (bs/to-byte-buffer "--"))
-     (.flip buf)
-     (bs/to-byte-array buf))))
+    (let [b (bs/to-byte-buffer (str "--" boundary))
+          b-len (+ 5 (.length boundary))
+          ps (map #(-> % populate-part encode-part) parts)
+          boundaries-len (* (inc (count parts)) b-len)
+          part-len (reduce (fn [acc ^ByteBuffer p] (+ acc (.limit p))) 0 ps)
+          buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
+      (.put buf b)
+      (doseq [^ByteBuffer part ps]
+        (.put buf (bs/to-byte-buffer "\n"))
+        (.put buf part)
+        (.put buf (bs/to-byte-buffer "\n"))
+        (.flip b)
+        (.put buf b))
+      (.put buf (bs/to-byte-buffer "--"))
+      (.flip buf)
+      (bs/to-byte-array buf))))

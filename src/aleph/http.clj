@@ -8,7 +8,8 @@
     [aleph.http
      [server :as server]
      [client :as client]
-     [client-middleware :as middleware]])
+     [client-middleware :as middleware]]
+    [aleph.netty :as netty])
   (:import
     [io.aleph.dirigiste Pools]
     [aleph.utils
@@ -41,7 +42,8 @@
    | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `4096`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `8192`
-   | `compression?` | when `true` enables http compression, defaults to `false`"
+   | `compression?` | when `true` enables http compression, defaults to `false`
+   | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value"
   [handler
    {:keys [port socket-address executor raw-stream? bootstrap-transform pipeline-transform ssl-context request-buffer-size shutdown-executor? rejected-handler]
     :as options}]
@@ -94,6 +96,7 @@
    | `stats-callback` | an optional callback which is invoked with a map of hosts onto usage statistics every ten seconds
    | `max-queue-size` | the maximum number of pending acquires from the pool that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`, defaults to `65536`
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
+   | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instace
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -107,11 +110,25 @@
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`"
+   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `8192`
+   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
+   | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
+
+   Supported `proxy-options` are
+
+   |:---|:---
+   | `host` | host of the proxy server
+   | `port` | an optional port to establish connection (defaults to 80 for http and 1080 for socks proxies)
+   | `protocol` | one of `:http`, `:socks4` or `:socks5` (defaults to `:http`)
+   | `user` | an optional auth username
+   | `password` | an optional auth password
+   | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
+   | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting."
   [{:keys [connections-per-host
            total-connections
            target-utilization
            connection-options
+           dns-options
            stats-callback
            control-period
            middleware
@@ -122,13 +139,16 @@
          control-period 60000
          middleware middleware/wrap-request
          max-queue-size 65536}}]
-  (let [p (promise)
+  (let [conn-options' (cond-> connection-options
+                        (some? dns-options)
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options)))
+        p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
                             (let [c (promise)
                                   conn (create-connection
                                          host
-                                         connection-options
+                                         conn-options'
                                          middleware
                                          #(flow/dispose @p host [@c]))]
                               (deliver c conn)
@@ -268,7 +288,7 @@
                                  (fn [^Throwable e]
                                    (flow/dispose pool k conn)
                                    (d/error-deferred (RequestTimeoutException. e))))
-                               
+
                                ;; request failed, dispose of the connection
                                (d/catch'
                                  (fn [e]
@@ -289,20 +309,20 @@
                                          (d/error-deferred (ReadTimeoutException. e))))
 
                                      (d/chain'
-                                      (fn [early?]
-                                        (if (or early?
-                                                (not (:aleph/keep-alive? rsp))
-                                                (<= 400 (:status rsp)))
-                                          (flow/dispose pool k conn)
-                                          (flow/release pool k conn)))))
+                                       (fn [early?]
+                                         (if (or early?
+                                               (not (:aleph/keep-alive? rsp))
+                                               (<= 400 (:status rsp)))
+                                           (flow/dispose pool k conn)
+                                           (flow/release pool k conn)))))
                                    (-> rsp
                                      (dissoc :aleph/complete)
                                      (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
                          (->> rsp
-                              (middleware/handle-cookies req)
-                              (middleware/handle-redirects request req)))))))))))
+                           (middleware/handle-cookies req)
+                           (middleware/handle-redirects request req)))))))))))
         req))))
 
 (defn- req

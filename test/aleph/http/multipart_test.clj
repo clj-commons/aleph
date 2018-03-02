@@ -1,12 +1,12 @@
 (ns aleph.http.multipart-test
   (:use
-   [clojure test])
+    [clojure test])
   (:require
-   [aleph.http.multipart :as mp]
-   [byte-streams :as bs])
+    [aleph.http.multipart :as mp]
+    [byte-streams :as bs])
   (:import
-   [java.io
-    File]))
+    [java.io
+     File]))
 
 (def file-to-send (File. (str (System/getProperty "user.dir") "/test/file.txt")))
 
@@ -79,9 +79,9 @@
 
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
-               (mp/encode-body [{:part-name "part1"
-                                 :content "content1"
-                                 :transfer-encoding :uknown-transfer-encoding}]))))
+        (mp/encode-body [{:part-name "part1"
+                          :content "content1"
+                          :transfer-encoding :uknown-transfer-encoding}]))))
 
 (deftest test-content-as-file
   (let [body (mp/encode-body [{:part-name "part1"

@@ -2,28 +2,28 @@
   (:use
     [clojure test])
   (:require
-   [clojure.java.io :as io]
-   [aleph
-    [http :as http]
-    [netty :as netty]
-    [flow :as flow]]
-   [byte-streams :as bs]
-   [manifold.deferred :as d]
-   [manifold.stream :as s])
+    [clojure.java.io :as io]
+    [aleph
+     [http :as http]
+     [netty :as netty]
+     [flow :as flow]]
+    [byte-streams :as bs]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
-   [java.util.concurrent
-    Executors]
-   [java.io
-    File
-    ByteArrayInputStream]
-   [java.util.zip
-    GZIPInputStream
-    ZipException]
-   [java.util.concurrent
-    TimeoutException]
-   [aleph.utils
-    ConnectionTimeoutException
-    RequestTimeoutException]))
+    [java.util.concurrent
+     Executors]
+    [java.io
+     File
+     ByteArrayInputStream]
+    [java.util.zip
+     GZIPInputStream
+     ZipException]
+    [java.util.concurrent
+     TimeoutException]
+    [aleph.utils
+     ConnectionTimeoutException
+     RequestTimeoutException]))
 
 ;;;
 
@@ -166,8 +166,11 @@
      ~@body))
 
 (defmacro with-compressed-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port port :compression? true})
-     ~@body))
+  `(do
+     (with-server (http/start-server ~handler {:port port :compression? true})
+       ~@body)
+     (with-server (http/start-server ~handler {:port port :compression-level 3})
+       ~@body)))
 
 (defmacro with-ssl-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port, :ssl-context (netty/self-signed-ssl-context)})
@@ -197,7 +200,7 @@
   (with-compressed-handler basic-handler
     (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)
             :let [resp @(http-get (str "http://localhost:" port "/" path)
-                                  {:headers {:accept-encoding "gzip"}})
+                          {:headers {:accept-encoding "gzip"}})
                   unzipped (try
                              (bs/to-string (GZIPInputStream. (:body resp)))
                              (catch ZipException _ nil))]]

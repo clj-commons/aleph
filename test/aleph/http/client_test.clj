@@ -1,6 +1,6 @@
 (ns aleph.http.client-test
   (:require [aleph.http.client :as client]
-            [clojure.test :as t :refer [deftest is testing]]))
+    [clojure.test :as t :refer [deftest is testing]]))
 
 (deftest test-domain-extracting
   (testing "ASCII domain is extracted from URL as is."

@@ -28,14 +28,25 @@
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
-    [io.netty.channel.socket.nio NioServerSocketChannel
-     NioSocketChannel]
+    [io.netty.channel.socket.nio
+     NioServerSocketChannel
+     NioSocketChannel
+     NioDatagramChannel]
     [io.netty.handler.ssl SslContext SslContextBuilder]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
+    [io.netty.resolver
+     AddressResolverGroup
+     NoopAddressResolverGroup
+     ResolvedAddressTypes]
+    [io.netty.resolver.dns
+     DnsNameResolverBuilder
+     DnsServerAddressStreamProvider
+     SingletonDnsServerAddressStreamProvider
+     SequentialDnsServerAddressStreamProvider]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
-    [java.net SocketAddress InetSocketAddress]
+    [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
      GenericFutureListener Future DefaultThreadFactory]
     [java.io InputStream File]
@@ -51,7 +62,8 @@
      Slf4JLoggerFactory
      JdkLoggerFactory]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]))
+    [java.security PrivateKey]
+    [aleph.utils PluggableDnsAddressResolverGroup]))
 
 ;;;
 
@@ -320,12 +332,12 @@
   (description [_]
     (let [ch (channel ch)]
       (merge
-       {:type       "netty"
-        :closed?    (not (.isActive ch))
-        :sink?      true
-        :connection (assoc (connection-stats ch false)
-                           :direction :outbound)}
-       (additional-description))))
+        {:type       "netty"
+         :closed?    (not (.isActive ch))
+         :sink?      true
+         :connection (assoc (connection-stats ch false)
+                       :direction :outbound)}
+        (additional-description))))
   (isSynchronous [_]
     false)
   (put [this msg blocking?]
@@ -351,23 +363,23 @@
 
 (defn sink
   ([ch]
-   (sink ch true identity (fn [])))
+    (sink ch true identity (fn [])))
   ([ch downstream? coerce-fn]
-   (sink ch downstream? coerce-fn (fn [])))
+    (sink ch downstream? coerce-fn (fn [])))
   ([ch downstream? coerce-fn additional-description]
-   (let [count (AtomicLong. 0)
-         last-count (AtomicLong. 0)
-         sink (->ChannelSink
-               coerce-fn
-               downstream?
-               ch
-               additional-description)]
+    (let [count (AtomicLong. 0)
+          last-count (AtomicLong. 0)
+          sink (->ChannelSink
+                 coerce-fn
+                 downstream?
+                 ch
+                 additional-description)]
 
-     (d/chain' (.closeFuture (channel ch))
-               wrap-future
-               (fn [_] (s/close! sink)))
+      (d/chain' (.closeFuture (channel ch))
+        wrap-future
+        (fn [_] (s/close! sink)))
 
-     (doto sink (reset-meta! {:aleph/channel ch})))))
+      (doto sink (reset-meta! {:aleph/channel ch})))))
 
 (defn source
   [^Channel ch]
@@ -615,8 +627,8 @@
   [private-key certificate-chain]
   (when-not
     (or (and (instance? File private-key) (instance? File certificate-chain))
-        (and (instance? InputStream private-key) (instance? InputStream certificate-chain))
-        (and (instance? PrivateKey private-key) (instance? (class (into-array X509Certificate [])) certificate-chain)))
+      (and (instance? InputStream private-key) (instance? InputStream certificate-chain))
+      (and (instance? PrivateKey private-key) (instance? (class (into-array X509Certificate [])) certificate-chain)))
     (throw (IllegalArgumentException. "ssl-client-context arguments invalid"))))
 
 (set! *warn-on-reflection* false)
@@ -637,24 +649,24 @@
   of certificates."
   ([] (ssl-client-context {}))
   ([{:keys [private-key private-key-password certificate-chain trust-store]}]
-   (-> (SslContextBuilder/forClient)
-     (#(if (and private-key certificate-chain)
-         (do
-           (check-ssl-args private-key certificate-chain)
-           (if (instance? (class (into-array X509Certificate [])) certificate-chain)
-             (.keyManager %
-               private-key
-               private-key-password
-               certificate-chain)
-             (.keyManager %
-               certificate-chain
-               private-key
-               private-key-password)))
-         %))
-     (#(if trust-store
-         (.trustManager % trust-store)
-         %))
-     .build)))
+    (-> (SslContextBuilder/forClient)
+      (#(if (and private-key certificate-chain)
+          (do
+            (check-ssl-args private-key certificate-chain)
+            (if (instance? (class (into-array X509Certificate [])) certificate-chain)
+              (.keyManager %
+                private-key
+                private-key-password
+                certificate-chain)
+              (.keyManager %
+                certificate-chain
+                private-key
+                private-key-password)))
+          %))
+      (#(if trust-store
+          (.trustManager % trust-store)
+          %))
+      .build)))
 
 (set! *warn-on-reflection* true)
 
@@ -688,46 +700,174 @@
           thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
+(defn convert-address-types [address-types]
+  (case address-types
+    :ipv4-only ResolvedAddressTypes/IPV4_ONLY
+    :ipv6-only ResolvedAddressTypes/IPV6_ONLY
+    :ipv4-preferred ResolvedAddressTypes/IPV4_PREFERRED
+    :ipv6-preferred ResolvedAddressTypes/IPV6_PREFERRED))
+
+(def dns-default-port 53)
+
+(defn dns-name-servers-provider [servers]
+  (let [addresses (->> servers
+                    (map (fn [server]
+                           (cond
+                             (instance? InetSocketAddress server)
+                             server
+
+                             (string? server)
+                             (let [^URI uri (URI. (str "dns://" server))
+                                   port (.getPort uri)
+                                   port' (int (if (= -1 port) dns-default-port port))]
+                               (InetSocketAddress. (.getHost uri) port'))
+
+                             :else
+                             (throw
+                               (IllegalArgumentException.
+                                 (format "Don't know how to create InetSocketAddress from '%s'"
+                                   server)))))))]
+    (if (= 1 (count addresses))
+      (SingletonDnsServerAddressStreamProvider. (first addresses))
+      (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
+
+(defn dns-resolver-group
+  "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
+
+   DNS options are a map of:
+
+   |:--- |:---
+   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to `4096`
+   | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to `16`
+   | `address-types` | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
+   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to `5000`
+   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to `0`
+   | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
+   | `negative-ttl` | sets the TTL of the cache for the failed DNS queries (in seconds)
+   | `trace-enabled?` | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
+   | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
+   | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
+   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
+   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
+   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+  [{:keys [max-payload-size
+           max-queries-per-resolve
+           address-types
+           query-timeout
+           min-ttl
+           max-ttl
+           negative-ttl
+           trace-enabled?
+           opt-resources-enabled?
+           search-domains
+           ndots
+           decode-idn?
+           recursion-desired?
+           name-servers]
+    :or {max-payload-size 4096
+         max-queries-per-resolve 16
+         query-timeout 5000
+         min-ttl 0
+         max-ttl Integer/MAX_VALUE
+         trace-enabled? false
+         opt-resources-enabled? true
+         ndots -1
+         decode-idn? true
+         recursion-desired? true}}]
+  (let [^EventLoopGroup
+        client-group (if (epoll-available?)
+                       @epoll-client-group
+                       @nio-client-group)
+
+        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
+                    (.channelType ^Class NioDatagramChannel)
+                    (.maxPayloadSize max-payload-size)
+                    (.maxQueriesPerResolve max-queries-per-resolve)
+                    (.queryTimeoutMillis query-timeout)
+                    (.ttl min-ttl max-ttl)
+                    (.traceEnabled trace-enabled?)
+                    (.optResourceEnabled opt-resources-enabled?)
+                    (.ndots ndots)
+                    (.decodeIdn decode-idn?)
+                    (.recursionDesired recursion-desired?)
+                    (.resolvedAddressTypes (when (some? address-types)
+                                             (convert-address-types address-types))))
+
+            (some? negative-ttl)
+            (.negativeTtl negative-ttl)
+
+            (and (some? search-domains)
+              (not (empty? search-domains)))
+            (.searchDomains search-domains)
+
+            (and (some? name-servers)
+              (not (empty? name-servers)))
+            (.nameServerProvider ^DnsServerAddressStreamProvider
+              (dns-name-servers-provider name-servers)))]
+    (PluggableDnsAddressResolverGroup. b)))
+
 (defn create-client
-  [pipeline-builder
-   ^SslContext ssl-context
-   bootstrap-transform
-   ^SocketAddress remote-address
-   ^SocketAddress local-address
-   epoll?]
-  (let [^Class
-        channel (if (and epoll? (epoll-available?))
-                  EpollSocketChannel
-                  NioSocketChannel)
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    remote-address
+    local-address
+    epoll?]
+    (create-client pipeline-builder
+      ssl-context
+      bootstrap-transform
+      remote-address
+      local-address
+      epoll?
+      nil))
+  ([pipeline-builder
+    ^SslContext ssl-context
+    bootstrap-transform
+    ^SocketAddress remote-address
+    ^SocketAddress local-address
+    epoll?
+    name-resolver]
+    (let [^Class
+          channel (if (and epoll? (epoll-available?))
+                    EpollSocketChannel
+                    NioSocketChannel)
 
-        pipeline-builder (if ssl-context
-                           (fn [^ChannelPipeline p]
-                             (.addLast p "ssl-handler"
-                               (.newHandler ^SslContext ssl-context
-                                 (-> p .channel .alloc)
-                                 (.getHostName ^InetSocketAddress remote-address)
-                                 (.getPort ^InetSocketAddress remote-address)))
-                             (pipeline-builder p))
-                           pipeline-builder)]
-    (try
-      (let [b (doto (Bootstrap.)
-                (.option ChannelOption/SO_REUSEADDR true)
-                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group (if (and epoll? (epoll-available?))
-                          @epoll-client-group
-                          @nio-client-group))
-                (.channel channel)
-                (.handler (pipeline-initializer pipeline-builder))
-                bootstrap-transform)
+          pipeline-builder (if ssl-context
+                             (fn [^ChannelPipeline p]
+                               (.addLast p "ssl-handler"
+                                 (.newHandler ^SslContext ssl-context
+                                   (-> p .channel .alloc)
+                                   (.getHostName ^InetSocketAddress remote-address)
+                                   (.getPort ^InetSocketAddress remote-address)))
+                               (pipeline-builder p))
+                             pipeline-builder)]
+      (try
+        (let [client-group (if (and epoll? (epoll-available?))
+                             @epoll-client-group
+                             @nio-client-group)
+              resolver' (when (some? name-resolver)
+                          (cond
+                            (= :default name-resolver) nil
+                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                            (instance? AddressResolverGroup name-resolver) name-resolver))
+              b (doto (Bootstrap.)
+                  (.option ChannelOption/SO_REUSEADDR true)
+                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                  (.group client-group)
+                  (.channel channel)
+                  (.handler (pipeline-initializer pipeline-builder))
+                  (.resolver resolver')
+                  bootstrap-transform)
 
-            f (if local-address
-                (.connect b remote-address local-address)
-                (.connect b remote-address))]
+              f (if local-address
+                  (.connect b remote-address local-address)
+                  (.connect b remote-address))]
 
-        (d/chain' (wrap-future f)
-          (fn [_]
-            (let [ch (.channel ^ChannelFuture f)]
-              ch)))))))
+          (d/chain' (wrap-future f)
+            (fn [_]
+              (let [ch (.channel ^ChannelFuture f)]
+                ch))))))))
 
 (defn start-server
   [pipeline-builder
@@ -758,9 +898,7 @@
               (.newHandler ssl-context
                 (-> p .channel .alloc)))
             (pipeline-builder p))
-          pipeline-builder)
-
-        ]
+          pipeline-builder)]
 
     (try
       (let [b (doto (ServerBootstrap.)

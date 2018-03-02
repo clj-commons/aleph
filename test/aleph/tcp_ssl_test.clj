@@ -2,31 +2,31 @@
   (:use
     [clojure test])
   (:require [aleph.tcp-test :refer [with-server]]
-            [aleph.tcp :as tcp]
-            [aleph.netty :as netty]
-            [manifold.stream :as s]
-            [byte-streams :as bs])
+    [aleph.tcp :as tcp]
+    [aleph.netty :as netty]
+    [manifold.stream :as s]
+    [byte-streams :as bs])
   (:import [java.security KeyFactory PrivateKey]
-           [java.security.cert CertificateFactory X509Certificate]
-           [java.io ByteArrayInputStream]
-           [java.security.spec RSAPrivateCrtKeySpec]
-           [io.netty.handler.ssl SslContextBuilder ClientAuth]
-           [org.apache.commons.codec.binary Base64]))
+    [java.security.cert CertificateFactory X509Certificate]
+    [java.io ByteArrayInputStream]
+    [java.security.spec RSAPrivateCrtKeySpec]
+    [io.netty.handler.ssl SslContextBuilder ClientAuth]
+    [org.apache.commons.codec.binary Base64]))
 
 (set! *warn-on-reflection* false)
 
 (defn ^PrivateKey gen-key
   [k]
   (let [spec (RSAPrivateCrtKeySpec. (:modulus k) (:publicExponent k) (:privateExponent k)
-                                    (:prime1 k) (:prime2 k) (:exponent1 k) (:exponent2 k)
-                                    (:coefficient k))
+               (:prime1 k) (:prime2 k) (:exponent1 k) (:exponent2 k)
+               (:coefficient k))
         gen (KeyFactory/getInstance "RSA")]
     (.generatePrivate gen spec)))
 
 (defn ^X509Certificate gen-cert
   [^String pemstr]
   (.generateCertificate (CertificateFactory/getInstance "X.509")
-                        (ByteArrayInputStream. (Base64/decodeBase64 pemstr))))
+    (ByteArrayInputStream. (Base64/decodeBase64 pemstr))))
 
 (def ca-cert
   (gen-cert "MIIDyjCCArKgAwIBAgIJAPj8IfB83MXVMA0GCSqGSIb3DQEBCwUAMHIxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlDdXBlcnRpbm8xGDAWBgNVBAoMD0JGUCBDb3Jwb3JhdGlvbjEOMAwGA1UECwwFQWxlcGgxEDAOBgNVBAMMB1Jvb3QgQ0EwHhcNMTYxMTIxMjEzMTIzWhcNMzcwMjI0MjEzMTIzWjByMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJQ3VwZXJ0aW5vMRgwFgYDVQQKDA9CRlAgQ29ycG9yYXRpb24xDjAMBgNVBAsMBUFsZXBoMRAwDgYDVQQDDAdSb290IENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1kKISz7cCJIU7pk+JBOH8+6UfvtR7BS1hTkWMw+IsTa9O1EJJqEtiJZTF267nLog+jfUr8AHSTR+qtKkbs77XrOMlaa6Zyq3Z2d/p8R3oUdurg6T3JECGwilYDsEMLNLXnqnUdkeWQJ7ea7UzgJ7ACZ61I4+Dv9xJQ+5BGMRkH+SUTDQ/um8UmrPxbDDljR7TbTY7WtAPbxbALrEKA5EfNS1vdcYCfguN0BUcHaHEiBDAIU7IXZigdPBnSTDHhqBYHjmgQZ9U/ojrvmjG9lsG6X5WGj5H1SZCmpWbp+WiNEgHckzhRkCKU5V53mpqcrFQ5WJjAHGQrBF7CD1IUj6VwIDAQABo2MwYTAdBgNVHQ4EFgQUHZFU7TsvVmLorae0LntY0bhIRwIwHwYDVR0jBBgwFoAUHZFU7TsvVmLorae0LntY0bhIRwIwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAYYwDQYJKoZIhvcNAQELBQADggEBACfuSp0gy8QI1BP6bAueT6/t7Nz2Yg2kwbIXac5sanLc9MjhjG/EjLrkwhCpEVEfFrKDBl/s0wdYoHcVTDlev4H3QOM4WeciaSUsEytihhey72f89ZyvQ+FGbif2BXNk4kPN0eo3t5TXS8Fw/iBi371KZo4jTpdsB0Y3fwKtXw8ieUAlaF86yGHA9bMF7eGXorpShEJ8JRWWy2pV9WtkYw+tBWj7PtXQAIUx4t+J3+B9pSUyHxxArKmZUKa3GpJzBAKXTLHddtadJLqptjZ6pq7OSiihAs3fxVF+TGDJyPyk8K48y9G2MinrYXVzKHeQWqPTrO0jz1F4FL9LiD+HwLc="))
@@ -67,8 +67,7 @@
             :exponent2
             (BigInteger. "623e290f9b444e000da852e6810df489baf226cb1f85edcb969173f2322ebf372106c1fbd4a35541bd38e3eb570eb31324206fa77c631c98c4b37b2f03d97e7354a59ba319ef00e1a4cde574c3959dce603a13d22757e1d450094bd4e97228e8729a204aa8fb10e4bb15e481ae4f522cd78488fb9f7f6b0817314f1b38ddac71" 16)
             :coefficient
-            (BigInteger. "1784f8c57ea68804d836a6259f93800858b9e3d5f570ab2c682006efd05a2893405317f5aa543b31db8a3fc91362d9fafc91300a3d818f6e71423fe76486fd04a9c064cfb67f25cb5ddc507d060605cc05b1641648d26f09fe0e71ce48a8fab9698ed85b003982d8dbdd09f310ca99fca5ad58eaa61fac179bc2d34dd128ee50" 16)
-        }))
+            (BigInteger. "1784f8c57ea68804d836a6259f93800858b9e3d5f570ab2c682006efd05a2893405317f5aa543b31db8a3fc91362d9fafc91300a3d818f6e71423fe76486fd04a9c064cfb67f25cb5ddc507d060605cc05b1641648d26f09fe0e71ce48a8fab9698ed85b003982d8dbdd09f310ca99fca5ad58eaa61fac179bc2d34dd128ee50" 16)}))
 
 (def client-cert
   (gen-cert "MIIEJDCCAwygAwIBAgICEAEwDQYJKoZIhvcNAQELBQAwcjELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCUN1cGVydGlubzEYMBYGA1UECgwPQkZQIENvcnBvcmF0aW9uMQ4wDAYDVQQLDAVBbGVwaDEQMA4GA1UEAwwHUm9vdCBDQTAeFw0xNjExMjEyMTQyMzFaFw0zNjAxMjEyMTQyMzFaMHoxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlDdXBlcnRpbm8xGDAWBgNVBAoMD0JGUCBDb3Jwb3JhdGlvbjEUMBIGA1UECwwLQ2xpZW50IENlcnQxEjAQBgNVBAMMCWxvY2FsaG9zdDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKkfLKv6OOBeThZ/qGNlFubAMDMrtbxIL74gVa526RCO2TdGbVc9iqUxCTBbj5sDxoZwdn+jYi0YbRVd5QF6TNo4W8LZkwb7tckDL0ag2o8PCOge8aAEk1xU5HA1Pb4oyhRrnl+22+OdY0Jputn7tMnTP63J6uFc5HXjKsgA+meqMGnzdYIWFapNhPjOq6CuhGikh2O+Rxgu9wXwpwCDbaP9Hl8wCODZhE1MoDXXi1M7gJ2SAcGEzc4vZiPy3Wm0UIMLEblqswHOi1w0X3obdrD8OKTTpauvXoHv5cqdLA7bwLaK2XEpApZfH21XAoa1cpRd4TnwHz7aNgzVINSYjdcCAwEAAaOBuzCBuDAJBgNVHRMEAjAAMBEGCWCGSAGG+EIBAQQEAwIHgDAzBglghkgBhvhCAQ0EJhYkT3BlblNTTCBHZW5lcmF0ZWQgQ2xpZW50IENlcnRpZmljYXRlMB0GA1UdDgQWBBTVEjypn0lUYwu1jSMkWNA4ipfFpDAfBgNVHSMEGDAWgBQdkVTtOy9WYuitp7Que1jRuEhHAjAOBgNVHQ8BAf8EBAMCBeAwEwYDVR0lBAwwCgYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBALCvifJ1ROcOuDVnQezjcVcFFhEccBVdi1b022fII9u1Lyp1QtNaXNC8o9vVa//VwInGvlhGwrWUJiey4QxIfhoHlEuWnZ1OIfxVyA3GqWpu0G1zwuqG8hG2kDfV3m4h7QBl9pSNHJIvxtp75j7qj0r3EXTUFAX9j80Fu9kfWJXUmumQOvz4gkZ/4GHz29iS3nah9/Kl4Mswb03mLClxNhLYwhVaFtPaxWcsFpBXJmJPiXwlGuiI169qmn9OFrw5kgQfoQoU97le39TzsLFXHUgmQQyzuraHadbQOY24uPskDbiRMZMPSXYhFt05jEcgVHp50YFkk93rmA4pBQ4XoD0="))
@@ -88,14 +87,13 @@
             :exponent2
             (BigInteger. "4e5f77096d4c59c663f9666c08a52f125af1ce372eb539777f2c560109cabe7c35a9fc736ddcdcea3b0d3d782f37da38bfa324127450c51bb3ff7b7d9173acf932840690300c239df7158f1045eb731e5fe02a7f58969e34cc6e99774f00b07e922a9fdf0aee7187be97945375a7738fa5c8c1911a3fb72486daa5fd3e4ba015" 16)
             :coefficient
-            (BigInteger. "00cb3cb8fc8480768922c77368d31a457b6c8922a72e544ec82bee19cafdf303e2fb236f65edad78a9124d9e6b002d2e6fa592aca443dbb217a6dc124c6d425df7079d91a754cb06c7bd97397dde6a24d13bbef3c8e31ac2578fe46db3d57c05d9f1d04f09bfc465014b6191ce9beea93b6b2d5ea259df9e35768b8f0041d956f8" 16)
-            }))
+            (BigInteger. "00cb3cb8fc8480768922c77368d31a457b6c8922a72e544ec82bee19cafdf303e2fb236f65edad78a9124d9e6b002d2e6fa592aca443dbb217a6dc124c6d425df7079d91a754cb06c7bd97397dde6a24d13bbef3c8e31ac2578fe46db3d57c05d9f1d04f09bfc465014b6191ce9beea93b6b2d5ea259df9e35768b8f0041d956f8" 16)}))
 
 (def server-ssl-context
   (-> (SslContextBuilder/forServer server-key (into-array X509Certificate [server-cert]))
-      (.trustManager (into-array X509Certificate [ca-cert]))
-      (.clientAuth ClientAuth/OPTIONAL)
-      .build))
+    (.trustManager (into-array X509Certificate [ca-cert]))
+    (.clientAuth ClientAuth/OPTIONAL)
+    .build))
 
 (def client-ssl-context
   (netty/ssl-client-context
@@ -110,9 +108,9 @@
     ; data. Otherwise, the session might not be set up yet.
     (s/map (fn [msg]
              (is (= (.getSubjectDN client-cert)
-                    (.getSubjectDN (first (.getPeerCertificates (:ssl-session c))))))
+                   (.getSubjectDN (first (.getPeerCertificates (:ssl-session c))))))
              msg)
-           s)
+      s)
     s))
 
 (deftest test-ssl-echo

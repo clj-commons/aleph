@@ -1,4 +1,4 @@
-(defproject aleph "0.4.5-alpha4"
+(defproject aleph "0.4.5-alpha5"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
@@ -9,6 +9,9 @@
                  [io.netty/netty-codec "4.1.17.Final"]
                  [io.netty/netty-codec-http "4.1.17.Final"]
                  [io.netty/netty-handler "4.1.17.Final"]
+                 [io.netty/netty-handler-proxy "4.1.17.Final"]
+                 [io.netty/netty-resolver "4.1.17.Final"]
+                 [io.netty/netty-resolver-dns "4.1.17.Final"]
                  [manifold "0.1.6"]
                  [byte-streams "0.2.4-alpha3"]
                  [potemkin "0.4.4"]]
@@ -39,7 +42,6 @@
                    :stress :stress
                    :all (constantly true)}
   :jvm-opts ^:replace ["-server"
-                       "-XX:+UseConcMarkSweepGC"
                        #_"-Xmx256m"
                        "-Xmx2g"
                        "-XX:+HeapDumpOnOutOfMemoryError"
