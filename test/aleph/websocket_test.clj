@@ -44,7 +44,7 @@
       (is (= "hello" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8080" {:throw-exceptions false})))))
 
-  (with-both-handlers echo-handler
+  #_(with-both-handlers echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (s/put! c "hello with compression enabled")
       (is (= "hello with compression enabled" @(s/try-take! c 5e3)))))
