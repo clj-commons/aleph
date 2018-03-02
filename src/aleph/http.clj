@@ -115,7 +115,7 @@
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `65536`
    | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
-   | `response-executor` | the `java.util.concurrent.Executor` that will execute response callbacks
+   | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks
 
    Supported `proxy-options` are
 
