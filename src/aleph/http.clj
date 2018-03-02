@@ -187,7 +187,7 @@
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocols.
    | `headers` | the headers that should be included in the handshake
    | `compression?` | when set to `true`, enables client to use permessage-deflate compression extension, defaults to `false`.
-   | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it."
+   | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
@@ -206,7 +206,7 @@
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `headers` | the headers that should be included in the handshake
    | `compression?` | when set to `true`, enables permessage-deflate compression extention support for the connection, defaults to `false`.
-   | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it."
+   | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`"
