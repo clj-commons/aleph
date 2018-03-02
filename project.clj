@@ -1,20 +1,31 @@
+(def netty-version "4.1.22.Final")
+
+(def netty-modules
+  '[transport
+    transport-native-epoll
+    codec
+    codec-http
+    handler
+    handler-proxy
+    resolver
+    resolver-dns])
+
+(def other-dependencies
+  '[[org.clojure/tools.logging "0.4.0" :exclusions [org.clojure/clojure]]
+    [manifold "0.1.6"]
+    [byte-streams "0.2.4-alpha3"]
+    [potemkin "0.4.4"]])
+
 (defproject aleph "0.4.5-alpha5"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/tools.logging "0.4.0" :exclusions [org.clojure/clojure]]
-                 [io.netty/netty-transport "4.1.17.Final"]
-                 [io.netty/netty-transport-native-epoll "4.1.17.Final"]
-                 [io.netty/netty-codec "4.1.17.Final"]
-                 [io.netty/netty-codec-http "4.1.17.Final"]
-                 [io.netty/netty-handler "4.1.17.Final"]
-                 [io.netty/netty-handler-proxy "4.1.17.Final"]
-                 [io.netty/netty-resolver "4.1.17.Final"]
-                 [io.netty/netty-resolver-dns "4.1.17.Final"]
-                 [manifold "0.1.6"]
-                 [byte-streams "0.2.4-alpha3"]
-                 [potemkin "0.4.4"]]
+  :dependencies ~(concat
+                   other-dependencies
+                   (map
+                     #(vector (symbol (str "netty-" %)) netty-version)
+                     netty-modules))
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]
                                   [criterium "0.4.4"]
                                   [cheshire "5.8.0"]
