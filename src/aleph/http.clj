@@ -103,7 +103,7 @@
    |:---|:---
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
-   | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
+   | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
    | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
