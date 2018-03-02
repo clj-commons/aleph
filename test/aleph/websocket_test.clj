@@ -23,6 +23,10 @@
   `(with-server (http/start-server ~handler {:port 8080, :raw-stream? true})
      ~@body))
 
+(defmacro with-compressing-handler [handler & body]
+  `(with-server (http/start-server ~handler {:port 8080, :compression? true})
+     ~@body))
+
 (defmacro with-both-handlers [handler & body]
   `(do
      (with-handler ~handler ~@body)
@@ -34,8 +38,23 @@
     (d/catch (fn [e] {}))))
 
 (deftest test-echo-handler
-  (with-handler echo-handler
+  (with-both-handlers echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (s/put! c "hello")
       (is (= "hello" @(s/try-take! c 5e3))))
-    (is (= 400 (:status @(http/get "http://localhost:8080" {:throw-exceptions false}))))))
+    (is (= 400 (:status @(http/get "http://localhost:8080" {:throw-exceptions false})))))
+
+  (with-both-handlers echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
+      (s/put! c "hello with compression enabled")
+      (is (= "hello with compression enabled" @(s/try-take! c 5e3)))))
+
+  (with-compressing-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080")]
+      (s/put! c "hello")
+      (is (= "hello" @(s/try-take! c 5e3)))))
+  
+  (with-compressing-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
+      (s/put! c "hello compressed")
+      (is (= "hello compressed" @(s/try-take! c 5e3))))))

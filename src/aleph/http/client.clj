@@ -51,6 +51,8 @@
      WebSocketFrame
      WebSocketFrameAggregator
      WebSocketVersion]
+    [io.netty.handler.codec.http.websocketx.extensions.compression
+     WebSocketClientCompressionHandler]
     [io.netty.handler.proxy
      ProxyConnectionEvent
      ProxyHandler
@@ -610,21 +612,33 @@
 
 (defn websocket-connection
   [uri
-   {:keys [raw-stream? bootstrap-transform insecure? headers local-address epoll?
-           sub-protocols extensions? max-frame-payload max-frame-size]
+   {:keys [raw-stream?
+           insecure?
+           headers
+           local-address
+           bootstrap-transform
+           pipeline-transform
+           epoll?
+           sub-protocols
+           extensions?
+           max-frame-payload
+           max-frame-size
+           compression?]
     :or {bootstrap-transform identity
+         pipeline-transform identity
          raw-stream? false
          epoll? false
          sub-protocols nil
          extensions? false
          max-frame-payload 65536
-         max-frame-size 1048576}
+         max-frame-size 1048576
+         compression? false}
     :as options}]
   (let [uri (URI. uri)
-        ssl? (= "wss" (.getScheme uri))
+        scheme (.getScheme uri)
+        _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
+        ssl? (= "wss" scheme)
         [s handler] (websocket-client-handler raw-stream? uri sub-protocols extensions? headers max-frame-payload)]
-
-    (assert (#{"ws" "wss"} (.getScheme uri)) "scheme must be one of 'ws' or 'wss'")
 
     (d/chain'
       (netty/create-client
@@ -633,7 +647,12 @@
             (.addLast "http-client" (HttpClientCodec.))
             (.addLast "aggregator" (HttpObjectAggregator. 16384))
             (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-            (.addLast "handler" ^ChannelHandler handler)))
+            (#(when compression?
+                (.addLast ^ChannelPipeline %
+                          "websocket-deflater"
+                          WebSocketClientCompressionHandler/INSTANCE)))
+            (.addLast "handler" ^ChannelHandler handler)
+            pipeline-transform))
         (when ssl?
           (if insecure?
             (netty/insecure-ssl-client-context)
