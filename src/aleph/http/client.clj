@@ -272,7 +272,7 @@
     (when (and (nil? user) (some? password))
       (throw (IllegalArgumentException.
                "Could not setup http proxy with basic auth: 'user' is missing")))
-    
+
     (when (and (some? user) (nil? password))
       (throw (IllegalArgumentException.
                "Could not setup http proxy with basic auth: 'password' is missing")))
@@ -638,8 +638,13 @@
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
         ssl? (= "wss" scheme)
-        [s handler] (websocket-client-handler raw-stream? uri sub-protocols extensions? headers max-frame-payload)]
-
+        [s handler] (websocket-client-handler
+                      raw-stream?
+                      uri
+                      sub-protocols
+                      extensions?
+                      headers
+                      max-frame-payload)]
     (d/chain'
       (netty/create-client
         (fn [^ChannelPipeline pipeline]
