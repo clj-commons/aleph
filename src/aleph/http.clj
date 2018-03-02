@@ -39,14 +39,13 @@
    | `request-buffer-size` | the maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384`.  This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance.
    | `raw-stream?` | if `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `rejected-handler` | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
-   | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `4096`
+   | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `8192`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `8192`
+   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
    | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value"
-  [handler
-   {:keys [port socket-address executor raw-stream? bootstrap-transform pipeline-transform ssl-context request-buffer-size shutdown-executor? rejected-handler]
-    :as options}]
+  [handler options]
   (server/start-server handler options))
 
 (defn- create-connection
