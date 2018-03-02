@@ -186,11 +186,13 @@
    | `extensions?` | if `true`, the websocket extensions will be supported.
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocols.
    | `headers` | the headers that should be included in the handshake
-   | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to 65536.
-   | `max-frame-size` | maximum aggregate message size, in bytes, defaults to 1048576."
+   | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
+   | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
+   | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
   ([url]
     (websocket-client url nil))
-  ([url {:keys [raw-stream? insecure? sub-protocols extensions? headers max-frame-payload max-frame-size] :as options}]
+  ([url options]
     (client/websocket-connection url options)))
 
 (defn websocket-connection
@@ -201,12 +203,12 @@
    |:---|:---
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `headers` | the headers that should be included in the handshake
-   | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to 65536.
-   | `max-frame-size` | maximum aggregate message size, in bytes, defaults to 1048576.
-   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol"
+   | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
+   | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
+   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`"
   ([req]
     (websocket-connection req nil))
-  ([req {:keys [raw-stream? headers max-frame-payload max-frame-size allow-extensions?] :as options}]
+  ([req options]
     (server/initialize-websocket-handler req options)))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]

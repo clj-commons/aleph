@@ -536,7 +536,10 @@
 (defn initialize-websocket-handler
   [^NettyRequest req
    {:keys [raw-stream? headers max-frame-payload max-frame-size allow-extensions?]
-    :or {raw-stream? false, max-frame-payload 65536, max-frame-size 1048576, allow-extensions? false}
+    :or {raw-stream? false
+         max-frame-payload 65536
+         max-frame-size 1048576
+         allow-extensions? false}
     :as options}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
