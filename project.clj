@@ -24,7 +24,7 @@
   :dependencies ~(concat
                    other-dependencies
                    (map
-                     #(vector (symbol (str "netty-" %)) netty-version)
+                     #(vector (symbol "io.netty" (str "netty-" %)) netty-version)
                      netty-modules))
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]
                                   [criterium "0.4.4"]
