@@ -13,7 +13,8 @@
      (try
        ~@body
        (finally
-         (.close ^java.io.Closeable server#)))))
+         (.close ^java.io.Closeable server#)
+         (netty/wait-for-close server#)))))
 
 (defmacro with-handler [handler & body]
   `(with-server (http/start-server ~handler {:port 8080})
