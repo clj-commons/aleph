@@ -202,7 +202,7 @@
    deferred which yields a duplex stream that can be used to communicate with the
    client over the WebSocket protocol.
 
-   Make sure that server is create with `:raw-stream?` option set to `false` (which is default
+   Make sure that server is created with `:raw-stream?` option set to `false` (which is default
    behavior) not to mess up websocket handshaker.
 
    |:---|:---
