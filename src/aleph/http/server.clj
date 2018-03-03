@@ -37,7 +37,7 @@
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent HttpServerExpectContinueHandler]
+     LastHttpContent HttpServerExpectContinueHandler HttpObjectAggregator]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
      WebSocketServerHandshaker
@@ -586,6 +586,9 @@
             factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
         (if-let [handshaker (.newHandshaker factory req)]
           (try
+            (doto (.pipeline ch)
+              (.remove "continue-handler")
+              (.addAfter "http-server" "aggregator" (HttpObjectAggregator. 65536)))
             (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
                   p (.newPromise ch)
                   h (DefaultHttpHeaders.)]
@@ -598,7 +601,6 @@
                    (fn [_]
                      (doto (.pipeline ch)
                        (.remove "request-handler")
-                       (.remove "continue-handler")
                        (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
                        (#(when compression?
                            (.addLast ^ChannelPipeline %
