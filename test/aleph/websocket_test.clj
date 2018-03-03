@@ -21,18 +21,9 @@
   `(with-server (http/start-server ~handler {:port 8080})
      ~@body))
 
-(defmacro with-raw-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080, :raw-stream? true})
-     ~@body))
-
 (defmacro with-compressing-handler [handler & body]
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
-
-(defmacro with-both-handlers [handler & body]
-  `(do
-     (with-handler ~handler ~@body)
-     (with-raw-handler ~handler ~@body)))
 
 (defn echo-handler [req]
   (-> (http/websocket-connection req)

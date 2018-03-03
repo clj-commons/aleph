@@ -202,6 +202,9 @@
    deferred which yields a duplex stream that can be used to communicate with the
    client over the WebSocket protocol.
 
+   Make sure that server is create with `:raw-stream?` option set to `false` (which is default
+   behavior) not to mess up websocket handshaker.
+
    |:---|:---
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `headers` | the headers that should be included in the handshake
