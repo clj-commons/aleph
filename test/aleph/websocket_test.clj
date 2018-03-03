@@ -40,7 +40,7 @@
     (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (deftest test-echo-handler
-  (with-both-handlers echo-handler
+  (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (s/put! c "hello")
       (is (= "hello" @(s/try-take! c 5e3))))
@@ -50,6 +50,11 @@
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (s/put! c "hello with compression enabled")
       (is (= "hello with compression enabled" @(s/try-take! c 5e3)))))
+
+  (with-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
+      (s/put! c "raw hello")
+      (is (= "raw hello" @(s/try-take! c 5e3)))))
 
   (with-compressing-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
