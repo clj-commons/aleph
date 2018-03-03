@@ -414,8 +414,8 @@
             max-header-size
             max-chunk-size
             false))
+        ;; (.addLast "aggregator" (HttpObjectAggregator. 65536))
         (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
-        (.addLast "aggregator" (HttpObjectAggregator. 65536))
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
             (let [compressor (HttpContentCompressor. (or compression-level 6))]
@@ -577,6 +577,7 @@
                (fn [_]
                  (doto (.pipeline ch)
                    (.remove "request-handler")
+                   ;; (.remove "aggregator")
                    (.remove "continue-handler")
                    (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
                    (#(when compression?
