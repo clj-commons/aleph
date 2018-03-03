@@ -36,7 +36,7 @@
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent HttpServerExpectContinueHandler]
+     LastHttpContent HttpServerExpectContinueHandler HttpObjectAggregator]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
      WebSocketServerHandshaker
@@ -415,6 +415,7 @@
             max-chunk-size
             false))
         (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
+        (.addLast "aggregator" (HttpObjectAggregator. 65536))
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
             (let [compressor (HttpContentCompressor. (or compression-level 6))]
