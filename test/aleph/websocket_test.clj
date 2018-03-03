@@ -6,7 +6,8 @@
     [manifold.stream :as s]
     [aleph.netty :as netty]
     [byte-streams :as bs]
-    [aleph.http :as http]))
+    [aleph.http :as http]
+    [clojure.tools.logging :as log]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -36,10 +37,10 @@
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
     (d/chain #(s/connect % %))
-    (d/catch (fn [e] {}))))
+    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (deftest test-echo-handler
-  (with-handler echo-handler
+  (with-both-handlers echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (s/put! c "hello")
       (is (= "hello" @(s/try-take! c 5e3))))
