@@ -559,12 +559,14 @@
            headers
            max-frame-payload
            max-frame-size
+           max-content-length
            allow-extensions?
            compression?
            pipeline-transform]
     :or {raw-stream? false
          max-frame-payload 65536
          max-frame-size 1048576
+         max-content-length 65536
          allow-extensions? false
          compression? false
          pipeline-transform identity}
@@ -588,7 +590,7 @@
           (try
             (doto (.pipeline ch)
               (.remove "continue-handler")
-              (.addAfter "http-server" "aggregator" (HttpObjectAggregator. 65536)))
+              (.addAfter "http-server" "aggregator" (HttpObjectAggregator. (int max-content-length))))
             (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
                   p (.newPromise ch)
                   h (DefaultHttpHeaders.)]
