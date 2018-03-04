@@ -481,9 +481,16 @@
    ^WebSocketServerHandshaker handshaker]
   (let [d (d/deferred)
         out (netty/sink ch false
-              #(if (instance? CharSequence %)
-                 (TextWebSocketFrame. (bs/to-string %))
-                 (BinaryWebSocketFrame. (netty/to-byte-buf ch %))))
+              (fn [c]
+                (cond
+                  (instance? CharSequence c)
+                  (TextWebSocketFrame. (bs/to-string c))
+
+                  (instance? ByteBuf c)
+                  (BinaryWebSocketFrame. (netty/acquire c))
+
+                  :else
+                  (BinaryWebSocketFrame. (netty/to-byte-buf ch c)))))
         in (netty/buffered-source ch (constantly 1) 16)]
 
     (s/on-drained in

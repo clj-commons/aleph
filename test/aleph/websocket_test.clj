@@ -41,7 +41,7 @@
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
-    (d/chain #(s/connect (s/map (fn [c] (if (string? c) c (netty/acquire c))) %) %))
+    (d/chain #(s/connect % %))
     (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (deftest test-echo-handler
