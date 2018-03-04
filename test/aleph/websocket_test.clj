@@ -63,8 +63,13 @@
 
   (with-handler raw-echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
-      (s/put! c (.getBytes "raw conn hello" "UTF-8"))
-      (is (= "raw conn hello" @(s/try-take! c 5e3)))))
+      (s/put! c (.getBytes "raw conn bytes hello" "UTF-8"))
+      (is (= "raw conn bytes hello" @(s/try-take! c 5e3)))))
+
+  (with-handler raw-echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080")]
+      (s/put! c "raw conn string hello")
+      (is (= "raw conn string hello" @(s/try-take! c 5e3)))))
 
   (with-compressing-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
