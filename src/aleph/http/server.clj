@@ -571,52 +571,52 @@
          compression? false
          pipeline-transform identity}
     :as options}]
-
-  (-> req ^AtomicBoolean (.websocket?) (.set true))
-
   (let [^Channel ch (.ch req)
         ssl? (identical? :https (:scheme req))]
     (if-not (websocket-upgrade-request? req)
       (do
         (send-websocket-request-expected! ch ssl?)
         (d/error-deferred (ex-info "not a websocket upgrade request" req)))
-      (let [url (str
-                 (if ssl? "wss://" "ws://")
-                 (get-in req [:headers "host"])
-                 (:uri req))
-            req (http/ring-request->full-netty-request req)
-            factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
-        (if-let [handshaker (.newHandshaker factory req)]
-          (try
-            (doto (.pipeline ch)
-              (.remove "continue-handler")
-              (.addAfter "http-server" "aggregator" (HttpObjectAggregator. (int max-content-length))))
-            (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
-                  p (.newPromise ch)
-                  h (DefaultHttpHeaders.)]
-              (http/map->headers! h headers)
-              (-> (try
-                    (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
-                    (catch Throwable e
-                      (d/error-deferred e)))
-                  (d/chain'
-                   (fn [_]
-                     (doto (.pipeline ch)
-                       (.remove "request-handler")
-                       (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-                       (#(when compression?
-                           (.addLast ^ChannelPipeline %
-                                     "websocket-deflater"
-                                     (WebSocketServerCompressionHandler.))))
-                       (.addLast "websocket-handler" handler)
-                       pipeline-transform)
-                     s))
-                  (d/catch'
-                      (fn [e]
-                        (send-websocket-request-expected! ch ssl?)
-                        (d/error-deferred e)))))
-            (catch Throwable e
-              (d/error-deferred e)))
-          (do
-            (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
-            (d/error-deferred (IllegalStateException. "unsupported version"))))))))
+      (do
+        (-> req ^AtomicBoolean (.websocket?) (.set true))
+        (let [url (str
+                   (if ssl? "wss://" "ws://")
+                   (get-in req [:headers "host"])
+                   (:uri req))
+              req (http/ring-request->full-netty-request req)
+              factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
+          (if-let [handshaker (.newHandshaker factory req)]
+            (try
+              #_(doto (.pipeline ch)
+                  (.remove "continue-handler")
+                  (.addAfter "http-server" "aggregator" (HttpObjectAggregator. (int max-content-length))))
+              (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
+                    p (.newPromise ch)
+                    h (DefaultHttpHeaders.)]
+                (http/map->headers! h headers)
+                (-> (try
+                      (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
+                      (catch Throwable e
+                        (d/error-deferred e)))
+                    (d/chain'
+                     (fn [_]
+                       (doto (.pipeline ch)
+                         (.remove "request-handler")
+                         (.remove "continue-handler")
+                         (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+                         (#(when compression?
+                             (.addLast ^ChannelPipeline %
+                                       "websocket-deflater"
+                                       (WebSocketServerCompressionHandler.))))
+                         (.addLast "websocket-handler" handler)
+                         pipeline-transform)
+                       s))
+                    (d/catch'
+                        (fn [e]
+                          (send-websocket-request-expected! ch ssl?)
+                          (d/error-deferred e)))))
+              (catch Throwable e
+                (d/error-deferred e)))
+            (do
+              (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
+              (d/error-deferred (IllegalStateException. "unsupported version")))))))))
