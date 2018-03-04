@@ -22,7 +22,7 @@
      ~@body))
 
 (defmacro with-raw-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080, :raw-stream? true})
+  `(with-server (http/start-server ~handler {:port 8081, :raw-stream? true})
      ~@body))
 
 (defmacro with-compressing-handler [handler & body]
@@ -45,11 +45,17 @@
     (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (deftest test-echo-handler
-  (with-both-handlers echo-handler
+  (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (s/put! c "hello")
       (is (= "hello" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8080" {:throw-exceptions false})))))
+
+  (with-raw-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8081")]
+      (s/put! c "hello raw handler")
+      (is (= "hello raw handler" @(s/try-take! c 5e3))))
+    (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false})))))
 
   (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
