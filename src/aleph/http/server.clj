@@ -515,7 +515,7 @@
        ([_ ctx]
          (when-not (s/closed? out)
            (s/close! out))
-         (when-not (s/clased? in)
+         (when-not (s/closed? in)
            (s/close! in)))
 
        :channel-read
