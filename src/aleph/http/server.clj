@@ -525,10 +525,7 @@
                    (let [body (.content ^BinaryWebSocketFrame msg)]
                      (netty/put! ch in
                        (if raw-stream?
-                         ;; xxx: i'm not even sure what we can do with this stream,
-                         ;; as we get only freed io.netty.buffer.PooledUnsafeDirectByteBuf
-                         ;; which are essentially useless in case of binary messages
-                         body
+                         (netty/acquire body)
                          (netty/buf->array body))))
 
                    (instance? PingWebSocketFrame msg)

@@ -41,7 +41,7 @@
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
-    (d/chain #(s/connect % %))
+    (d/chain #(s/connect (s/map (fn [c] (if (string? c) c (netty/acquire c))) %) %))
     (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (deftest test-echo-handler
@@ -66,7 +66,7 @@
     (with-handler raw-echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080")]
         (s/put! c (.getBytes "raw conn bytes hello" "UTF-8"))
-        (is (= "raw conn bytes hello" @(s/try-take! c 5e3))))))
+        (is (= "raw conn bytes hello" (bs/to-string @(s/try-take! c 5e3)))))))
 
   (testing "websocket server: raw-stream? with string message"
     (with-handler raw-echo-handler
