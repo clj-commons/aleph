@@ -56,20 +56,23 @@
       (s/put! c "hello with compression enabled")
       (is (= "hello with compression enabled" @(s/try-take! c 5e3)))))
 
-  (with-handler echo-handler
-    (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
-      (s/put! c (.getBytes "raw client hello" "UTF-8"))
-      (is (= "raw client hello" (bs/to-string (netty/buf->array @(s/try-take! c 5e3)))))))
+  (testing "websocket client: raw-stream?"
+    (with-handler echo-handler
+      (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
+        (s/put! c (.getBytes "raw client hello" "UTF-8"))
+        (is (= "raw client hello" (bs/to-string (netty/buf->array @(s/try-take! c 5e3))))))))
 
-  (with-handler raw-echo-handler
-    (let [c @(http/websocket-client "ws://localhost:8080")]
-      (s/put! c (.getBytes "raw conn bytes hello" "UTF-8"))
-      (is (= "raw conn bytes hello" @(s/try-take! c 5e3)))))
+  (testing "websocket server: raw-stream? with binary message"
+    (with-handler raw-echo-handler
+      (let [c @(http/websocket-client "ws://localhost:8080")]
+        (s/put! c (.getBytes "raw conn bytes hello" "UTF-8"))
+        (is (= "raw conn bytes hello" @(s/try-take! c 5e3))))))
 
-  (with-handler raw-echo-handler
-    (let [c @(http/websocket-client "ws://localhost:8080")]
-      (s/put! c "raw conn string hello")
-      (is (= "raw conn string hello" @(s/try-take! c 5e3)))))
+  (testing "websocket server: raw-stream? with string message"
+    (with-handler raw-echo-handler
+      (let [c @(http/websocket-client "ws://localhost:8080")]
+        (s/put! c "raw conn string hello")
+        (is (= "raw conn string hello" @(s/try-take! c 5e3))))))
 
   (with-compressing-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
