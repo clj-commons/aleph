@@ -479,8 +479,7 @@
   [raw-stream?
    ^Channel ch
    ^WebSocketServerHandshaker handshaker]
-  (let [d (d/deferred)
-        out (netty/sink ch false
+  (let [out (netty/sink ch false
               (fn [c]
                 (cond
                   (instance? CharSequence c)
@@ -514,8 +513,10 @@
 
        :channel-inactive
        ([_ ctx]
-         (s/close! out)
-         (s/close! in))
+         (when-not (s/closed? out)
+           (s/close! out))
+         (when-not (s/clased? in)
+           (s/close! in)))
 
        :channel-read
        ([_ ctx msg]
