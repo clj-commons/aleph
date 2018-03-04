@@ -209,7 +209,6 @@
    | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
-   | `max-content-length` | the maximum length of the aggregated content of the upgrade request in bytes, defaults to `65536`.
    | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`"
   ([req]
     (websocket-connection req nil))
