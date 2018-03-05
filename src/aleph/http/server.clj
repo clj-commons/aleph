@@ -495,7 +495,9 @@
     (s/on-drained in
       #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))
          netty/wrap-future
-         (fn [_] (.close ch))))
+         (fn [_]
+           (.close ch)
+           (s/close! in))))
 
     [(doto
        (s/splice out in)
@@ -513,10 +515,13 @@
 
        :channel-inactive
        ([_ ctx]
+         ;; do not close *in* here: after *out* is marked as closed
+         ;; *in* should be marked at drained. This leads to closing
+         ;; handshake to be sent and channel to be closed after
+         ;; *in* channel will be closed after that not to mess up
+         ;; with an executor that's potentially shutdown already
          (when-not (s/closed? out)
-           (s/close! out))
-         (when-not (s/closed? in)
-           (s/close! in)))
+           (s/close! out)))
 
        :channel-read
        ([_ ctx msg]
