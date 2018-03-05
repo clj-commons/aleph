@@ -493,9 +493,13 @@
         in (netty/buffered-source ch (constantly 1) 16)]
 
     (s/on-drained in
-      #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))
-         netty/wrap-future
-         (fn [_] (.close ch))))
+      ;; there's a change that the connection was closed by the server,
+      ;; in that case *out* would be closed earlier and the underlying
+      ;; netty channel is already terminated
+      #(when (.isOpen ch)
+         (d/chain' (.close handshaker ch (CloseWebSocketFrame.))
+           netty/wrap-future
+           (fn [_] (.close ch)))))
 
     [(doto
        (s/splice out in)
