@@ -342,17 +342,21 @@
     false)
   (put [this msg blocking?]
     (if (s/closed? this)
+      ;; TODO(kachayev): i'm not sure this is not breaking
+      ;; contract when blocking? is set to TRUE
       (d/success-deferred false)
       (let [msg (try
                   (coerce-fn msg)
                   (catch Exception e
                     (log/error e
                       (str "cannot coerce "
-                        (.getName (class msg))
-                        " into binary representation"))
+                           (.getName (class msg))
+                           " into binary representation"))
                     (close ch)))
-            ^ChannelFuture f (write-and-flush ch msg)
-            d (d/chain (wrap-future f) (fn [_] true))]
+            d (if (nil? msg)
+                (d/success-deferred true)
+                (let [^ChannelFuture f (write-and-flush ch msg)]
+                  (d/chain' (wrap-future f) (fn [_] true))))]
         (if blocking?
           @d
           d))))

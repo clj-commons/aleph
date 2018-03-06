@@ -524,6 +524,11 @@
   (let [d (d/deferred)
         in (atom nil)
         desc (atom {})
+        pong-waiters (atom nil)
+        resolve-pongs! (fn [v]
+                         (when-let [waiters @pong-waiters]
+                           (doseq [w waiters] (d/success! w v))
+                           (reset! pong-waiters nil)))
         handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
 
     [d
@@ -540,7 +545,8 @@
        :channel-inactive
        ([_ ctx]
          (when (realized? d)
-           (s/close! @d)))
+           (s/close! @d))
+         (resolve-pongs! false))
 
        :channel-active
        ([_ ctx]
@@ -558,10 +564,10 @@
                (do
                  (.finishHandshake handshaker ch msg)
                  (let [out (netty/sink ch false
-                             #(if (instance? CharSequence %)
-                                (TextWebSocketFrame. (bs/to-string %))
-                                (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
+                             (http/websocket-message-coerce-fn ch pong-waiters)
                              (fn [] @desc))]
+
+                   (s/on-closed out (fn [] (resolve-pongs! false)))
 
                    (d/success! d
                      (doto
@@ -594,7 +600,7 @@
                      (netty/buf->array frame))))
 
                (instance? PongWebSocketFrame msg)
-               nil
+               (resolve-pongs! true)
 
                (instance? PingWebSocketFrame msg)
                (let [frame (.content ^PingWebSocketFrame msg)]

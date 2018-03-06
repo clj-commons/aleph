@@ -30,6 +30,10 @@
      LastHttpContent HttpChunkedInput]
     [io.netty.handler.stream
      ChunkedFile ChunkedWriteHandler]
+    [io.netty.handler.codec.http.websocketx
+     PingWebSocketFrame
+     TextWebSocketFrame
+     BinaryWebSocketFrame]
     [java.io
      File
      RandomAccessFile
@@ -406,3 +410,26 @@
         (handle-cleanup ch f))
 
       f)))
+
+(defn websocket-message-coerce-fn [^Channel ch pong-waiters]
+  (fn [msg]
+    (cond
+      (and (map? msg) (contains? msg :aleph/ping))
+      (if-let [w @pong-waiters]
+        (do
+          ;; do not need to send PING when it was already done
+          (reset! pong-waiters (conj w (:d msg)))
+          nil)
+        (let [frame (if (nil? (:aleph/ping msg))
+                      (PingWebSocketFrame.)
+                      (->> msg
+                           (netty/to-byte-buf ch)
+                           (PingWebSocketFrame.)))]
+          (reset! pong-waiters [(:d msg)])
+          frame))
+
+      (instance? CharSequence msg)
+      (TextWebSocketFrame. (bs/to-string msg))
+
+      :else
+      (BinaryWebSocketFrame. (netty/to-byte-buf ch msg)))))

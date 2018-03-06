@@ -4,6 +4,7 @@
     [clojure.string :as str]
     [manifold.deferred :as d]
     [manifold.executor :as executor]
+    [manifold.stream :as s]
     [aleph.flow :as flow]
     [aleph.http
      [server :as server]
@@ -213,7 +214,19 @@
   ([req]
     (websocket-connection req nil))
   ([req options]
-    (server/initialize-websocket-handler req options)))
+   (server/initialize-websocket-handler req options)))
+
+(defn websocket-ping
+  ([conn]
+   (websocket-ping conn nil))
+  ([conn data]
+   (let [d' (d/deferred)]
+     (d/chain'
+      (s/put! conn {:aleph/ping data :d d'})
+      #(when (and (false? %) (not (d/realized? d')))
+         ;; meaning connection is already closed
+         (d/success! d' false)))
+     d')))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request

@@ -59,3 +59,21 @@
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (s/put! c "hello compressed")
       (is (= "hello compressed" @(s/try-take! c 5e3))))))
+
+(deftest test-ping-pong-protocol
+  (testing "empty ping from the client"
+    (with-handler #(http/websocket-connection %)
+      (let [c @(http/websocket-client "ws://localhost:8080")]
+        (is (true? (deref (http/websocket-ping c) 5e3 ::timeout))))))
+
+  (testing "empty ping from the server"
+    (let [d' (d/deferred)]
+      (with-handler (fn [req]
+                      (d/chain'
+                       (http/websocket-connection req)
+                       (fn [conn]
+                         (d/chain'
+                          (http/websocket-ping conn)
+                          (partial d/success! d')))))
+        @(http/websocket-client "ws://localhost:8080")
+        (is (true? (deref d' 5e3 ::timeout)))))))

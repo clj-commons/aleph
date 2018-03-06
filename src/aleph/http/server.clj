@@ -479,16 +479,20 @@
    ^Channel ch
    ^WebSocketServerHandshaker handshaker]
   (let [d (d/deferred)
-        out (netty/sink ch false
-              #(if (instance? CharSequence %)
-                 (TextWebSocketFrame. (bs/to-string %))
-                 (BinaryWebSocketFrame. (netty/to-byte-buf ch %))))
+        pong-waiters (atom nil)
+        resolve-pongs! (fn [v]
+                         (when-let [waiters @pong-waiters]
+                           (doseq [w waiters] (d/success! w v))
+                           (reset! pong-waiters nil)))
+        out (netty/sink ch false (http/websocket-message-coerce-fn ch pong-waiters))
         in (netty/buffered-source ch (constantly 1) 16)]
+
+    (s/on-closed out (fn [] (resolve-pongs! false)))
 
     (s/on-drained in
       #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))
          netty/wrap-future
-         (fn [_] (.close ch))))
+         (fn [_] (netty/close ch))))
 
     [(doto
        (s/splice out in)
@@ -502,7 +506,7 @@
          (when-not (instance? IOException ex)
            (log/warn ex "error in websocket handler"))
          (s/close! out)
-         (.close ctx))
+         (netty/close ctx))
 
        :channel-inactive
        ([_ ctx]
@@ -529,6 +533,9 @@
 
                    (instance? PingWebSocketFrame msg)
                    (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
+
+                   (instance? PongWebSocketFrame msg)
+                   (resolve-pongs! true)
 
                    (instance? CloseWebSocketFrame msg)
                    (.close handshaker ch (netty/acquire msg))))))
