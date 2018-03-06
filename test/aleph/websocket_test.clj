@@ -29,11 +29,6 @@
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
 
-(defmacro with-both-handlers [handler & body]
-  `(do
-     (with-handler ~handler ~@body)
-     (with-raw-handler ~handler ~@body)))
-
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
     (d/chain #(s/connect % %))
@@ -50,12 +45,6 @@
       (is @(s/put! c "hello"))
       (is (= "hello" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8080" {:throw-exceptions false})))))
-
-  (with-raw-handler echo-handler
-    (let [c @(http/websocket-client "ws://localhost:8081")]
-      (is @(s/put! c "hello raw handler"))
-      (is (= "hello raw handler" @(s/try-take! c 5e3))))
-    (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false})))))
 
   (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
@@ -89,3 +78,10 @@
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (is @(s/put! c "hello compressed"))
       (is (= "hello compressed" @(s/try-take! c 5e3))))))
+
+(deftest test-echo-handler-with-raw-stream-server
+  (with-raw-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8081")]
+      (is @(s/put! c "hello raw handler"))
+      (is (= "hello raw handler" @(s/try-take! c 5e3))))
+    (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
