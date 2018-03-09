@@ -226,7 +226,7 @@
    (websocket-ping conn d' nil))
   ([conn d' data]
    (d/chain'
-    (s/put! conn {:aleph/ping data :d d'})
+    (s/put! conn (aleph.http.core.WebsocketPing. d' data))
     #(when (and (false? %) (not (d/realized? d')))
        ;; meaning connection is already closed
        (d/success! d' false)))

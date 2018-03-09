@@ -61,7 +61,8 @@
      TimeUnit
      Executor
      ExecutorService
-     RejectedExecutionException]
+     RejectedExecutionException
+     ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicReference
      AtomicInteger
@@ -479,15 +480,11 @@
    ^Channel ch
    ^WebSocketServerHandshaker handshaker]
   (let [d (d/deferred)
-        pong-waiters (atom nil)
-        resolve-pongs! (fn [v]
-                         (when-let [waiters @pong-waiters]
-                           (doseq [w waiters] (d/success! w v))
-                           (reset! pong-waiters nil)))
-        out (netty/sink ch false (http/websocket-message-coerce-fn ch pong-waiters))
+        ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
+        out (netty/sink ch false (http/websocket-message-coerce-fn ch pending-pings))
         in (netty/buffered-source ch (constantly 1) 16)]
 
-    (s/on-closed out (fn [] (resolve-pongs! false)))
+    (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
 
     (s/on-drained in
       #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))
@@ -519,25 +516,25 @@
            (let [ch (.channel ctx)]
              (when (instance? WebSocketFrame msg)
                (let [^WebSocketFrame msg msg]
-                 (cond
+                 (condp instance? msg
 
-                   (instance? TextWebSocketFrame msg)
+                   TextWebSocketFrame
                    (netty/put! ch in (.text ^TextWebSocketFrame msg))
 
-                   (instance? BinaryWebSocketFrame msg)
+                   BinaryWebSocketFrame
                    (let [body (.content ^BinaryWebSocketFrame msg)]
                      (netty/put! ch in
                        (if raw-stream?
                          body
                          (netty/buf->array body))))
 
-                   (instance? PingWebSocketFrame msg)
+                   PingWebSocketFrame
                    (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
 
-                   (instance? PongWebSocketFrame msg)
-                   (resolve-pongs! true)
+                   PongWebSocketFrame
+                   (http/resolve-pings! pending-pings true)
 
-                   (instance? CloseWebSocketFrame msg)
+                   CloseWebSocketFrame
                    (.close handshaker ch (netty/acquire msg))))))
            (finally
              (netty/release msg)))))]))

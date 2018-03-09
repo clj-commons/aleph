@@ -31,6 +31,7 @@
     [io.netty.handler.stream
      ChunkedFile ChunkedWriteHandler]
     [io.netty.handler.codec.http.websocketx
+     WebSocketFrame
      PingWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame]
@@ -43,7 +44,8 @@
     [java.util
      Map$Entry]
     [java.util.concurrent
-     ConcurrentHashMap]
+     ConcurrentHashMap
+     ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicBoolean]))
 
@@ -411,24 +413,32 @@
 
       f)))
 
-(defn websocket-message-coerce-fn [^Channel ch pong-waiters]
-  (fn [msg]
-    (cond
-      (and (map? msg) (contains? msg :aleph/ping))
-      (if-let [w @pong-waiters]
-        (do
-          ;; do not need to send PING when it was already done
-          (reset! pong-waiters (conj w (:d msg)))
-          nil)
-        (let [frame (if (nil? (:aleph/ping msg))
-                      (PingWebSocketFrame.)
-                      (->> msg
-                           (netty/to-byte-buf ch)
-                           (PingWebSocketFrame.)))]
-          (reset! pong-waiters [(:d msg)])
-          frame))
+(deftype WebsocketPing [consumer payload])
 
-      (instance? CharSequence msg)
+(defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
+  (loop [^WebsocketPing ping (.poll pending-pings)]
+    (when (some? ping)
+      (let [d' (.-consumer ping)]
+        (when (not (realized? d'))
+          (d/success! d' v)))
+      (recur (.poll pending-pings)))))
+
+(defn websocket-message-coerce-fn [^Channel ch ^ConcurrentLinkedQueue pending-pings]
+  (fn [msg]
+    (condp instance? msg
+      WebSocketFrame
+      msg
+
+      WebsocketPing
+      (let [^WebsocketPing msg msg]
+        (.offer pending-pings msg)
+        (if-some [payload (.-payload msg)]
+          (->> payload
+               (netty/to-byte-buf ch)
+               (PingWebSocketFrame.))
+          (PingWebSocketFrame.)))
+
+      CharSequence
       (TextWebSocketFrame. (bs/to-string msg))
 
       :else

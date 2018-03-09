@@ -59,6 +59,8 @@
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
+    [java.util.concurrent
+     ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicInteger]))
 
@@ -524,11 +526,7 @@
   (let [d (d/deferred)
         in (atom nil)
         desc (atom {})
-        pong-waiters (atom nil)
-        resolve-pongs! (fn [v]
-                         (when-let [waiters @pong-waiters]
-                           (doseq [w waiters] (d/success! w v))
-                           (reset! pong-waiters nil)))
+        ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
         handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
 
     [d
@@ -546,7 +544,7 @@
        ([_ ctx]
          (when (realized? d)
            (s/close! @d))
-         (resolve-pongs! false))
+         (http/resolve-pings! pending-pings false))
 
        :channel-active
        ([_ ctx]
@@ -564,10 +562,10 @@
                (do
                  (.finishHandshake handshaker ch msg)
                  (let [out (netty/sink ch false
-                             (http/websocket-message-coerce-fn ch pong-waiters)
+                             (http/websocket-message-coerce-fn ch pending-pings)
                              (fn [] @desc))]
 
-                   (s/on-closed out (fn [] (resolve-pongs! false)))
+                   (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
 
                    (d/success! d
                      (doto
@@ -600,7 +598,7 @@
                      (netty/buf->array frame))))
 
                (instance? PongWebSocketFrame msg)
-               (resolve-pongs! true)
+               (http/resolve-pings! pending-pings true)
 
                (instance? PingWebSocketFrame msg)
                (let [frame (.content ^PingWebSocketFrame msg)]
