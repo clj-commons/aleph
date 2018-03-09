@@ -76,4 +76,20 @@
                           (http/websocket-ping conn)
                           (partial d/success! d')))))
         @(http/websocket-client "ws://localhost:8080")
-        (is (true? (deref d' 5e3 ::timeout)))))))
+        (is (true? (deref d' 5e3 ::timeout))))))
+
+  (testing "ping with payload from the client"
+    (with-handler #(http/websocket-connection %)
+      (let [d' (d/deferred)
+            c @(http/websocket-client "ws://localhost:8080")]
+        (is (true? (deref (http/websocket-ping c d' "hello!") 5e3 ::timeout))))))
+
+  (testing "concurrent pings from the client"
+    (with-handler #(http/websocket-connection %)
+      (let [c @(http/websocket-client "ws://localhost:8080")
+            all-pings (->> (range 10)
+                           (map (fn [_]
+                                  (-> (http/websocket-ping c)
+                                      (d/timeout! 1e3))))
+                           (apply d/zip'))]
+        (is (= (repeat 10 true) (deref all-pings 5e3 ::timeout)))))))
