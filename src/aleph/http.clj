@@ -217,16 +217,20 @@
    (server/initialize-websocket-handler req options)))
 
 (defn websocket-ping
+  "Takes a websocket endpoint (either client or server) and returns a deferred that will
+   yield true whenever the PONG comes back, or false if the connection is closed. Subsequent
+   PINGs are supressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
   ([conn]
-   (websocket-ping conn nil))
-  ([conn data]
-   (let [d' (d/deferred)]
-     (d/chain'
-      (s/put! conn {:aleph/ping data :d d'})
-      #(when (and (false? %) (not (d/realized? d')))
-         ;; meaning connection is already closed
-         (d/success! d' false)))
-     d')))
+   (websocket-ping conn (d/deferred) nil))
+  ([conn d']
+   (websocket-ping conn d' nil))
+  ([conn d' data]
+   (d/chain'
+    (s/put! conn {:aleph/ping data :d d'})
+    #(when (and (false? %) (not (d/realized? d')))
+       ;; meaning connection is already closed
+       (d/success! d' false)))
+   d'))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
