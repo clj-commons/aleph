@@ -83,5 +83,7 @@
   (with-raw-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8081")]
       (is @(s/put! c "hello raw handler"))
-      (is (= "hello raw handler" @(s/try-take! c 5e3))))
+      (is (= "hello raw handler" @(s/try-take! c 5e3)))
+      (is @(s/put! c "hello raw handler 2"))
+      (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
