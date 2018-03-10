@@ -413,15 +413,18 @@
 
       f)))
 
-(deftype WebsocketPing [consumer payload])
+(deftype WebsocketPing [deferred payload])
 
 (defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
-  (loop [^WebsocketPing ping (.poll pending-pings)]
-    (when (some? ping)
-      (let [d' (.-consumer ping)]
+  (loop []
+    (when-let [^WebsocketPing ping (.poll pending-pings)]
+      (let [d' (.-deferred ping)]
         (when (not (realized? d'))
-          (d/success! d' v)))
-      (recur (.poll pending-pings)))))
+          (try
+            (d/success! d' v)
+            (catch Throwable e
+              (log/error e "error in ping callback")))))
+      (recur))))
 
 (defn websocket-message-coerce-fn [^Channel ch ^ConcurrentLinkedQueue pending-pings]
   (fn [msg]
@@ -430,13 +433,17 @@
       msg
 
       WebsocketPing
-      (let [^WebsocketPing msg msg]
+      (let [^WebsocketPing msg msg
+            ;; this check should be safe as we rely on the strictly sequential
+            ;; processing of all messages put onto the same stream
+            send-ping? (.isEmpty pending-pings)]
         (.offer pending-pings msg)
-        (if-some [payload (.-payload msg)]
-          (->> payload
-               (netty/to-byte-buf ch)
-               (PingWebSocketFrame.))
-          (PingWebSocketFrame.)))
+        (when send-ping?
+          (if-some [payload (.-payload msg)]
+            (->> payload
+                 (netty/to-byte-buf ch)
+                 (PingWebSocketFrame.))
+            (PingWebSocketFrame.))))
 
       CharSequence
       (TextWebSocketFrame. (bs/to-string msg))
