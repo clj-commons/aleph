@@ -326,7 +326,6 @@
     handler))
 
 (defn pending-proxy-writes-handler []
-  ;; TODO: unbounded? maybe we need to add a limit here
   (let [pending-writes (atom [])
         flushed (atom false)]
     (netty/channel-handler
