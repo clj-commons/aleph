@@ -327,8 +327,13 @@
 
 (defn pending-proxy-writes-handler []
   ;; TODO: unbounded? maybe we need to add a limit here
-  (let [pending-writes (atom [])]
+  (let [pending-writes (atom [])
+        flushed (atom false)]
     (netty/channel-handler
+      :flush
+      ([_ ctx]
+       (reset! flushed true))
+
       :write
       ([_ ctx msg promise]
         (swap! pending-writes conj [msg promise]))
@@ -338,6 +343,8 @@
         (when (instance? ProxyConnectionEvent evt)
           (doseq [[msg promise] @pending-writes]
             (.write ^ChannelHandlerContext ctx msg promise))
+          (when @flushed
+            (.flush ^ChannelHandlerContext ctx))
           (.remove (.pipeline ctx) this))
         (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
 
