@@ -55,6 +55,7 @@
      WebSocketClientCompressionHandler]
     [io.netty.handler.proxy
      ProxyConnectionEvent
+     ProxyConnectException
      ProxyHandler
      HttpProxyHandler
      Socks4ProxyHandler
@@ -298,8 +299,9 @@
           (HttpProxyHandler. address headers)
           (HttpProxyHandler. address user password headers))))))
 
-(defn proxy-handler [{:keys [host port protocol user password]
-                      :or {protocol :http}
+(defn proxy-handler [{:keys [host port protocol user password connection-timeout]
+                      :or {protocol :http
+                           connection-timeout 6e4}
                       :as options}]
   {:pre [(some? host)]}
   (let [port' (int (cond
@@ -321,17 +323,25 @@
                       (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
                         protocol))))]
     (when (instance? ProxyHandler handler)
-      ;; as we will manage this on aleph side anyways
-      (.setConnectTimeoutMillis ^ProxyHandler handler -1))
+      (.setConnectTimeoutMillis ^ProxyHandler handler connection-timeout))
     handler))
 
-(defn pending-proxy-writes-handler []
+(defn pending-proxy-connection-handler [response-stream]
   (let [pending-writes (atom [])
         flushed (atom false)]
     (netty/channel-handler
+     :exception-caught
+     ([_ ctx cause]
+      (if-not (instance? ProxyConnectException cause)
+        (.fireExceptionCaught ^ChannelHandlerContext ctx cause)
+        (do
+          (s/put! response-stream cause)
+          ;; client handler should take care of the rest
+          (netty/close ctx))))
+
       :flush
       ([_ ctx]
-       (reset! flushed true))
+        (reset! flushed true))
 
       :write
       ([_ ctx msg promise]
@@ -339,13 +349,15 @@
 
       :user-event-triggered
       ([this ctx evt]
-        (when (instance? ProxyConnectionEvent evt)
-          (doseq [[msg promise] @pending-writes]
-            (.write ^ChannelHandlerContext ctx msg promise))
-          (when @flushed
-            (.flush ^ChannelHandlerContext ctx))
-          (.remove (.pipeline ctx) this))
-        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
+        (if-not (instance? ProxyConnectionEvent evt)
+          (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)
+          (do
+            (doseq [[msg promise] @pending-writes]
+              (.write ^ChannelHandlerContext ctx msg promise))
+            (when @flushed
+              (.flush ^ChannelHandlerContext ctx))
+            (.remove (.pipeline ctx) "proxy")
+            (.remove (.pipeline ctx) this)))))))
 
 (defn pipeline-builder
   [response-stream
@@ -384,10 +396,11 @@
           ;; HTTP/1.1 200 Connection established
           ;; before sending any requests
           (when (instance? ProxyHandler proxy)
-            (.addLast pipeline
-              "pending-proxy-writes"
+            (.addBefore pipeline
+              "http-client"
+              "pending-proxy-connection"
               ^ChannelHandler
-              (pending-proxy-writes-handler)))))
+              (pending-proxy-connection-handler response-stream)))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -487,6 +500,9 @@
                 (d/chain' rsp
                   (fn [rsp]
                     (cond
+                      (instance? Throwable rsp)
+                      (d/error-deferred rsp)
+
                       (identical? ::closed rsp)
                       (d/error-deferred
                         (ex-info
