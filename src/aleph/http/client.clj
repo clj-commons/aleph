@@ -61,7 +61,9 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [java.util.concurrent.atomic
-     AtomicInteger]))
+     AtomicInteger]
+    [aleph.utils
+     ProxyConnectionTimeoutException]))
 
 (set! *unchecked-math* true)
 
@@ -335,7 +337,7 @@
       (if-not (instance? ProxyConnectException cause)
         (.fireExceptionCaught ^ChannelHandlerContext ctx cause)
         (do
-          (s/put! response-stream cause)
+          (s/put! response-stream (ProxyConnectionTimeoutException. cause))
           ;; client handler should take care of the rest
           (netty/close ctx))))
 
