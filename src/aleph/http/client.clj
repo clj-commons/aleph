@@ -396,8 +396,8 @@
           ;; HTTP/1.1 200 Connection established
           ;; before sending any requests
           (when (instance? ProxyHandler proxy)
-            (.addBefore pipeline
-              "http-client"
+            (.addAfter pipeline
+              "proxy"
               "pending-proxy-connection"
               ^ChannelHandler
               (pending-proxy-connection-handler response-stream)))))
