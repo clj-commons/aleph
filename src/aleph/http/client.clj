@@ -39,7 +39,8 @@
      Channel ChannelFuture
      ChannelFutureListener
      ChannelHandler ChannelHandlerContext
-     ChannelPipeline]
+     ChannelPipeline
+     VoidChannelPromise]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -55,12 +56,15 @@
      WebSocketClientCompressionHandler]
     [io.netty.handler.proxy
      ProxyConnectionEvent
+     ProxyConnectException
      ProxyHandler
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [java.util.concurrent.atomic
-     AtomicInteger]))
+     AtomicInteger]
+    [aleph.utils
+     ProxyConnectionTimeoutException]))
 
 (set! *unchecked-math* true)
 
@@ -298,8 +302,9 @@
           (HttpProxyHandler. address headers)
           (HttpProxyHandler. address user password headers))))))
 
-(defn proxy-handler [{:keys [host port protocol user password]
-                      :or {protocol :http}
+(defn proxy-handler [{:keys [host port protocol user password connection-timeout]
+                      :or {protocol :http
+                           connection-timeout 6e4}
                       :as options}]
   {:pre [(some? host)]}
   (let [port' (int (cond
@@ -321,25 +326,38 @@
                       (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
                         protocol))))]
     (when (instance? ProxyHandler handler)
-      ;; as we will manage this on aleph side anyways
-      (.setConnectTimeoutMillis ^ProxyHandler handler -1))
+      (.setConnectTimeoutMillis ^ProxyHandler handler connection-timeout))
     handler))
 
-(defn pending-proxy-writes-handler []
-  ;; TODO: unbounded? maybe we need to add a limit here
-  (let [pending-writes (atom [])]
-    (netty/channel-handler
-      :write
-      ([_ ctx msg promise]
-        (swap! pending-writes conj [msg promise]))
+(defn pending-proxy-connection-handler [response-stream]
+  (netty/channel-handler
+    :exception-caught
+    ([_ ctx cause]
+      (if-not (instance? ProxyConnectException cause)
+        (.fireExceptionCaught ^ChannelHandlerContext ctx cause)
+        (do
+          (s/put! response-stream (ProxyConnectionTimeoutException. cause))
+          ;; client handler should take care of the rest
+          (netty/close ctx))))
 
-      :user-event-triggered
-      ([this ctx evt]
-        (when (instance? ProxyConnectionEvent evt)
-          (doseq [[msg promise] @pending-writes]
-            (.write ^ChannelHandlerContext ctx msg promise))
-          (.remove (.pipeline ctx) this))
-        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
+    :write
+    ([_ ctx msg promise]
+      (if-not (instance? VoidChannelPromise promise)
+        (.write ^ChannelHandlerContext ctx msg promise)
+        ;; note that we ignore promise from params on purpose
+        ;; `netty/write` executes all writes with VoidChannelPromise
+        ;; which forces PendingWritesQueue to fail with IllegalStateException
+        ;; (as it does not support void promise) and the error will be
+        ;; lost down the road as we never check if the write succeeded
+        (.write ^ChannelHandlerContext ctx msg)))
+
+    :user-event-triggered
+    ([this ctx evt]
+      (if-not (instance? ProxyConnectionEvent evt)
+        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)
+        (do
+          (.remove (.pipeline ctx) this)
+          (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))))
 
 (defn pipeline-builder
   [response-stream
@@ -378,10 +396,11 @@
           ;; HTTP/1.1 200 Connection established
           ;; before sending any requests
           (when (instance? ProxyHandler proxy)
-            (.addLast pipeline
-              "pending-proxy-writes"
+            (.addAfter pipeline
+              "proxy"
+              "pending-proxy-connection"
               ^ChannelHandler
-              (pending-proxy-writes-handler)))))
+              (pending-proxy-connection-handler response-stream)))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -481,6 +500,9 @@
                 (d/chain' rsp
                   (fn [rsp]
                     (cond
+                      (instance? Throwable rsp)
+                      (d/error-deferred rsp)
+
                       (identical? ::closed rsp)
                       (d/error-deferred
                         (ex-info
