@@ -39,7 +39,8 @@
      Channel ChannelFuture
      ChannelFutureListener
      ChannelHandler ChannelHandlerContext
-     ChannelPipeline]
+     ChannelPipeline
+     VoidChannelPromise]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -329,11 +330,9 @@
     handler))
 
 (defn pending-proxy-connection-handler [response-stream]
-  (let [pending-writes (atom [])
-        flushed (atom false)]
-    (netty/channel-handler
-     :exception-caught
-     ([_ ctx cause]
+  (netty/channel-handler
+    :exception-caught
+    ([_ ctx cause]
       (if-not (instance? ProxyConnectException cause)
         (.fireExceptionCaught ^ChannelHandlerContext ctx cause)
         (do
@@ -341,25 +340,24 @@
           ;; client handler should take care of the rest
           (netty/close ctx))))
 
-      :flush
-      ([_ ctx]
-        (reset! flushed true))
+    :write
+    ([_ ctx msg promise]
+      (if-not (instance? VoidChannelPromise promise)
+        (.write ^ChannelHandlerContext ctx msg promise)
+        ;; note that we ignore promise from params on purpose
+        ;; `netty/write` executes all writes with VoidChannelPromise
+        ;; which forces PendingWritesQueue to fail with IllegalStateException
+        ;; (as it does not support void promise) and the error will be
+        ;; lost down the road as we never check if the write succeeded
+        (.write ^ChannelHandlerContext ctx msg)))
 
-      :write
-      ([_ ctx msg promise]
-        (swap! pending-writes conj [msg promise]))
-
-      :user-event-triggered
-      ([this ctx evt]
-        (if-not (instance? ProxyConnectionEvent evt)
-          (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)
-          (do
-            (doseq [[msg promise] @pending-writes]
-              (.write ^ChannelHandlerContext ctx msg promise))
-            (when @flushed
-              (.flush ^ChannelHandlerContext ctx))
-            (.remove (.pipeline ctx) "proxy")
-            (.remove (.pipeline ctx) this)))))))
+    :user-event-triggered
+    ([this ctx evt]
+      (if-not (instance? ProxyConnectionEvent evt)
+        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)
+        (do
+          (.remove (.pipeline ctx) this)
+          (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))))
 
 (defn pipeline-builder
   [response-stream
