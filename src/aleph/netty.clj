@@ -920,7 +920,10 @@
             (when (compare-and-set! closed? false true)
               (-> ch .close .sync)
               (-> group .shutdownGracefully)
-              (when on-close (on-close))))
+              (when on-close
+                (d/chain'
+                 (wrap-future (.terminationFuture group))
+                 (fn [_] (on-close))))))
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))
