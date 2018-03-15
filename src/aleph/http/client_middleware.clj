@@ -75,10 +75,9 @@
   "Resolve and apply Transit's JSON/MessagePack decoding."
   [^InputStream in type & [opts]]
   {:pre [transit-enabled?]}
-  (when (pos? (.available in))
-    (let [reader (ns-resolve 'cognitect.transit 'reader)
-          read (ns-resolve 'cognitect.transit 'read)]
-      (read (reader in type (transit-read-opts opts))))))
+  (let [reader (ns-resolve 'cognitect.transit 'reader)
+        read (ns-resolve 'cognitect.transit 'read)]
+    (read (reader in type (transit-read-opts opts)))))
 
 (defn ^:dynamic transit-encode
   "Resolve and apply Transit's JSON/MessagePack encoding."
