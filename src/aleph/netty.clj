@@ -342,7 +342,9 @@
     false)
   (put [this msg blocking?]
     (if (s/closed? this)
-      (d/success-deferred false)
+      (if blocking?
+        false
+        (d/success-deferred false))
       (let [msg (try
                   (coerce-fn msg)
                   (catch Exception e
