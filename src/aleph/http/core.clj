@@ -33,8 +33,6 @@
      File
      RandomAccessFile
      Closeable]
-    [java.net
-     InetSocketAddress]
     [java.util.concurrent
      ConcurrentHashMap]
     [java.util.concurrent.atomic
