@@ -11,8 +11,7 @@
     [manifold.stream :as s]
     [manifold.executor :as ex]
     [byte-streams :as bs]
-    [clojure.edn :as edn]
-    [aleph.http.core :as http])
+    [clojure.edn :as edn])
   (:import
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.handler.codec.base64 Base64]
@@ -25,7 +24,7 @@
      DefaultCookie]
     [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
     [java.nio.charset StandardCharsets]
-    [java.net IDN URL URLEncoder URLDecoder UnknownHostException]))
+    [java.net IDN URL URLEncoder URLDecoder]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def json-enabled?
