@@ -222,12 +222,12 @@
 
 ;;;
 
-(defn try-set-content-length! [^HttpMessage msg ^long length]
-  (when-not (-> msg .headers (.contains "Content-Length"))
-    (HttpHeaders/setContentLength msg length)))
-
 (defn has-content-length? [^HttpMessage msg]
   (-> msg .headers (.contains "Content-Length")))
+
+(defn try-set-content-length! [^HttpMessage msg ^long length]
+  (when-not (has-content-length? msg)
+    (HttpHeaders/setContentLength msg length)))
 
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
