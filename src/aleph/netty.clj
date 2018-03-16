@@ -542,7 +542,8 @@
           (.fireChannelRegistered ctx)
           (catch Throwable e
             (log/warn e "Failed to initialize channel")
-            (.close ctx)))))))
+            (.close ctx))))
+      (.fireChannelRegistered ctx))))
 
 (defn instrument!
   [stream]

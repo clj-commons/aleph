@@ -37,7 +37,8 @@
 
       :channel-inactive
       ([_ ctx]
-        (s/close! @in))
+        (s/close! @in)
+        (.fireChannelInactive ctx))
 
       :channel-active
       ([_ ctx]
@@ -48,7 +49,8 @@
                 (netty/sink ch true netty/to-byte-buf)
                 (reset! in (netty/source ch)))
               (reset-meta! {:aleph/channel ch}))
-            (->TcpConnection ch))))
+            (->TcpConnection ch)))
+        (.fireChannelActive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -102,7 +104,8 @@
 
        :channel-inactive
        ([_ ctx]
-         (s/close! @in))
+         (s/close! @in)
+         (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
@@ -112,7 +115,8 @@
                (s/splice
                  (netty/sink ch true netty/to-byte-buf)
                  (reset! in (netty/source ch)))
-               (reset-meta! {:aleph/channel ch})))))
+               (reset-meta! {:aleph/channel ch}))))
+         (.fireChannelActive ctx))
 
        :channel-read
        ([_ ctx msg]

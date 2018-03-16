@@ -315,7 +315,8 @@
         (when-let [s @stream]
           (s/close! s))
         (doseq [b @buffer]
-          (netty/release b)))
+          (netty/release b))
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -329,7 +330,10 @@
           (instance? HttpContent msg)
           (if (instance? LastHttpContent msg)
             (process-last-content ctx msg)
-            (process-content ctx msg)))))))
+            (process-content ctx msg))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
@@ -359,7 +363,8 @@
       :channel-inactive
       ([_ ctx]
         (when-let [s @stream]
-          (s/close! s)))
+          (s/close! s))
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -377,7 +382,10 @@
           (let [content (.content ^HttpContent msg)]
             (netty/put! (.channel ctx) @stream content)
             (when (instance? LastHttpContent msg)
-              (s/close! @stream))))))))
+              (s/close! @stream)))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn pipeline-builder
   [handler
@@ -502,13 +510,15 @@
        :channel-inactive
        ([_ ctx]
          (s/close! out)
-         (s/close! in))
+         (s/close! in)
+         (.fireChannelInactive ctx))
 
        :channel-read
        ([_ ctx msg]
          (try
            (let [ch (.channel ctx)]
-             (when (instance? WebSocketFrame msg)
+             (if-not (instance? WebSocketFrame msg)
+               (.fireChannelRead ctx msg)
                (let [^WebSocketFrame msg msg]
                  (cond
 
@@ -526,7 +536,10 @@
                    (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
 
                    (instance? CloseWebSocketFrame msg)
-                   (.close handshaker ch (netty/acquire msg))))))
+                   (.close handshaker ch (netty/acquire msg))
+
+                   :else
+                   (.fireChannelRead ctx msg)))))
            (finally
              (netty/release msg)))))]))
 

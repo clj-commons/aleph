@@ -82,7 +82,8 @@
                     (d/success! d
                       (doto
                         (s/splice out in)
-                        (reset-meta! {:aleph/channel ch})))))
+                        (reset-meta! {:aleph/channel ch}))))
+                  (.fireChannelActive ctx))
 
                 :channel-read
                 ([_ ctx msg]
