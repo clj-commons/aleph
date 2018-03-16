@@ -426,12 +426,10 @@
    {:keys [port
            socket-address
            executor
-           raw-stream?
            bootstrap-transform
            pipeline-transform
            ssl-context
            shutdown-executor?
-           rejected-handler
            epoll?
            compression?]
     :or {bootstrap-transform identity
@@ -546,8 +544,7 @@
          max-frame-size 1048576
          allow-extensions? false
          compression? false
-         pipeline-transform identity}
-    :as options}]
+         pipeline-transform identity}}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 

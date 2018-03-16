@@ -87,7 +87,6 @@
 (defn raw-client-handler
   [response-stream buffer-capacity]
   (let [stream (atom nil)
-        previous-response (atom nil)
         complete (atom nil)
 
         handle-response
@@ -407,7 +406,6 @@
            raw-stream?
            bootstrap-transform
            name-resolver
-           pipeline-transform
            keep-alive?
            insecure?
            ssl-context
@@ -645,8 +643,7 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
-         compression? false}
-    :as options}]
+         compression? false}}]
   (let [uri (URI. uri)
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
