@@ -90,8 +90,8 @@
     (try
       (bootstrap-transform b)
       (let [cf (.bind b ^SocketAddress socket-address)]
-        (d/chain
-          (d/zip (netty/wrap-future cf) d)
+        (d/chain'
+          (d/zip' (netty/wrap-future cf) d)
           (fn [[_ s]]
             (s/on-closed s #(netty/close (.channel cf))))))
       d
