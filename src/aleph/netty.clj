@@ -369,9 +369,7 @@
   ([ch downstream? coerce-fn]
     (sink ch downstream? coerce-fn (fn [])))
   ([ch downstream? coerce-fn additional-description]
-    (let [count (AtomicLong. 0)
-          last-count (AtomicLong. 0)
-          sink (->ChannelSink
+    (let [sink (->ChannelSink
                  coerce-fn
                  downstream?
                  ch
