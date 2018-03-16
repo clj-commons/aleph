@@ -377,8 +377,8 @@
                  ch
                  additional-description)]
 
-      (d/chain' (.closeFuture (channel ch))
-        wrap-future
+      (d/chain'
+        (wrap-future (.closeFuture (channel ch)))
         (fn [_] (s/close! sink)))
 
       (doto sink (reset-meta! {:aleph/channel ch})))))
