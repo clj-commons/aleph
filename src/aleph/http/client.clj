@@ -6,7 +6,6 @@
     [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.http.client-middleware :as middleware]
     [aleph.netty :as netty])
   (:import
     [java.io
@@ -17,10 +16,8 @@
      IDN
      URL]
     [io.netty.buffer
-     ByteBuf
-     Unpooled]
+     ByteBuf]
     [io.netty.handler.codec.http
-     HttpMessage
      HttpClientCodec
      DefaultHttpHeaders
      HttpHeaders
@@ -29,15 +26,9 @@
      HttpContent
      LastHttpContent
      FullHttpResponse
-     DefaultLastHttpContent
-     DefaultHttpContent
-     DefaultFullHttpResponse
-     HttpVersion
-     HttpResponseStatus
      HttpObjectAggregator]
     [io.netty.channel
-     Channel ChannelFuture
-     ChannelFutureListener
+     Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline
      VoidChannelPromise]
@@ -96,7 +87,6 @@
 (defn raw-client-handler
   [response-stream buffer-capacity]
   (let [stream (atom nil)
-        previous-response (atom nil)
         complete (atom nil)
 
         handle-response
@@ -118,7 +108,8 @@
       ([_ ctx]
         (when-let [s @stream]
           (s/close! s))
-        (s/close! response-stream))
+        (s/close! response-stream)
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -139,7 +130,10 @@
             (netty/put! (.channel ctx) @stream content)
             (when (instance? LastHttpContent msg)
               (d/success! @complete false)
-              (s/close! @stream))))))))
+              (s/close! @stream)))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn client-handler
   [response-stream ^long buffer-capacity]
@@ -168,7 +162,8 @@
           (s/close! s))
         (doseq [b @buffer]
           (netty/release b))
-        (s/close! response-stream))
+        (s/close! response-stream)
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -240,7 +235,10 @@
 
                         (s/on-closed s #(d/success! c true))
 
-                        (handle-response @response c s)))))))))))))
+                        (handle-response @response c s))))))))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn non-tunnel-proxy? [{:keys [tunnel? user http-headers ssl?]
                           :as proxy-options}]
@@ -353,11 +351,9 @@
 
     :user-event-triggered
     ([this ctx evt]
-      (if-not (instance? ProxyConnectionEvent evt)
-        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)
-        (do
-          (.remove (.pipeline ctx) this)
-          (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))))
+      (when (instance? ProxyConnectionEvent evt)
+        (.remove (.pipeline ctx) this))
+      (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
 (defn pipeline-builder
   [response-stream
@@ -416,7 +412,6 @@
            raw-stream?
            bootstrap-transform
            name-resolver
-           pipeline-transform
            keep-alive?
            insecure?
            ssl-context
@@ -562,13 +557,15 @@
        :channel-inactive
        ([_ ctx]
          (when (realized? d)
-           (s/close! @d)))
+           (s/close! @d))
+         (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
          (let [ch (.channel ctx)]
            (reset! in (netty/buffered-source ch (constantly 1) 16))
-           (.handshake handshaker ch)))
+           (.handshake handshaker ch))
+         (.fireChannelActive ctx))
 
        :channel-read
        ([_ ctx msg]
@@ -628,7 +625,10 @@
                    (swap! desc assoc
                      :websocket-close-code (.statusCode frame)
                      :websocket-close-msg (.reasonText frame)))
-                 (netty/close ctx))))
+                 (netty/close ctx))
+
+               :else
+               (.fireChannelRead ctx msg)))
            (finally
              (netty/release msg)))))]))
 
@@ -654,8 +654,7 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
-         compression? false}
-    :as options}]
+         compression? false}}]
   (let [uri (URI. uri)
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")

@@ -54,8 +54,7 @@
    will be errors, and a new connection must be created."
   [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
-        ssl? (= "https" scheme)
-        response-executor (:response-executor options)]
+        ssl? (= "https" scheme)]
     (-> (client/http-connection
           (InetSocketAddress.
             (.getHost uri)

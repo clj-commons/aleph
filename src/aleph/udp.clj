@@ -13,8 +13,6 @@
      ChannelOption]
     [io.netty.bootstrap
      Bootstrap]
-    [io.netty.channel.nio
-     NioEventLoopGroup]
     [io.netty.channel.socket
      DatagramPacket]
     [io.netty.channel.socket.nio
@@ -82,7 +80,8 @@
                     (d/success! d
                       (doto
                         (s/splice out in)
-                        (reset-meta! {:aleph/channel ch})))))
+                        (reset-meta! {:aleph/channel ch}))))
+                  (.fireChannelActive ctx))
 
                 :channel-read
                 ([_ ctx msg]
@@ -91,8 +90,8 @@
     (try
       (bootstrap-transform b)
       (let [cf (.bind b ^SocketAddress socket-address)]
-        (d/chain
-          (d/zip (netty/wrap-future cf) d)
+        (d/chain'
+          (d/zip' (netty/wrap-future cf) d)
           (fn [[_ s]]
             (s/on-closed s #(netty/close (.channel cf))))))
       d
