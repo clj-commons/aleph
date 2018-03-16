@@ -544,7 +544,7 @@
                          (netty/buf->array body))))
 
                    (instance? PingWebSocketFrame msg)
-                   (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
+                   (netty/write-and-flush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
 
                    (instance? CloseWebSocketFrame msg)
                    (.close handshaker ch (netty/acquire msg))

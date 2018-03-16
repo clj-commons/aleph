@@ -588,8 +588,8 @@
                        (reset-meta! {:aleph/channel ch})))
 
                    (s/on-drained @in
-                     #(d/chain' (.writeAndFlush ch (CloseWebSocketFrame.))
-                        netty/wrap-future
+                     #(d/chain'
+                        (netty/wrap-future (netty/write-and-flush ch (CloseWebSocketFrame.)))
                         (fn [_] (netty/close ctx))))))
 
                (instance? FullHttpResponse msg)
@@ -617,7 +617,7 @@
 
                (instance? PingWebSocketFrame msg)
                (let [frame (.content ^PingWebSocketFrame msg)]
-                 (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire frame))))
+                 (netty/write-and-flush  ch (PongWebSocketFrame. (netty/acquire frame))))
 
                (instance? CloseWebSocketFrame msg)
                (let [frame ^CloseWebSocketFrame msg]
