@@ -13,8 +13,6 @@
      ChannelOption]
     [io.netty.bootstrap
      Bootstrap]
-    [io.netty.channel.nio
-     NioEventLoopGroup]
     [io.netty.channel.socket
      DatagramPacket]
     [io.netty.channel.socket.nio
