@@ -377,8 +377,7 @@
   (defn send-message
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
-    (let [^HttpHeaders headers (.headers msg)
-          f (cond
+    (let [f (cond
 
               (or
                 (nil? body)
