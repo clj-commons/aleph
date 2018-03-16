@@ -196,9 +196,9 @@
   :body body
   :scheme (if ssl? :https :http)
   :aleph/keep-alive? (HttpHeaders/isKeepAlive req)
-  :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
-  :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+  :server-name (netty/channel-server-name ch)
+  :server-port (netty/channel-server-port ch)
+  :remote-addr (netty/channel-remote-address ch))
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
   :status (-> rsp .getStatus .code)
