@@ -21,16 +21,15 @@
     [aleph.http.core
      NettyRequest]
     [io.netty.buffer
-     ByteBuf Unpooled]
+     ByteBuf]
     [io.netty.channel
-     Channel ChannelFuture ChannelHandlerContext
-     ChannelFutureListener ChannelHandler
+     Channel
+     ChannelHandlerContext
+     ChannelHandler
      ChannelPipeline]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
-     DefaultHttpContent
-     DefaultLastHttpContent
      HttpContent HttpHeaders
      HttpContentCompressor
      HttpRequest HttpResponse
@@ -50,9 +49,7 @@
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
     [java.io
-     Closeable File InputStream RandomAccessFile IOException]
-    [java.nio
-     ByteBuffer]
+     IOException]
     [java.net
      InetSocketAddress]
     [io.netty.util.concurrent

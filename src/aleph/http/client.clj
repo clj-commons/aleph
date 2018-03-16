@@ -6,7 +6,6 @@
     [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.http.client-middleware :as middleware]
     [aleph.netty :as netty])
   (:import
     [java.io
@@ -17,10 +16,8 @@
      IDN
      URL]
     [io.netty.buffer
-     ByteBuf
-     Unpooled]
+     ByteBuf]
     [io.netty.handler.codec.http
-     HttpMessage
      HttpClientCodec
      DefaultHttpHeaders
      HttpHeaders
@@ -29,15 +26,9 @@
      HttpContent
      LastHttpContent
      FullHttpResponse
-     DefaultLastHttpContent
-     DefaultHttpContent
-     DefaultFullHttpResponse
-     HttpVersion
-     HttpResponseStatus
      HttpObjectAggregator]
     [io.netty.channel
-     Channel ChannelFuture
-     ChannelFutureListener
+     Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline
      VoidChannelPromise]

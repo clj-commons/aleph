@@ -13,16 +13,15 @@
      Channel
      DefaultFileRegion
      ChannelFuture
-     ChannelFutureListener
-     ChannelHandlerContext]
+     ChannelFutureListener]
     [io.netty.buffer
-     ByteBuf Unpooled]
+     ByteBuf]
     [java.nio
      ByteBuffer]
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders HttpUtil  DefaultHttpHeaders HttpContent
+     HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
      DefaultHttpContent
@@ -36,8 +35,6 @@
      Closeable]
     [java.net
      InetSocketAddress]
-    [java.util
-     Map$Entry]
     [java.util.concurrent
      ConcurrentHashMap]
     [java.util.concurrent.atomic

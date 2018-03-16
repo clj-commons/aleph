@@ -13,7 +13,7 @@
     [potemkin :as potemkin :refer [doit doary]])
   (:import
     [io.netty.bootstrap Bootstrap ServerBootstrap]
-    [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
+    [io.netty.buffer ByteBuf Unpooled]
     [io.netty.channel
      Channel ChannelFuture ChannelOption
      ChannelPipeline EventLoopGroup
