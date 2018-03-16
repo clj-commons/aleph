@@ -352,7 +352,7 @@
                         " into binary representation"))
                     (close ch)))
             ^ChannelFuture f (write-and-flush ch msg)
-            d (d/chain (wrap-future f) (fn [_] true))]
+            d (d/chain' (wrap-future f) (fn [_] true))]
         (if blocking?
           @d
           d))))
