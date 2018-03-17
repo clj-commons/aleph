@@ -556,6 +556,9 @@
 
                    :else
                    (.fireChannelRead ctx msg)))))
+           (catch Exception e
+             (log/error "websocket server error when reading" e)
+             (throw e))
            (finally
              (netty/release msg)))))]))
 
