@@ -530,7 +530,9 @@
          (try
            (let [ch (.channel ctx)]
              (if-not (instance? WebSocketFrame msg)
-               (.fireChannelRead ctx msg)
+               (do
+                 (log/warn "websocket server received non-websocket read:" msg)
+                 (.fireChannelRead ctx msg))
                (let [^WebSocketFrame msg msg]
                  (cond
 
