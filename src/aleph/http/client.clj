@@ -588,9 +588,8 @@
                        (reset-meta! {:aleph/channel ch})))
 
                    (s/on-drained @in
-                     #(d/chain'
-                        (netty/wrap-future (netty/write-and-flush ch (CloseWebSocketFrame.)))
-                        (fn [_] (netty/close ctx))))))
+                     #(when (.isOpen ch)
+                        (.close handshaker ch (CloseWebSocketFrame.))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
