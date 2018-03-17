@@ -578,9 +578,12 @@
                  (netty/wrap-future (.processHandshake handshaker ch msg))
                  (fn [_]
                    (let [out (netty/sink ch false
-                               #(if (instance? CharSequence %)
-                                 (TextWebSocketFrame. (bs/to-string %))
-                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
+                               (fn [c]
+                                 (if (instance? CharSequence c)
+                                   (do
+                                     (log/info "websocket client writing:" c)
+                                     (TextWebSocketFrame. (bs/to-string c)))
+                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
                                (fn [] @desc))]
 
                      (d/success! d
