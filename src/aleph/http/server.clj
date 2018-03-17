@@ -36,8 +36,7 @@
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent HttpServerExpectContinueHandler
-     HttpObjectAggregator]
+     LastHttpContent HttpServerExpectContinueHandler]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
      WebSocketServerHandshaker
@@ -615,7 +614,6 @@
                  (doto (.pipeline ch)
                    (.remove "request-handler")
                    (.remove "continue-handler")
-                   (.addLast "aggregator" (HttpObjectAggregator. 16384))
                    (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
                    (#(when compression?
                        (.addLast ^ChannelPipeline %
