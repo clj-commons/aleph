@@ -486,6 +486,7 @@
    ^WebSocketServerHandshaker handshaker]
   (let [out (netty/sink ch false
               (fn [c]
+                (log/info "websocket server writing:" c)
                 (cond
                   (instance? CharSequence c)
                   (TextWebSocketFrame. (bs/to-string c))
@@ -534,7 +535,9 @@
                  (cond
 
                    (instance? TextWebSocketFrame msg)
-                   (netty/put! ch in (.text ^TextWebSocketFrame msg))
+                   (let [text (.text ^TextWebSocketFrame msg)]
+                     (log/info "websocket server received:" text)
+                     (netty/put! ch in text))
 
                    (instance? BinaryWebSocketFrame msg)
                    (let [body (.content ^BinaryWebSocketFrame msg)]

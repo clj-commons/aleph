@@ -603,7 +603,9 @@
                        "'"))))
 
                (instance? TextWebSocketFrame msg)
-               (netty/put! ch @in (.text ^TextWebSocketFrame msg))
+               (let [text (.text ^TextWebSocketFrame msg)]
+                 (log/info "websocket client received:" text)
+                 (netty/put! ch @in text))
 
                (instance? BinaryWebSocketFrame msg)
                (let [frame (.content ^BinaryWebSocketFrame msg)]
