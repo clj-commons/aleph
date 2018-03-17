@@ -615,7 +615,14 @@
           ;; actually, we're not going to except anything but websocket, so...
           (doto (.pipeline ch)
             (.remove "request-handler")
-            (.remove "continue-handler"))
+            (.remove "continue-handler")
+            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+            (#(when compression?
+                (.addLast ^ChannelPipeline %
+                          "websocket-deflater"
+                          (WebSocketServerCompressionHandler.))))
+            (.addLast "websocket-handler" handler)
+            pipeline-transform)
           (http/map->headers! h headers)
           (-> (try
                 (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
@@ -623,14 +630,6 @@
                   (d/error-deferred e)))
               (d/chain'
                (fn [_]
-                 (doto (.pipeline ch)
-                   (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-                   (#(when compression?
-                       (.addLast ^ChannelPipeline %
-                                 "websocket-deflater"
-                                 (WebSocketServerCompressionHandler.))))
-                   (.addLast "websocket-handler" handler)
-                   pipeline-transform)
                  s))
               (d/catch'
                   (fn [e]
