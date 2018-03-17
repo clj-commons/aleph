@@ -609,6 +609,10 @@
         (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
               p (.newPromise ch)
               h (DefaultHttpHeaders.)]
+          ;; actually, we're not going to except anything but websocket, so...
+          (doto (.pipeline ch)
+            (.remove "request-handler")
+            (.remove "continue-handler"))
           (http/map->headers! h headers)
           (-> (try
                 (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
@@ -617,8 +621,6 @@
               (d/chain'
                (fn [_]
                  (doto (.pipeline ch)
-                   (.remove "request-handler")
-                   (.remove "continue-handler")
                    (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
                    (#(when compression?
                        (.addLast ^ChannelPipeline %
