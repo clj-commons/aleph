@@ -381,7 +381,9 @@
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
-            (netty/put! (.channel ctx) @stream content)
+            ;; content might empty most probably in case of EmptyLastHttpContent
+            (when-not (zero? (.readableBytes content))
+              (netty/put! (.channel ctx) @stream content))
             (when (instance? LastHttpContent msg)
               (s/close! @stream)))
 
