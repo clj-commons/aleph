@@ -574,22 +574,23 @@
              (cond
 
                (not (.isHandshakeComplete handshaker))
-               (do
-                 (.finishHandshake handshaker ch msg)
-                 (let [out (netty/sink ch false
-                             #(if (instance? CharSequence %)
-                                (TextWebSocketFrame. (bs/to-string %))
-                                (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
-                             (fn [] @desc))]
+               (d/chain'
+                 (netty/wrap-future (.processHandshake handshaker ch msg))
+                 (fn [_]
+                   (let [out (netty/sink ch false
+                               #(if (instance? CharSequence %)
+                                 (TextWebSocketFrame. (bs/to-string %))
+                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
+                               (fn [] @desc))]
 
-                   (d/success! d
-                     (doto
-                       (s/splice out @in)
-                       (reset-meta! {:aleph/channel ch})))
+                     (d/success! d
+                       (doto
+                         (s/splice out @in)
+                         (reset-meta! {:aleph/channel ch})))
 
-                   (s/on-drained @in
-                     #(when (.isOpen ch)
-                        (.close handshaker ch (CloseWebSocketFrame.))))))
+                     (s/on-drained @in
+                       #(when (.isOpen ch)
+                         (.close handshaker ch (CloseWebSocketFrame.)))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
