@@ -500,8 +500,8 @@
       ;; in that case *out* would be closed earlier and the underlying
       ;; netty channel is already terminated
       #(when (.isOpen ch)
-         (d/chain' (.close handshaker ch (CloseWebSocketFrame.))
-           netty/wrap-future
+         (d/chain'
+           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
            (fn [_] (.close ch)))))
 
     [(doto
