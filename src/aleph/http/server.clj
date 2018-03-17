@@ -385,10 +385,13 @@
             (when-not (zero? (.readableBytes content))
               (netty/put! (.channel ctx) @stream content))
             (when (instance? LastHttpContent msg)
+              (log/info "raw handler finished reading body:" (.channel ctx))
               (s/close! @stream)))
 
           :else
-          (.fireChannelRead ctx msg))))))
+          (do
+            (log/warn "raw handler read something inappropriate:" (.channel ctx) msg)
+            (.fireChannelRead ctx msg)))))))
 
 (defn pipeline-builder
   [handler
@@ -625,11 +628,14 @@
             pipeline-transform)
           (http/map->headers! h headers)
           (-> (try
-                (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
+                (do
+                  (log/info "websocket server initiated handshake:" ch)
+                  (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p)))
                 (catch Throwable e
                   (d/error-deferred e)))
               (d/chain'
                (fn [_]
+                 (log/info "websocket server handshake is done:" ch)
                  s))
               (d/catch'
                   (fn [e]

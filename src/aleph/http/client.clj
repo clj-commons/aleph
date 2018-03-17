@@ -575,8 +575,11 @@
 
                (not (.isHandshakeComplete handshaker))
                (d/chain'
-                 (netty/wrap-future (.processHandshake handshaker ch msg))
+                 (do
+                   (log/info "websocket client initiated handshake:" ch)
+                   (netty/wrap-future (.processHandshake handshaker ch msg)))
                  (fn [_]
+                   (log/info "websocket client handshake is done:" ch)
                    (let [out (netty/sink ch false
                                (fn [c]
                                  (if (instance? CharSequence c)
