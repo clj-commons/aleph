@@ -345,7 +345,7 @@
       (if blocking?
         false
         (d/success-deferred false))
-      (let [msg (try
+      (let [msg' (try
                   (coerce-fn msg)
                   (catch Exception e
                     (log/error e
@@ -353,8 +353,11 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            ^ChannelFuture f (write-and-flush ch msg)
-            d (d/chain' (wrap-future f) (fn [_] true))]
+            ^ChannelFuture f (write-and-flush ch msg')
+            d (d/chain' (wrap-future f) (fn [_]
+                                          (when (string? msg)
+                                            (log/info "channel sink flushed:" msg))
+                                          true))]
         (if blocking?
           @d
           d))))
