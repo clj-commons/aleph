@@ -591,7 +591,9 @@
 
                      (s/on-drained @in
                        #(when (.isOpen ch)
-                         (.close handshaker ch (CloseWebSocketFrame.)))))))
+                         (d/chain'
+                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                           (fn [_] (netty/close ch))))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
