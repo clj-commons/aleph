@@ -385,13 +385,10 @@
             (when-not (zero? (.readableBytes content))
               (netty/put! (.channel ctx) @stream content))
             (when (instance? LastHttpContent msg)
-              (log/info "raw handler finished reading body:" (.channel ctx))
               (s/close! @stream)))
 
           :else
-          (do
-            (log/warn "raw handler read something inappropriate:" (.channel ctx) msg)
-            (.fireChannelRead ctx msg)))))))
+          (.fireChannelRead ctx msg))))))
 
 (defn pipeline-builder
   [handler
@@ -489,7 +486,6 @@
    ^WebSocketServerHandshaker handshaker]
   (let [out (netty/sink ch false
               (fn [c]
-                (log/info "websocket server writing:" c)
                 (cond
                   (instance? CharSequence c)
                   (TextWebSocketFrame. (bs/to-string c))
@@ -533,16 +529,12 @@
          (try
            (let [ch (.channel ctx)]
              (if-not (instance? WebSocketFrame msg)
-               (do
-                 (log/warn "websocket server received non-websocket read:" msg)
-                 (.fireChannelRead ctx msg))
+               (.fireChannelRead ctx msg)
                (let [^WebSocketFrame msg msg]
                  (cond
 
                    (instance? TextWebSocketFrame msg)
-                   (let [text (.text ^TextWebSocketFrame msg)]
-                     (log/info "websocket server received:" text)
-                     (netty/put! ch in text))
+                   (netty/put! ch in (.text ^TextWebSocketFrame msg))
 
                    (instance? BinaryWebSocketFrame msg)
                    (let [body (.content ^BinaryWebSocketFrame msg)]
@@ -559,9 +551,6 @@
 
                    :else
                    (.fireChannelRead ctx msg)))))
-           (catch Exception e
-             (log/error "websocket server error when reading" e)
-             (throw e))
            (finally
              (netty/release msg)))))]))
 
@@ -628,19 +617,14 @@
             pipeline-transform)
           (http/map->headers! h headers)
           (-> (try
-                (do
-                  (log/info "websocket server initiated handshake:" ch)
-                  (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p)))
+                (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                 (catch Throwable e
                   (d/error-deferred e)))
-              (d/chain'
-               (fn [_]
-                 (log/info "websocket server handshake is done:" ch)
-                 s))
+              (d/chain' (fn [_] s))
               (d/catch'
-                  (fn [e]
-                    (send-websocket-request-expected! ch ssl?)
-                    (d/error-deferred e)))))
+                (fn [e]
+                  (send-websocket-request-expected! ch ssl?)
+                  (d/error-deferred e)))))
         (catch Throwable e
           (d/error-deferred e)))
       (do

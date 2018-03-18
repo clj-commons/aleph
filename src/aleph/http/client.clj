@@ -575,17 +575,12 @@
 
                (not (.isHandshakeComplete handshaker))
                (d/chain'
-                 (do
-                   (log/info "websocket client initiated handshake:" ch)
-                   (netty/wrap-future (.processHandshake handshaker ch msg)))
+                 (netty/wrap-future (.processHandshake handshaker ch msg))
                  (fn [_]
-                   (log/info "websocket client handshake is done:" ch)
                    (let [out (netty/sink ch false
                                (fn [c]
                                  (if (instance? CharSequence c)
-                                   (do
-                                     (log/info "websocket client writing:" c)
-                                     (TextWebSocketFrame. (bs/to-string c)))
+                                   (TextWebSocketFrame. (bs/to-string c))
                                    (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
                                (fn [] @desc))]
 
@@ -609,9 +604,7 @@
                        "'"))))
 
                (instance? TextWebSocketFrame msg)
-               (let [text (.text ^TextWebSocketFrame msg)]
-                 (log/info "websocket client received:" text)
-                 (netty/put! ch @in text))
+               (netty/put! ch @in (.text ^TextWebSocketFrame msg))
 
                (instance? BinaryWebSocketFrame msg)
                (let [frame (.content ^BinaryWebSocketFrame msg)]
