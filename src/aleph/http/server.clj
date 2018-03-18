@@ -586,8 +586,7 @@
          max-frame-payload 65536
          max-frame-size 1048576
          allow-extensions? false
-         compression? false
-         pipeline-transform identity}}]
+         compression? false}}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 
@@ -613,13 +612,16 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           (WebSocketServerCompressionHandler.))))
-            (.addLast "websocket-handler" handler)
-            pipeline-transform)
+            (.addLast "websocket-handler" handler))
           (-> (try
                 (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                 (catch Throwable e
                   (d/error-deferred e)))
-              (d/chain' (fn [_] s))
+              (d/chain'
+                (fn [_]
+                  (when (some? pipeline-transform)
+                    (pipeline-transform (.pipeline ch)))
+                  s))
               (d/catch'
                 (fn [e]
                   (send-websocket-request-expected! ch ssl?)
