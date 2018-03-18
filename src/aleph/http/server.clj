@@ -590,20 +590,20 @@
          pipeline-transform identity}}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
-  
+
   (let [^Channel ch (.ch req)
         ssl? (identical? :https (:scheme req))
         url (str
-             (if ssl? "wss://" "ws://")
-             (get-in req [:headers "host"])
-             (:uri req))
+              (if ssl? "wss://" "ws://")
+              (get-in req [:headers "host"])
+              (:uri req))
         req (http/ring-request->full-netty-request req)
         factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
     (if-let [handshaker (.newHandshaker factory req)]
       (try
         (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
               p (.newPromise ch)
-              h (DefaultHttpHeaders.)]
+              h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
           ;; actually, we're not going to except anything but websocket, so...
           (doto (.pipeline ch)
             (.remove "request-handler")
@@ -615,7 +615,6 @@
                           (WebSocketServerCompressionHandler.))))
             (.addLast "websocket-handler" handler)
             pipeline-transform)
-          (http/map->headers! h headers)
           (-> (try
                 (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                 (catch Throwable e
