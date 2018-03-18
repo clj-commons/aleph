@@ -13,7 +13,7 @@
     [potemkin :as potemkin :refer [doit doary]])
   (:import
     [io.netty.bootstrap Bootstrap ServerBootstrap]
-    [io.netty.buffer ByteBuf PooledByteBufAllocator Unpooled]
+    [io.netty.buffer ByteBuf Unpooled]
     [io.netty.channel
      Channel ChannelFuture ChannelOption
      ChannelPipeline EventLoopGroup
@@ -342,9 +342,9 @@
     false)
   (put [this msg blocking?]
     (if (s/closed? this)
-      ;; TODO(kachayev): i'm not sure this is not breaking
-      ;; contract when blocking? is set to TRUE
-      (d/success-deferred false)
+      (if blocking?
+        false
+        (d/success-deferred false))
       (let [msg (try
                   (coerce-fn msg)
                   (catch Exception e
@@ -371,16 +371,14 @@
   ([ch downstream? coerce-fn]
     (sink ch downstream? coerce-fn (fn [])))
   ([ch downstream? coerce-fn additional-description]
-    (let [count (AtomicLong. 0)
-          last-count (AtomicLong. 0)
-          sink (->ChannelSink
+    (let [sink (->ChannelSink
                  coerce-fn
                  downstream?
                  ch
                  additional-description)]
 
-      (d/chain' (.closeFuture (channel ch))
-        wrap-future
+      (d/chain'
+        (wrap-future (.closeFuture (channel ch)))
         (fn [_] (s/close! sink)))
 
       (doto sink (reset-meta! {:aleph/channel ch})))))
@@ -546,7 +544,8 @@
           (.fireChannelRegistered ctx)
           (catch Throwable e
             (log/warn e "Failed to initialize channel")
-            (.close ctx)))))))
+            (.close ctx))))
+      (.fireChannelRegistered ctx))))
 
 (defn instrument!
   [stream]
@@ -924,7 +923,10 @@
             (when (compare-and-set! closed? false true)
               (-> ch .close .sync)
               (-> group .shutdownGracefully)
-              (when on-close (on-close))))
+              (when on-close
+                (d/chain'
+                 (wrap-future (.terminationFuture group))
+                 (fn [_] (on-close))))))
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))

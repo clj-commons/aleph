@@ -13,16 +13,15 @@
      Channel
      DefaultFileRegion
      ChannelFuture
-     ChannelFutureListener
-     ChannelHandlerContext]
+     ChannelFutureListener]
     [io.netty.buffer
-     ByteBuf Unpooled]
+     ByteBuf]
     [java.nio
      ByteBuffer]
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders HttpUtil  DefaultHttpHeaders HttpContent
+     HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
      DefaultHttpContent
@@ -39,10 +38,6 @@
      File
      RandomAccessFile
      Closeable]
-    [java.net
-     InetSocketAddress]
-    [java.util
-     Map$Entry]
     [java.util.concurrent
      ConcurrentHashMap
      ConcurrentLinkedQueue]
@@ -205,9 +200,9 @@
   :body body
   :scheme (if ssl? :https :http)
   :aleph/keep-alive? (HttpHeaders/isKeepAlive req)
-  :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
-  :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+  :server-name (netty/channel-server-name ch)
+  :server-port (netty/channel-server-port ch)
+  :remote-addr (netty/channel-remote-address ch))
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
   :status (-> rsp .getStatus .code)
@@ -231,12 +226,12 @@
 
 ;;;
 
-(defn try-set-content-length! [^HttpMessage msg ^long length]
-  (when-not (-> msg .headers (.contains "Content-Length"))
-    (HttpHeaders/setContentLength msg length)))
-
 (defn has-content-length? [^HttpMessage msg]
   (-> msg .headers (.contains "Content-Length")))
+
+(defn try-set-content-length! [^HttpMessage msg ^long length]
+  (when-not (has-content-length? msg)
+    (HttpHeaders/setContentLength msg length)))
 
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
@@ -305,7 +300,7 @@
         netty/channel
         .closeFuture
         netty/wrap-future
-        (d/chain (fn [_] (s/close! src))))
+        (d/chain' (fn [_] (s/close! src))))
 
       (let [d (d/deferred)]
         (s/on-closed sink
@@ -386,8 +381,7 @@
   (defn send-message
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
-    (let [^HttpHeaders headers (.headers msg)
-          f (cond
+    (let [f (cond
 
               (or
                 (nil? body)

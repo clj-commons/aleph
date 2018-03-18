@@ -18,9 +18,9 @@
      SslHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
-  :server-name (some-> ch ^InetSocketAddress (.localAddress) .getHostName)
-  :server-port (some-> ch ^InetSocketAddress (.localAddress) .getPort)
-  :remote-addr (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress)
+  :server-name (netty/channel-server-name ch)
+  :server-port (netty/channel-server-port ch)
+  :remote-addr (netty/channel-remote-address ch)
   :ssl-session (some-> ch ^ChannelPipeline (.pipeline) ^SslHandler (.get "ssl-handler") .engine .getSession))
 
 (alter-meta! #'->TcpConnection assoc :private true)
@@ -37,7 +37,8 @@
 
       :channel-inactive
       ([_ ctx]
-        (s/close! @in))
+        (s/close! @in)
+        (.fireChannelInactive ctx))
 
       :channel-active
       ([_ ctx]
@@ -48,7 +49,8 @@
                 (netty/sink ch true netty/to-byte-buf)
                 (reset! in (netty/source ch)))
               (reset-meta! {:aleph/channel ch}))
-            (->TcpConnection ch))))
+            (->TcpConnection ch)))
+        (.fireChannelActive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -88,7 +90,7 @@
     epoll?))
 
 (defn- ^ChannelHandler client-channel-handler
-  [{:keys [raw-stream?] :as options}]
+  [{:keys [raw-stream?]}]
   (let [d (d/deferred)
         in (atom nil)]
     [d
@@ -102,7 +104,8 @@
 
        :channel-inactive
        ([_ ctx]
-         (s/close! @in))
+         (s/close! @in)
+         (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
@@ -112,7 +115,8 @@
                (s/splice
                  (netty/sink ch true netty/to-byte-buf)
                  (reset! in (netty/source ch)))
-               (reset-meta! {:aleph/channel ch})))))
+               (reset-meta! {:aleph/channel ch}))))
+         (.fireChannelActive ctx))
 
        :channel-read
        ([_ ctx msg]
@@ -141,7 +145,7 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform raw-stream? epoll?]
+  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll?]
     :or {bootstrap-transform identity
          epoll? false}
     :as options}]

@@ -6,7 +6,6 @@
     [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.http.client-middleware :as middleware]
     [aleph.netty :as netty])
   (:import
     [java.io
@@ -17,10 +16,8 @@
      IDN
      URL]
     [io.netty.buffer
-     ByteBuf
-     Unpooled]
+     ByteBuf]
     [io.netty.handler.codec.http
-     HttpMessage
      HttpClientCodec
      DefaultHttpHeaders
      HttpHeaders
@@ -29,17 +26,12 @@
      HttpContent
      LastHttpContent
      FullHttpResponse
-     DefaultLastHttpContent
-     DefaultHttpContent
-     DefaultFullHttpResponse
-     HttpVersion
-     HttpResponseStatus
      HttpObjectAggregator]
     [io.netty.channel
-     Channel ChannelFuture
-     ChannelFutureListener
+     Channel
      ChannelHandler ChannelHandlerContext
-     ChannelPipeline]
+     ChannelPipeline
+     VoidChannelPromise]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -55,6 +47,7 @@
      WebSocketClientCompressionHandler]
     [io.netty.handler.proxy
      ProxyConnectionEvent
+     ProxyConnectException
      ProxyHandler
      HttpProxyHandler
      Socks4ProxyHandler
@@ -62,7 +55,9 @@
     [java.util.concurrent
      ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
-     AtomicInteger]))
+     AtomicInteger]
+    [aleph.utils
+     ProxyConnectionTimeoutException]))
 
 (set! *unchecked-math* true)
 
@@ -94,7 +89,6 @@
 (defn raw-client-handler
   [response-stream buffer-capacity]
   (let [stream (atom nil)
-        previous-response (atom nil)
         complete (atom nil)
 
         handle-response
@@ -116,7 +110,8 @@
       ([_ ctx]
         (when-let [s @stream]
           (s/close! s))
-        (s/close! response-stream))
+        (s/close! response-stream)
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -137,7 +132,10 @@
             (netty/put! (.channel ctx) @stream content)
             (when (instance? LastHttpContent msg)
               (d/success! @complete false)
-              (s/close! @stream))))))))
+              (s/close! @stream)))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn client-handler
   [response-stream ^long buffer-capacity]
@@ -166,7 +164,8 @@
           (s/close! s))
         (doseq [b @buffer]
           (netty/release b))
-        (s/close! response-stream))
+        (s/close! response-stream)
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -238,7 +237,10 @@
 
                         (s/on-closed s #(d/success! c true))
 
-                        (handle-response @response c s)))))))))))))
+                        (handle-response @response c s))))))))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn non-tunnel-proxy? [{:keys [tunnel? user http-headers ssl?]
                           :as proxy-options}]
@@ -300,8 +302,9 @@
           (HttpProxyHandler. address headers)
           (HttpProxyHandler. address user password headers))))))
 
-(defn proxy-handler [{:keys [host port protocol user password]
-                      :or {protocol :http}
+(defn proxy-handler [{:keys [host port protocol user password connection-timeout]
+                      :or {protocol :http
+                           connection-timeout 6e4}
                       :as options}]
   {:pre [(some? host)]}
   (let [port' (int (cond
@@ -323,25 +326,36 @@
                       (format "Proxy protocol '%s' not supported. Use :http, :socks4 or socks5"
                         protocol))))]
     (when (instance? ProxyHandler handler)
-      ;; as we will manage this on aleph side anyways
-      (.setConnectTimeoutMillis ^ProxyHandler handler -1))
+      (.setConnectTimeoutMillis ^ProxyHandler handler connection-timeout))
     handler))
 
-(defn pending-proxy-writes-handler []
-  ;; TODO: unbounded? maybe we need to add a limit here
-  (let [pending-writes (atom [])]
-    (netty/channel-handler
-      :write
-      ([_ ctx msg promise]
-        (swap! pending-writes conj [msg promise]))
+(defn pending-proxy-connection-handler [response-stream]
+  (netty/channel-handler
+    :exception-caught
+    ([_ ctx cause]
+      (if-not (instance? ProxyConnectException cause)
+        (.fireExceptionCaught ^ChannelHandlerContext ctx cause)
+        (do
+          (s/put! response-stream (ProxyConnectionTimeoutException. cause))
+          ;; client handler should take care of the rest
+          (netty/close ctx))))
 
-      :user-event-triggered
-      ([this ctx evt]
-        (when (instance? ProxyConnectionEvent evt)
-          (doseq [[msg promise] @pending-writes]
-            (.write ^ChannelHandlerContext ctx msg promise))
-          (.remove (.pipeline ctx) this))
-        (.fireUserEventTriggered ^ChannelHandlerContext ctx evt)))))
+    :write
+    ([_ ctx msg promise]
+      (if-not (instance? VoidChannelPromise promise)
+        (.write ^ChannelHandlerContext ctx msg promise)
+        ;; note that we ignore promise from params on purpose
+        ;; `netty/write` executes all writes with VoidChannelPromise
+        ;; which forces PendingWritesQueue to fail with IllegalStateException
+        ;; (as it does not support void promise) and the error will be
+        ;; lost down the road as we never check if the write succeeded
+        (.write ^ChannelHandlerContext ctx msg)))
+
+    :user-event-triggered
+    ([this ctx evt]
+      (when (instance? ProxyConnectionEvent evt)
+        (.remove (.pipeline ctx) this))
+      (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
 (defn pipeline-builder
   [response-stream
@@ -380,10 +394,11 @@
           ;; HTTP/1.1 200 Connection established
           ;; before sending any requests
           (when (instance? ProxyHandler proxy)
-            (.addLast pipeline
-              "pending-proxy-writes"
+            (.addAfter pipeline
+              "proxy"
+              "pending-proxy-connection"
               ^ChannelHandler
-              (pending-proxy-writes-handler)))))
+              (pending-proxy-connection-handler response-stream)))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -399,7 +414,6 @@
            raw-stream?
            bootstrap-transform
            name-resolver
-           pipeline-transform
            keep-alive?
            insecure?
            ssl-context
@@ -483,6 +497,9 @@
                 (d/chain' rsp
                   (fn [rsp]
                     (cond
+                      (instance? Throwable rsp)
+                      (d/error-deferred rsp)
+
                       (identical? ::closed rsp)
                       (d/error-deferred
                         (ex-info
@@ -544,13 +561,15 @@
        ([_ ctx]
          (when (realized? d)
            (s/close! @d))
-         (http/resolve-pings! pending-pings false))
+         (http/resolve-pings! pending-pings false)
+         (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
          (let [ch (.channel ctx)]
            (reset! in (netty/buffered-source ch (constantly 1) 16))
-           (.handshake handshaker ch)))
+           (.handshake handshaker ch))
+         (.fireChannelActive ctx))
 
        :channel-read
        ([_ ctx msg]
@@ -610,7 +629,10 @@
                    (swap! desc assoc
                      :websocket-close-code (.statusCode frame)
                      :websocket-close-msg (.reasonText frame)))
-                 (netty/close ctx))))
+                 (netty/close ctx))
+
+               :else
+               (.fireChannelRead ctx msg)))
            (finally
              (netty/release msg)))))]))
 
@@ -636,8 +658,7 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
-         compression? false}
-    :as options}]
+         compression? false}}]
   (let [uri (URI. uri)
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")

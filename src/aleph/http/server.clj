@@ -21,16 +21,15 @@
     [aleph.http.core
      NettyRequest]
     [io.netty.buffer
-     ByteBuf Unpooled]
+     ByteBuf]
     [io.netty.channel
-     Channel ChannelFuture ChannelHandlerContext
-     ChannelFutureListener ChannelHandler
+     Channel
+     ChannelHandlerContext
+     ChannelHandler
      ChannelPipeline]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
-     DefaultHttpContent
-     DefaultLastHttpContent
      HttpContent HttpHeaders
      HttpContentCompressor
      HttpRequest HttpResponse
@@ -50,9 +49,7 @@
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
     [java.io
-     Closeable File InputStream RandomAccessFile IOException]
-    [java.nio
-     ByteBuffer]
+     IOException]
     [java.net
      InetSocketAddress]
     [io.netty.util.concurrent
@@ -319,7 +316,8 @@
         (when-let [s @stream]
           (s/close! s))
         (doseq [b @buffer]
-          (netty/release b)))
+          (netty/release b))
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -333,7 +331,10 @@
           (instance? HttpContent msg)
           (if (instance? LastHttpContent msg)
             (process-last-content ctx msg)
-            (process-content ctx msg)))))))
+            (process-content ctx msg))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
@@ -363,7 +364,8 @@
       :channel-inactive
       ([_ ctx]
         (when-let [s @stream]
-          (s/close! s)))
+          (s/close! s))
+        (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -381,7 +383,10 @@
           (let [content (.content ^HttpContent msg)]
             (netty/put! (.channel ctx) @stream content)
             (when (instance? LastHttpContent msg)
-              (s/close! @stream))))))))
+              (s/close! @stream)))
+
+          :else
+          (.fireChannelRead ctx msg))))))
 
 (defn pipeline-builder
   [handler
@@ -430,12 +435,10 @@
    {:keys [port
            socket-address
            executor
-           raw-stream?
            bootstrap-transform
            pipeline-transform
            ssl-context
            shutdown-executor?
-           rejected-handler
            epoll?
            compression?]
     :or {bootstrap-transform identity
@@ -508,13 +511,15 @@
        :channel-inactive
        ([_ ctx]
          (s/close! out)
-         (s/close! in))
+         (s/close! in)
+         (.fireChannelInactive ctx))
 
        :channel-read
        ([_ ctx msg]
          (try
            (let [ch (.channel ctx)]
-             (when (instance? WebSocketFrame msg)
+             (if-not (instance? WebSocketFrame msg)
+               (.fireChannelRead ctx msg)
                (let [^WebSocketFrame msg msg]
                  (condp instance? msg
 
@@ -535,7 +540,10 @@
                    (http/resolve-pings! pending-pings true)
 
                    CloseWebSocketFrame
-                   (.close handshaker ch (netty/acquire msg))))))
+                   (.close handshaker ch (netty/acquire msg))
+
+                   :else
+                   (.fireChannelRead ctx msg)))))
            (finally
              (netty/release msg)))))]))
 
@@ -553,8 +561,7 @@
          max-frame-size 1048576
          allow-extensions? false
          compression? false
-         pipeline-transform identity}
-    :as options}]
+         pipeline-transform identity}}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 

@@ -10,8 +10,6 @@
      File]
     [java.nio
      ByteBuffer]
-    [java.nio.charset
-     Charset]
     [java.net
      URLConnection]
     [io.netty.util.internal
