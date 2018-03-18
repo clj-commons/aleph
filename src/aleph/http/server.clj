@@ -554,6 +554,8 @@
            (finally
              (netty/release msg)))))]))
 
+;; note, as we set `keep-alive?` to `false`, `send-message` will close the connection
+;; after writes are done, which is exactly what we expect to happen
 (defn send-websocket-request-expected! [ch ssl?]
   (http/send-message
    ch
