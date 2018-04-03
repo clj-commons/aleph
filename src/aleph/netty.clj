@@ -12,6 +12,7 @@
      [set :as set]]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
+    [java.io IOException]
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.channel
@@ -354,7 +355,10 @@
                         " into binary representation"))
                     (close ch)))
             ^ChannelFuture f (write-and-flush ch msg)
-            d (d/chain' (wrap-future f) (fn [_] true))]
+            d (-> f
+                wrap-future
+                (d/chain' (fn [_] true))
+                (d/catch' IOException (fn [_] false)))]
         (if blocking?
           @d
           d))))

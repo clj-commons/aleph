@@ -14,9 +14,9 @@
   '[[org.clojure/tools.logging "0.4.0" :exclusions [org.clojure/clojure]]
     [manifold "0.1.6"]
     [byte-streams "0.2.4-alpha3"]
-    [potemkin "0.4.4"]])
+    [potemkin "0.4.5"]])
 
-(defproject aleph "0.4.5-alpha5"
+(defproject aleph "0.4.5-alpha6"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
