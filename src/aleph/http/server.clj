@@ -5,6 +5,7 @@
     [aleph.flow :as flow]
     [byte-streams :as bs]
     [clojure.tools.logging :as log]
+    [clojure.string :as str]
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
@@ -380,7 +381,9 @@
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
-            (netty/put! (.channel ctx) @stream content)
+            ;; content might empty most probably in case of EmptyLastHttpContent
+            (when-not (zero? (.readableBytes content))
+              (netty/put! (.channel ctx) @stream content))
             (when (instance? LastHttpContent msg)
               (s/close! @stream)))
 
@@ -481,17 +484,25 @@
   [raw-stream?
    ^Channel ch
    ^WebSocketServerHandshaker handshaker]
-  (let [d (d/deferred)
-        out (netty/sink ch false
-              #(if (instance? CharSequence %)
-                 (TextWebSocketFrame. (bs/to-string %))
-                 (BinaryWebSocketFrame. (netty/to-byte-buf ch %))))
+  (let [out (netty/sink ch false
+              (fn [c]
+                (cond
+                  (instance? CharSequence c)
+                  (TextWebSocketFrame. (bs/to-string c))
+
+                  (instance? ByteBuf c)
+                  (BinaryWebSocketFrame. (netty/acquire c))
+
+                  :else
+                  (BinaryWebSocketFrame. (netty/to-byte-buf ch c)))))
         in (netty/buffered-source ch (constantly 1) 16)]
 
     (s/on-drained in
-      #(d/chain' (.close handshaker ch (CloseWebSocketFrame.))
-         netty/wrap-future
-         (fn [_] (.close ch))))
+      ;; there's a change that the connection was closed by the server,
+      ;; in that case *out* would be closed earlier and the underlying
+      ;; netty channel is already terminated
+      #(when (.isOpen ch)
+         (.close handshaker ch (CloseWebSocketFrame.))))
 
     [(doto
        (s/splice out in)
@@ -529,11 +540,11 @@
                    (let [body (.content ^BinaryWebSocketFrame msg)]
                      (netty/put! ch in
                        (if raw-stream?
-                         body
+                         (netty/acquire body)
                          (netty/buf->array body))))
 
                    (instance? PingWebSocketFrame msg)
-                   (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
+                   (netty/write-and-flush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
 
                    (instance? CloseWebSocketFrame msg)
                    (.close handshaker ch (netty/acquire msg))
@@ -542,6 +553,27 @@
                    (.fireChannelRead ctx msg)))))
            (finally
              (netty/release msg)))))]))
+
+;; note, as we set `keep-alive?` to `false`, `send-message` will close the connection
+;; after writes are done, which is exactly what we expect to happen
+(defn send-websocket-request-expected! [ch ssl?]
+  (http/send-message
+   ch
+   false
+   ssl?
+   (http/ring-response->netty-response
+    {:status 400
+     :headers {"content-type" "text/plain"}})
+   "expected websocket request"))
+
+(defn websocket-upgrade-request?
+  "Returns `true` if given request is an attempt to upgrade to websockets"
+  [^NettyRequest req]
+  (let [headers (:headers req)
+        conn (get headers :connection)
+        upgrade (get headers :upgrade)]
+    (and (= "upgrade" (when (some? conn) (str/lower-case conn)))
+         (= "websocket" (when (some? upgrade) (str/lower-case upgrade))))))
 
 (defn initialize-websocket-handler
   [^NettyRequest req
@@ -556,8 +588,7 @@
          max-frame-payload 65536
          max-frame-size 1048576
          allow-extensions? false
-         compression? false
-         pipeline-transform identity}}]
+         compression? false}}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 
@@ -573,35 +604,29 @@
       (try
         (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
               p (.newPromise ch)
-              h (DefaultHttpHeaders.)]
-          (http/map->headers! h headers)
+              h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
+          ;; actually, we're not going to except anything but websocket, so...
+          (doto (.pipeline ch)
+            (.remove "request-handler")
+            (.remove "continue-handler")
+            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+            (#(when compression?
+                (.addLast ^ChannelPipeline %
+                          "websocket-deflater"
+                          (WebSocketServerCompressionHandler.))))
+            (.addLast "websocket-handler" handler))
           (-> (try
                 (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                 (catch Throwable e
                   (d/error-deferred e)))
               (d/chain'
-               (fn [_]
-                 (doto (.pipeline ch)
-                   (.remove "request-handler")
-                   (.remove "continue-handler")
-                   (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-                   (#(when compression?
-                       (.addLast ^ChannelPipeline %
-                                 "websocket-deflater"
-                                 (WebSocketServerCompressionHandler.))))
-                   (.addLast "websocket-handler" handler)
-                   pipeline-transform)
-                 s))
+                (fn [_]
+                  (when (some? pipeline-transform)
+                    (pipeline-transform (.pipeline ch)))
+                  s))
               (d/catch'
                 (fn [e]
-                  (http/send-message
-                    ch
-                    false
-                    ssl?
-                    (http/ring-response->netty-response
-                     {:status 400
-                      :headers {"content-type" "text/plain"}})
-                    "expected websocket request")
+                  (send-websocket-request-expected! ch ssl?)
                   (d/error-deferred e)))))
         (catch Throwable e
           (d/error-deferred e)))

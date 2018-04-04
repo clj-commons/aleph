@@ -574,23 +574,26 @@
              (cond
 
                (not (.isHandshakeComplete handshaker))
-               (do
-                 (.finishHandshake handshaker ch msg)
-                 (let [out (netty/sink ch false
-                             #(if (instance? CharSequence %)
-                                (TextWebSocketFrame. (bs/to-string %))
-                                (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
-                             (fn [] @desc))]
+               (d/chain'
+                 (netty/wrap-future (.processHandshake handshaker ch msg))
+                 (fn [_]
+                   (let [out (netty/sink ch false
+                               (fn [c]
+                                 (if (instance? CharSequence c)
+                                   (TextWebSocketFrame. (bs/to-string c))
+                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
+                               (fn [] @desc))]
 
-                   (d/success! d
-                     (doto
-                       (s/splice out @in)
-                       (reset-meta! {:aleph/channel ch})))
+                     (d/success! d
+                       (doto
+                         (s/splice out @in)
+                         (reset-meta! {:aleph/channel ch})))
 
-                   (s/on-drained @in
-                     #(d/chain' (.writeAndFlush ch (CloseWebSocketFrame.))
-                        netty/wrap-future
-                        (fn [_] (netty/close ctx))))))
+                     (s/on-drained @in
+                       #(when (.isOpen ch)
+                         (d/chain'
+                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                           (fn [_] (netty/close ch))))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
@@ -617,7 +620,7 @@
 
                (instance? PingWebSocketFrame msg)
                (let [frame (.content ^PingWebSocketFrame msg)]
-                 (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire frame))))
+                 (netty/write-and-flush  ch (PongWebSocketFrame. (netty/acquire frame))))
 
                (instance? CloseWebSocketFrame msg)
                (let [frame ^CloseWebSocketFrame msg]
