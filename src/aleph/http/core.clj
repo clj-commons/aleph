@@ -294,7 +294,9 @@
         netty/channel
         .closeFuture
         netty/wrap-future
-        (d/chain' (fn [_] (s/close! src))))
+        (d/chain' (fn [_] (if (s/stream? body')
+                            (s/close! body')
+                            (s/close! src)))))
 
       (let [d (d/deferred)]
         (s/on-closed sink
