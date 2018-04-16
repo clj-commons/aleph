@@ -30,8 +30,7 @@
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
-     ChannelPipeline
-     VoidChannelPromise]
+     ChannelPipeline]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
