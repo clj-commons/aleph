@@ -338,17 +338,6 @@
           ;; client handler should take care of the rest
           (netty/close ctx))))
 
-    :write
-    ([_ ctx msg promise]
-      (if-not (instance? VoidChannelPromise promise)
-        (.write ^ChannelHandlerContext ctx msg promise)
-        ;; note that we ignore promise from params on purpose
-        ;; `netty/write` executes all writes with VoidChannelPromise
-        ;; which forces PendingWritesQueue to fail with IllegalStateException
-        ;; (as it does not support void promise) and the error will be
-        ;; lost down the road as we never check if the write succeeded
-        (.write ^ChannelHandlerContext ctx msg)))
-
     :user-event-triggered
     ([this ctx evt]
       (when (instance? ProxyConnectionEvent evt)
