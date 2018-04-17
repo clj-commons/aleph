@@ -51,7 +51,7 @@
             (.channel (if epoll? EpollDatagramChannel NioDatagramChannel))
             (.option ChannelOption/SO_BROADCAST (boolean broadcast?))
             (.handler
-              (netty/channel-handler
+              (netty/channel-inbound-handler
                 :exception-caught
                 ([_ ctx ex]
                   (when-not (d/error! d ex)

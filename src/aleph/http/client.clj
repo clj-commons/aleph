@@ -97,7 +97,7 @@
               complete
               body)))]
 
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -149,7 +149,7 @@
                               complete
                               body)))]
 
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -289,7 +289,7 @@
                  "Consider setting 'tunnel?' to 'true' or omit it at all"))))
 
     (if (non-tunnel-proxy? options')
-      (netty/channel-handler
+      (netty/channel-outbound-handler
         :connect
         ([_ ctx remote-address local-address promise]
           (.connect ^ChannelHandlerContext ctx address local-address promise)))
@@ -545,7 +545,7 @@
 
     [d
 
-     (netty/channel-handler
+     (netty/channel-inbound-handler
 
        :exception-caught
        ([_ ctx ex]
