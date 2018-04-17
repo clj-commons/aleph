@@ -615,19 +615,16 @@
         (= \/ (-> origin-path (subs (count norm-path)) first))))))
 
 (defn req->cookie-origin [{:keys [url] :as req}]
-  (if (some? url)
-    (let [{:keys [server-name server-port uri scheme]} (parse-url url)]
-      {:host server-name
-       :port server-port
-       :secure? (= :https scheme)
-       :path (cond
-               (nil? uri) "/"
-               (str/starts-with? uri "/") uri
-               :else (str "/" uri))})
-    {:host (some-> (or (:host req) (:server-name req)) IDN/toASCII)
-     :port (or (:port req) (:server-port req) -1)
-     :secure? (= :https (or (:scheme req) :http))
-     :path "/"}))
+  (let [{:keys [server-name server-port uri scheme]} (if (some? url)
+                                                       (parse-url url)
+                                                       req)]
+    {:host server-name
+     :port server-port
+     :secure? (= :https scheme)
+     :path (cond
+             (nil? uri) "/"
+             (str/starts-with? uri "/") uri
+             :else (str "/" uri))}))
 
 (defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
   (doto (DefaultCookie. name value)
