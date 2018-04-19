@@ -422,8 +422,7 @@
            on-closed
            response-executor
            epoll?
-           proxy-options
-           idle-timeout]
+           proxy-options]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
