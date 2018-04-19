@@ -27,6 +27,10 @@
      LastHttpContent
      FullHttpResponse
      HttpObjectAggregator]
+    [io.netty.handler.timeout
+     IdleState
+     IdleStateEvent
+     IdleStateHandler]
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
@@ -52,6 +56,8 @@
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
+    [java.util.concurrent
+     TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -355,6 +361,15 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
+(defn close-on-idle-handler []
+  (netty/channel-handler
+   :user-event-triggered
+   ([_ ctx evt]
+    (if (and (instance? IdleStateEvent evt)
+             (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
+      (netty/close (.channel ctx))
+      (.fireUserEventTriggered ctx evt)))))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -365,13 +380,15 @@
      max-chunk-size
      raw-stream?
      proxy-options
-     ssl?]
+     ssl?
+     idle-timeout]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
-     max-chunk-size 65536}}]
+     max-chunk-size 65536
+     idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -397,6 +414,10 @@
               "pending-proxy-connection"
               ^ChannelHandler
               (pending-proxy-connection-handler response-stream)))))
+      (when (pos? idle-timeout)
+        (doto pipeline
+          (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
+          (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -419,7 +440,8 @@
            on-closed
            response-executor
            epoll?
-           proxy-options]
+           proxy-options
+           idle-timeout]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536

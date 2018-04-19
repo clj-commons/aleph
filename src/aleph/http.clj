@@ -107,6 +107,7 @@
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
    | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
+   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
@@ -142,6 +143,12 @@
          control-period 60000
          middleware middleware/wrap-request
          max-queue-size 65536}}]
+  (when (and (false? (:keep-alive? connection-options))
+             (pos? (:idle-timeout connection-options 0)))
+    (throw
+     (IllegalArgumentException.
+      ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
+
   (let [conn-options' (cond-> connection-options
                         (some? dns-options)
                         (assoc :name-resolver (netty/dns-resolver-group dns-options)))
