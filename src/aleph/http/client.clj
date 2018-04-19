@@ -27,10 +27,6 @@
      LastHttpContent
      FullHttpResponse
      HttpObjectAggregator]
-    [io.netty.handler.timeout
-     IdleState
-     IdleStateEvent
-     IdleStateHandler]
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
@@ -56,8 +52,6 @@
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
-    [java.util.concurrent
-     TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -361,15 +355,6 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
-(defn close-on-idle-handler []
-  (netty/channel-handler
-   :user-event-triggered
-   ([_ ctx evt]
-    (if (and (instance? IdleStateEvent evt)
-             (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-      (netty/close (.channel ctx))
-      (.fireUserEventTriggered ctx evt)))))
-
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -401,7 +386,8 @@
             max-chunk-size
             false
             false))
-        (.addLast "handler" ^ChannelHandler handler))
+        (.addLast "handler" ^ChannelHandler handler)
+        (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
         (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
           (.addFirst pipeline "proxy" ^ChannelHandler proxy)
@@ -414,10 +400,6 @@
               "pending-proxy-connection"
               ^ChannelHandler
               (pending-proxy-connection-handler response-stream)))))
-      (when (pos? idle-timeout)
-        (doto pipeline
-          (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
-          (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler))))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
