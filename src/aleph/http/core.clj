@@ -416,7 +416,7 @@
    ([_ ctx evt]
     (if (and (instance? IdleStateEvent evt)
              (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-      (netty/close (.channel ctx))
+      (netty/close ctx)
       (.fireUserEventTriggered ctx evt)))))
 
 (defn attach-idle-handlers [^ChannelPipeline pipeline idle-timeout]
