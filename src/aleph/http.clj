@@ -44,7 +44,8 @@
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
-   | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value"
+   | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
+   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds"
   [handler options]
   (server/start-server handler options))
 
