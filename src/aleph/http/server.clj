@@ -305,7 +305,7 @@
 
                       (handle-request ctx @request s))))))))]
 
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -355,7 +355,7 @@
               @previous-response
               body
               (HttpHeaders/isKeepAlive req))))]
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -511,7 +511,7 @@
        (s/splice out in)
        (reset-meta! {:aleph/channel ch}))
 
-     (netty/channel-handler
+     (netty/channel-inbound-handler
 
        :exception-caught
        ([_ ctx ex]
