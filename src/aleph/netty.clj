@@ -351,8 +351,8 @@
                   (catch Exception e
                     (log/error e
                       (str "cannot coerce "
-                           (.getName (class msg))
-                           " into binary representation"))
+                        (.getName (class msg))
+                        " into binary representation"))
                     (close ch)))
             d (if (nil? msg)
                 (d/success-deferred true)
