@@ -365,13 +365,15 @@
      max-chunk-size
      raw-stream?
      proxy-options
-     ssl?]
+     ssl?
+     idle-timeout]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
-     max-chunk-size 65536}}]
+     max-chunk-size 65536
+     idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -384,7 +386,8 @@
             max-chunk-size
             false
             false))
-        (.addLast "handler" ^ChannelHandler handler))
+        (.addLast "handler" ^ChannelHandler handler)
+        (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
         (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
           (.addFirst pipeline "proxy" ^ChannelHandler proxy)

@@ -403,13 +403,15 @@
      raw-stream?
      ssl?
      compression?
-     compression-level]
+     compression-level
+     idle-timeout]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
      max-header-size 8192
      max-chunk-size 16384
-     compression? false}}]
+     compression? false
+     idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
@@ -428,6 +430,7 @@
             (let [compressor (HttpContentCompressor. (or compression-level 6))]
               (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
             (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
+        (http/attach-idle-handlers idle-timeout)
         pipeline-transform))))
 
 ;;;
