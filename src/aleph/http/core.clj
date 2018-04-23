@@ -451,7 +451,6 @@
       CharSequence
       (TextWebSocketFrame. (bs/to-string msg))
 
-      :else
       (BinaryWebSocketFrame. (netty/to-byte-buf ch msg)))))
 
 (defn close-on-idle-handler []
