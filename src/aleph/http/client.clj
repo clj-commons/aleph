@@ -573,11 +573,10 @@
                  (netty/wrap-future (.processHandshake handshaker ch msg))
                  (fn [_]
                    (let [out (netty/sink ch false
-                               (fn [c]
-                                 (if (instance? CharSequence c)
-                                   (TextWebSocketFrame. (bs/to-string c))
-                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
+                               (http/websocket-message-coerce-fn ch pending-pings)
                                (fn [] @desc))]
+
+                     (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
 
                      (d/success! d
                        (doto
