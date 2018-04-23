@@ -550,7 +550,6 @@
                    CloseWebSocketFrame
                    (.close handshaker ch (netty/acquire msg))
 
-                   :else
                    (.fireChannelRead ctx msg)))))
            (finally
              (netty/release msg)))))]))
