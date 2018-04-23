@@ -62,7 +62,8 @@
     (with-handler raw-echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080")]
         (is @(s/put! c (.getBytes "raw conn bytes hello" "UTF-8")))
-        (is (= "raw conn bytes hello" (bs/to-string @(s/try-take! c 5e3)))))))
+        (let [msg @(s/try-take! c 5e3)]
+          (is (= "raw conn bytes hello" (when msg (bs/to-string msg))))))))
 
   (testing "websocket server: raw-stream? with string message"
     (with-handler raw-echo-handler
