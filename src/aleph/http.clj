@@ -57,7 +57,7 @@
   (let [scheme (.getScheme uri)
         ssl? (= "https" scheme)]
     (-> (client/http-connection
-          (InetSocketAddress.
+          (InetSocketAddress/createUnresolved
             (.getHost uri)
             (int
               (or
