@@ -60,12 +60,12 @@
 (defn part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
              (when name (str "; filename=\"" name "\""))
-             \newline)
-        ct (str "Content-Type: " mime-type \newline)
+             "\r\n")
+        ct (str "Content-Type: " mime-type "\r\n")
         cte (if (nil? transfer-encoding)
               ""
-              (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) \newline))]
-    (bs/to-byte-buffer (str cd ct cte \newline))))
+              (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) "\r\n"))]
+    (bs/to-byte-buffer (str cd ct cte "\r\n"))))
 
 (defn encode-part
   "Generates the byte representation of a part for the bytebuffer"
@@ -87,16 +87,16 @@
     (encode-body (boundary) parts))
   ([^String boundary parts]
     (let [b (bs/to-byte-buffer (str "--" boundary))
-          b-len (+ 5 (.length boundary))
+          b-len (+ 6 (.length boundary))
           ps (map #(-> % populate-part encode-part) parts)
           boundaries-len (* (inc (count parts)) b-len)
           part-len (reduce (fn [acc ^ByteBuffer p] (+ acc (.limit p))) 0 ps)
           buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
       (.put buf b)
       (doseq [^ByteBuffer part ps]
-        (.put buf (bs/to-byte-buffer "\n"))
+        (.put buf (bs/to-byte-buffer "\r\n"))
         (.put buf part)
-        (.put buf (bs/to-byte-buffer "\n"))
+        (.put buf (bs/to-byte-buffer "\r\n"))
         (.flip b)
         (.put buf b))
       (.put buf (bs/to-byte-buffer "--"))
