@@ -4,7 +4,6 @@
   (:refer-clojure :exclude [update])
   (:require
     [potemkin :as p]
-    [clojure.stacktrace :refer [root-cause]]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
@@ -782,7 +781,7 @@
     (write-cookie-header cookies cookie-spec req)))
 
 (defn wrap-cookies
-  "Middleware that set 'Cookie' header based on the contentn of cookies passed
+  "Middleware that set 'Cookie' header based on the content of cookies passed
    with the request or from cookies storage (when provided). Source for 'Cookie'
    header content by priorities:
 
