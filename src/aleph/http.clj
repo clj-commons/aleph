@@ -235,7 +235,8 @@
      | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
      | `connection-timeout` | timeout in milliseconds for the connection to become established
      | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection
-     | `read-timeout` | timeout in milliseconds for the response to be completed"
+     | `read-timeout` | timeout in milliseconds for the response to be completed
+     | `follow-redirects?` | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`"
     [{:keys [pool
              middleware
              pool-timeout
@@ -247,8 +248,7 @@
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
-           connection-timeout 6e4 ;; 60 seconds
-           follow-redirects? true}
+           connection-timeout 6e4} ;; 60 seconds
       :as req}]
 
     (executor/with-executor response-executor
