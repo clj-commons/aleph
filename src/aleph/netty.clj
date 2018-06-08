@@ -85,9 +85,9 @@
 (defn set-logger! [logger]
   (InternalLoggerFactory/setDefaultFactory
     (case logger
-      :log4j (Log4JLoggerFactory.)
-      :slf4j (Slf4JLoggerFactory.)
-      :jdk   (JdkLoggerFactory.))))
+      :log4j Log4JLoggerFactory/INSTANCE
+      :slf4j Slf4JLoggerFactory/INSTANCE
+      :jdk   JdkLoggerFactory/INSTANCE)))
 
 ;;;
 
