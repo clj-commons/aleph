@@ -327,7 +327,7 @@
     handler))
 
 (defn pending-proxy-connection-handler [response-stream]
-  (netty/channel-handler
+  (netty/channel-inbound-handler
     :exception-caught
     ([_ ctx cause]
       (if-not (instance? ProxyConnectException cause)
