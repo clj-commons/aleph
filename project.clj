@@ -1,4 +1,4 @@
-(def netty-version "4.1.22.Final")
+(def netty-version "4.1.25.Final")
 
 (def netty-modules
   '[transport
@@ -11,9 +11,9 @@
     resolver-dns])
 
 (def other-dependencies
-  '[[org.clojure/tools.logging "0.4.0" :exclusions [org.clojure/clojure]]
-    [manifold "0.1.6"]
-    [byte-streams "0.2.4-alpha3"]
+  '[[org.clojure/tools.logging "0.4.1" :exclusions [org.clojure/clojure]]
+    [manifold "0.1.8"]
+    [byte-streams "0.2.4"]
     [potemkin "0.4.5"]])
 
 (defproject aleph "0.4.5-alpha6"
@@ -30,7 +30,7 @@
                                   [criterium "0.4.4"]
                                   [cheshire "5.8.0"]
                                   [org.slf4j/slf4j-simple "1.7.25"]
-                                  [com.cognitect/transit-clj "0.8.300"]]}}
+                                  [com.cognitect/transit-clj "0.8.309"]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}

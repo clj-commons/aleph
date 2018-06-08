@@ -11,3 +11,4 @@ dump.rdb
 target/**
 .nrepl*
 /doc
+.java-version
