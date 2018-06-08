@@ -13,7 +13,9 @@
      Channel
      DefaultFileRegion
      ChannelFuture
-     ChannelFutureListener]
+     ChannelFutureListener
+     ChannelPipeline
+     ChannelHandler]
     [io.netty.buffer
      ByteBuf]
     [java.nio
@@ -27,6 +29,10 @@
      DefaultHttpContent
      HttpVersion
      LastHttpContent HttpChunkedInput]
+    [io.netty.handler.timeout
+     IdleState
+     IdleStateEvent
+     IdleStateHandler]
     [io.netty.handler.stream
      ChunkedFile ChunkedWriteHandler]
     [java.io
@@ -34,7 +40,8 @@
      RandomAccessFile
      Closeable]
     [java.util.concurrent
-     ConcurrentHashMap]
+     ConcurrentHashMap
+     TimeUnit]
     [java.util.concurrent.atomic
      AtomicBoolean]))
 
@@ -294,7 +301,9 @@
         netty/channel
         .closeFuture
         netty/wrap-future
-        (d/chain' (fn [_] (s/close! src))))
+        (d/chain' (fn [_] (if (s/stream? body')
+                            (s/close! body')
+                            (s/close! src)))))
 
       (let [d (d/deferred)]
         (s/on-closed sink
@@ -400,3 +409,19 @@
         (handle-cleanup ch f))
 
       f)))
+
+(defn close-on-idle-handler []
+  (netty/channel-handler
+   :user-event-triggered
+   ([_ ctx evt]
+    (if (and (instance? IdleStateEvent evt)
+             (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
+      (netty/close ctx)
+      (.fireUserEventTriggered ctx evt)))))
+
+(defn attach-idle-handlers [^ChannelPipeline pipeline idle-timeout]
+  (if (pos? idle-timeout)
+    (doto pipeline
+      (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
+      (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
+    pipeline))

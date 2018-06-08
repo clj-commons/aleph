@@ -44,7 +44,8 @@
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
-   | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value"
+   | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
+   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds"
   [handler options]
   (server/start-server handler options))
 
@@ -56,7 +57,7 @@
   (let [scheme (.getScheme uri)
         ssl? (= "https" scheme)]
     (-> (client/http-connection
-          (InetSocketAddress.
+          (InetSocketAddress/createUnresolved
             (.getHost uri)
             (int
               (or
@@ -107,6 +108,7 @@
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
    | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
+   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
@@ -142,6 +144,12 @@
          control-period 60000
          middleware middleware/wrap-request
          max-queue-size 65536}}]
+  (when (and (false? (:keep-alive? connection-options))
+             (pos? (:idle-timeout connection-options 0)))
+    (throw
+     (IllegalArgumentException.
+      ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
+
   (let [conn-options' (cond-> connection-options
                         (some? dns-options)
                         (assoc :name-resolver (netty/dns-resolver-group dns-options)))

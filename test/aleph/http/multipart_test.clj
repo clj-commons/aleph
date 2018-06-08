@@ -41,7 +41,7 @@
     ;; default mime-type
     (is (.contains body-str "Content-Type: application/octet-stream;charset=UTF-8"))
     ;; omitting charset
-    (is (.contains body-str "Content-Type: application/json\n"))
+    (is (.contains body-str "Content-Type: application/json\r\n"))
     ;; mime-type + charset
     (is (.contains body-str "Content-Type: application/xml;charset=ISO-8859-1"))
     ;; filename header
@@ -106,7 +106,7 @@
     (is (.contains body-str "name=\"file.txt\""))
     (is (.contains body-str "filename=\"file.txt\""))
     (is (.contains body-str "filename=\"text-file-to-send.txt\""))
-    (is (.contains body-str "Content-Type: text/plain\n"))
-    (is (.contains body-str "Content-Type: text/plain;charset=UTF-8\n"))
-    (is (.contains body-str "Content-Type: application/png\n"))
-    (is (.contains body-str "Content-Transfer-Encoding: base64\n"))))
+    (is (.contains body-str "Content-Type: text/plain\r\n"))
+    (is (.contains body-str "Content-Type: text/plain;charset=UTF-8\r\n"))
+    (is (.contains body-str "Content-Type: application/png\r\n"))
+    (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))

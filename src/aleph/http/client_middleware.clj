@@ -11,7 +11,9 @@
     [manifold.stream :as s]
     [manifold.executor :as ex]
     [byte-streams :as bs]
-    [clojure.edn :as edn])
+    [clojure.edn :as edn]
+    ;; leave this dependency to make sure that HeaderMap is already compiled
+    [aleph.http.core :as http])
   (:import
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.handler.codec.base64 Base64]
@@ -614,20 +616,24 @@
         (= (count origin-path) (count norm-path))
         (= \/ (-> origin-path (subs (count norm-path)) first))))))
 
-(defn req->cookie-origin [{:keys [url] :as req}]
-  (if (some? url)
-    (let [{:keys [server-name server-port uri scheme]} (parse-url url)]
-      {:host server-name
-       :port server-port
-       :secure? (= :https scheme)
-       :path (cond
-               (nil? uri) "/"
-               (str/starts-with? uri "/") uri
-               :else (str "/" uri))})
-    {:host (some-> (or (:host req) (:server-name req)) IDN/toASCII)
-     :port (or (:port req) (:server-port req) -1)
-     :secure? (= :https (or (:scheme req) :http))
-     :path "/"}))
+
+(let [uri->path (fn [uri]
+                  (cond
+                    (nil? uri) "/"
+                    (str/starts-with? uri "/") uri
+                    :else (str "/" uri)))]
+
+  (defn req->cookie-origin [{:keys [url] :as req}]
+    (if (some? url)
+      (let [{:keys [server-name server-port uri scheme]} (parse-url url)]
+        {:host    server-name
+         :port    server-port
+         :secure? (= :https scheme)
+         :path    (uri->path uri)})
+      {:host    (some-> (or (:host req) (:server-name req)) IDN/toASCII)
+       :port    (or (:port req) (:server-port req) -1)
+       :secure? (= :https (or (:scheme req) :http))
+       :path    (uri->path (:uri req))})))
 
 (defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
   (doto (DefaultCookie. name value)

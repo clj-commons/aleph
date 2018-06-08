@@ -30,8 +30,7 @@
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
-     ChannelPipeline
-     VoidChannelPromise]
+     ChannelPipeline]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -97,7 +96,7 @@
               complete
               body)))]
 
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -149,7 +148,7 @@
                               complete
                               body)))]
 
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -289,7 +288,7 @@
                  "Consider setting 'tunnel?' to 'true' or omit it at all"))))
 
     (if (non-tunnel-proxy? options')
-      (netty/channel-handler
+      (netty/channel-outbound-handler
         :connect
         ([_ ctx remote-address local-address promise]
           (.connect ^ChannelHandlerContext ctx address local-address promise)))
@@ -328,7 +327,7 @@
     handler))
 
 (defn pending-proxy-connection-handler [response-stream]
-  (netty/channel-handler
+  (netty/channel-inbound-handler
     :exception-caught
     ([_ ctx cause]
       (if-not (instance? ProxyConnectException cause)
@@ -337,17 +336,6 @@
           (s/put! response-stream (ProxyConnectionTimeoutException. cause))
           ;; client handler should take care of the rest
           (netty/close ctx))))
-
-    :write
-    ([_ ctx msg promise]
-      (if-not (instance? VoidChannelPromise promise)
-        (.write ^ChannelHandlerContext ctx msg promise)
-        ;; note that we ignore promise from params on purpose
-        ;; `netty/write` executes all writes with VoidChannelPromise
-        ;; which forces PendingWritesQueue to fail with IllegalStateException
-        ;; (as it does not support void promise) and the error will be
-        ;; lost down the road as we never check if the write succeeded
-        (.write ^ChannelHandlerContext ctx msg)))
 
     :user-event-triggered
     ([this ctx evt]
@@ -365,13 +353,15 @@
      max-chunk-size
      raw-stream?
      proxy-options
-     ssl?]
+     ssl?
+     idle-timeout]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
-     max-chunk-size 65536}}]
+     max-chunk-size 65536
+     idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -384,7 +374,8 @@
             max-chunk-size
             false
             false))
-        (.addLast "handler" ^ChannelHandler handler))
+        (.addLast "handler" ^ChannelHandler handler)
+        (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
         (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
           (.addFirst pipeline "proxy" ^ChannelHandler proxy)
@@ -545,7 +536,7 @@
 
     [d
 
-     (netty/channel-handler
+     (netty/channel-inbound-handler
 
        :exception-caught
        ([_ ctx ex]
@@ -574,23 +565,26 @@
              (cond
 
                (not (.isHandshakeComplete handshaker))
-               (do
-                 (.finishHandshake handshaker ch msg)
-                 (let [out (netty/sink ch false
-                             #(if (instance? CharSequence %)
-                                (TextWebSocketFrame. (bs/to-string %))
-                                (BinaryWebSocketFrame. (netty/to-byte-buf ctx %)))
-                             (fn [] @desc))]
+               (d/chain'
+                 (netty/wrap-future (.processHandshake handshaker ch msg))
+                 (fn [_]
+                   (let [out (netty/sink ch false
+                               (fn [c]
+                                 (if (instance? CharSequence c)
+                                   (TextWebSocketFrame. (bs/to-string c))
+                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
+                               (fn [] @desc))]
 
-                   (d/success! d
-                     (doto
-                       (s/splice out @in)
-                       (reset-meta! {:aleph/channel ch})))
+                     (d/success! d
+                       (doto
+                         (s/splice out @in)
+                         (reset-meta! {:aleph/channel ch})))
 
-                   (s/on-drained @in
-                     #(d/chain' (.writeAndFlush ch (CloseWebSocketFrame.))
-                        netty/wrap-future
-                        (fn [_] (netty/close ctx))))))
+                     (s/on-drained @in
+                       #(when (.isOpen ch)
+                         (d/chain'
+                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                           (fn [_] (netty/close ch))))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
@@ -617,7 +611,7 @@
 
                (instance? PingWebSocketFrame msg)
                (let [frame (.content ^PingWebSocketFrame msg)]
-                 (.writeAndFlush ch (PongWebSocketFrame. (netty/acquire frame))))
+                 (netty/write-and-flush  ch (PongWebSocketFrame. (netty/acquire frame))))
 
                (instance? CloseWebSocketFrame msg)
                (let [frame ^CloseWebSocketFrame msg]
