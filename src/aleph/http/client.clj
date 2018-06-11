@@ -24,6 +24,8 @@
      HttpRequest
      HttpResponse
      HttpContent
+     HttpUtil
+     HttpHeaderNames
      LastHttpContent
      FullHttpResponse
      HttpObjectAggregator]
@@ -171,7 +173,7 @@
 
           (instance? HttpResponse msg)
           (let [rsp msg]
-            (if (HttpHeaders/isTransferEncodingChunked rsp)
+            (if (HttpUtil/isTransferEncodingChunked rsp)
               (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                     c (d/deferred)]
                 (reset! stream s)
@@ -262,7 +264,7 @@
 ;;  * `curl` uses separate option `--proxytunnel` flag to switch tunneling on
 ;;  * `curl` uses CONNECT when sending request to HTTPS destination through HTTP proxy
 ;;
-;; Explicitily setting `tunnel?` to false when it's expected to use CONNECT
+;; Explicitly setting `tunnel?` to false when it's expected to use CONNECT
 ;; throws `IllegalArgumentException` to reduce the confusion
 (defn http-proxy-handler
   [^InetSocketAddress address
@@ -448,9 +450,9 @@
                                           (assoc req :uri (:request-url req))
                                           req))]
                 (when-not (.get (.headers req') "Host")
-                  (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
+                  (.set (.headers req') HttpHeaderNames/HOST (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
-                  (HttpHeaders/setKeepAlive req' keep-alive?))
+                  (HttpUtil/setKeepAlive req' keep-alive?))
                 (when (and (non-tunnel-proxy? proxy-options')
                         (get proxy-options :keep-alive? true)
                         (not (.get (.headers req') "Proxy-Connection")))
@@ -591,7 +593,7 @@
                  (throw
                    (IllegalStateException.
                      (str "unexpected HTTP response, status: "
-                       (.getStatus rsp)
+                       (.status rsp)
                        ", body: '"
                        (bs/to-string (.content rsp))
                        "'"))))
