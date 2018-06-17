@@ -1,5 +1,5 @@
 (ns aleph.http.client-middleware
-  "This middleware is adapted from clj-http, whose license is amendable to this sort of
+  "This middleware is adapted from clj-http, whose license is amenable to this sort of
    copy/pastery"
   (:refer-clojure :exclude [update])
   (:require

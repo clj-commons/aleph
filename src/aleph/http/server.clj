@@ -119,13 +119,16 @@
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
+        (let [headers (.headers rsp)]
 
-        (doto (.headers rsp)
-          (.set ^CharSequence server-name server-value)
-          (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
-          (.set ^CharSequence date-name (date-header-value ctx)))
+          (when-not (.contains headers ^CharSequence server-name)
+            (.set headers ^CharSequence server-name server-value))
 
-        (http/send-message ctx keep-alive? ssl? rsp body)))))
+          (doto headers
+            (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+            (.set ^CharSequence date-name (date-header-value ctx)))
+
+          (http/send-message ctx keep-alive? ssl? rsp body))))))
 
 ;;;
 
