@@ -61,7 +61,8 @@
      InternalLoggerFactory
      Log4JLoggerFactory
      Slf4JLoggerFactory
-     JdkLoggerFactory]
+     JdkLoggerFactory
+     Log4J2LoggerFactory]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
     [aleph.utils PluggableDnsAddressResolverGroup]))
@@ -85,9 +86,10 @@
 (defn set-logger! [logger]
   (InternalLoggerFactory/setDefaultFactory
     (case logger
-      :log4j Log4JLoggerFactory/INSTANCE
-      :slf4j Slf4JLoggerFactory/INSTANCE
-      :jdk   JdkLoggerFactory/INSTANCE)))
+      :log4j  Log4JLoggerFactory/INSTANCE
+      :log4j2 Log4J2LoggerFactory/INSTANCE
+      :slf4j  Slf4JLoggerFactory/INSTANCE
+      :jdk    JdkLoggerFactory/INSTANCE)))
 
 ;;;
 
