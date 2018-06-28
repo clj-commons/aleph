@@ -666,7 +666,7 @@
     :else (>= (System/currentTimeMillis) (+ created max-age))))
 
 (defprotocol CookieSpec
-  "Implement rules for accepting and returing cookies"
+  "Implement rules for accepting and returning cookies"
   (parse-cookie [this cookie-str])
   (write-cookies [this cookies])
   (match-cookie-origin? [this origin cookie]))
@@ -733,7 +733,9 @@
   ([header]
     (decode-set-cookie-header default-cookie-spec header))
   ([cookie-spec header]
-    (netty-cookie->cookie (parse-cookie cookie-spec header))))
+    (some->> header
+             (parse-cookie cookie-spec)
+             (netty-cookie->cookie))))
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
