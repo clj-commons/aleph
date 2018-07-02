@@ -37,7 +37,7 @@
   {:socket-timeout 1e3
    :pool-timeout 1e4
    :request-timeout 1e4
-   :throw-exceptions? false})
+   :throw-exceptions false})
 
 (defn http-get
   ([url]
