@@ -182,7 +182,7 @@
     req))
 
 (p/def-derived-map NettyRequest
-  [^HttpRequest req
+  [^HttpRequest Req
    ssl?
    ^Channel ch
    ^AtomicBoolean websocket?
@@ -192,22 +192,22 @@
          (if (neg? idx)
            (.getUri req)
            (.substring (.getUri req) 0 idx)))
-  :query-string (let [uri (.getUri req)]
+  :query-string (let [uri (.uri req)]
                   (if (neg? question-mark-index)
                     nil
                     (.substring uri (unchecked-inc question-mark-index))))
   :headers (-> req .headers headers->map)
-  :request-method (-> req .getMethod .name str/lower-case keyword)
+  :request-method (-> req .method .name str/lower-case keyword)
   :body body
   :scheme (if ssl? :https :http)
-  :aleph/keep-alive? (HttpHeaders/isKeepAlive req)
+  :aleph/keep-alive? (HttpUtil/isKeepAlive req)
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
   :remote-addr (netty/channel-remote-address ch))
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
-  :status (-> rsp .getStatus .code)
-  :aleph/keep-alive? (HttpHeaders/isKeepAlive rsp)
+  :status (-> rsp .status .code)
+  :aleph/keep-alive? (HttpUtil/isKeepAlive rsp)
   :headers (-> rsp .headers headers->map)
   :aleph/complete complete
   :body body)
@@ -219,7 +219,7 @@
       ssl?
       ch
       (AtomicBoolean. false)
-      (-> req .getUri (.indexOf (int 63))) body)
+      (-> req .uri (.indexOf (int 63))) body)
     :aleph/request-arrived (System/nanoTime)))
 
 (defn netty-response->ring-response [rsp complete body]
@@ -360,7 +360,7 @@
 
     (when-not omitted?
       (if (instance? HttpResponse msg)
-        (let [code (-> ^HttpResponse msg .getStatus .code)]
+        (let [code (-> ^HttpResponse msg .status .code)]
           (when-not (or (<= 100 code 199) (= 204 code))
             (try-set-content-length! msg length)))
         (try-set-content-length! msg length)))
