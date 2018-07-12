@@ -237,7 +237,7 @@
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
 (let [ary-class (class (byte-array 0))]
-  (defn coerce-element [ch x]
+  (defn coerce-element [x]
     (if (or
           (instance? String x)
           (instance? ary-class x)
@@ -255,7 +255,7 @@
 
                    (let [buf (netty/allocate ch)
                          pending? (instance? clojure.lang.IPending body)]
-                     (loop [s (map (partial coerce-element ch) body)]
+                     (loop [s (map coerce-element body)]
                        (cond
 
                          (and pending? (not (realized? s)))
