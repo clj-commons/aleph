@@ -182,7 +182,7 @@
     req))
 
 (p/def-derived-map NettyRequest
-  [^HttpRequest Req
+  [^HttpRequest req
    ssl?
    ^Channel ch
    ^AtomicBoolean websocket?

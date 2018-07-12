@@ -31,7 +31,7 @@
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
-     HttpContent HttpHeaders
+     HttpContent HttpHeaders HttpUtil
      HttpContentCompressor
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
@@ -357,7 +357,7 @@
               req
               @previous-response
               body
-              (HttpHeaders/isKeepAlive req))))]
+              (HttpUtil/isKeepAlive req))))]
     (netty/channel-inbound-handler
 
       :exception-caught
