@@ -627,7 +627,7 @@
         (.write ctx msg promise)))))
 
 (defn pipeline-initializer [pipeline-builder]
-  (channel-handler
+  (channel-inbound-handler
 
     :channel-registered
     ([this ctx]
@@ -638,8 +638,7 @@
           (.fireChannelRegistered ctx)
           (catch Throwable e
             (log/warn e "Failed to initialize channel")
-            (.close ctx))))
-      (.fireChannelRegistered ctx))))
+            (.close ctx)))))))
 
 (defn instrument!
   [stream]
