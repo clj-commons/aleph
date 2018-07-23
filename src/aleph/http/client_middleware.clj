@@ -942,3 +942,8 @@
                   (d/future-with (or executor (ex/wait-pool))
                     (coerce-response-body req' rsp))
                   rsp)))))))))
+
+(defn handle-request-debug [req rsp]
+  (if-not (opt req :save-request)
+    rsp
+    (assoc rsp :aleph/request req)))
