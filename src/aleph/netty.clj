@@ -715,10 +715,12 @@
   "A self-signed SSL context for servers."
   []
   (let [cert (SelfSignedCertificate.)]
-    (SslContext/newServerContext (.certificate cert) (.privateKey cert))))
+    (.build (SslContextBuilder/forServer (.certificate cert) (.privateKey cert)))))
 
 (defn insecure-ssl-client-context []
-  (SslContext/newClientContext InsecureTrustManagerFactory/INSTANCE))
+  (-> (SslContextBuilder/forClient)
+      (.trustManager InsecureTrustManagerFactory/INSTANCE)
+      .build))
 
 (defn- check-ssl-args
   [private-key certificate-chain]
