@@ -336,7 +336,6 @@
                        (fn [rsp]
                          (->> rsp
                            (middleware/handle-cookies req)
-                           (middleware/handle-request-debug req)
                            (middleware/handle-redirects request req)))))))))))
         req))))
 
