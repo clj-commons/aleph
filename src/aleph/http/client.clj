@@ -1,64 +1,63 @@
 (ns aleph.http.client
   (:require
-   [clojure.tools.logging :as log]
-   [byte-streams :as bs]
-   [manifold.deferred :as d]
-   [manifold.stream :as s]
-   [aleph.http.core :as http]
-   [aleph.http.multipart :as multipart]
-   [aleph.netty :as netty]
-   [aleph.http.client-middleware :as middleware])
+    [clojure.tools.logging :as log]
+    [byte-streams :as bs]
+    [manifold.deferred :as d]
+    [manifold.stream :as s]
+    [aleph.http.core :as http]
+    [aleph.http.multipart :as multipart]
+    [aleph.netty :as netty])
   (:import
-   [java.io
-    IOException]
-   [java.net
-    URI
-    InetSocketAddress
-    IDN
-    URL]
-   [io.netty.buffer
-    ByteBuf]
-   [io.netty.handler.codec.http
-    HttpClientCodec
-    DefaultHttpHeaders
-    HttpHeaders
-    HttpRequest
-    HttpResponse
-    HttpContent
-    LastHttpContent
-    FullHttpResponse
-    HttpObjectAggregator]
-   [io.netty.channel
-    Channel
-    ChannelHandler ChannelHandlerContext
-    ChannelPipeline]
-   [io.netty.handler.codec.http.websocketx
-    CloseWebSocketFrame
-    PingWebSocketFrame
-    PongWebSocketFrame
-    TextWebSocketFrame
-    BinaryWebSocketFrame
-    WebSocketClientHandshaker
-    WebSocketClientHandshakerFactory
-    WebSocketFrame
-    WebSocketFrameAggregator
-    WebSocketVersion]
-   [io.netty.handler.codec.http.websocketx.extensions.compression
-    WebSocketClientCompressionHandler]
-   [io.netty.handler.proxy
-    ProxyConnectionEvent
-    ProxyConnectException
-    ProxyHandler
-    HttpProxyHandler
-    Socks4ProxyHandler
-    Socks5ProxyHandler]
-   [io.netty.handler.logging
-    LoggingHandler
-    LogLevel]
-   [java.util.concurrent.atomic
-    AtomicInteger]
-   [aleph.utils
-    ProxyConnectionTimeoutException]))
+    [java.io
+     IOException]
+    [java.net
+     URI
+     InetSocketAddress
+     IDN
+     URL]
+    [io.netty.buffer
+     ByteBuf]
+    [io.netty.handler.codec.http
+     HttpClientCodec
+     DefaultHttpHeaders
+     HttpHeaders
+     HttpRequest
+     HttpResponse
+     HttpContent
+     LastHttpContent
+     FullHttpResponse
+     HttpObjectAggregator]
+    [io.netty.channel
+     Channel
+     ChannelHandler ChannelHandlerContext
+     ChannelPipeline]
+    [io.netty.handler.codec.http.websocketx
+     CloseWebSocketFrame
+     PingWebSocketFrame
+     PongWebSocketFrame
+     TextWebSocketFrame
+     BinaryWebSocketFrame
+     WebSocketClientHandshaker
+     WebSocketClientHandshakerFactory
+     WebSocketFrame
+     WebSocketFrameAggregator
+     WebSocketVersion]
+    [io.netty.handler.codec.http.websocketx.extensions.compression
+     WebSocketClientCompressionHandler]
+    [io.netty.handler.proxy
+     ProxyConnectionEvent
+     ProxyConnectException
+     ProxyHandler
+     HttpProxyHandler
+     Socks4ProxyHandler
+     Socks5ProxyHandler]
+    [io.netty.handler.logging
+     LoggingHandler
+     LogLevel]
+    [java.util.concurrent.atomic
+     AtomicInteger]
+    [aleph.utils
+     ProxyConnectionTimeoutException]))
 
 (set! *unchecked-math* true)
 
