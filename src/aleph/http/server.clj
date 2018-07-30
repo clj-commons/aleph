@@ -150,8 +150,10 @@
    ^HttpRequest req
    previous-response
    body
-   keep-alive?]
-  (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
+   keep-alive?
+   connections]
+  (let [ch (netty/channel ctx)
+        ^NettyRequest req' (http/netty-request->ring-request req ssl? ch body)
         head? (identical? HttpMethod/HEAD (.method req))
         rsp (if executor
 
@@ -186,19 +188,27 @@
             (d/chain'
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
-                  (send-response ctx keep-alive? ssl?
-                    (cond
+                  (let [rsp' (cond
 
-                      (map? rsp)
-                      (if head?
-                        (assoc rsp :body :aleph/omitted)
-                        rsp)
+                               (map? rsp)
+                               (if head?
+                                 (assoc rsp :body :aleph/omitted)
+                                 rsp)
 
-                      (nil? rsp)
-                      {:status 204}
+                               (nil? rsp)
+                               {:status 204}
 
-                      :else
-                      (invalid-value-response req rsp))))))))))))
+                               :else
+                               (invalid-value-response req rsp))
+                        sent (send-response ctx keep-alive? ssl? rsp')]
+                    ;; xxx: this probably should be done in chain,
+                    ;; as we don't want to mess up with the seq of
+                    ;; state updates
+                    (d/on-realized sent
+                      (fn [_] (netty/mark-connection-idle! connections ch))
+                      ;; xxx: what should we do with errors here
+                      identity)
+                    sent))))))))))
 
 (defn exception-handler [ctx ex]
   (when-not (instance? IOException ex)
@@ -218,7 +228,7 @@
     (fn [_] (netty/close ctx))))
 
 (defn ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity connections]
   (let [buffer-capacity (long buffer-capacity)
         request (atom nil)
         buffer (atom [])
@@ -238,7 +248,8 @@
               req
               @previous-response
               (when body (bs/to-input-stream body))
-              (HttpHeaders/isKeepAlive req))))
+              (HttpHeaders/isKeepAlive req)
+              connections)))
 
         process-request
         (fn [ctx req]
@@ -324,6 +335,7 @@
 
       :channel-read
       ([_ ctx msg]
+       (netty/mark-connection-active! connections (netty/channel ctx))
         (cond
 
           (instance? HttpRequest msg)
@@ -340,7 +352,7 @@
           (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity connections]
   (let [buffer-capacity (long buffer-capacity)
         stream (atom nil)
         previous-response (atom nil)
@@ -357,7 +369,8 @@
               req
               @previous-response
               body
-              (HttpHeaders/isKeepAlive req))))]
+              (HttpHeaders/isKeepAlive req)
+              connections)))]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -372,6 +385,7 @@
 
       :channel-read
       ([_ ctx msg]
+        (netty/mark-connection-active! connections (netty/channel ctx))
         (cond
 
           (instance? HttpRequest msg)
@@ -386,7 +400,7 @@
           (let [content (.content ^HttpContent msg)]
             ;; content might empty most probably in case of EmptyLastHttpContent
             (when-not (zero? (.readableBytes content))
-              (netty/put! (.channel ctx) @stream content))
+              (netty/put! (netty/channel ctx) @stream content))
             (when (instance? LastHttpContent msg)
               (s/close! @stream)))
 
@@ -407,7 +421,8 @@
      ssl?
      compression?
      compression-level
-     idle-timeout]
+     idle-timeout
+     connections]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -417,8 +432,18 @@
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
-                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))]
+                    (raw-ring-handler ssl?
+                                      handler
+                                      rejected-handler
+                                      executor
+                                      request-buffer-size
+                                      connections)
+                    (ring-handler ssl?
+                                  handler
+                                  rejected-handler
+                                  executor
+                                  request-buffer-size
+                                  connections))]
 
       (doto pipeline
         (.addLast "http-server"
@@ -448,14 +473,16 @@
            ssl-context
            shutdown-executor?
            epoll?
-           compression?]
+           compression?
+           connections]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
          epoll? false
          compression? false}
     :as options}]
-  (let [executor (cond
+  (let [connections (or connections (netty/new-connections-register))
+        executor (cond
                    (instance? Executor executor)
                    executor
 
@@ -476,13 +503,17 @@
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (boolean ssl-context)))
+        (assoc options
+               :executor executor
+               :ssl? (boolean ssl-context)
+               :connections connections))
       ssl-context
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
       (if socket-address socket-address (InetSocketAddress. port))
-      epoll?)))
+      epoll?
+      connections)))
 
 ;;;
 
@@ -533,7 +564,7 @@
        :channel-read
        ([_ ctx msg]
          (try
-           (let [ch (.channel ctx)]
+           (let [ch (netty/channel ctx)]
              (if-not (instance? WebSocketFrame msg)
                (.fireChannelRead ctx msg)
                (let [^WebSocketFrame msg msg]

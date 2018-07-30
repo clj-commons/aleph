@@ -87,7 +87,9 @@
     (if socket-address
       socket-address
       (InetSocketAddress. port))
-    epoll?))
+    epoll?
+    ;; xxx: impl.
+    (netty/new-connections-register)))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]

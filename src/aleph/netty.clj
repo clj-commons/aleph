@@ -49,13 +49,20 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     GenericFutureListener Future DefaultThreadFactory]
+     GenericFutureListener
+     Future
+     DefaultThreadFactory
+     AbstractEventExecutor]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
     [java.util.concurrent
-     ConcurrentHashMap CancellationException ScheduledFuture TimeUnit]
+     ConcurrentHashMap
+     CancellationException
+     ScheduledFuture
+     TimeUnit]
     [java.util.concurrent.atomic
+     AtomicBoolean
      AtomicLong]
     [io.netty.util.internal.logging
      InternalLoggerFactory
@@ -773,7 +780,9 @@
 
 (defprotocol AlephServer
   (port [_] "Returns the port the server is listening on.")
-  (wait-for-close [_] "Blocks until the server has been closed."))
+  (wait-for-close [_] "Blocks until the server has been closed.")
+  (shutdown-gracefully [_ options]
+    "Shuts down the server without interrupting active connections."))
 
 (defn epoll-available? []
   (Epoll/isAvailable))
@@ -968,13 +977,86 @@
               (let [ch (.channel ^ChannelFuture f)]
                 ch))))))))
 
+(def CONN_NEW 0)
+(def CONN_ACTIVE 1)
+(def CONN_IDLE 2)
+
+(defrecord ConnectionsRegister [conns closed? shutdown-ready])
+
+(defn new-connections-register
+  ([] (new-connections-register (ConcurrentHashMap.)))
+  ([conns]
+   (ConnectionsRegister.
+    conns
+    (AtomicBoolean. false)
+    (d/deferred))))
+
+(defn closed-connections-register? [register]
+  (.get ^AtomicBoolean (:closed? register)))
+
+(defn close-connections-register! [register]
+  (.set ^AtomicBoolean (:closed? register) true))
+
+(defn mark-connection-active! [register ^Channel channel]
+  (let [^ConcurrentHashMap conns (:conns register)]
+    (.replace conns channel CONN_ACTIVE)))
+
+;; if we're in shutting down state (closed? = true),
+;; we should force closing the connection here
+(defn mark-connection-idle! [register ^Channel channel]
+  (let [^ConcurrentHashMap conns (:conns register)]
+    (.replace conns channel CONN_IDLE)
+    (when (closed-connections-register? register)
+      (close channel))))
+
+(defn connections-tracker [conns-register]
+  (let [^ConcurrentHashMap conns (:conns conns-register)
+        shutdown-ready (:shutdown-ready conns-register)]
+    (channel-inbound-handler
+
+     :channel-active
+     ([_ ctx]
+      (.put conns (.channel ctx) CONN_NEW)
+      (.fireChannelActive ctx))
+
+     :channel-inactive
+     ([_ ctx]
+      (.remove conns (.channel ctx))
+      (when (and (closed-connections-register? conns-register)
+                 (.isEmpty conns)
+                 (not (d/realized? shutdown-ready)))
+        (d/success! shutdown-ready true))
+      (.fireChannelInactive ctx)))))
+
+;; at this point we assume that any new connection will be accepted,
+;; so an iterator over the map given should return all of them
+;; seq of actions:
+;; * set flag that we're in shutting down state
+;; * get list of connections from the map
+;; xxx:
+;; ^^^ here we potentially have a race condition, as it's still
+;;     possible to change state of the connection after iterator
+;;     is consumed
+;; * ask Netty to close all idle connections
+;; * wait for all active connection to be closed,
+;;   simply subscribing to shutdown-ready deferred which will be
+;;   eventually realiazed (by connections-tracker handler in the pipeline)
+(defn close-connections [conns-register]
+  (close-connections-register! conns-register)
+  (let [^ConcurrentHashMap conns (:conns conns-register)]
+    (doseq [[^Channel ch state] conns]
+      (when (= CONN_IDLE state)
+        (close ch)))
+    (:shutdown-ready conns-register)))
+
 (defn start-server
   [pipeline-builder
    ^SslContext ssl-context
    bootstrap-transform
    on-close
    ^SocketAddress socket-address
-   epoll?]
+   epoll?
+   connections-register]
   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
         num-threads    (* 2 num-cores)
         thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" false)
@@ -997,7 +1079,16 @@
               (.newHandler ssl-context
                 (-> p .channel .alloc)))
             (pipeline-builder p))
-          pipeline-builder)]
+          pipeline-builder)
+
+        pipeline-builder' (fn [^ChannelPipeline p]
+                            (pipeline-builder p)
+                            ;; xxx: what about pipeline transformer?
+                            ;; should be able to update pipeline when
+                            ;; connection-tracker is already there?
+                            (.addFirst p "connections-tracker"
+                              ^ChannelInboundHandler
+                              (connections-tracker connections-register)))]
 
     (try
       (let [b (doto (ServerBootstrap.)
@@ -1006,7 +1097,7 @@
                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                 (.group group)
                 (.channel channel)
-                (.childHandler (pipeline-initializer pipeline-builder))
+                (.childHandler (pipeline-initializer pipeline-builder'))
                 (.childOption ChannelOption/SO_REUSEADDR true)
                 (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                 bootstrap-transform)
@@ -1018,7 +1109,7 @@
           (close [_]
             (when (compare-and-set! closed? false true)
               (-> ch .close .sync)
-              (-> group .shutdownGracefully)
+              (.shutdownGracefully group)
               (when on-close
                 (d/chain'
                  (wrap-future (.terminationFuture group))
@@ -1029,7 +1120,26 @@
           (wait-for-close [_]
             (-> ch .closeFuture .await)
             (-> group .terminationFuture .await)
-            nil)))
+            nil)
+          (shutdown-gracefully [_ options]
+            ;; shutdown works by first stoping to accept new connections,
+            ;; then closing all idle connections, and after that waiting
+            ;; for all active connections to return to idle state or being
+            ;; closed, when all connections are closed, Netty resources
+            ;; are cleaned up and executors shuts down (when necessary)
+            (if-not (compare-and-set! closed? false true)
+              (d/success-deferred true)
+              (d/chain'
+               (wrap-future (.closeFuture ch))
+               (fn [_] (close-connections connections-register))
+               (fn [_]
+                 ;; xxx: default values only? :(
+                 (.shutdownGracefully group)
+                 (d/chain'
+                  (wrap-future (.terminationFuture group))
+                  (fn [_]
+                    (when on-close (on-close))
+                    true))))))))
 
       (catch Exception e
         @(.shutdownGracefully group)
