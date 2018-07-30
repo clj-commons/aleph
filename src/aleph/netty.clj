@@ -1139,17 +1139,19 @@
             ;; xxx: handle exceptions :(
             (if-not (compare-and-set! closed? false true)
               (d/success-deferred true)
-              (d/chain'
-               (wrap-future (.closeFuture ch))
-               (fn [_] (close-connections connections-register))
-               (fn [_]
-                 ;; xxx: default values only? :(
-                 (.shutdownGracefully group)
-                 (d/chain'
-                  (wrap-future (.terminationFuture group))
-                  (fn [_]
-                    (when on-close (on-close))
-                    true))))))))
+              (let [_ (.close ch)]
+                (d/chain'
+                 (wrap-future (.closeFuture ch))
+                 (fn [_]
+                   (close-connections connections-register))
+                 (fn [_]
+                   ;; xxx: default values only? :(
+                   (.shutdownGracefully group)
+                   (d/chain'
+                    (wrap-future (.terminationFuture group))
+                    (fn [_]
+                      (when on-close (on-close))
+                      true)))))))))
 
       (catch Exception e
         @(.shutdownGracefully group)
