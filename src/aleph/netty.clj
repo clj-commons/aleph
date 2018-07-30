@@ -1129,29 +1129,43 @@
             (-> ch .closeFuture .await)
             (-> group .terminationFuture .await)
             nil)
-          (shutdown-gracefully [_ options]
+          (shutdown-gracefully [_ {:keys [quite-period shutdown-timeout]
+                                   :or {quite-period 2e3
+                                        shutdown-timeout 15e3}}]
             ;; shutdown works by first stoping to accept new connections,
             ;; then closing all idle connections, and after that waiting
             ;; for all active connections to return to idle state or being
             ;; closed, when all connections are closed, Netty resources
             ;; are cleaned up and executors shuts down (when necessary)
-            ;; xxx: timeout to short-circuit everything here
-            ;; xxx: handle exceptions :(
             (if-not (compare-and-set! closed? false true)
               (d/success-deferred true)
               (let [_ (.close ch)]
-                (d/chain'
-                 (wrap-future (.closeFuture ch))
-                 (fn [_]
-                   (close-connections connections-register))
-                 (fn [_]
-                   ;; xxx: default values only? :(
-                   (.shutdownGracefully group)
-                   (d/chain'
-                    (wrap-future (.terminationFuture group))
-                    (fn [_]
-                      (when on-close (on-close))
-                      true)))))))))
+                (-> (d/chain'
+                     (wrap-future (.closeFuture ch))
+                     (fn [_]
+                       ;; on exception just move to the next stage (shutting down group)
+                       (try
+                         (close-connections connections-register)
+                         (catch Exception e
+                           (log/error e "failed to close connections during graceful shutdown")
+                           nil))))
+                    (d/timeout! shutdown-timeout ::timeout)
+                    (d/catch'
+                        (fn [e]
+                          (log/error e "failure during graceful shutdown")
+                          nil))
+                    (d/finally'
+                      (fn []
+                        (.shutdownGracefully group
+                                             quite-period
+                                             ;; xxx: should this be a separate timeout?
+                                             shutdown-timeout
+                                             TimeUnit/MILLISECONDS)
+                        (d/chain'
+                         (wrap-future (.terminationFuture group))
+                         (fn [_]
+                           (when on-close (on-close))
+                           true))))))))))
 
       (catch Exception e
         @(.shutdownGracefully group)
