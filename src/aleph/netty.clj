@@ -998,6 +998,7 @@
   (.set ^AtomicBoolean (:closed? register) true))
 
 (defn mark-connection-active! [register ^Channel ch]
+  (println "active" (.id ch))
   (let [^ConcurrentHashMap conns (:conns register)]
     ;; xxx: is it possible to mess up replace & removing
     ;;      at the same time? :thinking:
@@ -1006,12 +1007,14 @@
 ;; if we're in shutting down state (closed? = true),
 ;; we should force closing the connection here
 (defn mark-connection-idle! [register ^Channel ch]
+  (println "idle" (.id ch))
   (let [^ConcurrentHashMap conns (:conns register)]
     (.replace conns channel CONN_IDLE)
     (when (closed-connections-register? register)
       ;; xxx: might be already closed
       (close ch))))
 
+;; xxx: websocket connections should be removed right away
 (defn connections-tracker [conns-register]
   (let [^ConcurrentHashMap conns (:conns conns-register)
         shutdown-ready (:shutdown-ready conns-register)]
@@ -1019,11 +1022,13 @@
 
      :channel-active
      ([_ ctx]
+      (println "adding" (.id (.channel ctx)))
       (.put conns (.channel ctx) CONN_NEW)
       (.fireChannelActive ctx))
 
      :channel-inactive
      ([_ ctx]
+      (println "removing" (.id (.channel ctx)))
       (.remove conns (.channel ctx))
       (when (and (closed-connections-register? conns-register)
                  (.isEmpty conns)

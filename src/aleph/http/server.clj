@@ -141,6 +141,21 @@
         (:uri req)
         "'"))))
 
+(defn mark-after-sent! [connections ^Channel ch sent]
+  (let [sent' (if (d/deferred? sent)
+                sent
+                (d/success-deferred sent))]
+    (d/on-realized
+     sent'
+     (fn [f]
+       (d/chain'
+        (netty/wrap-future f)
+        (fn [_] (netty/mark-connection-idle! connections ch))))
+     ;; xxx: not sure what is the best way to deal with
+     ;;      errors here, I assume most probably this
+     ;;      would eventually lead to closing the connection
+     identity)))
+
 (defn handle-request
   [^ChannelHandlerContext ctx
    ssl?
@@ -201,13 +216,7 @@
                                :else
                                (invalid-value-response req rsp))
                         sent (send-response ctx keep-alive? ssl? rsp')]
-                    ;; xxx: this probably should be done in chain,
-                    ;; as we don't want to mess up with the seq of
-                    ;; state updates
-                    (d/on-realized sent
-                      (fn [_] (netty/mark-connection-idle! connections ch))
-                      ;; xxx: what should we do with errors here
-                      identity)
+                    (mark-after-sent! connections ch sent)
                     sent))))))))))
 
 (defn exception-handler [ctx ex]
