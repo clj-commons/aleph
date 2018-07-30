@@ -1047,7 +1047,10 @@
 ;;   eventually realiazed (by connections-tracker handler in the pipeline)
 (defn close-connections [conns-register]
   (close-connections-register! conns-register)
-  (let [^ConcurrentHashMap conns (:conns conns-register)]
+  (let [^ConcurrentHashMap conns (:conns conns-register)
+        shutdown-ready (:shutdown-ready conns-register)]
+    (when (.isEmpty conns)
+      (d/success! shutdown-ready true))
     (doseq [[^Channel ch state] conns]
       ;; xxx: for TCP server we should also track NEW connections,
       ;;      or even for HTTP server... as the client might be
@@ -1055,7 +1058,7 @@
       (when (= CONN_IDLE state)
         ;; xxx: might be already closed
         (close ch)))
-    (:shutdown-ready conns-register)))
+    shutdown-ready))
 
 (defn start-server
   [pipeline-builder
