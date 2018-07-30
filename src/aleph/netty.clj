@@ -997,17 +997,20 @@
 (defn close-connections-register! [register]
   (.set ^AtomicBoolean (:closed? register) true))
 
-(defn mark-connection-active! [register ^Channel channel]
+(defn mark-connection-active! [register ^Channel ch]
   (let [^ConcurrentHashMap conns (:conns register)]
-    (.replace conns channel CONN_ACTIVE)))
+    ;; xxx: is it possible to mess up replace & removing
+    ;;      at the same time? :thinking:
+    (.replace conns ch CONN_ACTIVE)))
 
 ;; if we're in shutting down state (closed? = true),
 ;; we should force closing the connection here
-(defn mark-connection-idle! [register ^Channel channel]
+(defn mark-connection-idle! [register ^Channel ch]
   (let [^ConcurrentHashMap conns (:conns register)]
     (.replace conns channel CONN_IDLE)
     (when (closed-connections-register? register)
-      (close channel))))
+      ;; xxx: might be already closed
+      (close ch))))
 
 (defn connections-tracker [conns-register]
   (let [^ConcurrentHashMap conns (:conns conns-register)
@@ -1045,7 +1048,11 @@
   (close-connections-register! conns-register)
   (let [^ConcurrentHashMap conns (:conns conns-register)]
     (doseq [[^Channel ch state] conns]
+      ;; xxx: for TCP server we should also track NEW connections,
+      ;;      or even for HTTP server... as the client might be
+      ;;      pretty slow sending its request to us
       (when (= CONN_IDLE state)
+        ;; xxx: might be already closed
         (close ch)))
     (:shutdown-ready conns-register)))
 
@@ -1127,6 +1134,8 @@
             ;; for all active connections to return to idle state or being
             ;; closed, when all connections are closed, Netty resources
             ;; are cleaned up and executors shuts down (when necessary)
+            ;; xxx: timeout to short-circuit everything here
+            ;; xxx: handle exceptions :(
             (if-not (compare-and-set! closed? false true)
               (d/success-deferred true)
               (d/chain'
