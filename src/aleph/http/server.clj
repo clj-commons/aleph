@@ -155,7 +155,7 @@
      (fn [f]
        (d/chain'
         (netty/wrap-future f)
-        (fn [_] (netty/mark-connection-idle! connections ch))))
+        (fn [_] (netty/set-connection-state connections ch :idle))))
      ;; xxx: not sure what is the best way to deal with
      ;;      errors here, I assume most probably this
      ;;      would eventually lead to closing the connection
@@ -493,7 +493,7 @@
          epoll? false
          compression? false}
     :as options}]
-  (let [connections (or connections (netty/new-connections-register))
+  (let [connections (or connections (netty/new-default-connections-manager))
         executor (cond
                    (instance? Executor executor)
                    executor

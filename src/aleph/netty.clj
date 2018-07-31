@@ -980,39 +980,22 @@
               (let [ch (.channel ^ChannelFuture f)]
                 ch))))))))
 
+(defprotocol ConnectionsManager
+  (set-connection-state [this conn state])
+  (close-connections [this options])
+  (inject-into-pipeline [this pipeline]))
+
 (def CONN_ACTIVE -1)
 (def CONN_IDLE -2)
 (def CONN_HIJACKED -3)
 
-;; xxx: add a protocol and different impl.
-;; xxx: should it be *Manager?
-(defrecord ConnectionsRegister [conns closed? shutdown-ready])
+(defn connections-manager-closed? [manager]
+  (.get ^AtomicBoolean (:closed? manager)))
 
-(defn new-connections-register
-  ([] (new-connections-register (ConcurrentHashMap.)))
-  ([conns]
-   (ConnectionsRegister.
-    conns
-    (AtomicBoolean. false)
-    (d/deferred))))
-
-(defn closed-connections-register? [register]
-  (.get ^AtomicBoolean (:closed? register)))
-
-(defn close-connections-register! [register]
-  (.set ^AtomicBoolean (:closed? register) true))
-
-(defn mark-connection-active! [register ^Channel ch]
-  (let [^ConcurrentHashMap conns (:conns register)]
-    ;; note, that replace would do nothing in case
-    ;; we've removed channel earlier (which is right
-    ;; what we need to achieve here)
-    (.replace conns ch CONN_ACTIVE)))
-
-(defn shutdown-if-necessary! [register]
-  (let [^ConcurrentHashMap conns (:conns register)
-        shutdown-ready (:shutdown-ready register)]
-    (when (and (closed-connections-register? register)
+(defn shutdown-if-necessary! [manager]
+  (let [^ConcurrentHashMap conns (:conns manager)
+        shutdown-ready (:shutdown-ready manager)]
+    (when (and (connections-manager-closed? manager)
                (not (d/realized? shutdown-ready))
                ;; note, that this operation might be performed
                ;; only in case closed? mark is set to TRUE,
@@ -1022,29 +1005,8 @@
                (.isEmpty conns))
       (d/success! shutdown-ready true))))
 
-;; if we're in shutting down state (closed? = true),
-;; we should force closing the connection here
-(defn mark-connection-idle! [register ^Channel ch]
-  (let [^ConcurrentHashMap conns (:conns register)]
-    (if (.isOpen ch)
-      (do
-        (.replace conns ch CONN_IDLE)
-        (when (closed-connections-register? register)
-          (close ch)))
-      (do
-        ;; this is very unlikely situation to happen,
-        ;; but it seems we cannot prevent events reording
-        ;; w/o locking or any other restrictive mechanism
-        ;; which will have undesirable performace impediments
-        (.remove conns ch)
-        (shutdown-if-necessary! register)))))
-
-(defn mark-connection-hijacked! [register ^Channel ch]
-  (let [^ConcurrentHashMap conns (:conns register)]
-    (.replace conns ch CONN_HIJACKED)))
-
-(defn connections-tracker [conns-register]
-  (let [^ConcurrentHashMap conns (:conns conns-register)]
+(defn connections-tracker [conns-manager]
+  (let [^ConcurrentHashMap conns (:conns conns-manager)]
     (channel-inbound-handler
 
      :channel-active
@@ -1055,7 +1017,7 @@
      :channel-inactive
      ([_ ctx]
       (.remove conns (.channel ctx))
-      (shutdown-if-necessary! conns-register)
+      (shutdown-if-necessary! conns-manager)
       (.fireChannelInactive ctx))
 
      :channel-read
@@ -1067,62 +1029,103 @@
       ;; a few corner cases here: websockets (use hijacked connection
       ;; status), pipelining (xxx: double check), TCP server (either
       ;; to use hijacking or noop-level tracker)
-      (mark-connection-active! conns-register (.channel ctx))
+      (set-connection-state conns-manager (.channel ctx) :active)
       (.fireChannelRead ctx msg))
 
      :user-event-triggered
      ([_ ctx msg]
       (if (instance? HijackedConnEvent msg)
-        (mark-connection-hijacked! conns-register (.channel ctx))
+        (set-connection-state conns-manager (.channel ctx) :hijacked)
         (.fireUserEventTriggered ctx msg))))))
 
-;; at this point we assume that any new connection will be accepted,
-;; so an iterator over the map given should return all of them
-;; seq of actions:
-;; * set flag that we're in shutting down state
-;; * get list of connections from the map
-;;   here we potentially have a race condition, as it's still
-;;   possible to change state of the connection after iterator
-;;   is consumed, but we're doing our best to avoid problems
-;;   by checking if we need to report succesfull shutdown after
-;;   each state change on each connection left out there
-;; * ask Netty to close all idle connections
-;; * wait for all active connection to be closed,
-;;   simply subscribing to shutdown-ready deferred which will be
-;;   eventually realiazed (by connections-tracker handler in the pipeline)
-(defn close-connections
-  ([conns-register] (close-connections conns-register {}))
-  ([conns-register {:keys [activate-timeout]
-                    :or {activate-timeout 5e3}}]
-   (close-connections-register! conns-register)
-   (let [^ConcurrentHashMap conns (:conns conns-register)
-         shutdown-ready (:shutdown-ready conns-register)]
-     (doseq [[^Channel ch state] conns]
-       (cond
-         ;; once again, this is unlikely to happen,
-         ;; but better be ready
-         (false? (.isOpen ch))
-         (.remove conns ch)
+(defrecord DefaultConnectionsManager [^ConcurrentHashMap conns
+                                      ^AtomicBoolean closed?
+                                      shutdown-ready]
+  ConnectionsManager
+  (set-connection-state [this conn state]
+    (case state
+      :active
+      ;; note, that replace would do nothing in case
+      ;; we've removed channel earlier (which is right
+      ;; what we need to achieve here)
+      (.replace conns ^Channel conn CONN_ACTIVE)
 
-         (= CONN_IDLE state)
-         (close ch)
+      :idle
+      (if (.isOpen ^Channel conn)
+        (do
+          (.replace conns ^Channel conn CONN_IDLE)
+          ;; if we're in shutting down state (closed? = true),
+          ;; we should force closing the connection here
+          (when (connections-manager-closed? this)
+            (close ^Channel conn)))
+        (do
+          ;; this is very unlikely situation to happen,
+          ;; but it seems we cannot prevent events reording
+          ;; w/o locking or any other restrictive mechanism
+          ;; which will have undesirable performace impediments
+          (.remove conns ^Channel conn)
+          (shutdown-if-necessary! this)))
 
-         ;; notify connection that we're closing now
-         ;; to perform cleanup and to close properly
-         (= CONN_HIJACKED state)
-         (let [^ChannelPipeline pipeline (.pipeline ch)]
-           (.fireUserEventTriggered pipeline ShuttingDownEvent/INSTANCE))
+      :hijacked
+      ;; this means that caller will manage this connection
+      ;; by itself (e.g. websockets)
+      (.replace conns ^Channel conn CONN_HIJACKED)))
+  (close-connections [_ {:keys [activate-timeout]
+                         :or {activate-timeout 5e3}}]
+    (.set closed? true)
+    ;; at this point we assume that any new connection will be accepted,
+    ;; so an iterator over the map given should return all of them
+    ;; seq of actions:
+    ;; * set flag that we're in shutting down state
+    ;; * get list of connections from the map
+    ;;   here we potentially have a race condition, as it's still
+    ;;   possible to change state of the connection after iterator
+    ;;   is consumed, but we're doing our best to avoid problems
+    ;;   by checking if we need to report succesfull shutdown after
+    ;;   each state change on each connection left out there
+    ;; * ask Netty to close all idle connections
+    ;; * wait for all active connection to be closed,
+    ;;   simply subscribing to shutdown-ready deferred which will be
+    ;;   eventually realiazed (by connections-tracker handler in the pipeline)
+    (doseq [[^Channel ch state] conns]
+      (cond
+        ;; once again, this is unlikely to happen,
+        ;; but better be ready
+        (false? (.isOpen ch))
+        (.remove conns ch)
 
-         ;; closing connection when it took more than :activate-timeout ms
-         ;; for the client to send a first byte of the request
-         (and (< 0 state)
-              (<= activate-timeout (- (System/currentTimeMillis) state)))
-         (close ch)
+        (= CONN_IDLE state)
+        (close ch)
 
-         :else nil))
-     (when (.isEmpty conns)
-       (d/success! shutdown-ready true))
-     shutdown-ready)))
+        ;; notify connection that we're closing now
+        ;; to perform cleanup and to close properly
+        (= CONN_HIJACKED state)
+        (let [^ChannelPipeline pipeline (.pipeline ch)]
+          (.fireUserEventTriggered pipeline ShuttingDownEvent/INSTANCE))
+
+        ;; closing connection when it took more than :activate-timeout ms
+        ;; for the client to send a first byte of the request
+        (and (< 0 state)
+             (<= activate-timeout (- (System/currentTimeMillis) state)))
+        (close ch)
+
+        :else nil))
+    (when (.isEmpty conns)
+      (d/success! shutdown-ready true))
+    shutdown-ready)
+  (inject-into-pipeline [this pipeline]
+    (.addFirst ^ChannelPipeline pipeline
+      "connections-tracker"
+      ^ChannelInboundHandler
+      (connections-tracker this))))
+
+(defn new-default-connections-manager
+  ([] (new-default-connections-manager (ConcurrentHashMap.)))
+  ([conns]
+   (DefaultConnectionsManager.
+    conns
+    (AtomicBoolean. false)
+    (d/deferred))))
 
 (defn start-server
   [pipeline-builder
@@ -1131,7 +1134,7 @@
    on-close
    ^SocketAddress socket-address
    epoll?
-   connections-register]
+   connections-manager]
   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
         num-threads    (* 2 num-cores)
         thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" false)
@@ -1159,9 +1162,7 @@
 
         pipeline-builder'
         (fn [^ChannelPipeline p]
-          (.addFirst p "connections-tracker"
-                     ^ChannelInboundHandler
-                     (connections-tracker connections-register))
+          (inject-into-pipeline connections-manager p)
           (pipeline-builder p))]
 
     (try
@@ -1215,7 +1216,7 @@
                      (fn [_]
                        ;; on exception just move to the next stage (shutting down group)
                        (try
-                         (close-connections connections-register
+                         (close-connections connections-manager
                                             {:activate-timeout activate-timeout})
                          (catch Exception e
                            (log/error e "failed to close connections during graceful shutdown")
