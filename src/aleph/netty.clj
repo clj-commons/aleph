@@ -981,6 +981,8 @@
 (def CONN_ACTIVE 1)
 (def CONN_IDLE 2)
 
+;; xxx: add a protocol and different impl.
+;; xxx: should it be *Manager?
 (defrecord ConnectionsRegister [conns closed? shutdown-ready])
 
 (defn new-connections-register
@@ -1008,6 +1010,11 @@
         shutdown-ready (:shutdown-ready register)]
     (when (and (closed-connections-register? register)
                (not (d/realized? shutdown-ready))
+               ;; note, that this operation might be performed
+               ;; only in case closed? mark is set to TRUE,
+               ;; so... by the contract we should not accept
+               ;; any new connections already and number of
+               ;; nodes in the map may only decrement
                (.isEmpty conns))
       (d/success! shutdown-ready true))))
 
@@ -1061,15 +1068,26 @@
   (close-connections-register! conns-register)
   (let [^ConcurrentHashMap conns (:conns conns-register)
         shutdown-ready (:shutdown-ready conns-register)]
-    (when (.isEmpty conns)
-      (d/success! shutdown-ready true))
-    (doseq [[^Channel ch state] conns]
-      ;; xxx: for TCP server we should also track NEW connections,
-      ;;      or even for HTTP server... as the client might be
-      ;;      pretty slow sending its request to us
-      (when (= CONN_IDLE state)
-        ;; xxx: might be already closed
-        (close ch)))
+    (if (.isEmpty conns)
+      (d/success! shutdown-ready true)
+      (let [num-closed (reduce (fn [acc [[^Channel ch state] conns]]
+                                 (cond
+                                   ;; once again, this is unlikely to happen,
+                                   ;; but better be ready
+                                   (false? (.isOpen ch)) (inc acc)
+
+                                   (= CONN_IDLE state)
+                                   (do (close ch) acc)
+
+                                   ;; xxx: for TCP server we should also track NEW connections,
+                                   ;;      or even for HTTP server... as the client might be
+                                   ;;      pretty slow sending its request to us
+
+                                   :else acc))
+                               0
+                               conns)]
+        (when (= (.size conns) num-closed)
+          (d/success! shutdown-ready true))))
     shutdown-ready))
 
 (defn start-server
