@@ -398,7 +398,6 @@
 
       :channel-read
       ([_ ctx msg]
-        (netty/mark-connection-active! connections (netty/channel ctx))
         (cond
 
           (instance? HttpRequest msg)
