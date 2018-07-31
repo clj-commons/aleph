@@ -1001,8 +1001,9 @@
 
 (defn mark-connection-active! [register ^Channel ch]
   (let [^ConcurrentHashMap conns (:conns register)]
-    ;; xxx: is it possible to mess up replace & removing
-    ;;      at the same time? :thinking:
+    ;; note, that replace would do nothing in case
+    ;; we've removed channel earlier (which is right
+    ;; what we need to achieve here)
     (.replace conns ch CONN_ACTIVE)))
 
 (defn shutdown-if-necessary! [register]
@@ -1056,10 +1057,11 @@
 ;; seq of actions:
 ;; * set flag that we're in shutting down state
 ;; * get list of connections from the map
-;; xxx:
-;; ^^^ here we potentially have a race condition, as it's still
-;;     possible to change state of the connection after iterator
-;;     is consumed
+;;   here we potentially have a race condition, as it's still
+;;   possible to change state of the connection after iterator
+;;   is consumed, but we're doing our best to avoid problems
+;;   by checking if we need to report succesfull shutdown after
+;;   each state change on each connection left out there
 ;; * ask Netty to close all idle connections
 ;; * wait for all active connection to be closed,
 ;;   simply subscribing to shutdown-ready deferred which will be
