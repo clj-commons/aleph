@@ -1136,6 +1136,7 @@
         num-threads    (* 2 num-cores)
         thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" false)
         closed?        (atom false)
+        shutdown-ready (d/deferred)
 
         ^EventLoopGroup group
         (if (and epoll? (epoll-available?))
@@ -1209,9 +1210,7 @@
             ;; for all active connections to return to idle state or being
             ;; closed, when all connections are closed, Netty resources
             ;; are cleaned up and executors shuts down (when necessary)
-            (if-not (compare-and-set! closed? false true)
-              ;; xxx: it can also return a shared deferred
-              (d/success-deferred true)
+            (when (compare-and-set! closed? false true)
               (let [_ (.close ch)]
                 (-> (d/chain'
                      (wrap-future (.closeFuture ch))
@@ -1238,7 +1237,8 @@
                          (wrap-future (.terminationFuture group))
                          (fn [_]
                            (when on-close (on-close))
-                           true))))))))))
+                           (d/success! shutdown-ready true))))))))
+            shutdown-ready)))
 
       (catch Exception e
         @(.shutdownGracefully group)
