@@ -65,7 +65,8 @@
      AtomicInteger
      AtomicBoolean]
     [aleph.utils
-     HijackedConnEvent]))
+     HijackedConnEvent
+     ShuttingDownEvent]))
 
 (set! *unchecked-math* true)
 
@@ -533,7 +534,8 @@
 (defn websocket-server-handler
   [raw-stream?
    ^Channel ch
-   ^WebSocketServerHandshaker handshaker]
+   ^WebSocketServerHandshaker handshaker
+   on-shutdown]
   (let [out (netty/sink ch false
               (fn [c]
                 (cond
@@ -602,7 +604,14 @@
                    :else
                    (.fireChannelRead ctx msg)))))
            (finally
-             (netty/release msg)))))]))
+             (netty/release msg))))
+
+       :user-event-triggered
+       ([_ ctx msg]
+        (if (and (instance? ShuttingDownEvent msg)
+                 (some? on-shutdown))
+          (on-shutdown ctx handshaker)
+          (.fireUserEventTriggered ctx msg))))]))
 
 ;; note, as we set `keep-alive?` to `false`, `send-message` will close the connection
 ;; after writes are done, which is exactly what we expect to happen
@@ -633,12 +642,15 @@
            max-frame-size
            allow-extensions?
            compression?
-           pipeline-transform]
+           pipeline-transform
+           on-shutdown]
     :or {raw-stream? false
          max-frame-payload 65536
          max-frame-size 1048576
          allow-extensions? false
-         compression? false}}]
+         compression? false
+         ;; xxx: should we provide default behavior?
+         on-shutdown nil}}]
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 
@@ -652,7 +664,10 @@
         factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
     (if-let [handshaker (.newHandshaker factory req)]
       (try
-        (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
+        (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
+                                                                    ch
+                                                                    handshaker
+                                                                    on-shutdown)
               p (.newPromise ch)
               h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
           ;; actually, we're not going to except anything but websocket, so...
