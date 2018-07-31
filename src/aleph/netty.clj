@@ -977,9 +977,8 @@
               (let [ch (.channel ^ChannelFuture f)]
                 ch))))))))
 
-(def CONN_NEW 0)
-(def CONN_ACTIVE 1)
-(def CONN_IDLE 2)
+(def CONN_ACTIVE -1)
+(def CONN_IDLE -2)
 
 ;; xxx: add a protocol and different impl.
 ;; xxx: should it be *Manager?
@@ -1043,7 +1042,7 @@
 
      :channel-active
      ([_ ctx]
-      (.put conns (.channel ctx) CONN_NEW)
+      (.put conns (.channel ctx) (System/currentTimeMillis))
       (.fireChannelActive ctx))
 
      :channel-inactive
@@ -1066,28 +1065,33 @@
 ;; * wait for all active connection to be closed,
 ;;   simply subscribing to shutdown-ready deferred which will be
 ;;   eventually realiazed (by connections-tracker handler in the pipeline)
-(defn close-connections [conns-register]
-  (close-connections-register! conns-register)
-  (let [^ConcurrentHashMap conns (:conns conns-register)
-        shutdown-ready (:shutdown-ready conns-register)]
-    (doseq [[^Channel ch state] conns]
-      (cond
-        ;; once again, this is unlikely to happen,
-        ;; but better be ready
-        (false? (.isOpen ch))
-        (.remove conns ch)
+(defn close-connections
+  ([conns-register] (close-connections conns-register {}))
+  ([conns-register {:keys [activate-timeout]
+                    :or {activate-timeout 5e3}}]
+   (close-connections-register! conns-register)
+   (let [^ConcurrentHashMap conns (:conns conns-register)
+         shutdown-ready (:shutdown-ready conns-register)]
+     (doseq [[^Channel ch state] conns]
+       (cond
+         ;; once again, this is unlikely to happen,
+         ;; but better be ready
+         (false? (.isOpen ch))
+         (.remove conns ch)
 
-        (= CONN_IDLE state)
-        (close ch)
+         (= CONN_IDLE state)
+         (close ch)
 
-        ;; xxx: for TCP server we should also track NEW connections,
-        ;;      or even for HTTP server... as the client might be
-        ;;      pretty slow sending its request to us
+         ;; closing connection when it took more than :activate-timeout ms
+         ;; for the client to send a first byte of the request
+         (and (< 0 state)
+              (<= activate-timeout (- (System/currentTimeMillis) state)))
+         (close ch)
 
-        :else nil))
-    (when (.isEmpty conns)
-      (d/success! shutdown-ready true))
-    shutdown-ready))
+         :else nil))
+     (when (.isEmpty conns)
+       (d/success! shutdown-ready true))
+     shutdown-ready)))
 
 (defn start-server
   [pipeline-builder
@@ -1161,9 +1165,12 @@
             (-> ch .closeFuture .await)
             (-> group .terminationFuture .await)
             nil)
-          (shutdown-gracefully [_ {:keys [quite-period shutdown-timeout]
+          (shutdown-gracefully [_ {:keys [quite-period
+                                          shutdown-timeout
+                                          activate-timeout]
                                    :or {quite-period 2e3
-                                        shutdown-timeout 15e3}}]
+                                        shutdown-timeout 15e3
+                                        activate-timeout 5e3}}]
             ;; shutdown works by first stoping to accept new connections,
             ;; then closing all idle connections, and after that waiting
             ;; for all active connections to return to idle state or being
@@ -1177,7 +1184,8 @@
                      (fn [_]
                        ;; on exception just move to the next stage (shutting down group)
                        (try
-                         (close-connections connections-register)
+                         (close-connections connections-register
+                                            {:activate-timeout activate-timeout})
                          (catch Exception e
                            (log/error e "failed to close connections during graceful shutdown")
                            nil))))
