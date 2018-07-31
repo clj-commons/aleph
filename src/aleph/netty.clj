@@ -1157,14 +1157,12 @@
             (pipeline-builder p))
           pipeline-builder)
 
-        pipeline-builder' (fn [^ChannelPipeline p]
-                            (pipeline-builder p)
-                            ;; xxx: what about pipeline transformer?
-                            ;; should be able to update pipeline when
-                            ;; connection-tracker is already there?
-                            (.addFirst p "connections-tracker"
-                              ^ChannelInboundHandler
-                              (connections-tracker connections-register)))]
+        pipeline-builder'
+        (fn [^ChannelPipeline p]
+          (.addFirst p "connections-tracker"
+                     ^ChannelInboundHandler
+                     (connections-tracker connections-register))
+          (pipeline-builder p))]
 
     (try
       (let [b (doto (ServerBootstrap.)
