@@ -1167,10 +1167,12 @@
             nil)
           (shutdown-gracefully [_ {:keys [quite-period
                                           shutdown-timeout
-                                          activate-timeout]
+                                          activate-timeout
+                                          event-loop-shutdown-timeout]
                                    :or {quite-period 2e3
                                         shutdown-timeout 15e3
-                                        activate-timeout 5e3}}]
+                                        activate-timeout 5e3
+                                        event-loop-shutdown-timeout 15e3}}]
             ;; shutdown works by first stoping to accept new connections,
             ;; then closing all idle connections, and after that waiting
             ;; for all active connections to return to idle state or being
@@ -1198,8 +1200,7 @@
                       (fn []
                         (.shutdownGracefully group
                                              quite-period
-                                             ;; xxx: should this be a separate timeout?
-                                             shutdown-timeout
+                                             event-loop-shutdown-timeout
                                              TimeUnit/MILLISECONDS)
                         (d/chain'
                          (wrap-future (.terminationFuture group))
