@@ -1127,6 +1127,12 @@
     (AtomicBoolean. false)
     (d/deferred))))
 
+(def noop-connections-manager
+  (reify ConnectionsManager
+    (set-connection-state [_ _ _] nil)
+    (close-connections [_ _] (d/success-deferred true))
+    (inject-into-pipeline [_ _] nil)))
+
 (defn start-server
   [pipeline-builder
    ^SslContext ssl-context
