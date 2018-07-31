@@ -1058,6 +1058,18 @@
       (shutdown-if-necessary! conns-register)
       (.fireChannelInactive ctx))
 
+     :channel-read
+     ([_ ctx msg]
+      ;; the idea here is pretty simple: in most generic case
+      ;; we assume that we want to "respond" to anything we read
+      ;; from the client, so the server is responsible for marking
+      ;; connection to IDLE whenever this response is actually sent
+      ;; a few corner cases here: websockets (use hijacked connection
+      ;; status), pipelining (xxx: double check), TCP server (either
+      ;; to use hijacking or noop-level tracker)
+      (mark-connection-active! conns-register (.channel ctx))
+      (.fireChannelRead ctx msg))
+
      :user-event-triggered
      ([_ ctx msg]
       (if (instance? HijackedConnEvent msg)
