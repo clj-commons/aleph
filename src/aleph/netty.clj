@@ -74,7 +74,8 @@
     [java.security PrivateKey]
     [aleph.utils
      PluggableDnsAddressResolverGroup
-     HijackedConnEvent]))
+     HijackedConnEvent
+     ShuttingDownEvent]))
 
 ;;;
 
@@ -981,6 +982,7 @@
 
 (def CONN_ACTIVE -1)
 (def CONN_IDLE -2)
+(def CONN_HIJACKED -3)
 
 ;; xxx: add a protocol and different impl.
 ;; xxx: should it be *Manager?
@@ -1037,6 +1039,10 @@
         (.remove conns ch)
         (shutdown-if-necessary! register)))))
 
+(defn mark-connection-hijacked! [register ^Channel ch]
+  (let [^ConcurrentHashMap conns (:conns register)]
+    (.replace conns ch CONN_HIJACKED)))
+
 (defn connections-tracker [conns-register]
   (let [^ConcurrentHashMap conns (:conns conns-register)]
     (channel-inbound-handler
@@ -1055,9 +1061,7 @@
      :user-event-triggered
      ([_ ctx msg]
       (if (instance? HijackedConnEvent msg)
-        (do
-          (.remove conns (.channel ctx))
-          (shutdown-if-necessary! conns-register))
+        (mark-connection-hijacked! conns-register (.channel ctx))
         (.fireUserEventTriggered ctx msg))))))
 
 ;; at this point we assume that any new connection will be accepted,
@@ -1090,6 +1094,12 @@
 
          (= CONN_IDLE state)
          (close ch)
+
+         ;; notify connection that we're closing now
+         ;; to perform cleanup and to close properly
+         (= CONN_HIJACKED state)
+         (let [^ChannelPipeline pipeline (.pipeline ch)]
+           (.fireUserEventTriggered pipeline ShuttingDownEvent/INSTANCE))
 
          ;; closing connection when it took more than :activate-timeout ms
          ;; for the client to send a first byte of the request
