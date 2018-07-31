@@ -1003,19 +1003,34 @@
     ;;      at the same time? :thinking:
     (.replace conns ch CONN_ACTIVE)))
 
+(defn shutdown-if-necessary! [register]
+  (let [^ConcurrentHashMap conns (:conns register)
+        shutdown-ready (:shutdown-ready register)]
+    (when (and (closed-connections-register? register)
+               (not (d/realized? shutdown-ready))
+               (.isEmpty conns))
+      (d/success! shutdown-ready true))))
+
 ;; if we're in shutting down state (closed? = true),
 ;; we should force closing the connection here
 (defn mark-connection-idle! [register ^Channel ch]
   (let [^ConcurrentHashMap conns (:conns register)]
-    (.replace conns channel CONN_IDLE)
-    (when (closed-connections-register? register)
-      ;; xxx: might be already closed
-      (close ch))))
+    (if (.isOpen ch)
+      (do
+        (.replace conns ch CONN_IDLE)
+        (when (closed-connections-register? register)
+          (close ch)))
+      (do
+        ;; this is very unlikely situation to happen,
+        ;; but it seems we cannot prevent events reording
+        ;; w/o locking or any other restrictive mechanism
+        ;; which will have undesirable performace impediments
+        (.remove conns ch)
+        (shutdown-if-necessary! register)))))
 
 ;; xxx: websocket connections should be removed right away
 (defn connections-tracker [conns-register]
-  (let [^ConcurrentHashMap conns (:conns conns-register)
-        shutdown-ready (:shutdown-ready conns-register)]
+  (let [^ConcurrentHashMap conns (:conns conns-register)]
     (channel-inbound-handler
 
      :channel-active
@@ -1026,10 +1041,7 @@
      :channel-inactive
      ([_ ctx]
       (.remove conns (.channel ctx))
-      (when (and (closed-connections-register? conns-register)
-                 (.isEmpty conns)
-                 (not (d/realized? shutdown-ready)))
-        (d/success! shutdown-ready true))
+      (shutdown-if-necessary! conns-register)
       (.fireChannelInactive ctx)))))
 
 ;; at this point we assume that any new connection will be accepted,
