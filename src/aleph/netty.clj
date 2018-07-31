@@ -72,7 +72,9 @@
      Log4J2LoggerFactory]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
-    [aleph.utils PluggableDnsAddressResolverGroup]))
+    [aleph.utils
+     PluggableDnsAddressResolverGroup
+     HijackedConnEvent]))
 
 ;;;
 
@@ -1035,7 +1037,6 @@
         (.remove conns ch)
         (shutdown-if-necessary! register)))))
 
-;; xxx: websocket connections should be removed right away
 (defn connections-tracker [conns-register]
   (let [^ConcurrentHashMap conns (:conns conns-register)]
     (channel-inbound-handler
@@ -1049,7 +1050,15 @@
      ([_ ctx]
       (.remove conns (.channel ctx))
       (shutdown-if-necessary! conns-register)
-      (.fireChannelInactive ctx)))))
+      (.fireChannelInactive ctx))
+
+     :user-event-triggered
+     ([_ ctx msg]
+      (if (instance? HijackedConnEvent msg)
+        (do
+          (.remove conns (.channel ctx))
+          (shutdown-if-necessary! conns-register))
+        (.fireUserEventTriggered ctx msg))))))
 
 ;; at this point we assume that any new connection will be accepted,
 ;; so an iterator over the map given should return all of them
@@ -1179,6 +1188,7 @@
             ;; closed, when all connections are closed, Netty resources
             ;; are cleaned up and executors shuts down (when necessary)
             (if-not (compare-and-set! closed? false true)
+              ;; xxx: it can also return a shared deferred
               (d/success-deferred true)
               (let [_ (.close ch)]
                 (-> (d/chain'

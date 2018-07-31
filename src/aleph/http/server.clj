@@ -63,7 +63,9 @@
     [java.util.concurrent.atomic
      AtomicReference
      AtomicInteger
-     AtomicBoolean]))
+     AtomicBoolean]
+    [aleph.utils
+     HijackedConnEvent]))
 
 (set! *unchecked-math* true)
 
@@ -142,6 +144,8 @@
         "'"))))
 
 (defn mark-after-sent! [connections ^Channel ch sent]
+  ;; this is just a workaround for the fact that safe-execute
+  ;; might return different types depending on the current thread
   (let [sent' (if (d/deferred? sent)
                 sent
                 (d/success-deferred sent))]
@@ -653,6 +657,7 @@
               h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
           ;; actually, we're not going to except anything but websocket, so...
           (doto (.pipeline ch)
+            (.fireUserEventTriggered HijackedConnEvent/INSTANCE)
             (.remove "request-handler")
             (.remove "continue-handler")
             (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
