@@ -1070,26 +1070,23 @@
   (close-connections-register! conns-register)
   (let [^ConcurrentHashMap conns (:conns conns-register)
         shutdown-ready (:shutdown-ready conns-register)]
-    (if (.isEmpty conns)
-      (d/success! shutdown-ready true)
-      (let [num-closed (reduce (fn [acc [[^Channel ch state] conns]]
-                                 (cond
-                                   ;; once again, this is unlikely to happen,
-                                   ;; but better be ready
-                                   (false? (.isOpen ch)) (inc acc)
+    (doseq [[^Channel ch state] conns]
+      (cond
+        ;; once again, this is unlikely to happen,
+        ;; but better be ready
+        (false? (.isOpen ch))
+        (.remove conns ch)
 
-                                   (= CONN_IDLE state)
-                                   (do (close ch) acc)
+        (= CONN_IDLE state)
+        (close ch)
 
-                                   ;; xxx: for TCP server we should also track NEW connections,
-                                   ;;      or even for HTTP server... as the client might be
-                                   ;;      pretty slow sending its request to us
+        ;; xxx: for TCP server we should also track NEW connections,
+        ;;      or even for HTTP server... as the client might be
+        ;;      pretty slow sending its request to us
 
-                                   :else acc))
-                               0
-                               conns)]
-        (when (= (.size conns) num-closed)
-          (d/success! shutdown-ready true))))
+        :else nil))
+    (when (.isEmpty conns)
+      (d/success! shutdown-ready true))
     shutdown-ready))
 
 (defn start-server
