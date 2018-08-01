@@ -9,7 +9,8 @@
      [flow :as flow]]
     [byte-streams :as bs]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [manifold.time :as time])
   (:import
     [java.util.concurrent
      Executors]
@@ -385,6 +386,22 @@
                {:as :byte-array})
           :body
           count)))))
+
+;;;
+
+(defn slow-handler [req]
+  (let [d (d/deferred)]
+    (time/in 1e3 #(d/success! d {:status 200 :body "ok"}))
+    d))
+
+(deftest test-graceful-shutdown
+  (let [url (str "http://localhost:" port)
+        s (http/start-server slow-handler {:port port})
+        rs (apply d/zip' (mapv (fn [_] (http/get url)) (range 5)))
+        shutting-down (netty/shutdown-gracefully s {})]
+    (is (thrown? Exception @(http/get url)))
+    (is (every? #(= 200 (:status %)) @rs))
+    (is @shutting-down)))
 
 ;;;
 
