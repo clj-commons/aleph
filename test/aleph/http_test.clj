@@ -389,19 +389,38 @@
 
 ;;;
 
-(defn slow-handler [req]
-  (let [d (d/deferred)]
-    (time/in 1e3 #(d/success! d {:status 200 :body "ok"}))
-    d))
+(def port1 28080)
+(def port2 28081)
+
+(defn slow-handler [t]
+  (fn [req]
+    (let [d (d/deferred)]
+      (time/in t #(d/success! d {:status 200 :body "ok"}))
+      d)))
 
 (deftest test-graceful-shutdown
-  (let [url (str "http://localhost:" port)
-        s (http/start-server slow-handler {:port port})
+  (let [url (str "http://localhost:" port1)
+        s (http/start-server (slow-handler 1e3) {:port port1})
         rs (apply d/zip' (mapv (fn [_] (http/get url)) (range 5)))
         shutting-down (netty/shutdown-gracefully s {})]
     (is (thrown? Exception @(http/get url)))
     (is (every? #(= 200 (:status %)) @rs))
     (is @shutting-down)))
+
+(deftest test-graceful-shutdown-timeout
+  (let [url (str "http://localhost:" port2)
+        s (http/start-server (slow-handler 5e3) {:port port2})
+        rs (apply d/zip' (->> (range 5)
+                              (mapv (fn [_]
+                                      (-> (http/get url)
+                                          (d/catch' (fn [_] "error")))))))
+        options {:shutdown-timeout 1e3
+                 :quite-period 1e3
+                 :event-loop-shutdown-timeout 1e3}
+        shutting-down (netty/shutdown-gracefully s options)]
+    (is (thrown? Exception @(http/get url)))
+    (is (every? #(= "error" %) @rs))
+    (is (not= ::timeout @(d/timeout! shutting-down 3e3 ::timeout)))))
 
 ;;;
 
