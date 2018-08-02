@@ -31,8 +31,8 @@
 
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
-    (d/chain #(s/connect % %))
-    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
+      (d/chain #(s/connect % %))
+      (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
@@ -88,3 +88,23 @@
       (is @(s/put! c "hello raw handler 2"))
       (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
+
+;;;
+
+(def port1 28090)
+
+(deftest test-graceful-shutdown
+  (let [url (str "ws://localhost:" port1)
+        closed? (atom false)
+        handler (fn [req]
+                  (-> (http/websocket-connection
+                       req
+                       {:on-shutdown (fn [_ _] (reset! closed? true))})
+                      (d/chain #(s/connect % %))
+                      (d/catch (fn [e] (log/error "upgrade failed" e) {}))))
+        s (http/start-server handler {:port port1})
+        c @(http/websocket-client url)
+        _ (Thread/sleep 100)
+        shutting-down (netty/shutdown-gracefully s {})]
+    (is @shutting-down)
+    (is (true? @closed?))))
