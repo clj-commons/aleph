@@ -54,7 +54,9 @@
     [java.net
      InetSocketAddress]
     [io.netty.util.concurrent
-     FastThreadLocal]
+     FastThreadLocal
+     GenericFutureListener
+     Future]
     [java.util.concurrent
      TimeUnit
      Executor
@@ -144,22 +146,14 @@
         (:uri req)
         "'"))))
 
-(defn mark-after-sent! [connections ^Channel ch sent]
-  ;; this is just a workaround for the fact that safe-execute
-  ;; might return different types depending on the current thread
-  (let [sent' (if (d/deferred? sent)
-                sent
-                (d/success-deferred sent))]
-    (d/on-realized
-     sent'
-     (fn [f]
-       (d/chain'
-        (netty/wrap-future f)
-        (fn [_] (netty/set-connection-state connections ch :idle))))
-     ;; xxx: not sure what is the best way to deal with
-     ;;      errors here, I assume most probably this
-     ;;      would eventually lead to closing the connection
-     identity)))
+(defn mark-after-sent! [connections ch sent]
+  (d/chain'
+   sent
+   (fn [^Future f]
+     (.addListener f
+       (reify GenericFutureListener
+         (operationComplete [_ _]
+           (netty/set-connection-state connections ch :idle)))))))
 
 (defn handle-request
   [^ChannelHandlerContext ctx
