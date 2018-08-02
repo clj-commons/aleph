@@ -1217,8 +1217,8 @@
             ;; are cleaned up and executors shuts down (when necessary)
             (when (compare-and-set! closed? false true)
               (let [_ (.close ch)]
-                (-> (d/chain'
-                     (wrap-future (.closeFuture ch))
+                (-> (wrap-future (.closeFuture ch))
+                    (d/chain'
                      (fn [_]
                        ;; on exception just move to the next stage (shutting down group)
                        (try
