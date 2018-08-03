@@ -105,6 +105,6 @@
         s (http/start-server handler {:port port1})
         c @(http/websocket-client url)
         _ (Thread/sleep 100)
-        shutting-down (netty/shutdown-gracefully s {})]
+        shutting-down (netty/shutdown-gracefully s)]
     (is @shutting-down)
     (is (true? @closed?))))

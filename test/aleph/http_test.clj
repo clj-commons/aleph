@@ -405,7 +405,7 @@
         s (http/start-server (very-slow-handler 1e3) {:port port1})
         rs (apply d/zip' (mapv (fn [_] (http/get url)) (range 5)))
         _ (Thread/sleep 100) ;; make sure we've sent requests
-        shutting-down (netty/shutdown-gracefully s {})]
+        shutting-down (netty/shutdown-gracefully s)]
     (is (thrown? ConnectException @(http/get url)))
     (is (every? #(= 200 (:status %)) @rs))
     (is @shutting-down)))

@@ -784,7 +784,7 @@
 (defprotocol AlephServer
   (port [_] "Returns the port the server is listening on.")
   (wait-for-close [_] "Blocks until the server has been closed.")
-  (shutdown-gracefully [_ options]
+  (shutdown-gracefully [_] [_ options]
     "Shuts down the server without interrupting active connections."))
 
 (defn epoll-available? []
@@ -1202,6 +1202,8 @@
             (-> ch .closeFuture .await)
             (-> group .terminationFuture .await)
             nil)
+          (shutdown-gracefully [this]
+            (shutdown-gracefully this {}))
           (shutdown-gracefully [_ {:keys [quite-period
                                           shutdown-timeout
                                           activate-timeout
