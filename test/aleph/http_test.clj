@@ -1,32 +1,34 @@
 (ns aleph.http-test
   (:use
-    [clojure test])
+   [clojure test])
   (:require
-    [clojure.java.io :as io]
-    [aleph
-     [http :as http]
-     [netty :as netty]
-     [flow :as flow]]
-    [byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [manifold.time :as time])
+   [clojure.java.io :as io]
+   [aleph
+    [http :as http]
+    [netty :as netty]
+    [flow :as flow]]
+   [byte-streams :as bs]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [manifold.time :as time]
+   [clojure.tools.logging :as log])
   (:import
-    [java.util.concurrent
-     Executors]
-    [java.io
-     File
-     ByteArrayInputStream]
-    [java.net
-     ConnectException]
-    [java.util.zip
-     GZIPInputStream
-     ZipException]
-    [java.util.concurrent
-     TimeoutException]
-    [aleph.utils
-     ConnectionTimeoutException
-     RequestTimeoutException]))
+   [java.util.concurrent
+    Executors
+    RejectedExecutionException]
+   [java.io
+    File
+    ByteArrayInputStream]
+   [java.net
+    ConnectException]
+   [java.util.zip
+    GZIPInputStream
+    ZipException]
+   [java.util.concurrent
+    TimeoutException]
+   [aleph.utils
+    ConnectionTimeoutException
+    RequestTimeoutException]))
 
 ;;;
 
@@ -394,9 +396,13 @@
 (def port1 28080)
 (def port2 28081)
 
+;; to avoid problems with manifold.deferred/set-deferred
+;; when trying to realize response deferred after timeout
+(def exec (flow/fixed-thread-executor 5))
+
 (defn very-slow-handler [t]
   (fn [req]
-    (let [d (d/deferred)]
+    (let [d (d/deferred exec)]
       (time/in t #(d/success! d {:status 200 :body "ok"}))
       d)))
 

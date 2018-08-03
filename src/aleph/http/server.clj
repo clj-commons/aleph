@@ -147,13 +147,13 @@
         "'"))))
 
 (defn mark-after-sent! [connections ch sent]
-  (d/chain'
-   sent
-   (fn [^Future f]
-     (.addListener f
-       (reify GenericFutureListener
-         (operationComplete [_ _]
-           (netty/set-connection-state connections ch :idle)))))))
+  (-> sent
+      (d/chain'
+       (fn [^Future f]
+         (.addListener f
+           (reify GenericFutureListener
+             (operationComplete [_ _]
+               (netty/set-connection-state connections ch :idle))))))))
 
 (defn handle-request
   [^ChannelHandlerContext ctx
