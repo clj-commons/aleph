@@ -31,8 +31,8 @@
 
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
-      (d/chain #(s/connect % %))
-      (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
+    (d/chain #(s/connect % %))
+    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
