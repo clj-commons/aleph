@@ -45,7 +45,8 @@
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
    | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
-   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds"
+   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds
+   | `connections` | optional instance of `ConnectionManager` to track state of all connections to cleanup resources property when doing graceful shutdown. Consider using `netty/noop-connections-manager` to gain some performance when **it's critical** and you do not need graceful shutdown functionality. Only recommended for advanced users."
   [handler options]
   (server/start-server handler options))
 
@@ -218,7 +219,7 @@
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`
-   | `on-shutdown` | optional callback function that will be called when graceful shutdown is performed for the server with 2 arguments: instance of appropriate ChannelHandlerContext and instance of the handshaker"
+   | `on-shutdown` | optional callback function that will be called when graceful shutdown is performed for the server with 2 arguments: appropriate instance `ChannelHandlerContext` and instance of the handshaker (so you can cleanup resources and close the connection properly)"
   ([req]
     (websocket-connection req nil))
   ([req options]
