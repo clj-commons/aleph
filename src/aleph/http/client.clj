@@ -584,7 +584,7 @@
                        #(when (.isOpen ch)
                          (d/chain'
                            (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                           (fn [_] (netty/close ch))))))))
+                           (fn [_] (netty/close ctx))))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
