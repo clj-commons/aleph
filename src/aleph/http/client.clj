@@ -461,9 +461,14 @@
                                    content-type (str "multipart/form-data; boundary=" boundary)]
                                (HttpHeaders/setHeader req' "Content-Type" content-type)
                                (multipart/encode-body boundary parts))
-                             (get req :body))]
+                             (get req :body))
+                      body' (if (= :trace (:method req))
+                              (do
+                                (log/warn "TRACE request body was omitted")
+                                nil)
+                              body)]
                   (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' body))))
+                    (http/send-message ch true ssl? req' body'))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
