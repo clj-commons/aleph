@@ -92,7 +92,9 @@
       (.put ^ByteBuffer body)
       (.flip))))
 
-(defn encode-body
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  encode-body
   ([parts]
     (encode-body (boundary) parts))
   ([^String boundary parts]
