@@ -13,7 +13,12 @@
     [java.net
      URLConnection]
     [io.netty.util.internal
-     ThreadLocalRandom]))
+     ThreadLocalRandom]
+    [io.netty.handler.codec.http
+     DefaultHttpRequest]
+    [io.netty.handler.codec.http.multipart
+     HttpPostRequestEncoder
+     MemoryAttribute]))
 
 (defn boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
@@ -102,3 +107,16 @@
       (.put buf (bs/to-byte-buffer "--"))
       (.flip buf)
       (bs/to-byte-array buf))))
+
+(defn encode-request [^DefaultHttpRequest req parts]
+  (let [^HttpPostRequestEncoder encoder (HttpPostRequestEncoder. req true)]
+    (doseq [{:keys [part-name content mime-type charset name]} parts]
+      (if (instance? File content)
+        (let [filename (.getName ^File content)
+              name' (or name filename)
+              mt (or mime-type (URLConnection/guessContentTypeFromName filename))]
+          (.addBodyFileUpload encoder part-name name' content mt false))
+        ;; xxx: it might be not a string :(
+        (let [attr (MemoryAttribute. ^String part-name ^String content)]
+          (.addBodyHttpData encoder attr))))
+    (.finalizeRequest encoder)))

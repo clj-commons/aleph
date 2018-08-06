@@ -31,6 +31,7 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
+    [io.netty.handler.codec.http FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -456,14 +457,12 @@
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
-                (let [body (if-let [parts (get req :multipart)]
-                             (let [boundary (multipart/boundary)
-                                   content-type (str "multipart/form-data; boundary=" boundary)]
-                               (HttpHeaders/setHeader req' "Content-Type" content-type)
-                               (multipart/encode-body boundary parts))
-                             (get req :body))]
+                (if-let [parts (:multipart req)]
+                  (let [full-req (multipart/encode-request req' parts)]
+                    (netty/safe-execute ch
+                      (http/send-full-request ch true ssl? full-req)))
                   (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' body))))
+                    (http/send-message ch true ssl? req' (:body req)))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e

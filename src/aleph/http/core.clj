@@ -23,6 +23,7 @@
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
+     FullHttpRequest
      HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
@@ -409,6 +410,9 @@
         (handle-cleanup ch f))
 
       f)))
+
+(defn send-full-request [ch keep-alive? ssl? ^FullHttpRequest req]
+  (send-message ch keep-alive? ssl? req (.content req)))
 
 (defn close-on-idle-handler []
   (netty/channel-handler
