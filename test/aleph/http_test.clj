@@ -335,7 +335,7 @@
 
 (deftest test-trace-request-omitted-body
   (with-handler echo-handler
-    (is (= "" (-> @(http/trace (str "http://localhost:" port))
+    (is (= "" (-> @(http/trace (str "http://localhost:" port) {:body "REQUEST"})
                   :body
                   bs/to-string)))))
 

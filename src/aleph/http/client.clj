@@ -462,7 +462,7 @@
                                (HttpHeaders/setHeader req' "Content-Type" content-type)
                                (multipart/encode-body boundary parts))
                              (get req :body))
-                      body' (if (= :trace (:method req))
+                      body' (if (= :trace (:request-method req))
                               (do
                                 (log/warn "TRACE request body was omitted")
                                 nil)
