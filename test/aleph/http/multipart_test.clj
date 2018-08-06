@@ -41,11 +41,11 @@
     (is (.contains body-str "content2"))
     (is (.contains body-str "Content-Disposition: form-data;"))
     ;; default mime-type
-    (is (.contains body-str "Content-Type: application/octet-stream;charset=UTF-8"))
+    (is (.contains body-str "Content-Type: application/octet-stream; charset=UTF-8"))
     ;; omitting charset
     (is (.contains body-str "Content-Type: application/json\r\n"))
     ;; mime-type + charset
-    (is (.contains body-str "Content-Type: application/xml;charset=ISO-8859-1"))
+    (is (.contains body-str "Content-Type: application/xml; charset=ISO-8859-1"))
     ;; filename header
     (is (.contains body-str "filename=\"content5.pdf\""))))
 
@@ -109,7 +109,7 @@
     (is (.contains body-str "filename=\"file.txt\""))
     (is (.contains body-str "filename=\"text-file-to-send.txt\""))
     (is (.contains body-str "Content-Type: text/plain\r\n"))
-    (is (.contains body-str "Content-Type: text/plain;charset=UTF-8\r\n"))
+    (is (.contains body-str "Content-Type: text/plain; charset=UTF-8\r\n"))
     (is (.contains body-str "Content-Type: application/png\r\n"))
     (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
 
@@ -127,7 +127,10 @@
              :content file-to-send}
             {:part-name "#4-file-with-name"
              :name "text-file-to-send.txt"
-             :content file-to-send}])
+             :content file-to-send}
+            {:part-name "#5-file-with-charset"
+             :content file-to-send
+             :charset "ISO-8859-1"}])
 
 (defn echo-handler [{:keys [body]}]
   {:status 200
@@ -152,6 +155,7 @@
     (is (.contains resp "content-type: text/plain"))
     (is (.contains resp "content-type: application/png"))
     (is (.contains resp "; charset=UTF-8"))
+    (is (.contains resp "; charset=ISO-8859-1"))
 
     ;; explicit filename
     (is (.contains resp "filename=\"text-file-to-send.txt\""))

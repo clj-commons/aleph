@@ -31,9 +31,9 @@
 (defn mime-type-descriptor
   [^String mime-type ^String encoding]
   (str
-    (-> (or mime-type "application/octet-stream") .trim (.toLowerCase Locale/US))
-    (when encoding
-      (str ";charset=" encoding))))
+   (-> (or mime-type "application/octet-stream") .trim (.toLowerCase Locale/US))
+   (when encoding
+     (str "; charset=" encoding))))
 
 (defn populate-part
   "Generates a part map of the appropriate format"
@@ -118,9 +118,16 @@
     (doseq [{:keys [part-name content mime-type charset name]} parts]
       (if (instance? File content)
         (let [filename (.getName ^File content)
-              name' (or name filename)
-              mt (or mime-type (URLConnection/guessContentTypeFromName filename))]
-          (.addBodyFileUpload encoder part-name name' content mt false))
+              name (or name filename)
+              mime-type (or mime-type
+                            (URLConnection/guessContentTypeFromName filename))
+              content-type (mime-type-descriptor mime-type charset)]
+          (.addBodyFileUpload encoder
+                              part-name
+                              name
+                              content
+                              content-type
+                              false))
         (let [^Charset charset (cond
                                  (nil? charset)
                                  HttpConstants/DEFAULT_CHARSET
