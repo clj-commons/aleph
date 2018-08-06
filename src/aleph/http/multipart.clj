@@ -15,7 +15,8 @@
     [io.netty.util.internal
      ThreadLocalRandom]
     [io.netty.handler.codec.http
-     DefaultHttpRequest]
+     DefaultHttpRequest
+     FullHttpRequest]
     [io.netty.handler.codec.http.multipart
      HttpPostRequestEncoder
      MemoryAttribute]))
@@ -119,4 +120,8 @@
         ;; xxx: it might be not a string :(
         (let [attr (MemoryAttribute. ^String part-name ^String content)]
           (.addBodyHttpData encoder attr))))
-    (.finalizeRequest encoder)))
+    (let [req' (.finalizeRequest encoder)]
+      [req'
+       (if (instance? FullHttpRequest req')
+         (.content ^FullHttpRequest req')
+         encoder)])))
