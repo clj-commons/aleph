@@ -116,12 +116,10 @@
         (let [filename (.getName ^File content)
               name' (or name filename)
               mt (or mime-type (URLConnection/guessContentTypeFromName filename))]
+          ;; xxx: close files after write is done
           (.addBodyFileUpload encoder part-name name' content mt false))
         ;; xxx: it might be not a string :(
         (let [attr (MemoryAttribute. ^String part-name ^String content)]
           (.addBodyHttpData encoder attr))))
     (let [req' (.finalizeRequest encoder)]
-      [req'
-       (if (instance? FullHttpRequest req')
-         (.content ^FullHttpRequest req')
-         encoder)])))
+      [req' (when (.isChunked encoder) encoder)])))
