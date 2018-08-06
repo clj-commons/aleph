@@ -31,6 +31,7 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
+    [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
@@ -375,6 +376,7 @@
             max-chunk-size
             false
             false))
+        (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
         (.addLast "handler" ^ChannelHandler handler)
         (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
@@ -458,9 +460,10 @@
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
                 (if-let [parts (:multipart req)]
-                  (let [full-req (multipart/encode-request req' parts)]
+                  ;; xxx: refactoring :(
+                  (let [[req' body] (multipart/encode-request req' parts)]
                     (netty/safe-execute ch
-                      (http/send-full-request ch true ssl? full-req)))
+                      (http/send-message ch true ssl? req' body)))
                   (netty/safe-execute ch
                     (http/send-message ch true ssl? req' (:body req)))))
 
