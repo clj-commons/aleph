@@ -459,13 +459,12 @@
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
-                (if-let [parts (:multipart req)]
-                  ;; xxx: refactoring :(
-                  (let [[req' body] (multipart/encode-request req' parts)]
-                    (netty/safe-execute ch
-                      (http/send-message ch true ssl? req' body)))
+                (let [parts (:multipart req)
+                      [req' body] (if (nil? parts)
+                                    [req' (:body req)]
+                                    (multipart/encode-request req' parts))]
                   (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' (:body req)))))
+                    (http/send-message ch true ssl? req' body))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
