@@ -118,7 +118,7 @@
 
 (def parts [{:part-name "#0-string"
              :content "CONTENT1"}
-            #_{:part-name "#1-bytes"
+            {:part-name "#1-bytes"
              :content (.getBytes "CONTENT2" "UTF-8")}
             {:part-name "#2-file"
              :content file-to-send}
@@ -145,7 +145,7 @@
 
     ;; contents from a string, bytes, files
     (is (.contains resp "CONTENT1"))
-    #_(.is (.contains resp "CONTENT2"))
+    (is (.contains resp "CONTENT2"))
     (is (.contains resp "this is a file"))
 
     ;; mime types: set explicitly and automatically derived

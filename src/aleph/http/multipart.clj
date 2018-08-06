@@ -2,7 +2,8 @@
   (:require
     [clojure.core :as cc]
     [byte-streams :as bs]
-    [aleph.http.encoding :refer [encode]])
+    [aleph.http.encoding :refer [encode]]
+    [aleph.netty :as netty])
   (:import
     [java.util
      Locale]
@@ -10,13 +11,16 @@
      File]
     [java.nio
      ByteBuffer]
+    [java.nio.charset
+     Charset]
     [java.net
      URLConnection]
     [io.netty.util.internal
      ThreadLocalRandom]
     [io.netty.handler.codec.http
      DefaultHttpRequest
-     FullHttpRequest]
+     FullHttpRequest
+     HttpConstants]
     [io.netty.handler.codec.http.multipart
      HttpPostRequestEncoder
      MemoryAttribute]))
@@ -117,8 +121,19 @@
               name' (or name filename)
               mt (or mime-type (URLConnection/guessContentTypeFromName filename))]
           (.addBodyFileUpload encoder part-name name' content mt false))
-        ;; xxx: it might be not a string :(
-        (let [attr (MemoryAttribute. ^String part-name ^String content)]
+        (let [^Charset charset (cond
+                                 (nil? charset)
+                                 HttpConstants/DEFAULT_CHARSET
+
+                                 (string? charset)
+                                 (Charset/forName charset)
+
+                                 (instance? Charset charset)
+                                 charset)
+              attr (if (string? content)
+                     (MemoryAttribute. ^String part-name ^String content charset)
+                     (doto (MemoryAttribute. ^String part-name charset)
+                       (.addContent (netty/to-byte-buf content) true)))]
           (.addBodyHttpData encoder attr))))
     (let [req' (.finalizeRequest encoder)]
       [req' (when (.isChunked encoder) encoder)])))
