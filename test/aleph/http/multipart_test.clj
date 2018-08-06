@@ -1,12 +1,14 @@
 (ns aleph.http.multipart-test
   (:use
-    [clojure test])
+   [clojure test])
   (:require
-    [aleph.http.multipart :as mp]
-    [byte-streams :as bs])
+   [aleph.http :as http]
+   [aleph.http.multipart :as mp]
+   [byte-streams :as bs]
+   [manifold.deferred :as d])
   (:import
-    [java.io
-     File]))
+   [java.io
+    File]))
 
 (def file-to-send (File. (str (System/getProperty "user.dir") "/test/file.txt")))
 
@@ -110,3 +112,48 @@
     (is (.contains body-str "Content-Type: text/plain;charset=UTF-8\r\n"))
     (is (.contains body-str "Content-Type: application/png\r\n"))
     (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
+
+(def port 26003)
+(def url (str "http://localhost:" port))
+
+(def parts [{:part-name "#0-string"
+             :content "CONTENT1"}
+            #_{:part-name "#1-bytes"
+             :content (.getBytes "CONTENT2" "UTF-8")}
+            {:part-name "#2-file"
+             :content file-to-send}
+            {:part-name "#3-file-with-mime-type"
+             :mime-type "application/png"
+             :content file-to-send}
+            {:part-name "#4-file-with-name"
+             :name "text-file-to-send.txt"
+             :content file-to-send}])
+
+(defn echo-handler [{:keys [body]}]
+  {:status 200
+   :body body})
+
+(deftest test-send-multipart-request
+  (let [s (http/start-server echo-handler {:port port})
+        ^String resp @(d/chain'
+                       (http/post url {:multipart parts})
+                       :body
+                       bs/to-string)]
+    ;; part names
+    (doseq [{:keys [part-name]} parts]
+      (is (.contains resp (str "name=\"" part-name "\""))))
+
+    ;; contents from a string, bytes, files
+    (is (.contains resp "CONTENT1"))
+    #_(.is (.contains resp "CONTENT2"))
+    (is (.contains resp "this is a file"))
+
+    ;; mime types: set explicitly and automatically derived
+    (is (.contains resp "content-type: text/plain"))
+    (is (.contains resp "content-type: application/png"))
+    (is (.contains resp "; charset=UTF-8"))
+
+    ;; explicit filename
+    (is (.contains resp "filename=\"text-file-to-send.txt\""))
+
+    (.close ^java.io.Closeable s)))
