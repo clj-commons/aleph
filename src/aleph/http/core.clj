@@ -332,7 +332,6 @@
     (netty/write-and-flush ch ci)))
 
 (defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
-  (assert (chunked-writer-enabled? ch))
   (netty/write ch msg)
   (netty/write-and-flush ch body))
 
