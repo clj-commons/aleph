@@ -42,6 +42,7 @@
      ResolvedAddressTypes]
     [io.netty.resolver.dns
      DnsNameResolverBuilder
+     DnsAddressResolverGroup
      DnsServerAddressStreamProvider
      SingletonDnsServerAddressStreamProvider
      SequentialDnsServerAddressStreamProvider]
@@ -64,8 +65,7 @@
      JdkLoggerFactory
      Log4J2LoggerFactory]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]
-    [aleph.utils PluggableDnsAddressResolverGroup]))
+    [java.security PrivateKey]))
 
 ;;;
 
@@ -715,10 +715,12 @@
   "A self-signed SSL context for servers."
   []
   (let [cert (SelfSignedCertificate.)]
-    (SslContext/newServerContext (.certificate cert) (.privateKey cert))))
+    (.build (SslContextBuilder/forServer (.certificate cert) (.privateKey cert)))))
 
 (defn insecure-ssl-client-context []
-  (SslContext/newClientContext InsecureTrustManagerFactory/INSTANCE))
+  (-> (SslContextBuilder/forClient)
+      (.trustManager InsecureTrustManagerFactory/INSTANCE)
+      .build))
 
 (defn- check-ssl-args
   [private-key certificate-chain]
@@ -902,7 +904,7 @@
               (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
               (dns-name-servers-provider name-servers)))]
-    (PluggableDnsAddressResolverGroup. b)))
+    (DnsAddressResolverGroup. b)))
 
 (defn create-client
   ([pipeline-builder

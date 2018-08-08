@@ -31,6 +31,8 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
+    [io.netty.handler.stream ChunkedWriteHandler]
+    [io.netty.handler.codec.http FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -397,6 +399,7 @@
             max-chunk-size
             false
             false))
+        (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
         (.addLast "handler" ^ChannelHandler handler)
         (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
@@ -481,12 +484,10 @@
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
-                (let [body (if-let [parts (get req :multipart)]
-                             (let [boundary (multipart/boundary)
-                                   content-type (str "multipart/form-data; boundary=" boundary)]
-                               (HttpHeaders/setHeader req' "Content-Type" content-type)
-                               (multipart/encode-body boundary parts))
-                             (get req :body))]
+                (let [parts (:multipart req)
+                      [req' body] (if (nil? parts)
+                                    [req' (:body req)]
+                                    (multipart/encode-request req' parts))]
 
                   (when-let [save-message (get req :aleph/save-request-message)]
                     ;; debug purpose only
@@ -621,7 +622,7 @@
                        #(when (.isOpen ch)
                          (d/chain'
                            (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                           (fn [_] (netty/close ch))))))))
+                           (fn [_] (netty/close ctx))))))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
