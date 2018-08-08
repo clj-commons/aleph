@@ -327,7 +327,7 @@
     (with-handler hello-handler
       @(d/future-with ex
          (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
-           (is (= http/default-response-executor) (.executor rsp)))))))
+           (is (= http/default-response-executor (.executor rsp))))))))
 
 ;;;
 
