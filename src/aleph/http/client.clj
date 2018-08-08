@@ -55,6 +55,9 @@
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
+    [io.netty.handler.logging
+     LoggingHandler
+     LogLevel]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -347,6 +350,21 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
+(defn coerce-log-level [level]
+  (if (instance? LogLevel level)
+    level
+    (let [netty-level (case level
+                        :trace LogLevel/TRACE
+                        :debug LogLevel/DEBUG
+                        :info LogLevel/INFO
+                        :warn LogLevel/WARN
+                        :error LogLevel/ERROR
+                        nil)]
+      (when (nil? netty-level)
+        (throw (IllegalArgumentException.
+                (str "unknown log level given: " level))))
+      netty-level)))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -358,7 +376,8 @@
      raw-stream?
      proxy-options
      ssl?
-     idle-timeout]
+     idle-timeout
+     log-activity]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
@@ -369,7 +388,11 @@
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
-                    (client-handler response-stream response-buffer-size))]
+                    (client-handler response-stream response-buffer-size))
+          logger (when (some? log-activity)
+                   (LoggingHandler.
+                    "aleph-client"
+                    ^LogLevel (coerce-log-level log-activity)))]
       (doto pipeline
         (.addLast "http-client"
           (HttpClientCodec.
@@ -393,6 +416,8 @@
               "pending-proxy-connection"
               ^ChannelHandler
               (pending-proxy-connection-handler response-stream)))))
+      (when (some? logger)
+        (.addFirst pipeline "activity-logger" logger))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -465,6 +490,18 @@
                       [req' body] (if (nil? parts)
                                     [req' (:body req)]
                                     (multipart/encode-request req' parts))]
+
+                  (when-let [save-message (get req :aleph/save-request-message)]
+                    ;; debug purpose only
+                    ;; note, that req' is effectively mutable, so
+                    ;; it will "capture" all changes made during "send-message"
+                    ;; execution
+                    (reset! save-message req'))
+
+                  (when-let [save-body (get req :aleph/save-request-body)]
+                    ;; might be different in case we use :multipart
+                    (reset! save-body body))
+
                   (netty/safe-execute ch
                     (http/send-message ch true ssl? req' body))))
 
