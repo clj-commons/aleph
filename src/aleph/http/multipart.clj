@@ -19,7 +19,11 @@
    [io.netty.handler.codec.http
     DefaultHttpContent]
    [io.netty.handler.codec.http.multipart
-    HttpPostRequestEncoder]))
+    Attribute
+    FileUpload
+    HttpPostRequestDecoder
+    InterfaceHttpData
+    InterfaceHttpData$HttpDataType]))
 
 (defn boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
@@ -109,12 +113,41 @@
       (.flip buf)
       (bs/to-byte-array buf))))
 
-;; xxx: covert interface data to clojure maps
+(defmulti http-data->map
+  (fn [^InterfaceHttpData data]
+    (.getHttpDataType data)))
+
+(defmethod http-data->map InterfaceHttpData$HttpDataType/Attribute
+  [^Attribute attr]
+  (let [content (.getValue attr)]
+    {:part-name (.getName attr)
+     :content content
+     :name nil
+     :charset (.getCharset attr)
+     :mime-type nil
+     :transfer-encoding nil
+     :memory? (.isInMemory attr)
+     :file? false
+     :size (count content)}))
+
+(defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
+  [^FileUpload data]
+  {:part-name (.getName data)
+   :content (.getValue data)
+   :name (.getFilename data)
+   :charset (.getCharset data)
+   :mime-type (.getContentType data)
+   :transfer-encoding (.getContentTransferEncoding data)
+   :memory? (.isInMemory data)
+   :file? true
+   :file (when-not (.isInMemory data) (.getFile data))
+   :size (.length data)})
+
 ;; xxx: cleanup everything after chunks is read
 (defn- read-attributes [^HttpPostRequestDecoder decoder]
   (let [chunks (s/stream)]
     (while (.hasNext decoder)
-      (s/put! chunks (.next decoder)))
+      (s/put! chunks (http-data->map (.next decoder))))
     (s/close! chunks)
     chunks))
 
