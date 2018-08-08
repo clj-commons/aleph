@@ -182,34 +182,43 @@
    :transfer-encoding (.getContentTransferEncoding data)
    :memory? (.isInMemory data)
    :file? true
+   ;; xxx: helper to move disk file to another location?
    :file (when-not (.isInMemory data) (.getFile data))
    :size (.length data)})
 
-;; xxx: cleanup everything after chunks is read
-(defn- read-attributes [^HttpPostRequestDecoder decoder]
-  (let [chunks (s/stream)]
-    (while (.hasNext decoder)
-      (s/put! chunks (http-data->map (.next decoder))))
-    (s/close! chunks)
-    chunks))
+(defn- read-attributes [^HttpPostRequestDecoder decoder parts]
+  (while (.hasNext decoder)
+    (s/put! parts (http-data->map (.next decoder)))))
 
-;; xxx: helper to move disk file to another location
 ;; xxx: read from InputStream as well
 (defn decode-raw-stream-request
   "Takes request from :raw-stream?=true handler and returns
    a manifold stream which yields parts of the mutlipart/form-data
    encoded body."
   [{:keys [body] :as req}]
+
   (when-not (s/stream? body)
     (throw (IllegalArgumentException.
             "Request body should be a stream of ByteBuf's")))
-  (let [chunks (s/stream->seq body)
+
+  (let [parts (s/stream)
         req' (http-core/ring-request->netty-request req)
-        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')]
-    ;; xxx: chunks might be added afterwards,
-    ;; no need to read an entire stream before decoding
-    (doseq [c chunks
-            ;; xxx: decide when to cleanup Netty buffers :expressionless:
-            :let [content (DefaultHttpContent. c)]]
-      (.offer decoder content))
-    (read-attributes decoder)))
+        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
+        cleanup (fn []
+                  (.destroy decoder)
+                  (s/close! body)
+                  (s/close! parts))]
+
+    ;; on each HttpContent chunk, put it into the decoder
+    ;; and resume our attempts to get the next attribute available
+    (s/consume
+     (fn [chunk]
+       (let [content (DefaultHttpContent. chunk)]
+         (.offer decoder content)
+         (read-attributes decoder parts)))
+     body)
+
+    (s/on-closed parts cleanup)
+    (s/on-closed parts body)
+
+    parts))
