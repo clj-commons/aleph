@@ -1,19 +1,25 @@
 (ns aleph.http.multipart
   (:require
-    [clojure.core :as cc]
-    [byte-streams :as bs]
-    [aleph.http.encoding :refer [encode]])
+   [clojure.core :as cc]
+   [byte-streams :as bs]
+   [aleph.http.encoding :refer [encode]]
+   [aleph.http.core :as http-core]
+   [manifold.stream :as s])
   (:import
-    [java.util
-     Locale]
-    [java.io
-     File]
-    [java.nio
-     ByteBuffer]
-    [java.net
-     URLConnection]
-    [io.netty.util.internal
-     ThreadLocalRandom]))
+   [java.util
+    Locale]
+   [java.io
+    File]
+   [java.nio
+    ByteBuffer]
+   [java.net
+    URLConnection]
+   [io.netty.util.internal
+    ThreadLocalRandom]
+   [io.netty.handler.codec.http
+    DefaultHttpContent]
+   [io.netty.handler.codec.http.multipart
+    HttpPostRequestEncoder]))
 
 (defn boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
@@ -102,3 +108,33 @@
       (.put buf (bs/to-byte-buffer "--"))
       (.flip buf)
       (bs/to-byte-array buf))))
+
+;; xxx: covert interface data to clojure maps
+;; xxx: cleanup everything after chunks is read
+(defn- read-attributes [^HttpPostRequestDecoder decoder]
+  (let [chunks (s/stream)]
+    (while (.hasNext decoder)
+      (s/put! chunks (.next decoder)))
+    (s/close! chunks)
+    chunks))
+
+;; xxx: helper to move disk file to another location
+;; xxx: read from InputStream as well
+(defn decode-raw-stream-request
+  "Takes request from :raw-stream?=true handler and returns
+   a manifold stream which yields parts of the mutlipart/form-data
+   encoded body."
+  [{:keys [body] :as req}]
+  (when-not (s/stream? body)
+    (throw (IllegalArgumentException.
+            "Request body should be a stream of ByteBuf's")))
+  (let [chunks (s/stream->seq body)
+        req' (http-core/ring-request->netty-request req)
+        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')]
+    ;; xxx: chunks might be added afterwards,
+    ;; no need to read an entire stream before decoding
+    (doseq [c chunks
+            ;; xxx: decide when to cleanup Netty buffers :expressionless:
+            :let [content (DefaultHttpContent. c)]]
+      (.offer decoder content))
+    (read-attributes decoder)))
