@@ -117,6 +117,7 @@
    | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks
+   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
 
    Supported `proxy-options` are
 
@@ -235,7 +236,8 @@
      | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
      | `connection-timeout` | timeout in milliseconds for the connection to become established
      | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection
-     | `read-timeout` | timeout in milliseconds for the response to be completed"
+     | `read-timeout` | timeout in milliseconds for the response to be completed
+     | `follow-redirects?` | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`"
     [{:keys [pool
              middleware
              pool-timeout
@@ -247,8 +249,7 @@
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
-           connection-timeout 6e4 ;; 60 seconds
-           follow-redirects? true}
+           connection-timeout 6e4} ;; 60 seconds
       :as req}]
 
     (executor/with-executor response-executor

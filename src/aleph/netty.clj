@@ -42,6 +42,7 @@
      ResolvedAddressTypes]
     [io.netty.resolver.dns
      DnsNameResolverBuilder
+     DnsAddressResolverGroup
      DnsServerAddressStreamProvider
      SingletonDnsServerAddressStreamProvider
      SequentialDnsServerAddressStreamProvider]
@@ -64,8 +65,7 @@
      JdkLoggerFactory
      Log4J2LoggerFactory]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]
-    [aleph.utils PluggableDnsAddressResolverGroup]))
+    [java.security PrivateKey]))
 
 ;;;
 
@@ -904,7 +904,7 @@
               (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
               (dns-name-servers-provider name-servers)))]
-    (PluggableDnsAddressResolverGroup. b)))
+    (DnsAddressResolverGroup. b)))
 
 (defn create-client
   ([pipeline-builder
