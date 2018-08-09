@@ -129,9 +129,10 @@
           (when-not (.contains headers ^CharSequence server-name)
             (.set headers ^CharSequence server-name server-value))
 
-          (doto headers
-            (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
-            (.set ^CharSequence date-name (date-header-value ctx)))
+          (when-not (.contains headers ^CharSequence date-name)
+            (.set headers ^CharSequence date-name (date-header-value ctx)))
+
+          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
           (http/send-message ctx keep-alive? ssl? rsp body))))))
 

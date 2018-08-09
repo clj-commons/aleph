@@ -42,6 +42,7 @@
      ResolvedAddressTypes]
     [io.netty.resolver.dns
      DnsNameResolverBuilder
+     DnsAddressResolverGroup
      DnsServerAddressStreamProvider
      SingletonDnsServerAddressStreamProvider
      SequentialDnsServerAddressStreamProvider]
@@ -73,7 +74,6 @@
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
     [aleph.utils
-     PluggableDnsAddressResolverGroup
      HijackedConnEvent
      ShuttingDownEvent]))
 
@@ -916,7 +916,7 @@
               (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
               (dns-name-servers-provider name-servers)))]
-    (PluggableDnsAddressResolverGroup. b)))
+    (DnsAddressResolverGroup. b)))
 
 (defn create-client
   ([pipeline-builder

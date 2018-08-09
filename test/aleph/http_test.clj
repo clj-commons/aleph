@@ -326,13 +326,37 @@
                      :body
                      bs/to-string)))))
 
+(deftest test-debug-middleware
+  (with-handler hello-handler
+    (let [url (str "http://localhost:" port)
+          r1 @(http/get url {:query-params {:name "John"}
+                             :save-request? true
+                             :debug-body? true})
+          r2 @(http/get url {:save-request? true
+                             :debug-body? false})]
+      (is (contains? r1 :aleph/request))
+      (is (= "name=John" (get-in r1 [:aleph/request :query-string])))
+      (is (contains? r1 :aleph/netty-request))
+      (is (contains? r1 :aleph/request-body))
+      (is (not (contains? r2 :aleph/request-body))))))
+
 (deftest test-response-executor-affinity
   (let [pool (http/connection-pool {})
         ex (flow/fixed-thread-executor 4)]
     (with-handler hello-handler
       @(d/future-with ex
          (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
-           (is (= http/default-response-executor) (.executor rsp)))))))
+           (is (= http/default-response-executor (.executor rsp))))))))
+
+(defn echo-handler [req]
+  {:status 200
+   :body (:body req)})
+
+(deftest test-trace-request-omitted-body
+  (with-handler echo-handler
+    (is (= "" (-> @(http/trace (str "http://localhost:" port) {:body "REQUEST"})
+                  :body
+                  bs/to-string)))))
 
 ;;;
 
