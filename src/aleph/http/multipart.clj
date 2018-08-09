@@ -204,15 +204,7 @@
 
   (let [parts (s/stream)
         req' (http-core/ring-request->netty-request req)
-        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
-        cleanup (fn []
-                  (try
-                    ;; this may fail with IllegalReferenceCount
-                    (.destroy decoder)
-                    (catch Exception e
-                      (log/warn e "exception when cleaning up multipart decoder")))
-                  (s/close! body)
-                  (s/close! parts))]
+        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')]
 
     ;; on each HttpContent chunk, put it into the decoder
     ;; and resume our attempts to get the next attribute available
@@ -223,7 +215,13 @@
          (read-attributes decoder parts)))
      body)
 
-    (s/on-closed parts cleanup)
-    (s/on-closed body cleanup)
+    (s/on-closed body #(s/close! parts))
+    (s/on-closed parts (fn []
+                         (try
+                           ;; this may fail with IllegalReferenceCount
+                           (.destroy decoder)
+                           (catch Exception e
+                             (log/warn e "exception when cleaning up multipart decoder")))
+                         (s/close! body)))
 
     parts))
