@@ -181,7 +181,8 @@
   [^FileUpload data]
   (let [memory? (.isInMemory data)]
     {:part-name (.getName data)
-     :content (when memory? (bs/to-input-stream (.content data)))
+     :content (when memory?
+                (bs/to-input-stream (netty/acquire (.content data))))
      :name (.getFilename data)
      :charset (-> data .getCharset .toString)
      :mime-type (.getContentType data)
