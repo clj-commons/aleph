@@ -167,8 +167,8 @@
      :content content
      :name nil
      :charset (-> attr .getCharset .toString)
-     :mime-type (.getContentType attr)
-     :transfer-encoding (.getContentTransferEncoding attr)
+     :mime-type nil
+     :transfer-encoding nil
      :memory? (.isInMemory attr)
      :file? false
      :file nil
@@ -177,7 +177,8 @@
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
   {:part-name (.getName data)
-   :content (.content data)
+   ;; xxx: disk files we need to avoid reading data
+   :content (bs/to-input-stream (.content data))
    :name (.getFilename data)
    :charset (-> data .getCharset .toString)
    :mime-type (.getContentType data)
@@ -189,7 +190,9 @@
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
   (while (.hasNext decoder)
-    (s/put! parts (http-data->map (.next decoder)))))
+    (let [chunk (http-data->map (.next decoder))]
+      (println chunk)
+      (s/put! parts chunk))))
 
 ;; xxx: read from InputStream as well
 (defn decode-raw-stream-request
@@ -202,9 +205,9 @@
     (throw (IllegalArgumentException.
             "Request body should be a stream of ByteBuf's")))
 
-  (let [parts (s/stream)
-        req' (http-core/ring-request->netty-request req)
-        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')]
+  (let [req' (http-core/ring-request->netty-request req)
+        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
+        parts (s/stream)]
 
     ;; on each HttpContent chunk, put it into the decoder
     ;; and resume our attempts to get the next attribute available
@@ -216,7 +219,7 @@
      body)
 
     (s/on-closed body #(s/close! parts))
-    (s/on-closed
+    #_(s/on-closed
      parts
      (fn []
        (try
