@@ -176,25 +176,23 @@
 
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
-  {:part-name (.getName data)
-   ;; xxx: disk files we need to avoid reading data
-   :content (bs/to-input-stream (.content data))
-   :name (.getFilename data)
-   :charset (-> data .getCharset .toString)
-   :mime-type (.getContentType data)
-   :transfer-encoding (.getContentTransferEncoding data)
-   :memory? (.isInMemory data)
-   :file? true
-   :file (when-not (.isInMemory data) (.getFile data))
-   :size (.length data)})
+  (let [memory? (.isInMemory data)]
+    {:part-name (.getName data)
+     :content (when memory? (bs/to-input-stream (.content data)))
+     :name (.getFilename data)
+     :charset (-> data .getCharset .toString)
+     :mime-type (.getContentType data)
+     :transfer-encoding (.getContentTransferEncoding data)
+     :memory? memory?
+     :file? true
+     :file (when-not (.isInMemory data) (.getFile data))
+     :size (.length data)}))
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
   (while (.hasNext decoder)
     (s/put! parts (http-data->map (.next decoder)))))
 
-;; xxx: rename function
-;; xxx: options :(
-(defn decode-raw-stream-request
+(defn decode-request
   "Takes a ring request and returns a manifold stream which yields
    parts of the mutlipart/form-data encoded body. In case the size of
    a part content exceeds limit, corresponding payload would be
@@ -205,34 +203,36 @@
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
    input stream coercion."
-  [{:keys [body] :as req}]
+  ([req] (decode-request req {}))
+  ([{:keys [body] :as req}
+    {:keys [body-buffer-size]
+     :or {body-buffer-size 65536}}]
+   (let [body (if (s/stream? body)
+                body
+                (netty/to-byte-buf-stream body body-buffer-size))
+         destroyed? (atom false)
+         req' (http-core/ring-request->netty-request req)
+         ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
+         parts (s/stream)]
 
-  (let [body (if (s/stream? body)
-               body
-               (netty/to-byte-buf-stream body 65536))
-        destroyed? (atom false)
-        req' (http-core/ring-request->netty-request req)
-        ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
-        parts (s/stream)]
+     ;; on each HttpContent chunk, put it into the decoder
+     ;; and resume our attempts to get the next attribute available
+     (s/consume
+      (fn [chunk]
+        (let [content (DefaultHttpContent. chunk)]
+          (.offer decoder content)
+          (read-attributes decoder parts)))
+      body)
 
-    ;; on each HttpContent chunk, put it into the decoder
-    ;; and resume our attempts to get the next attribute available
-    (s/consume
-     (fn [chunk]
-       (let [content (DefaultHttpContent. chunk)]
-         (.offer decoder content)
-         (read-attributes decoder parts)))
-     body)
+     (s/on-closed body #(s/close! parts))
+     (s/on-closed
+      parts
+      (fn []
+        (when (compare-and-set! destroyed? false true)
+          (try
+            (.destroy decoder)
+            (catch Exception e
+              (log/warn e "exception when cleaning up multipart decoder"))))
+        (s/close! body)))
 
-    (s/on-closed body #(s/close! parts))
-    (s/on-closed
-     parts
-     (fn []
-       (when (compare-and-set! destroyed? false true)
-         (try
-           (.destroy decoder)
-           (catch Exception e
-             (log/warn e "exception when cleaning up multipart decoder"))))
-       (s/close! body)))
-
-    parts))
+     parts)))
