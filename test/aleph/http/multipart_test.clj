@@ -116,9 +116,9 @@
     (is (.contains body-str "Content-Type: application/png\r\n"))
     (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
 
-(def port1 26003)
-(def port2 26004)
-(def port3 26005)
+(def port1 26013)
+(def port2 26014)
+(def port3 26015)
 (def url1 (str "http://localhost:" port1))
 (def url2 (str "http://localhost:" port2))
 (def url3 (str "http://localhost:" port3))
@@ -181,10 +181,10 @@
     {:status 200
      :body (pr-str (map pack-chunk chunks))}))
 
-(deftest test-mutlipart-request-decode
-  (let [s (http/start-server decode-handler {:port port2
-                                             :raw-stream? true})
-        chunks (-> (http/post url2 {:multipart parts})
+(defn- test-decoder [port url raw-stream?]
+  (let [s (http/start-server decode-handler {:port port
+                                             :raw-stream? raw-stream?})
+        chunks (-> (http/post url {:multipart parts})
                    (deref 1e3 {:body "timeout"})
                    :body
                    bs/to-string
@@ -211,3 +211,10 @@
     (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
 
     (.close ^java.io.Closeable s)))
+
+(deftest test-mutlipart-request-decode-with-ring-handler
+  (test-decoder port2 url2 false))
+
+(deftest test-mutlipart-request-decode-with-raw-handler
+  (test-decoder port3 url3 true))
+
