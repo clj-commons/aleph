@@ -185,7 +185,7 @@
      :transfer-encoding (.getContentTransferEncoding data)
      :memory? memory?
      :file? true
-     :file (when-not (.isInMemory data) (.getFile data))
+     :file (when-not memory? (.getFile data))
      :size (.length data)}))
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
