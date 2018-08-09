@@ -174,9 +174,9 @@
     (not (string? content))
     (dissoc :content)))
 
-(defn decode-handler [req]
+(defn- decode-handler [req]
   (let [chunks (-> req
-                   mp/decode-raw-stream-request
+                   mp/decode-request
                    s/stream->seq)]
     {:status 200
      :body (pr-str (map pack-chunk chunks))}))
@@ -217,4 +217,3 @@
 
 (deftest test-mutlipart-request-decode-with-raw-handler
   (test-decoder port3 url3 true))
-
