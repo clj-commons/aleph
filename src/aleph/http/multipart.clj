@@ -190,9 +190,7 @@
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
   (while (.hasNext decoder)
-    (let [chunk (http-data->map (.next decoder))]
-      (println chunk)
-      (s/put! parts chunk))))
+    (s/put! parts (http-data->map (.next decoder)))))
 
 ;; xxx: read from InputStream as well
 (defn decode-raw-stream-request
