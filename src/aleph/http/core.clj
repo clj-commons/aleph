@@ -23,6 +23,7 @@
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
+     FullHttpRequest
      HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
@@ -34,7 +35,7 @@
      IdleStateEvent
      IdleStateHandler]
     [io.netty.handler.stream
-     ChunkedFile ChunkedWriteHandler]
+     ChunkedInput ChunkedFile ChunkedWriteHandler]
     [java.io
      File
      RandomAccessFile
@@ -246,6 +247,9 @@
       x
       (str x))))
 
+(defn chunked-writer-enabled? [^Channel ch]
+  (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
+
 (defn send-streaming-body [ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
@@ -327,6 +331,10 @@
     (netty/write ch msg)
     (netty/write-and-flush ch ci)))
 
+(defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
+  (netty/write ch msg)
+  (netty/write-and-flush ch body))
+
 (defn send-file-region [ch ^HttpMessage msg ^File file]
   (let [raf (RandomAccessFile. file "r")
         len (.length raf)
@@ -345,7 +353,7 @@
         (bs/to-byte-buffers {:chunk-size 1e6})
         s/->source))
 
-    (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))
+    (chunked-writer-enabled? ch)
     (send-chunked-file ch msg file)
 
     :else
@@ -394,6 +402,9 @@
                 (instance? ByteBuffer body)
                 (instance? ByteBuf body))
               (send-contiguous-body ch msg body)
+
+              (instance? ChunkedInput body)
+              (send-chunked-body ch msg body)
 
               (instance? File body)
               (send-file-body ch ssl? msg body)
