@@ -29,6 +29,8 @@
     Attribute
     MemoryAttribute
     FileUpload
+    HttpDataFactory
+    DefaultHttpDataFactory
     HttpPostRequestDecoder
     HttpPostRequestEncoder
     InterfaceHttpData
@@ -195,24 +197,27 @@
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
    parts of the mutlipart/form-data encoded body. In case the size of
-   a part content exceeds limit, corresponding payload would be
-   written to a temp file. Check `:memory?` flag to know whether
-   content might be read directly from `:content` or should be fetched
-   from the file specified in `:file`.
+   a part content exceeds `:memory-limit` limit (16KB by default),
+   corresponding payload would be written to a temp file. Check `:memory?`
+   flag to know whether content might be read directly from `:content` or
+   should be fetched from the file specified in `:file`.
 
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
    input stream coercion."
   ([req] (decode-request req {}))
   ([{:keys [body] :as req}
-    {:keys [body-buffer-size]
-     :or {body-buffer-size 65536}}]
+    {:keys [body-buffer-size
+            memory-limit]
+     :or {body-buffer-size 65536
+          memory-limit DefaultHttpDataFactory/MINSIZE}}]
    (let [body (if (s/stream? body)
                 body
                 (netty/to-byte-buf-stream body body-buffer-size))
          destroyed? (atom false)
          req' (http-core/ring-request->netty-request req)
-         ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
+         factory (DefaultHttpDataFactory. (long memory-limit))
+         decoder (HttpPostRequestDecoder. factory req')
          parts (s/stream)]
 
      ;; on each HttpContent chunk, put it into the decoder
