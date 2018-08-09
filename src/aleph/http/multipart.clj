@@ -192,18 +192,26 @@
   (while (.hasNext decoder)
     (s/put! parts (http-data->map (.next decoder)))))
 
-;; xxx: read from InputStream as well
+;; xxx: rename function
+;; xxx: options :(
 (defn decode-raw-stream-request
-  "Takes request from :raw-stream?=true handler and returns
-   a manifold stream which yields parts of the mutlipart/form-data
-   encoded body."
+  "Takes a ring request and returns a manifold stream which yields
+   parts of the mutlipart/form-data encoded body. In case the size of
+   a part content exceeds limit, corresponding payload would be
+   written to a temp file. Check `:memory?` flag to know whether
+   content might be read directly from `:content` or should be fetched
+   from the file specified in `:file`.
+
+   Note, that if your handler works with multipart requests only,
+   it's better to set `:raw-stream?` to `true` to avoid additional
+   input stream coercion."
   [{:keys [body] :as req}]
 
-  (when-not (s/stream? body)
-    (throw (IllegalArgumentException.
-            "Request body should be a stream of ByteBuf's")))
-
-  (let [req' (http-core/ring-request->netty-request req)
+  (let [body (if (s/stream? body)
+               body
+               (netty/to-byte-buf-stream body 65536))
+        destroyed? (atom false)
+        req' (http-core/ring-request->netty-request req)
         ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
         parts (s/stream)]
 
@@ -217,14 +225,14 @@
      body)
 
     (s/on-closed body #(s/close! parts))
-    #_(s/on-closed
+    (s/on-closed
      parts
      (fn []
-       (try
-         ;; this may fail with IllegalReferenceCount
-         (.destroy decoder)
-         (catch Exception e
-           (log/warn e "exception when cleaning up multipart decoder")))
+       (when (compare-and-set! destroyed? false true)
+         (try
+           (.destroy decoder)
+           (catch Exception e
+             (log/warn e "exception when cleaning up multipart decoder"))))
        (s/close! body)))
 
     parts))
