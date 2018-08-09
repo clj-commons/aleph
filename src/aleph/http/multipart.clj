@@ -216,12 +216,14 @@
      body)
 
     (s/on-closed body #(s/close! parts))
-    (s/on-closed parts (fn []
-                         (try
-                           ;; this may fail with IllegalReferenceCount
-                           (.destroy decoder)
-                           (catch Exception e
-                             (log/warn e "exception when cleaning up multipart decoder")))
-                         (s/close! body)))
+    (s/on-closed
+     parts
+     (fn []
+       (try
+         ;; this may fail with IllegalReferenceCount
+         (.destroy decoder)
+         (catch Exception e
+           (log/warn e "exception when cleaning up multipart decoder")))
+       (s/close! body)))
 
     parts))
