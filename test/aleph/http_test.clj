@@ -343,6 +343,16 @@
          (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
            (is (= http/default-response-executor (.executor rsp))))))))
 
+(defn echo-handler [req]
+  {:status 200
+   :body (:body req)})
+
+(deftest test-trace-request-omitted-body
+  (with-handler echo-handler
+    (is (= "" (-> @(http/trace (str "http://localhost:" port) {:body "REQUEST"})
+                  :body
+                  bs/to-string)))))
+
 ;;;
 
 (defn get-netty-client-event-threads []

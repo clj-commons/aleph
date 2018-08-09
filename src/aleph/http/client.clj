@@ -486,9 +486,22 @@
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
-                (let [parts (:multipart req)
-                      [req' body] (if (nil? parts)
-                                    [req' (:body req)]
+                (let [body (:body req)
+                      parts (:multipart req)
+                      multipart? (some? parts)
+                      [req' body] (cond
+                                    ;; RFC #7231 4.3.8. TRACE
+                                    ;; A client MUST NOT send a message body...
+                                    (= :trace (:request-method req))
+                                    (do
+                                      (when (or (some? body) multipart?)
+                                        (log/warn "TRACE request body was omitted"))
+                                      [req' nil])
+
+                                    (not multipart?)
+                                    [req' body]
+
+                                    :else
                                     (multipart/encode-request req' parts))]
 
                   (when-let [save-message (get req :aleph/save-request-message)]
