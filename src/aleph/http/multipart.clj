@@ -6,7 +6,8 @@
    [aleph.http.core :as http-core]
    [aleph.netty :as netty]
    [manifold.stream :as s]
-   [clojure.tools.logging :as log])
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d])
   (:import
    [java.util
     Locale]
@@ -222,14 +223,15 @@
 
      ;; on each HttpContent chunk, put it into the decoder
      ;; and resume our attempts to get the next attribute available
-     (s/consume
+     (s/connect-via
+      body
       (fn [chunk]
         (let [content (DefaultHttpContent. chunk)]
           (.offer decoder content)
-          (read-attributes decoder parts)))
-      body)
+          (read-attributes decoder parts)
+          (d/success-deferred true)))
+      parts)
 
-     (s/on-closed body #(s/close! parts))
      (s/on-closed
       parts
       (fn []
@@ -237,7 +239,6 @@
           (try
             (.destroy decoder)
             (catch Exception e
-              (log/warn e "exception when cleaning up multipart decoder"))))
-        (s/close! body)))
+              (log/warn e "exception when cleaning up multipart decoder"))))))
 
      parts)))

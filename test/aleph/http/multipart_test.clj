@@ -116,9 +116,9 @@
     (is (.contains body-str "Content-Type: application/png\r\n"))
     (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
 
-(def port1 26013)
-(def port2 26014)
-(def port3 26015)
+(def port1 26023)
+(def port2 26024)
+(def port3 26025)
 (def url1 (str "http://localhost:" port1))
 (def url2 (str "http://localhost:" port2))
 (def url3 (str "http://localhost:" port3))
