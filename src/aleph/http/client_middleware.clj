@@ -1,17 +1,18 @@
 (ns aleph.http.client-middleware
-  "This middleware is adapted from clj-http, whose license is amendable to this sort of
+  "This middleware is adapted from clj-http, whose license is amenable to this sort of
    copy/pastery"
   (:refer-clojure :exclude [update])
   (:require
     [potemkin :as p]
-    [clojure.stacktrace :refer [root-cause]]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
     [manifold.stream :as s]
     [manifold.executor :as ex]
     [byte-streams :as bs]
-    [clojure.edn :as edn])
+    [clojure.edn :as edn]
+    ;; leave this dependency to make sure that HeaderMap is already compiled
+    [aleph.http.core :as http])
   (:import
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.handler.codec.base64 Base64]
@@ -664,7 +665,7 @@
     :else (>= (System/currentTimeMillis) (+ created max-age))))
 
 (defprotocol CookieSpec
-  "Implement rules for accepting and returing cookies"
+  "Implement rules for accepting and returning cookies"
   (parse-cookie [this cookie-str])
   (write-cookies [this cookies])
   (match-cookie-origin? [this origin cookie]))
@@ -731,7 +732,9 @@
   ([header]
     (decode-set-cookie-header default-cookie-spec header))
   ([cookie-spec header]
-    (netty-cookie->cookie (parse-cookie cookie-spec header))))
+    (some->> header
+             (parse-cookie cookie-spec)
+             (netty-cookie->cookie))))
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
@@ -782,7 +785,7 @@
     (write-cookie-header cookies cookie-spec req)))
 
 (defn wrap-cookies
-  "Middleware that set 'Cookie' header based on the contentn of cookies passed
+  "Middleware that set 'Cookie' header based on the content of cookies passed
    with the request or from cookies storage (when provided). Source for 'Cookie'
    header content by priorities:
 
@@ -902,6 +905,34 @@
 (defmethod coerce-response-body :default [_ resp]
   resp)
 
+(defn wrap-request-debug [req]
+  (cond-> req
+    (opt req :save-request)
+    (assoc :aleph/save-request-message (atom nil))
+
+    (opt req :debug-body)
+    (assoc :aleph/save-request-body (atom nil))))
+
+(defn handle-response-debug [req rsp]
+  (let [saved-message (get req :aleph/save-request-message)
+        saved-body (get req :aleph/save-request-body)
+        req' (dissoc req
+                     :aleph/save-request-body
+                     :aleph/save-request-message
+                     :save-request
+                     :save-request?
+                     :debug-body
+                     :debug-body?)]
+    (cond-> rsp
+      (some? saved-message)
+      (assoc :aleph/netty-request @saved-message)
+
+      (some? saved-body)
+      (assoc :aleph/request-body @saved-body)
+
+      (opt req :save-request)
+      (assoc :aleph/request req'))))
+
 (def default-middleware
   [wrap-method
    wrap-url
@@ -914,7 +945,8 @@
    wrap-accept
    wrap-accept-encoding
    wrap-content-type
-   wrap-cookies])
+   wrap-cookies
+   wrap-request-debug])
 
 (defn wrap-request
   "Returns a batteries-included HTTP request function corresponding to the given
@@ -934,7 +966,8 @@
 
               ;; coerce the response body
               (fn [{:keys [body] :as rsp}]
-                (if body
-                  (d/future-with (or executor (ex/wait-pool))
-                    (coerce-response-body req' rsp))
-                  rsp)))))))))
+                (let [rsp' (handle-response-debug req' rsp)]
+                  (if (nil? body)
+                    rsp'
+                    (d/future-with (or executor (ex/wait-pool))
+                      (coerce-response-body req' rsp'))))))))))))

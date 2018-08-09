@@ -28,5 +28,16 @@ Thanks to Dominic Monroe
 
 ### 0.4.4
 
+Thanks to Antony Woods, Alexey Kachayev, Ivan Kryvoruchko, Yonatan Elhanan, Daniel Truemper
+
 * fix memory lead in handling of binary websocket frames
 * fix handling of decoder errors in Netty's HTTP stack
+
+### 0.4.6
+
+Thanks to Alexey Kachayev, Yoan Blanc, Christian Karlsen, Jeremie Grodziski
+
+* Add support for WebSocket `PING` frames
+* Add support for cookies in HTTP client
+* Add `:dns-resolver` option for all client protocols
+* Add proxy support for HTTP client

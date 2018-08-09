@@ -120,13 +120,17 @@
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
+        (let [headers (.headers rsp)]
 
-        (doto (.headers rsp)
-          (.set ^CharSequence server-name server-value)
-          (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
-          (.set ^CharSequence date-name (date-header-value ctx)))
+          (when-not (.contains headers ^CharSequence server-name)
+            (.set headers ^CharSequence server-name server-value))
 
-        (http/send-message ctx keep-alive? ssl? rsp body)))))
+          (when-not (.contains headers ^CharSequence date-name)
+            (.set headers ^CharSequence date-name (date-header-value ctx)))
+
+          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+
+          (http/send-message ctx keep-alive? ssl? rsp body))))))
 
 ;;;
 
@@ -306,7 +310,7 @@
 
                       (handle-request ctx @request s))))))))]
 
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -356,7 +360,7 @@
               @previous-response
               body
               (HttpHeaders/isKeepAlive req))))]
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -506,7 +510,7 @@
        (s/splice out in)
        (reset-meta! {:aleph/channel ch}))
 
-     (netty/channel-handler
+     (netty/channel-inbound-handler
 
        :exception-caught
        ([_ ctx ex]

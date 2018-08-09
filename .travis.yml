@@ -5,4 +5,3 @@ script: lein do clean, jammin 300 test
 jdk:
   - oraclejdk8
   - openjdk8
-  - openjdk7

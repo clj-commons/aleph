@@ -15,16 +15,16 @@
 
 (set! *warn-on-reflection* false)
 
-(defn ^PrivateKey gen-key
-  [k]
+(defn gen-key
+  ^PrivateKey [k]
   (let [spec (RSAPrivateCrtKeySpec. (:modulus k) (:publicExponent k) (:privateExponent k)
                (:prime1 k) (:prime2 k) (:exponent1 k) (:exponent2 k)
                (:coefficient k))
         gen (KeyFactory/getInstance "RSA")]
     (.generatePrivate gen spec)))
 
-(defn ^X509Certificate gen-cert
-  [^String pemstr]
+(defn gen-cert
+  ^X509Certificate [^String pemstr]
   (.generateCertificate (CertificateFactory/getInstance "X.509")
     (ByteArrayInputStream. (Base64/decodeBase64 pemstr))))
 
@@ -69,7 +69,7 @@
             :coefficient
             (BigInteger. "1784f8c57ea68804d836a6259f93800858b9e3d5f570ab2c682006efd05a2893405317f5aa543b31db8a3fc91362d9fafc91300a3d818f6e71423fe76486fd04a9c064cfb67f25cb5ddc507d060605cc05b1641648d26f09fe0e71ce48a8fab9698ed85b003982d8dbdd09f310ca99fca5ad58eaa61fac179bc2d34dd128ee50" 16)}))
 
-(def client-cert
+(def ^X509Certificate client-cert
   (gen-cert "MIIEJDCCAwygAwIBAgICEAEwDQYJKoZIhvcNAQELBQAwcjELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCUN1cGVydGlubzEYMBYGA1UECgwPQkZQIENvcnBvcmF0aW9uMQ4wDAYDVQQLDAVBbGVwaDEQMA4GA1UEAwwHUm9vdCBDQTAeFw0xNjExMjEyMTQyMzFaFw0zNjAxMjEyMTQyMzFaMHoxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlDdXBlcnRpbm8xGDAWBgNVBAoMD0JGUCBDb3Jwb3JhdGlvbjEUMBIGA1UECwwLQ2xpZW50IENlcnQxEjAQBgNVBAMMCWxvY2FsaG9zdDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKkfLKv6OOBeThZ/qGNlFubAMDMrtbxIL74gVa526RCO2TdGbVc9iqUxCTBbj5sDxoZwdn+jYi0YbRVd5QF6TNo4W8LZkwb7tckDL0ag2o8PCOge8aAEk1xU5HA1Pb4oyhRrnl+22+OdY0Jputn7tMnTP63J6uFc5HXjKsgA+meqMGnzdYIWFapNhPjOq6CuhGikh2O+Rxgu9wXwpwCDbaP9Hl8wCODZhE1MoDXXi1M7gJ2SAcGEzc4vZiPy3Wm0UIMLEblqswHOi1w0X3obdrD8OKTTpauvXoHv5cqdLA7bwLaK2XEpApZfH21XAoa1cpRd4TnwHz7aNgzVINSYjdcCAwEAAaOBuzCBuDAJBgNVHRMEAjAAMBEGCWCGSAGG+EIBAQQEAwIHgDAzBglghkgBhvhCAQ0EJhYkT3BlblNTTCBHZW5lcmF0ZWQgQ2xpZW50IENlcnRpZmljYXRlMB0GA1UdDgQWBBTVEjypn0lUYwu1jSMkWNA4ipfFpDAfBgNVHSMEGDAWgBQdkVTtOy9WYuitp7Que1jRuEhHAjAOBgNVHQ8BAf8EBAMCBeAwEwYDVR0lBAwwCgYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBALCvifJ1ROcOuDVnQezjcVcFFhEccBVdi1b022fII9u1Lyp1QtNaXNC8o9vVa//VwInGvlhGwrWUJiey4QxIfhoHlEuWnZ1OIfxVyA3GqWpu0G1zwuqG8hG2kDfV3m4h7QBl9pSNHJIvxtp75j7qj0r3EXTUFAX9j80Fu9kfWJXUmumQOvz4gkZ/4GHz29iS3nah9/Kl4Mswb03mLClxNhLYwhVaFtPaxWcsFpBXJmJPiXwlGuiI169qmn9OFrw5kgQfoQoU97le39TzsLFXHUgmQQyzuraHadbQOY24uPskDbiRMZMPSXYhFt05jEcgVHp50YFkk93rmA4pBQ4XoD0="))
 
 (def client-key
@@ -107,8 +107,8 @@
     ; note we need to inspect the SSL session *after* we start reading
     ; data. Otherwise, the session might not be set up yet.
     (s/map (fn [msg]
-             (is (= (.getSubjectDN client-cert)
-                   (.getSubjectDN (first (.getPeerCertificates (:ssl-session c))))))
+             (is (= (.getSubjectDN ^X509Certificate client-cert)
+                   (.getSubjectDN ^X509Certificate (first (.getPeerCertificates (:ssl-session c))))))
              msg)
       s)
     s))

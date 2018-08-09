@@ -28,7 +28,7 @@
 (defn- ^ChannelHandler server-channel-handler
   [handler {:keys [raw-stream?] :as options}]
   (let [in (atom nil)]
-    (netty/channel-handler
+    (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
@@ -95,7 +95,7 @@
         in (atom nil)]
     [d
 
-     (netty/channel-handler
+     (netty/channel-inbound-handler
 
        :exception-caught
        ([_ ctx ex]
