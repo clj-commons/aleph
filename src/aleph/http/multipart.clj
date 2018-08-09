@@ -5,7 +5,8 @@
    [aleph.http.encoding :refer [encode]]
    [aleph.http.core :as http-core]
    [aleph.netty :as netty]
-   [manifold.stream :as s])
+   [manifold.stream :as s]
+   [clojure.tools.logging :as log])
   (:import
    [java.util
     Locale]
@@ -165,24 +166,24 @@
     {:part-name (.getName attr)
      :content content
      :name nil
-     :charset (.getCharset attr)
-     :mime-type nil
-     :transfer-encoding nil
+     :charset (-> attr .getCharset .toString)
+     :mime-type (.getContentType attr)
+     :transfer-encoding (.getContentTransferEncoding attr)
      :memory? (.isInMemory attr)
      :file? false
+     :file nil
      :size (count content)}))
 
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
   {:part-name (.getName data)
-   :content (.getValue data)
+   :content (.content data)
    :name (.getFilename data)
-   :charset (.getCharset data)
+   :charset (-> data .getCharset .toString)
    :mime-type (.getContentType data)
    :transfer-encoding (.getContentTransferEncoding data)
    :memory? (.isInMemory data)
    :file? true
-   ;; xxx: helper to move disk file to another location?
    :file (when-not (.isInMemory data) (.getFile data))
    :size (.length data)})
 
@@ -205,7 +206,11 @@
         req' (http-core/ring-request->netty-request req)
         ^HttpPostRequestDecoder decoder (HttpPostRequestDecoder. req')
         cleanup (fn []
-                  (.destroy decoder)
+                  (try
+                    ;; this may fail with IllegalReferenceCount
+                    (.destroy decoder)
+                    (catch Exception e
+                      (log/warn e "exception when cleaning up multipart decoder")))
                   (s/close! body)
                   (s/close! parts))]
 
@@ -219,6 +224,6 @@
      body)
 
     (s/on-closed parts cleanup)
-    (s/on-closed parts body)
+    (s/on-closed body cleanup)
 
     parts))
