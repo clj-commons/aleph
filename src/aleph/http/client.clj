@@ -36,8 +36,7 @@
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
      IdleState
-     IdleStateEvent
-     IdleStateHandler]
+     IdleStateEvent]
     [io.netty.handler.codec.http FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
@@ -63,8 +62,7 @@
      LoggingHandler
      LogLevel]
     [java.util.concurrent
-     ConcurrentLinkedQueue
-     TimeUnit]
+     ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -645,16 +643,7 @@
         (if (and (instance? IdleStateEvent evt)
                  (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
           (when (d/realized? d)
-            (let [done (d/deferred)]
-              (http/websocket-ping @d done (:payload heartbeats))
-              (when (pos? (:timeout heartbeats))
-                (-> done
-                    (d/timeout! (:timeout heartbeats) ::ping-timeout)
-                    (d/chain'
-                     (fn [v]
-                       (when (and (identical? ::ping-timeout v)
-                                  (.isOpen ^Channel (.channel ctx)))
-                         (netty/close ctx))))))))
+            (http/handle-heartbeat ctx @d heartbeats))
           (.fireUserEventTriggered ctx evt)))
 
        :channel-read
@@ -777,12 +766,7 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
-            (#(when (some? heartbeats)
-                (let [it (:send-after-idle heartbeats)
-                      idle (IdleStateHandler. 0 0 it TimeUnit/MILLISECONDS)]
-                  (.addLast ^ChannelPipeline %
-                            "websocket-idle"
-                            ^ChannelHandler idle))))
+            (http/attach-heartbeats-handler heartbeats)
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))
         (when ssl?

@@ -15,7 +15,8 @@
      ChannelFuture
      ChannelFutureListener
      ChannelPipeline
-     ChannelHandler]
+     ChannelHandler
+     ChannelHandlerContext]
     [io.netty.buffer
      ByteBuf]
     [java.nio
@@ -487,3 +488,25 @@
       ;; meaning connection is already closed
       (d/success! d' false)))
   d')
+
+(defn attach-heartbeats-handler [^ChannelPipeline pipeline heartbeats]
+  (when (and (some? heartbeats)
+             (pos? (:send-after-idle heartbeats)))
+    (let [after (:send-after-idle heartbeats)]
+      (.addLast pipeline
+                "websocket-heartbeats"
+                ^ChannelHandler
+                (IdleStateHandler. 0 0 after TimeUnit/MILLISECONDS)))))
+
+(defn handle-heartbeat [^ChannelHandlerContext ctx conn {:keys [payload
+                                                                timeout]}]
+  (let [done (d/deferred)]
+    (websocket-ping conn done payload)
+    (when (pos? timeout)
+      (-> done
+          (d/timeout! timeout ::ping-timeout)
+          (d/chain'
+           (fn [v]
+             (when (and (identical? ::ping-timeout v)
+                        (.isOpen ^Channel (.channel ctx)))
+               (netty/close ctx))))))))
