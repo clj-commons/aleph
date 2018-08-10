@@ -479,3 +479,11 @@
       (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
       (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
     pipeline))
+
+(defn websocket-ping [conn d' data]
+  (d/chain'
+   (s/put! conn (aleph.http.core.WebsocketPing. d' data))
+   #(when (and (false? %) (not (d/realized? d')))
+      ;; meaning connection is already closed
+      (d/success! d' false)))
+  d')

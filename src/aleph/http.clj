@@ -9,7 +9,8 @@
     [aleph.http
      [server :as server]
      [client :as client]
-     [client-middleware :as middleware]]
+     [client-middleware :as middleware]
+     [core :as http-core]]
     [aleph.netty :as netty])
   (:import
     [io.aleph.dirigiste Pools]
@@ -230,16 +231,11 @@
    yield true whenever the PONG comes back, or false if the connection is closed. Subsequent
    PINGs are supressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
   ([conn]
-   (websocket-ping conn (d/deferred) nil))
+   (http-core/websocket-ping conn (d/deferred) nil))
   ([conn d']
-   (websocket-ping conn d' nil))
+   (http-core/websocket-ping conn d' nil))
   ([conn d' data]
-   (d/chain'
-    (s/put! conn (aleph.http.core.WebsocketPing. d' data))
-    #(when (and (false? %) (not (d/realized? d')))
-       ;; meaning connection is already closed
-       (d/success! d' false)))
-   d'))
+   (http-core/websocket-ping conn d' data)))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
