@@ -1,8 +1,7 @@
 (ns aleph.http.encoding
   (:require
     [byte-streams :as bs]
-    [primitive-math :as p]
-    [potemkin :refer [doary]])
+    [primitive-math :as p])
   (:import
     [io.netty.buffer
      ByteBuf
