@@ -202,7 +202,8 @@
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([url]
     (websocket-client url nil))
   ([url options]
@@ -220,7 +221,8 @@
    | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
-   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`"
+   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`.
+   | `heartbeats` | optional configuration to send Ping frames to the client periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty uses empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([req]
     (websocket-connection req nil))
   ([req options]
