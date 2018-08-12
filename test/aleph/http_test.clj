@@ -194,7 +194,7 @@
 
 (deftest test-response-formats
   (with-handler basic-handler
-    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+    (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
         (= result
           (bs/to-string
@@ -203,7 +203,7 @@
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
-    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)
+    (doseq [[index [path result]] (map-indexed vector expected-results)
             :let [resp @(http-get (str "http://localhost:" port "/" path)
                           {:headers {:accept-encoding "gzip"}})
                   unzipped (try
@@ -215,7 +215,7 @@
 
 (deftest test-ssl-response-formats
   (with-ssl-handler basic-handler
-    (doseq [[index [path result]] (map vector (iterate inc 0) expected-results)]
+    (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
         (= result
           (bs/to-string
