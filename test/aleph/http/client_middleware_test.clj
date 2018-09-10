@@ -113,7 +113,9 @@
                                                      :cookies [{:name "name" :value "John"}]
                                                      :cookie-store cs})
                          (get-in [:headers "cookie"])))
-      "explicitly set cookies override cookie-store even when specified")))
+      "explicitly set cookies override cookie-store even when specified")
+    (is (nil? (middleware/decode-set-cookie-header ""))
+        "empty set-cookie header doesn't crash")))
 
 (defn req->query-string [req]
   (-> (reduce #(%2 %1) req middleware/default-middleware)

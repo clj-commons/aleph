@@ -42,6 +42,7 @@
      ResolvedAddressTypes]
     [io.netty.resolver.dns
      DnsNameResolverBuilder
+     DnsAddressResolverGroup
      DnsServerAddressStreamProvider
      SingletonDnsServerAddressStreamProvider
      SequentialDnsServerAddressStreamProvider]
@@ -61,10 +62,10 @@
      InternalLoggerFactory
      Log4JLoggerFactory
      Slf4JLoggerFactory
-     JdkLoggerFactory]
+     JdkLoggerFactory
+     Log4J2LoggerFactory]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]
-    [aleph.utils PluggableDnsAddressResolverGroup]))
+    [java.security PrivateKey]))
 
 ;;;
 
@@ -85,9 +86,10 @@
 (defn set-logger! [logger]
   (InternalLoggerFactory/setDefaultFactory
     (case logger
-      :log4j Log4JLoggerFactory/INSTANCE
-      :slf4j Slf4JLoggerFactory/INSTANCE
-      :jdk   JdkLoggerFactory/INSTANCE)))
+      :log4j  Log4JLoggerFactory/INSTANCE
+      :log4j2 Log4J2LoggerFactory/INSTANCE
+      :slf4j  Slf4JLoggerFactory/INSTANCE
+      :jdk    JdkLoggerFactory/INSTANCE)))
 
 ;;;
 
@@ -625,7 +627,7 @@
         (.write ctx msg promise)))))
 
 (defn pipeline-initializer [pipeline-builder]
-  (channel-handler
+  (channel-inbound-handler
 
     :channel-registered
     ([this ctx]
@@ -636,8 +638,7 @@
           (.fireChannelRegistered ctx)
           (catch Throwable e
             (log/warn e "Failed to initialize channel")
-            (.close ctx))))
-      (.fireChannelRegistered ctx))))
+            (.close ctx)))))))
 
 (defn instrument!
   [stream]
@@ -654,69 +655,16 @@
 
 ;;;
 
-(potemkin/def-map-type HeaderMap
-  [^Headers headers
-   added
-   removed
-   mta]
-  (meta [_]
-    mta)
-  (with-meta [_ m]
-    (HeaderMap.
-      headers
-      added
-      removed
-      m))
-  (keys [_]
-    (set/difference
-      (set/union
-        (set (map str/lower-case (.names headers)))
-        (set (keys added)))
-      (set removed)))
-  (assoc [_ k v]
-    (HeaderMap.
-      headers
-      (assoc added k v)
-      (disj removed k)
-      mta))
-  (dissoc [_ k]
-    (HeaderMap.
-      headers
-      (dissoc added k)
-      (conj (or removed #{}) k)
-      mta))
-  (get [_ k default-value]
-    (if (contains? removed k)
-      default-value
-      (if-let [e (find added k)]
-        (val e)
-        (let [k' (str/lower-case (name k))
-              vs (.getAll headers k')]
-          (if (.isEmpty vs)
-            default-value
-            (if (p/== 1 (.size vs))
-              (.get vs 0)
-              (reduce
-                (fn [v s]
-                  (if v
-                    (str v "," s)
-                    s)
-                  vs)
-                nil))))))))
-
-(defn headers [^Headers h]
-  (HeaderMap. h nil nil nil))
-
-;;;
-
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
   []
   (let [cert (SelfSignedCertificate.)]
-    (SslContext/newServerContext (.certificate cert) (.privateKey cert))))
+    (.build (SslContextBuilder/forServer (.certificate cert) (.privateKey cert)))))
 
 (defn insecure-ssl-client-context []
-  (SslContext/newClientContext InsecureTrustManagerFactory/INSTANCE))
+  (-> (SslContextBuilder/forClient)
+      (.trustManager InsecureTrustManagerFactory/INSTANCE)
+      .build))
 
 (defn- check-ssl-args
   [private-key certificate-chain]
@@ -900,7 +848,7 @@
               (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
               (dns-name-servers-provider name-servers)))]
-    (PluggableDnsAddressResolverGroup. b)))
+    (DnsAddressResolverGroup. b)))
 
 (defn create-client
   ([pipeline-builder

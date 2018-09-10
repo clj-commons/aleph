@@ -31,7 +31,7 @@
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
-     HttpContent HttpHeaders
+     HttpContent HttpHeaders HttpUtil
      HttpContentCompressor
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
@@ -124,9 +124,10 @@
           (when-not (.contains headers ^CharSequence server-name)
             (.set headers ^CharSequence server-name server-value))
 
-          (doto headers
-            (.set ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
-            (.set ^CharSequence date-name (date-header-value ctx)))
+          (when-not (.contains headers ^CharSequence date-name)
+            (.set headers ^CharSequence date-name (date-header-value ctx)))
+
+          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
           (http/send-message ctx keep-alive? ssl? rsp body))))))
 
@@ -357,7 +358,7 @@
               req
               @previous-response
               body
-              (HttpHeaders/isKeepAlive req))))]
+              (HttpUtil/isKeepAlive req))))]
     (netty/channel-inbound-handler
 
       :exception-caught
