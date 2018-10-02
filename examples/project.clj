@@ -4,4 +4,4 @@
                  [compojure "1.6.1"]
                  [org.clojure/clojure "1.9.0"]
                  [org.clojure/core.async "0.4.474"]]
-  :plugins [[lein-marginalia "0.9.0"]])
+  :plugins [[lein-marginalia "0.9.1"]])
