@@ -683,6 +683,7 @@
   [uri
    {:keys [raw-stream?
            insecure?
+           ssl-context
            headers
            local-address
            bootstrap-transform
@@ -727,9 +728,10 @@
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))
         (when ssl?
-          (if insecure?
-            (netty/insecure-ssl-client-context)
-            (netty/ssl-client-context)))
+          (or ssl-context
+            (if insecure?
+              (netty/insecure-ssl-client-context)
+              (netty/ssl-client-context))))
         bootstrap-transform
         (InetSocketAddress.
           (.getHost uri)

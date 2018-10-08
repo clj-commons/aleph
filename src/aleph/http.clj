@@ -192,6 +192,7 @@
    |:---|:---
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `insecure?` | if `true`, the certificates for `wss://` will be ignored.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `extensions?` | if `true`, the websocket extensions will be supported.
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocols.
    | `headers` | the headers that should be included in the handshake
