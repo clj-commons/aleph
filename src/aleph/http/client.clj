@@ -6,7 +6,8 @@
     [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [manifold.time :as time])
   (:import
     [java.io
      IOException]
@@ -58,6 +59,9 @@
     [io.netty.handler.logging
      LoggingHandler
      LogLevel]
+    [java.util.concurrent
+     Future
+     TimeoutException]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -581,11 +585,12 @@
     (doto (DefaultHttpHeaders.) (http/map->headers! headers))
     max-frame-payload))
 
-(defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers max-frame-payload]
+(defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers max-frame-payload handshake-timeout]
   (let [d (d/deferred)
         in (atom nil)
         desc (atom {})
-        handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
+        handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)
+        timeout-task (atom nil)]
 
     [d
 
@@ -595,11 +600,11 @@
        ([_ ctx ex]
          (when-not (d/error! d ex)
            (log/warn ex "error in websocket client"))
-         (s/close! @in)
          (netty/close ctx))
 
        :channel-inactive
        ([_ ctx]
+         (s/close! @in)
          (when (realized? d)
            ;; close only on success
            (d/chain' d s/close!))
@@ -609,6 +614,16 @@
        ([_ ctx]
          (let [ch (.channel ctx)]
            (reset! in (netty/buffered-source ch (constantly 1) 16))
+
+           ;; Start handshake timeout timer
+           (reset! timeout-task
+                   (.in time/*clock*
+                        handshake-timeout
+                        (fn []
+                          ;; if there was no answer after handshake was sent - close channel
+                          (d/error! d (TimeoutException. "WebSocket handshake timeout"))
+                          (netty/close ctx))))
+
            (.handshake handshaker ch))
          (.fireChannelActive ctx))
 
@@ -619,32 +634,35 @@
              (cond
 
                (not (.isHandshakeComplete handshaker))
-               (-> (netty/wrap-future (.processHandshake handshaker ch msg))
-                   (d/chain'
-                     (fn [_]
-                       (let [out (netty/sink ch false
-                                             (fn [c]
-                                               (if (instance? CharSequence c)
-                                                 (TextWebSocketFrame. (bs/to-string c))
-                                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
-                                             (fn [] @desc))]
+               ;; If timeout task cannot be cancelled there is no need to continue handshake
+               (when (.cancel ^Future @timeout-task false)
+                 (-> (netty/wrap-future (.processHandshake handshaker ch msg))
+                     ;; we want to check timeout here too
+                     (d/timeout! handshake-timeout)
+                     (d/chain'
+                       (fn [_]
+                         (let [out (netty/sink ch false
+                                               (fn [c]
+                                                 (if (instance? CharSequence c)
+                                                   (TextWebSocketFrame. (bs/to-string c))
+                                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
+                                               (fn [] @desc))]
 
-                         (d/success! d
-                                     (doto
-                                       (s/splice out @in)
-                                       (reset-meta! {:aleph/channel ch})))
+                           (d/success! d
+                                       (doto
+                                         (s/splice out @in)
+                                         (reset-meta! {:aleph/channel ch})))
 
-                         (s/on-drained @in
-                                       #(when (.isOpen ch)
-                                          (d/chain'
-                                            (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                                            (fn [_] (netty/close ctx))))))))
-                   (d/catch'
-                     (fn [ex]
-                       ;; handle handshake exception
-                       (d/error! d ex)
-                       (s/close! @in)
-                       (netty/close ctx))))
+                           (s/on-drained @in
+                                         #(when (.isOpen ch)
+                                            (d/chain'
+                                              (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                                              (fn [_] (netty/close ctx))))))))
+                     (d/catch'
+                       (fn [ex]
+                         ;; handle handshake exception
+                         (d/error! d ex)
+                         (netty/close ctx)))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
@@ -699,6 +717,7 @@
            extensions?
            max-frame-payload
            max-frame-size
+           handshake-timeout
            compression?]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -708,6 +727,7 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
+         handshake-timeout 60000
          compression? false}}]
   (let [uri (URI. uri)
         scheme (.getScheme uri)
@@ -719,7 +739,8 @@
                       sub-protocols
                       extensions?
                       headers
-                      max-frame-payload)]
+                      max-frame-payload
+                      handshake-timeout)]
     (d/chain'
       (netty/create-client
         (fn [^ChannelPipeline pipeline]
