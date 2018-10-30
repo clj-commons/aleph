@@ -601,7 +601,8 @@
        :channel-inactive
        ([_ ctx]
          (when (realized? d)
-           (s/close! @d))
+           ;; close only on success
+           (d/chain' d s/close!))
          (.fireChannelInactive ctx))
 
        :channel-active
@@ -618,26 +619,32 @@
              (cond
 
                (not (.isHandshakeComplete handshaker))
-               (d/chain'
-                 (netty/wrap-future (.processHandshake handshaker ch msg))
-                 (fn [_]
-                   (let [out (netty/sink ch false
-                               (fn [c]
-                                 (if (instance? CharSequence c)
-                                   (TextWebSocketFrame. (bs/to-string c))
-                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
-                               (fn [] @desc))]
+               (-> (netty/wrap-future (.processHandshake handshaker ch msg))
+                   (d/chain'
+                     (fn [_]
+                       (let [out (netty/sink ch false
+                                             (fn [c]
+                                               (if (instance? CharSequence c)
+                                                 (TextWebSocketFrame. (bs/to-string c))
+                                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
+                                             (fn [] @desc))]
 
-                     (d/success! d
-                       (doto
-                         (s/splice out @in)
-                         (reset-meta! {:aleph/channel ch})))
+                         (d/success! d
+                                     (doto
+                                       (s/splice out @in)
+                                       (reset-meta! {:aleph/channel ch})))
 
-                     (s/on-drained @in
-                       #(when (.isOpen ch)
-                         (d/chain'
-                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                           (fn [_] (netty/close ctx))))))))
+                         (s/on-drained @in
+                                       #(when (.isOpen ch)
+                                          (d/chain'
+                                            (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                                            (fn [_] (netty/close ctx))))))))
+                   (d/catch'
+                     (fn [ex]
+                       ;; handle handshake exception
+                       (d/error! d ex)
+                       (s/close! @in)
+                       (netty/close ctx))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]

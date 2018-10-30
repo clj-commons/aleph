@@ -21,7 +21,8 @@
      ChannelHandler FileRegion
      ChannelInboundHandler
      ChannelOutboundHandler
-     ChannelHandlerContext]
+     ChannelHandlerContext
+     ChannelInitializer]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
@@ -637,18 +638,9 @@
         (.write ctx msg promise)))))
 
 (defn pipeline-initializer [pipeline-builder]
-  (channel-inbound-handler
-
-    :channel-registered
-    ([this ctx]
-      (let [pipeline (.pipeline ctx)]
-        (try
-          (.remove pipeline this)
-          (pipeline-builder pipeline)
-          (.fireChannelRegistered ctx)
-          (catch Throwable e
-            (log/warn e "Failed to initialize channel")
-            (.close ctx)))))))
+  (proxy [ChannelInitializer] []
+    (initChannel [^Channel ch]
+      (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
 
 (defn instrument!
   [stream]
