@@ -60,12 +60,12 @@
      LoggingHandler
      LogLevel]
     [java.util.concurrent
-     Future
-     TimeoutException]
+     Future]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
-     ProxyConnectionTimeoutException]))
+     ProxyConnectionTimeoutException
+     WebSocketHandshakeTimeoutException]))
 
 (set! *unchecked-math* true)
 
@@ -621,7 +621,7 @@
                         handshake-timeout
                         (fn []
                           ;; if there was no answer after handshake was sent - close channel
-                          (d/error! d (TimeoutException. "WebSocket handshake timeout"))
+                          (d/error! d (WebSocketHandshakeTimeoutException. "WebSocket handshake timeout"))
                           (netty/close ctx))))
 
            (.handshake handshaker ch))
