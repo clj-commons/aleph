@@ -230,11 +230,10 @@
         (let [content (DefaultHttpContent. chunk)]
           (.offer decoder content)
           (read-attributes decoder parts)
-          ;; TODO(kachayev): I'm still not sure this is
-          ;; an appropriate place/time to release a chunk
-          ;; of the request body, as it depends only on
-          ;; the internals of a decoder being consistent
-          ;; across all operations with all types of attributes
+          ;; note, that releasing chunk right here relies on
+          ;; the internals of the decoder. in case those
+          ;; internal are changed in future, this flow of
+          ;; manipulations should be also reconsidered
           (netty/release chunk)
           (d/success-deferred true)))
       parts)
