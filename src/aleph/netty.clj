@@ -1128,8 +1128,8 @@
               (-> ch .close .sync)
               (.shutdownGracefully group)
               (when on-close
-                (d/chain'
-                 (wrap-future (.terminationFuture group))
+                (d/chain
+                 (.terminationFuture group)
                  (fn [_] (on-close))))))
           AlephServer
           (port [_]
@@ -1155,8 +1155,8 @@
             ;; are cleaned up and executors shuts down (when necessary)
             (when (compare-and-set! closed? false true)
               (let [_ (.close ch)]
-                (-> (wrap-future (.closeFuture ch))
-                    (d/chain'
+                (-> (.closeFuture ch)
+                    (d/chain
                      (fn [_]
                        ;; on exception just move to the next stage (shutting down group)
                        (try
@@ -1166,18 +1166,18 @@
                            (log/error e "failed to close connections during graceful shutdown")
                            nil))))
                     (d/timeout! shutdown-timeout ::timeout)
-                    (d/catch'
+                    (d/catch
                         (fn [e]
                           (log/error e "failure during graceful shutdown")
                           nil))
-                    (d/finally'
+                    (d/finally
                       (fn []
                         (.shutdownGracefully group
                                              quite-period
                                              event-loop-shutdown-timeout
                                              TimeUnit/MILLISECONDS)
-                        (d/chain'
-                         (wrap-future (.terminationFuture group))
+                        (d/chain
+                         (.terminationFuture group)
                          (fn [_]
                            (when on-close (on-close))
                            (d/success! shutdown-ready true))))))))
