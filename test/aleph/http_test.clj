@@ -431,14 +431,18 @@
       d)))
 
 (deftest test-graceful-shutdown
-  (let [url (str "http://localhost:" port1)
-        s (http/start-server (very-slow-handler 1e3) {:port port1})
-        rs (apply d/zip' (mapv (fn [_] (http/get url)) (range 5)))
-        _ (Thread/sleep 100) ;; make sure we've sent requests
-        shutting-down (netty/shutdown-gracefully s)]
-    (is (thrown? ConnectException @(http/get url)))
-    (is (every? #(= 200 (:status %)) @rs))
-    (is @shutting-down)))
+  ;; just to make sure we're able to bind the same port again
+  ;; meaning, that shutdown was done, not just reported to be done
+  (dotimes [i 3]
+    (let [url (str "http://localhost:" port1)
+          s (http/start-server (very-slow-handler 1e3) {:port port1})
+          rs (apply d/zip' (mapv (fn [_] (http/get url)) (range 5)))
+          _ (Thread/sleep 100) ;; make sure we've sent requests
+          shutting-down (netty/shutdown-gracefully s)]
+      (is (thrown? ConnectException @(http/get url))
+          (str "not closed on iteration " (inc i)))
+      (is (every? #(= 200 (:status %)) @rs))
+      (is @shutting-down))))
 
 (deftest test-graceful-shutdown-timeout
   (let [url (str "http://localhost:" port2)

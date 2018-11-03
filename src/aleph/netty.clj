@@ -23,7 +23,9 @@
      ChannelOutboundHandler
      ChannelHandlerContext
      ChannelInitializer]
-    [io.netty.channel.epoll Epoll EpollEventLoopGroup
+    [io.netty.channel.epoll
+     Epoll
+     EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
     [io.netty.util Attribute AttributeKey]
@@ -47,7 +49,8 @@
      DnsServerAddressStreamProvider
      SingletonDnsServerAddressStreamProvider
      SequentialDnsServerAddressStreamProvider]
-    [io.netty.util ResourceLeakDetector
+    [io.netty.util
+     ResourceLeakDetector
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
