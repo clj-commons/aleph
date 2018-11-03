@@ -987,7 +987,9 @@
       ;; note, that replace would do nothing in case
       ;; we've removed channel earlier (which is right
       ;; what we need to achieve here)
-      (.replace conns ^Channel conn CONN_ACTIVE)
+      ;; we're also ignoring situations when the connection
+      ;; was not IDLE for some reason, i.e. it was hijacted before
+      (.replace conns ^Channel conn CONN_IDLE CONN_ACTIVE)
 
       :idle
       (if (.isOpen ^Channel conn)
