@@ -24,6 +24,8 @@
      HttpRequest
      HttpResponse
      HttpContent
+     HttpUtil
+     HttpHeaderNames
      LastHttpContent
      FullHttpResponse
      HttpObjectAggregator]
@@ -33,6 +35,10 @@
      ChannelPipeline]
     [io.netty.handler.codec
      TooLongFrameException]
+    [io.netty.handler.stream 
+     ChunkedWriteHandler]
+    [io.netty.handler.codec.http 
+     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -53,6 +59,9 @@
      HttpProxyHandler
      Socks4ProxyHandler
      Socks5ProxyHandler]
+    [io.netty.handler.logging
+     LoggingHandler
+     LogLevel]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -191,7 +200,7 @@
 
           (instance? HttpResponse msg)
           (let [rsp msg]
-            (if (HttpHeaders/isTransferEncodingChunked rsp)
+            (if (HttpUtil/isTransferEncodingChunked rsp)
               (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                     c (d/deferred)]
                 (reset! stream s)
@@ -282,7 +291,7 @@
 ;;  * `curl` uses separate option `--proxytunnel` flag to switch tunneling on
 ;;  * `curl` uses CONNECT when sending request to HTTPS destination through HTTP proxy
 ;;
-;; Explicitily setting `tunnel?` to false when it's expected to use CONNECT
+;; Explicitly setting `tunnel?` to false when it's expected to use CONNECT
 ;; throws `IllegalArgumentException` to reduce the confusion
 (defn http-proxy-handler
   [^InetSocketAddress address
@@ -363,6 +372,21 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
+(defn coerce-log-level [level]
+  (if (instance? LogLevel level)
+    level
+    (let [netty-level (case level
+                        :trace LogLevel/TRACE
+                        :debug LogLevel/DEBUG
+                        :info LogLevel/INFO
+                        :warn LogLevel/WARN
+                        :error LogLevel/ERROR
+                        nil)]
+      (when (nil? netty-level)
+        (throw (IllegalArgumentException.
+                (str "unknown log level given: " level))))
+      netty-level)))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -374,7 +398,8 @@
      raw-stream?
      proxy-options
      ssl?
-     idle-timeout]
+     idle-timeout
+     log-activity]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
@@ -385,7 +410,11 @@
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
-                    (client-handler response-stream response-buffer-size))]
+                    (client-handler response-stream response-buffer-size))
+          logger (when (some? log-activity)
+                   (LoggingHandler.
+                    "aleph-client"
+                    ^LogLevel (coerce-log-level log-activity)))]
       (doto pipeline
         (.addLast "http-client"
           (HttpClientCodec.
@@ -394,6 +423,7 @@
             max-chunk-size
             false
             false))
+        (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
         (.addLast "handler" ^ChannelHandler handler)
         (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
@@ -408,6 +438,8 @@
               "pending-proxy-connection"
               ^ChannelHandler
               (pending-proxy-connection-handler response-stream)))))
+      (when (some? logger)
+        (.addFirst pipeline "activity-logger" logger))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]
@@ -468,20 +500,43 @@
                                           (assoc req :uri (:request-url req))
                                           req))]
                 (when-not (.get (.headers req') "Host")
-                  (HttpHeaders/setHost req' (str host (when explicit-port? (str ":" port)))))
+                  (.set (.headers req') HttpHeaderNames/HOST (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
-                  (HttpHeaders/setKeepAlive req' keep-alive?))
+                  (HttpUtil/setKeepAlive req' keep-alive?))
                 (when (and (non-tunnel-proxy? proxy-options')
                         (get proxy-options :keep-alive? true)
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
-                (let [body (if-let [parts (get req :multipart)]
-                             (let [boundary (multipart/boundary)
-                                   content-type (str "multipart/form-data; boundary=" boundary)]
-                               (HttpHeaders/setHeader req' "Content-Type" content-type)
-                               (multipart/encode-body boundary parts))
-                             (get req :body))]
+                (let [body (:body req)
+                      parts (:multipart req)
+                      multipart? (some? parts)
+                      [req' body] (cond
+                                    ;; RFC #7231 4.3.8. TRACE
+                                    ;; A client MUST NOT send a message body...
+                                    (= :trace (:request-method req))
+                                    (do
+                                      (when (or (some? body) multipart?)
+                                        (log/warn "TRACE request body was omitted"))
+                                      [req' nil])
+
+                                    (not multipart?)
+                                    [req' body]
+
+                                    :else
+                                    (multipart/encode-request req' parts))]
+
+                  (when-let [save-message (get req :aleph/save-request-message)]
+                    ;; debug purpose only
+                    ;; note, that req' is effectively mutable, so
+                    ;; it will "capture" all changes made during "send-message"
+                    ;; execution
+                    (reset! save-message req'))
+
+                  (when-let [save-body (get req :aleph/save-request-body)]
+                    ;; might be different in case we use :multipart
+                    (reset! save-body body))
+
                   (netty/safe-execute ch
                     (http/send-message ch true ssl? req' body))))
 
@@ -568,7 +623,8 @@
        :channel-inactive
        ([_ ctx]
          (when (realized? d)
-           (s/close! @d))
+           ;; close only on success
+           (d/chain' d s/close!))
          (.fireChannelInactive ctx))
 
        :channel-active
@@ -585,33 +641,39 @@
              (cond
 
                (not (.isHandshakeComplete handshaker))
-               (d/chain'
-                 (netty/wrap-future (.processHandshake handshaker ch msg))
-                 (fn [_]
-                   (let [out (netty/sink ch false
-                               (fn [c]
-                                 (if (instance? CharSequence c)
-                                   (TextWebSocketFrame. (bs/to-string c))
-                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
-                               (fn [] @desc))]
+               (-> (netty/wrap-future (.processHandshake handshaker ch msg))
+                   (d/chain'
+                     (fn [_]
+                       (let [out (netty/sink ch false
+                                             (fn [c]
+                                               (if (instance? CharSequence c)
+                                                 (TextWebSocketFrame. (bs/to-string c))
+                                                 (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
+                                             (fn [] @desc))]
 
-                     (d/success! d
-                       (doto
-                         (s/splice out @in)
-                         (reset-meta! {:aleph/channel ch})))
+                         (d/success! d
+                                     (doto
+                                       (s/splice out @in)
+                                       (reset-meta! {:aleph/channel ch})))
 
-                     (s/on-drained @in
-                       #(when (.isOpen ch)
-                         (d/chain'
-                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                           (fn [_] (netty/close ch))))))))
+                         (s/on-drained @in
+                                       #(when (.isOpen ch)
+                                          (d/chain'
+                                            (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                                            (fn [_] (netty/close ctx))))))))
+                   (d/catch'
+                     (fn [ex]
+                       ;; handle handshake exception
+                       (d/error! d ex)
+                       (s/close! @in)
+                       (netty/close ctx))))
 
                (instance? FullHttpResponse msg)
                (let [rsp ^FullHttpResponse msg]
                  (throw
                    (IllegalStateException.
                      (str "unexpected HTTP response, status: "
-                       (.getStatus rsp)
+                       (.status rsp)
                        ", body: '"
                        (bs/to-string (.content rsp))
                        "'"))))
@@ -650,6 +712,7 @@
   [uri
    {:keys [raw-stream?
            insecure?
+           ssl-context
            headers
            local-address
            bootstrap-transform
@@ -694,9 +757,10 @@
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))
         (when ssl?
-          (if insecure?
-            (netty/insecure-ssl-client-context)
-            (netty/ssl-client-context)))
+          (or ssl-context
+            (if insecure?
+              (netty/insecure-ssl-client-context)
+              (netty/ssl-client-context))))
         bootstrap-transform
         (InetSocketAddress.
           (.getHost uri)

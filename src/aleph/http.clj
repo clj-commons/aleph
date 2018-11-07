@@ -33,6 +33,7 @@
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object if an SSL connection is desired |
+   | `manual-ssl?` | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `executor` | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
    | `shutdown-executor?` | if `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true`.
@@ -117,6 +118,7 @@
    | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks
+   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
 
    Supported `proxy-options` are
 
@@ -191,6 +193,7 @@
    |:---|:---
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `insecure?` | if `true`, the certificates for `wss://` will be ignored.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `extensions?` | if `true`, the websocket extensions will be supported.
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocols.
    | `headers` | the headers that should be included in the handshake
@@ -235,7 +238,8 @@
      | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
      | `connection-timeout` | timeout in milliseconds for the connection to become established
      | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection
-     | `read-timeout` | timeout in milliseconds for the response to be completed"
+     | `read-timeout` | timeout in milliseconds for the response to be completed
+     | `follow-redirects?` | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`"
     [{:keys [pool
              middleware
              pool-timeout
@@ -247,8 +251,7 @@
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
-           connection-timeout 6e4 ;; 60 seconds
-           follow-redirects? true}
+           connection-timeout 6e4} ;; 60 seconds
       :as req}]
 
     (executor/with-executor response-executor

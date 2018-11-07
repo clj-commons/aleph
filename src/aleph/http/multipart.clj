@@ -1,19 +1,41 @@
 (ns aleph.http.multipart
   (:require
-    [clojure.core :as cc]
-    [byte-streams :as bs]
-    [aleph.http.encoding :refer [encode]])
+   [clojure.core :as cc]
+   [byte-streams :as bs]
+   [aleph.http.encoding :refer [encode]]
+   [aleph.http.core :as http-core]
+   [aleph.netty :as netty]
+   [manifold.stream :as s]
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d])
   (:import
-    [java.util
-     Locale]
-    [java.io
-     File]
-    [java.nio
-     ByteBuffer]
-    [java.net
-     URLConnection]
-    [io.netty.util.internal
-     ThreadLocalRandom]))
+   [java.util
+    Locale]
+   [java.io
+    File]
+   [java.nio
+    ByteBuffer]
+   [java.nio.charset
+    Charset]
+   [java.net
+    URLConnection]
+   [io.netty.util.internal
+    ThreadLocalRandom]
+   [io.netty.handler.codec.http
+    DefaultHttpContent
+    DefaultHttpRequest
+    FullHttpRequest
+    HttpConstants]
+   [io.netty.handler.codec.http.multipart
+    Attribute
+    MemoryAttribute
+    FileUpload
+    HttpDataFactory
+    DefaultHttpDataFactory
+    HttpPostRequestDecoder
+    HttpPostRequestEncoder
+    InterfaceHttpData
+    InterfaceHttpData$HttpDataType]))
 
 (defn boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
@@ -21,9 +43,9 @@
 (defn mime-type-descriptor
   [^String mime-type ^String encoding]
   (str
-    (-> (or mime-type "application/octet-stream") .trim (.toLowerCase Locale/US))
-    (when encoding
-      (str ";charset=" encoding))))
+   (-> (or mime-type "application/octet-stream") .trim (.toLowerCase Locale/US))
+   (when encoding
+     (str "; charset=" encoding))))
 
 (defn populate-part
   "Generates a part map of the appropriate format"
@@ -82,7 +104,9 @@
       (.put ^ByteBuffer body)
       (.flip))))
 
-(defn encode-body
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  encode-body
   ([parts]
     (encode-body (boundary) parts))
   ([^String boundary parts]
@@ -102,3 +126,125 @@
       (.put buf (bs/to-byte-buffer "--"))
       (.flip buf)
       (bs/to-byte-array buf))))
+
+(defn encode-request [^DefaultHttpRequest req parts]
+  (let [^HttpPostRequestEncoder encoder (HttpPostRequestEncoder. req true)]
+    (doseq [{:keys [part-name content mime-type charset name]} parts]
+      (if (instance? File content)
+        (let [filename (.getName ^File content)
+              name (or name filename)
+              mime-type (or mime-type
+                            (URLConnection/guessContentTypeFromName filename))
+              content-type (mime-type-descriptor mime-type charset)]
+          (.addBodyFileUpload encoder
+                              part-name
+                              name
+                              content
+                              content-type
+                              false))
+        (let [^Charset charset (cond
+                                 (nil? charset)
+                                 HttpConstants/DEFAULT_CHARSET
+
+                                 (string? charset)
+                                 (Charset/forName charset)
+
+                                 (instance? Charset charset)
+                                 charset)
+              attr (if (string? content)
+                     (MemoryAttribute. ^String part-name ^String content charset)
+                     (doto (MemoryAttribute. ^String part-name charset)
+                       (.addContent (netty/to-byte-buf content) true)))]
+          (.addBodyHttpData encoder attr))))
+    (let [req' (.finalizeRequest encoder)]
+      [req' (when (.isChunked encoder) encoder)])))
+
+(defmulti http-data->map
+  (fn [^InterfaceHttpData data]
+    (.getHttpDataType data)))
+
+(defmethod http-data->map InterfaceHttpData$HttpDataType/Attribute
+  [^Attribute attr]
+  (let [content (.getValue attr)]
+    {:part-name (.getName attr)
+     :content content
+     :name nil
+     :charset (-> attr .getCharset .toString)
+     :mime-type nil
+     :transfer-encoding nil
+     :memory? (.isInMemory attr)
+     :file? false
+     :file nil
+     :size (count content)}))
+
+(defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
+  [^FileUpload data]
+  (let [memory? (.isInMemory data)]
+    {:part-name (.getName data)
+     :content (when memory?
+                (bs/to-input-stream (netty/acquire (.content data))))
+     :name (.getFilename data)
+     :charset (-> data .getCharset .toString)
+     :mime-type (.getContentType data)
+     :transfer-encoding (.getContentTransferEncoding data)
+     :memory? memory?
+     :file? true
+     :file (when-not memory? (.getFile data))
+     :size (.length data)}))
+
+(defn- read-attributes [^HttpPostRequestDecoder decoder parts]
+  (while (.hasNext decoder)
+    (s/put! parts (http-data->map (.next decoder)))))
+
+(defn decode-request
+  "Takes a ring request and returns a manifold stream which yields
+   parts of the mutlipart/form-data encoded body. In case the size of
+   a part content exceeds `:memory-limit` limit (16KB by default),
+   corresponding payload would be written to a temp file. Check `:memory?`
+   flag to know whether content might be read directly from `:content` or
+   should be fetched from the file specified in `:file`.
+
+   Note, that if your handler works with multipart requests only,
+   it's better to set `:raw-stream?` to `true` to avoid additional
+   input stream coercion."
+  ([req] (decode-request req {}))
+  ([{:keys [body] :as req}
+    {:keys [body-buffer-size
+            memory-limit]
+     :or {body-buffer-size 65536
+          memory-limit DefaultHttpDataFactory/MINSIZE}}]
+   (let [body (if (s/stream? body)
+                body
+                (netty/to-byte-buf-stream body body-buffer-size))
+         destroyed? (atom false)
+         req' (http-core/ring-request->netty-request req)
+         factory (DefaultHttpDataFactory. (long memory-limit))
+         decoder (HttpPostRequestDecoder. factory req')
+         parts (s/stream)]
+
+     ;; on each HttpContent chunk, put it into the decoder
+     ;; and resume our attempts to get the next attribute available
+     (s/connect-via
+      body
+      (fn [chunk]
+        (let [content (DefaultHttpContent. chunk)]
+          (.offer decoder content)
+          (read-attributes decoder parts)
+          ;; note, that releasing chunk right here relies on
+          ;; the internals of the decoder. in case those
+          ;; internal are changed in future, this flow of
+          ;; manipulations should be also reconsidered
+          (netty/release chunk)
+          (d/success-deferred true)))
+      parts)
+
+     (s/on-closed
+      parts
+      (fn []
+        (when (compare-and-set! destroyed? false true)
+          (try
+            (.destroy decoder)
+            (catch Exception e
+              (log/warn e "exception when cleaning up multipart decoder"))))))
+
+     parts)))
