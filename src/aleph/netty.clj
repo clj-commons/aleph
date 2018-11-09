@@ -206,24 +206,35 @@
   (when f
     (if (.isSuccess f)
       (d/success-deferred (.getNow f) nil)
-      (let [d (d/deferred nil)]
+      (let [d (d/deferred nil)
+            ;; workaround for the issue with executing RT.readString
+            ;; on a Netty thread that doesn't have appropriate class loader
+            ;; more information here:
+            ;; https://github.com/ztellman/aleph/issues/365
+            class-loader (.deref clojure.lang.Compiler/LOADER)]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
-              (cond
-                (.isSuccess f)
-                (d/success! d (.getNow f))
+              (try
+                (. clojure.lang.Var
+                   (pushThreadBindings {clojure.lang.Compiler/LOADER
+                                        class-loader}))
+                (cond
+                  (.isSuccess f)
+                  (d/success! d (.getNow f))
 
-                (.isCancelled f)
-                (d/error! d (CancellationException. "future is cancelled."))
+                  (.isCancelled f)
+                  (d/error! d (CancellationException. "future is cancelled."))
 
-                (some? (.cause f))
-                (if (instance? java.nio.channels.ClosedChannelException (.cause f))
-                  (d/success! d false)
-                  (d/error! d (.cause f)))
+                  (some? (.cause f))
+                  (if (instance? java.nio.channels.ClosedChannelException (.cause f))
+                    (d/success! d false)
+                    (d/error! d (.cause f)))
 
-                :else
-                (d/error! d (IllegalStateException. "future in unknown state"))))))
+                  :else
+                  (d/error! d (IllegalStateException. "future in unknown state")))
+                (finally
+                  (. clojure.lang.Var (popThreadBindings)))))))
         d))))
 
 (defn allocate [x]
@@ -1133,8 +1144,8 @@
               (-> ch .close .sync)
               (.shutdownGracefully group)
               (when on-close
-                (d/chain
-                 (.terminationFuture group)
+                (d/chain'
+                 (wrap-future (.terminationFuture group))
                  (fn [_] (on-close))))))
           AlephServer
           (port [_]
@@ -1161,7 +1172,8 @@
             (when (compare-and-set! closed? false true)
               (let [_ (.close ch)]
                 (-> (.closeFuture ch)
-                    (d/chain
+                    wrap-future
+                    (d/chain'
                      (fn [_]
                        ;; on exception just move to the next stage (shutting down group)
                        (try
@@ -1181,8 +1193,8 @@
                                              quite-period
                                              event-loop-shutdown-timeout
                                              TimeUnit/MILLISECONDS)
-                        (d/chain
-                         (.terminationFuture group)
+                        (d/chain'
+                         (wrap-future (.terminationFuture group))
                          (fn [_]
                            (when on-close (on-close))
                            (d/success! shutdown-ready true))))))))
