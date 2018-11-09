@@ -211,7 +211,11 @@
             ;; on a Netty thread that doesn't have appropriate class loader
             ;; more information here:
             ;; https://github.com/ztellman/aleph/issues/365
-            class-loader (.deref clojure.lang.Compiler/LOADER)]
+            ;; to avoid if-branch here we can set loader in
+            ;; manifold threads factory
+            class-loader (if (.isBound clojure.lang.Compiler/LOADER)
+                           (.deref clojure.lang.Compiler/LOADER)
+                           (clojure.lang.RT/makeClassLoader))]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
