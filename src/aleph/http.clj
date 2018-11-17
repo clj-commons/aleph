@@ -254,92 +254,92 @@
            connection-timeout 6e4} ;; 60 seconds
       :as req}]
 
-    (executor/with-executor response-executor
-      ((middleware
-         (fn [req]
-           (let [k (client/req->domain req)
-                 start (System/currentTimeMillis)]
+    ((middleware
+      (fn [req]
+        (let [k (client/req->domain req)
+              start (System/currentTimeMillis)]
 
-             ;; acquire a connection
-             (-> (flow/acquire pool k)
-               (maybe-timeout! pool-timeout)
+          ;; acquire a connection
+          (-> (flow/acquire pool k)
+              (maybe-timeout! pool-timeout)
 
-               ;; pool timeout triggered
-               (d/catch' TimeoutException
-                 (fn [^Throwable e]
-                   (d/error-deferred (PoolTimeoutException. e))))
+              ;; pool timeout triggered
+              (d/catch' TimeoutException
+                  (fn [^Throwable e]
+                    (d/error-deferred (PoolTimeoutException. e))))
 
-               (d/chain'
-                 (fn [conn]
+              (d/chain'
+               (fn [conn]
 
-                   ;; get the wrapper for the connection, which may or may not be realized yet
-                   (-> (first conn)
+                 ;; get the wrapper for the connection, which may or may not be realized yet
+                 (-> (first conn)
 
                      (maybe-timeout! connection-timeout)
 
                      ;; connection timeout triggered, dispose of the connetion
                      (d/catch' TimeoutException
-                       (fn [^Throwable e]
-                         (flow/dispose pool k conn)
-                         (d/error-deferred (ConnectionTimeoutException. e))))
+                         (fn [^Throwable e]
+                           (flow/dispose pool k conn)
+                           (d/error-deferred (ConnectionTimeoutException. e))))
 
                      ;; connection failed, bail out
                      (d/catch'
-                       (fn [e]
-                         (flow/dispose pool k conn)
-                         (d/error-deferred e)))
+                         (fn [e]
+                           (flow/dispose pool k conn)
+                           (d/error-deferred e)))
 
                      ;; actually make the request now
                      (d/chain'
 
-                       (fn [conn']
+                      (fn [conn']
 
-                         (when-not (nil? conn')
-                           (let [end (System/currentTimeMillis)]
-                             (-> (conn' req)
-                               (maybe-timeout! request-timeout)
+                        (when-not (nil? conn')
+                          (let [end (System/currentTimeMillis)]
+                            (-> (conn' req)
+                                (d/onto response-executor)
+                                (maybe-timeout! request-timeout)
 
-                               ;; request timeout triggered, dispose of the connection
-                               (d/catch' TimeoutException
-                                 (fn [^Throwable e]
-                                   (flow/dispose pool k conn)
-                                   (d/error-deferred (RequestTimeoutException. e))))
+                                ;; request timeout triggered, dispose of the connection
+                                (d/catch' TimeoutException
+                                    (fn [^Throwable e]
+                                      (flow/dispose pool k conn)
+                                      (d/error-deferred (RequestTimeoutException. e))))
 
-                               ;; request failed, dispose of the connection
-                               (d/catch'
-                                 (fn [e]
-                                   (flow/dispose pool k conn)
-                                   (d/error-deferred e)))
+                                ;; request failed, dispose of the connection
+                                (d/catch'
+                                    (fn [e]
+                                      (flow/dispose pool k conn)
+                                      (d/error-deferred e)))
 
-                               ;; clean up the response
-                               (d/chain'
+                                ;; clean up the response
+                                (d/chain'
                                  (fn [rsp]
 
                                    ;; only release the connection back once the response is complete
                                    (-> (:aleph/complete rsp)
-                                     (maybe-timeout! read-timeout)
+                                       (maybe-timeout! read-timeout)
 
-                                     (d/catch' TimeoutException
-                                       (fn [^Throwable e]
-                                         (flow/dispose pool k conn)
-                                         (d/error-deferred (ReadTimeoutException. e))))
+                                       (d/catch' TimeoutException
+                                           (fn [^Throwable e]
+                                             (flow/dispose pool k conn)
+                                             (d/error-deferred (ReadTimeoutException. e))))
 
-                                     (d/chain'
-                                       (fn [early?]
-                                         (if (or early?
-                                               (not (:aleph/keep-alive? rsp))
-                                               (<= 400 (:status rsp)))
-                                           (flow/dispose pool k conn)
-                                           (flow/release pool k conn)))))
+                                       (d/chain'
+                                        (fn [early?]
+                                          (if (or early?
+                                                  (not (:aleph/keep-alive? rsp))
+                                                  (<= 400 (:status rsp)))
+                                            (flow/dispose pool k conn)
+                                            (flow/release pool k conn)))))
                                    (-> rsp
-                                     (dissoc :aleph/complete)
-                                     (assoc :connection-time (- end start)))))))))
+                                       (dissoc :aleph/complete)
+                                       (assoc :connection-time (- end start)))))))))
 
-                       (fn [rsp]
-                         (->> rsp
-                           (middleware/handle-cookies req)
-                           (middleware/handle-redirects request req)))))))))))
-        req))))
+                      (fn [rsp]
+                        (->> rsp
+                             (middleware/handle-cookies req)
+                             (middleware/handle-redirects request req)))))))))))
+     req)))
 
 (defn- req
   ([method url]
