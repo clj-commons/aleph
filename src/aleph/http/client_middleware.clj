@@ -252,9 +252,9 @@
     type))
 
 (defn wrap-exceptions
-  "Middleware that throws a slingshot exception if the response is not a
-  regular response. If :throw-entire-message? is set to true, the entire
-  response is used as the message, instead of just the status number."
+  "Middleware that throws response as an ExceptionInfo if the response has
+  unsuccessful status code. :throw-exceptions set to false in the request
+  disables this middleware."
   [client]
   (fn [req]
     (d/let-flow' [{:keys [status body] :as rsp} (client req)]
