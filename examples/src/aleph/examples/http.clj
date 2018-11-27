@@ -52,8 +52,8 @@
 ;; deferred, we extend Compojure's `Renderable` protocol to pass the deferred
 ;; through unchanged so it can be handled asynchronously.
 (extend-protocol Renderable
-  manifold.deferred.IDeferred
-  (render [d _] d))
+  clojure.lang.IDeref
+  (render [d _] (d/->deferred d)))
 
 (defn delayed-hello-world-handler
   "Alternately, we can use a [core.async](https://github.com/clojure/core.async) goroutine to

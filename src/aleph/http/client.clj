@@ -33,8 +33,12 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
-    [io.netty.handler.stream ChunkedWriteHandler]
-    [io.netty.handler.codec.http FullHttpRequest]
+    [io.netty.handler.codec
+     TooLongFrameException]
+    [io.netty.handler.stream 
+     ChunkedWriteHandler]
+    [io.netty.handler.codec.http 
+     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -159,7 +163,13 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
+        (cond
+          ; could happens when io.netty.handler.codec.http.HttpObjectAggregator
+          ; is part of the pipeline
+          (instance? TooLongFrameException ex)
+          (s/put! response-stream ex)
+
+          (not (instance? IOException ex))
           (log/warn ex "error in HTTP client")))
 
       :channel-inactive
@@ -175,6 +185,18 @@
       ([_ ctx msg]
 
         (cond
+
+          ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
+          (instance? FullHttpResponse msg)
+          (let [^FullHttpResponse rsp msg
+                content (.content rsp)
+                c (d/deferred)
+                s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+            (s/on-closed s #(d/success! c true))
+            (s/put! s (netty/buf->array content))
+            (netty/release content)
+            (handle-response rsp c s)
+            (s/close! s))
 
           (instance? HttpResponse msg)
           (let [rsp msg]
@@ -690,6 +712,7 @@
   [uri
    {:keys [raw-stream?
            insecure?
+           ssl-context
            headers
            local-address
            bootstrap-transform
@@ -734,9 +757,10 @@
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))
         (when ssl?
-          (if insecure?
-            (netty/insecure-ssl-client-context)
-            (netty/ssl-client-context)))
+          (or ssl-context
+            (if insecure?
+              (netty/insecure-ssl-client-context)
+              (netty/ssl-client-context))))
         bootstrap-transform
         (InetSocketAddress.
           (.getHost uri)
