@@ -949,7 +949,7 @@
               ;; coerce the response body
               (fn [{:keys [body] :as rsp}]
                 (let [rsp' (handle-response-debug req' rsp)]
-                  (if (nil? body)
-                    rsp'
+                  (if (and (some? body) (some? (:as req')))
                     (d/future-with (or executor (ex/wait-pool))
-                      (coerce-response-body req' rsp'))))))))))))
+                      (coerce-response-body req' rsp'))
+                    rsp'))))))))))
