@@ -1,7 +1,6 @@
 (ns aleph.http.client-middleware
   "This middleware is adapted from clj-http, whose license is amenable to this sort of
    copy/pastery"
-  (:refer-clojure :exclude [update])
   (:require
     [potemkin :as p]
     [clojure.string :as str]
@@ -110,25 +109,8 @@
 
 ;;;
 
-(defn update [m k f & args]
-  (assoc m k (apply f (m k) args)))
-
 (defn when-pos [v]
   (when (and v (pos? v)) v))
-
-(defn dissoc-in
-  "Dissociates an entry from a nested associative structure returning a new
-  nested structure. keys is a sequence of keys. Any empty maps that result
-  will not be present in the new structure."
-  [m [k & ks :as keys]]
-  (if ks
-    (if-let [nextmap (clojure.core/get m k)]
-      (let [newmap (dissoc-in nextmap ks)]
-        (if (seq newmap)
-          (assoc m k newmap)
-          (dissoc m k)))
-      m)
-    (dissoc m k)))
 
 (defn url-encode
   ([s]
