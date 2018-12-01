@@ -567,6 +567,8 @@
                    (netty/write-and-flush ch (PongWebSocketFrame. body)))
 
                  (instance? CloseWebSocketFrame msg)
+                 ;; reusing the same buffer
+                 ;; will be deallocated by Netty
                  (.close handshaker ch msg)
 
                  :else
