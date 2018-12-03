@@ -175,7 +175,8 @@
      :memory? (.isInMemory attr)
      :file? false
      :file nil
-     :size (count content)}))
+     :size (count content)
+     :release #(netty/release attr)}))
 
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
@@ -190,11 +191,13 @@
      :memory? memory?
      :file? true
      :file (when-not memory? (.getFile data))
-     :size (.length data)}))
+     :size (.length data)
+     :release #(netty/release data)}))
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
   (while (.hasNext decoder)
     (when-let [^InterfaceHttpData data (.next decoder)]
+      (.removeHttpDataFromClean decoder data)
       (s/put! parts (http-data->map data)))))
 
 (defn decode-request
@@ -204,6 +207,20 @@
    corresponding payload would be written to a temp file. Check `:memory?`
    flag to know whether content might be read directly from `:content` or
    should be fetched from the file specified in `:file`.
+
+   Each part contains `:release` callback that should be used to cleanup
+   allocated buffers and temp files (if any). Typical use case would look like:
+
+   ```
+   (defn file-upload-handler [req]
+     (let [chunks (multipart/decode-request req)]
+       (d/chain'
+         (stream/take! chunks)
+         (fn [{:keys [file release] :as chunk}]
+           (io/copy file writer)
+           (release)
+           {:status 200 :body \"Succesfull!\"}))))
+   ```
 
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
@@ -244,6 +261,11 @@
       (fn []
         (when (compare-and-set! destroyed? false true)
           (try
+            ;; we're removing each received http data chunk
+            ;; from cleanup queue before pushing to `parts` stream,
+            ;; meaning that this `destroy` call would only cleanup
+            ;; those chunck that were not consumed for some reasons
+            ;; (i.e. the user closes the stream given earlier)
             (.destroy decoder)
             (catch Exception e
               (log/warn e "exception when cleaning up multipart decoder"))))))
