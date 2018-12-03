@@ -195,10 +195,22 @@
      :release #(netty/release data)}))
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
-  (while (.hasNext decoder)
-    (when-let [^InterfaceHttpData data (.next decoder)]
-      (.removeHttpDataFromClean decoder data)
-      (s/put! parts (http-data->map data)))))
+  (d/loop []
+    (if-not (.hasNext decoder)
+      (d/success-deferred true) ;; go for another chunk of body
+      (let [^InterfaceHttpData data (.next decoder)]
+        (if (nil? data)
+          ;; this probably could happen only in case of
+          ;; simultaneous access to the decoder object...
+          (d/success-deferred true)
+          (d/chain'
+           (s/put! parts (http-data->map data))
+           (fn [succeed?]
+             (if succeed?
+               (do
+                 (.removeHttpDataFromClean decoder data)
+                 (d/recur))
+               (d/success-deferred false)))))))))
 
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
@@ -252,8 +264,7 @@
           ;; release it here
           ;; https://github.com/netty/netty/blob/d05666ae2d2068da7ee031a8bfc1ca572dbcc3f8/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L329
           (netty/release chunk)
-          (read-attributes decoder parts)
-          (d/success-deferred true)))
+          (read-attributes decoder parts)))
       parts)
 
      (s/on-closed
