@@ -194,7 +194,8 @@
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
   (while (.hasNext decoder)
-    (s/put! parts (http-data->map (.next decoder)))))
+    (when-let [^InterfaceHttpData data (.next decoder)]
+      (s/put! parts (http-data->map data)))))
 
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
@@ -229,12 +230,12 @@
       (fn [chunk]
         (let [content (DefaultHttpContent. chunk)]
           (.offer decoder content)
-          (read-attributes decoder parts)
-          ;; note, that releasing chunk right here relies on
-          ;; the internals of the decoder. in case those
-          ;; internal are changed in future, this flow of
-          ;; manipulations should be also reconsidered
+          ;; note, that HttpPostRequestDecoder actually
+          ;; makes a copy of the content provided, so we can
+          ;; release it here
+          ;; https://github.com/netty/netty/blob/d05666ae2d2068da7ee031a8bfc1ca572dbcc3f8/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L329
           (netty/release chunk)
+          (read-attributes decoder parts)
           (d/success-deferred true)))
       parts)
 
