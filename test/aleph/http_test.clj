@@ -236,6 +236,13 @@
     (with-handler basic-handler
       (is (= 414 (:status @(http-get long-url)))))))
 
+(deftest test-overly-long-header
+  (let [url (str "http://localhost:" port)
+        long-header-value (apply str (repeat 1e5 "a"))
+        opts {:headers {"X-Long" long-header-value}}]
+    (with-handler basic-handler
+      (is (= 400 (:status @(http-get url opts)))))))
+
 (deftest test-echo
   (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5 1e6 1e7]]
