@@ -232,8 +232,9 @@
         deref))))
 
 (deftest test-overly-long-request
-  (with-handler basic-handler
-    (= 414 @(http-get (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))))))
+  (let [long-url (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))]
+    (with-handler basic-handler
+      (is (= 414 (:status @(http-get long-url)))))))
 
 (deftest test-echo
   (with-handler basic-handler
