@@ -212,6 +212,8 @@
 (defn uri-too-long? [^Throwable cause]
   (and
    (instance? TooLongFrameException cause)
+   ;; seems like there's no other way to distinguish too long
+   ;; URI from too long header or too large HTTP entity
    (str/starts-with? (.getMessage cause) "An HTTP line is larger than")))
 
 (defn reject-invalid-request [ctx ^HttpRequest req]
