@@ -29,6 +29,7 @@
      ChannelHandler
      ChannelPipeline]
     [io.netty.handler.stream ChunkedWriteHandler]
+    [io.netty.handler.codec TooLongFrameException]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
      HttpContent HttpHeaders HttpUtil
@@ -208,15 +209,23 @@
 (defn invalid-request? [^HttpRequest req]
   (-> req .decoderResult .isFailure))
 
+(defn uri-too-long? [^Throwable cause]
+  (and
+   (instance? TooLongFrameException cause)
+   (str/starts-with? (.getMessage cause) "An HTTP line is larger than")))
+
 (defn reject-invalid-request [ctx ^HttpRequest req]
-  (d/chain
-    (netty/write-and-flush ctx
-      (DefaultFullHttpResponse.
-        HttpVersion/HTTP_1_1
-        HttpResponseStatus/REQUEST_URI_TOO_LONG
-        (-> req .decoderResult .cause .getMessage netty/to-byte-buf)))
-    netty/wrap-future
-    (fn [_] (netty/close ctx))))
+  (let [^Throwable cause (-> req .decoderResult .cause)
+        status (if (uri-too-long? cause)
+                 HttpResponseStatus/REQUEST_URI_TOO_LONG
+                 HttpResponseStatus/BAD_REQUEST)
+        response (DefaultFullHttpResponse.
+                  HttpVersion/HTTP_1_1
+                  status
+                  (-> cause .getMessage netty/to-byte-buf))]
+    (-> (netty/write-and-flush ctx response)
+      netty/wrap-future
+      (d/chain' (fn [_] (netty/close ctx))))))
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
