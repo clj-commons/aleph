@@ -6,10 +6,12 @@
     [aleph
      [http :as http]
      [netty :as netty]
-     [flow :as flow]]
+     [flow :as flow]
+     [tcp :as tcp]]
     [byte-streams :as bs]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [clojure.string :as str])
   (:import
     [java.util.concurrent
      Executors]
@@ -242,6 +244,14 @@
         opts {:headers {"X-Long" long-header-value}}]
     (with-handler basic-handler
       (is (= 400 (:status @(http-get url opts)))))))
+
+(deftest test-invalid-http-version
+  (with-handler basic-handler
+    (let [client @(tcp/client {:host "localhost" :port port})
+          _ @(s/put! client "GET / HTTP/1.1 INVALID\r\n\r\n")
+          response (bs/to-string @(s/take! client))]
+      (is (str/starts-with? response "HTTP/1.1 400"))
+      (s/close! client))))
 
 (deftest test-echo
   (with-handler basic-handler
