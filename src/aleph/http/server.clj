@@ -535,45 +535,40 @@
        :channel-read
        ([_ ctx msg]
          (let [ch (.channel ctx)]
-           (if-not (instance? WebSocketFrame msg)
+           (cond
+             (instance? TextWebSocketFrame msg)
+             (let [text (.text ^TextWebSocketFrame msg)]
+               ;; working with text now, so we do not need
+               ;; ByteBuf inside TextWebSocketFrame
+               ;; note, that all *WebSocketFrame classes are
+               ;; subclasses of DefaultByteBufHolder, meaning
+               ;; there's no difference between releasing
+               ;; frame & frame's content
+               (netty/release msg)
+               (netty/put! ch in text))
+
+             (instance? BinaryWebSocketFrame msg)
+             (let [body (.content ^BinaryWebSocketFrame msg)]
+               (netty/put! ch in
+                 (if raw-stream?
+                   body
+                   ;; copied data into byte array, deallocating ByteBuf
+                   (netty/release-buf->array body))))
+
+             (instance? PingWebSocketFrame msg)
+             (let [body (.content ^PingWebSocketFrame msg)]
+               ;; reusing the same buffer
+               ;; will be deallocated by Netty
+               (netty/write-and-flush ch (PongWebSocketFrame. body)))
+
+             (instance? CloseWebSocketFrame msg)
+             ;; reusing the same buffer
+             ;; will be deallocated by Netty
+             (.close handshaker ch msg)
+
+             :else
              ;; no need to release buffer when passing to a next handler
-             (.fireChannelRead ctx msg)
-             (let [^WebSocketFrame msg msg]
-               (cond
-
-                 (instance? TextWebSocketFrame msg)
-                 (let [text (.text ^TextWebSocketFrame msg)]
-                   ;; working with text now, so we do not need
-                   ;; ByteBuf inside TextWebSocketFrame
-                   ;; note, that all *WebSocketFrame classes are
-                   ;; subclasses of DefaultByteBufHolder, meaning
-                   ;; there's no difference between releasing
-                   ;; frame & frame's content
-                   (netty/release msg)
-                   (netty/put! ch in text))
-
-                 (instance? BinaryWebSocketFrame msg)
-                 (let [body (.content ^BinaryWebSocketFrame msg)]
-                   (netty/put! ch in
-                     (if raw-stream?
-                       body
-                       ;; copied data into byte array, deallocating ByteBuf
-                       (netty/release-buf->array body))))
-
-                 (instance? PingWebSocketFrame msg)
-                 (let [body (.content ^PingWebSocketFrame msg)]
-                   ;; reusing the same buffer
-                   ;; will be deallocated by Netty
-                   (netty/write-and-flush ch (PongWebSocketFrame. body)))
-
-                 (instance? CloseWebSocketFrame msg)
-                 ;; reusing the same buffer
-                 ;; will be deallocated by Netty
-                 (.close handshaker ch msg)
-
-                 :else
-                 ;; no need to release buffer when passing to a next handler
-                 (.fireChannelRead ctx msg)))))))]))
+             (.fireChannelRead ctx msg)))))]))
 
 ;; note, as we set `keep-alive?` to `false`, `send-message` will close the connection
 ;; after writes are done, which is exactly what we expect to happen
