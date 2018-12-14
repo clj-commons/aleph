@@ -8,7 +8,7 @@ Aleph exposes data from the network as a [Manifold](https://github.com/ztellman/
 
 ### HTTP
 
-Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/ztellman/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/ztellman/manifold/blob/master/docs/deferred.md#let-flow) operator. `aleph.http/wrap-ring-async-handler` helper might be used to covert async 3-arity Ring handler to Aleph-compliant one.
+Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/ztellman/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/ztellman/manifold/blob/master/docs/deferred.md#let-flow) operator. `aleph.http/wrap-ring-async-handler` helper can be used to covert async 3-arity Ring handler to Aleph-compliant one.
 
 ```clj
 (require '[aleph.http :as http])
