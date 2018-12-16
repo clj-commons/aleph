@@ -388,3 +388,14 @@
    rather than a comma-delimited string."
   [^aleph.http.core.HeaderMap headers ^String k]
   (-> headers ^io.netty.handler.codec.http.HttpHeaders (.headers) (.getAll k)))
+
+(defn wrap-ring-async-handler
+  "Converts given asynchronous Ring handler to Aleph-compliant handler.
+
+   More information about asynchronous Ring handlers and middleware:
+   https://www.booleanknot.com/blog/2016/07/15/asynchronous-ring.html"
+  [handler]
+  (fn [request]
+    (let [response (d/deferred)]
+      (handler request #(d/success! response %) #(d/error! response %))
+      response)))
