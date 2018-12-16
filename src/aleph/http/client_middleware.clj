@@ -131,9 +131,9 @@
     (dissoc m k)))
 
 (defn url-encode
-  ([s]
+  ([^String s]
     (url-encode s "UTF-8"))
-  ([s encoding]
+  ([^String s ^String encoding]
     (URLEncoder/encode s encoding)))
 
 (let [param-? (memoize #(keyword (str (name %) "?")))]
