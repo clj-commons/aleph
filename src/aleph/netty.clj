@@ -924,8 +924,7 @@
    on-close
    ^SocketAddress socket-address
    epoll?]
-  (let [num-cores      (.availableProcessors (Runtime/getRuntime))
-        num-threads    (* 2 num-cores)
+  (let [num-threads    (get-default-event-loop-threads)
         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
         closed?        (atom false)
 
