@@ -250,10 +250,21 @@
    flag to know whether content might be read directly from `:content` or
    should be fetched from the file specified in `:file`.
 
-   Each part contains `:release` callback that should be used to cleanup
-   allocated buffers and temp files (if any). Typical use case would look like:
+   Each part should be released using `netty/release` helper to cleanup
+   allocated buffers and temp files (if any) as soon as the data is fully
+   consumed (i.e. temp file moved to a target location). Note, it's also
+   safer to close the stream of chunks manually to ensure all chunks that
+   were never read from the stream but were already consumed from the connection,
+   are also deallocated.
+
+   Typical usage looks like:
 
    ```
+   (require '[aleph.http.multipart :as multipart])
+   (require '[aleph.netty :as netty])
+   (require '[manifold.stream :as stream])
+   (require '[clojure.java.io :as io])
+
    (defn file-upload-handler [req]
      (let [chunks (multipart/decode-request req)]
        (d/chain'
