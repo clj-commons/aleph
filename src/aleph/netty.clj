@@ -838,9 +838,10 @@
                     (.optResourceEnabled opt-resources-enabled?)
                     (.ndots ndots)
                     (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?)
-                    (.resolvedAddressTypes (when (some? address-types)
-                                             (convert-address-types address-types))))
+                    (.recursionDesired recursion-desired?))
+
+            (some? address-types)
+            (.resolvedAddressTypes (convert-address-types address-types))
 
             (some? negative-ttl)
             (.negativeTtl negative-ttl)
