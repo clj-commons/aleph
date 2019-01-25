@@ -19,6 +19,7 @@
     Charset]
    [java.net
     URLConnection]
+   [io.netty.util ReferenceCounted]
    [io.netty.util.internal
     ThreadLocalRandom]
    [io.netty.handler.codec.http
@@ -159,6 +160,33 @@
     (let [req' (.finalizeRequest encoder)]
       [req' (when (.isChunked encoder) encoder)])))
 
+(defrecord MultipartChunk [part-name
+                           content
+                           name
+                           charset
+                           mime-type
+                           transfer-encoding
+                           memory?
+                           file?
+                           file
+                           size
+                           ^ReferenceCounted raw-http-data]
+  ReferenceCounted
+  (refCnt [_]
+    (.refCnt raw-http-data))
+  (retain [_]
+    (.retain raw-http-data))
+  (retain [_ increment]
+    (.retain raw-http-data increment))
+  (^ReferenceCounted touch [_]
+    (.touch raw-http-data))
+  (^ReferenceCounted touch [_ ^Object hint]
+    (.touch raw-http-data hint))
+  (release [_]
+    (.release raw-http-data))
+  (release [_ decrement]
+    (.release raw-http-data decrement)))
+
 (defmulti http-data->map
   (fn [^InterfaceHttpData data]
     (.getHttpDataType data)))
@@ -166,33 +194,35 @@
 (defmethod http-data->map InterfaceHttpData$HttpDataType/Attribute
   [^Attribute attr]
   (let [content (.getValue attr)]
-    {:part-name (.getName attr)
-     :content content
-     :name nil
-     :charset (-> attr .getCharset .toString)
-     :mime-type nil
-     :transfer-encoding nil
-     :memory? (.isInMemory attr)
-     :file? false
-     :file nil
-     :size (count content)
-     :release #(netty/release attr)}))
+    (map->MultipartChunk
+     {:part-name (.getName attr)
+      :content content
+      :name nil
+      :charset (-> attr .getCharset .toString)
+      :mime-type nil
+      :transfer-encoding nil
+      :memory? (.isInMemory attr)
+      :file? false
+      :file nil
+      :size (count content)
+      :raw-http-data attr})))
 
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
   (let [memory? (.isInMemory data)]
-    {:part-name (.getName data)
-     :content (when memory?
-                (bs/to-input-stream (netty/acquire (.content data))))
-     :name (.getFilename data)
-     :charset (-> data .getCharset .toString)
-     :mime-type (.getContentType data)
-     :transfer-encoding (.getContentTransferEncoding data)
-     :memory? memory?
-     :file? true
-     :file (when-not memory? (.getFile data))
-     :size (.length data)
-     :release #(netty/release data)}))
+    (map->MultipartChunk
+     {:part-name (.getName data)
+      :content (when memory?
+                 (bs/to-input-stream (netty/acquire (.content data))))
+      :name (.getFilename data)
+      :charset (-> data .getCharset .toString)
+      :mime-type (.getContentType data)
+      :transfer-encoding (.getContentTransferEncoding data)
+      :memory? memory?
+      :file? true
+      :file (when-not memory? (.getFile data))
+      :size (.length data)
+      :raw-http-data data})))
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
   (d/loop []
@@ -228,9 +258,10 @@
      (let [chunks (multipart/decode-request req)]
        (d/chain'
          (stream/take! chunks)
-         (fn [{:keys [file release] :as chunk}]
+         (fn [{:keys [file] :as chunk}]
            (io/copy file writer)
-           (release)
+           (netty/release chunk)
+           (stream/close! chunks)
            {:status 200 :body \"Succesfull!\"}))))
    ```
 

@@ -8,7 +8,8 @@
    [manifold.deferred :as d]
    [manifold.stream :as s]
    [clojure.string :as str]
-   [clojure.edn :as edn])
+   [clojure.edn :as edn]
+   [aleph.netty :as netty])
   (:import
    [java.io
     File]))
@@ -184,17 +185,17 @@
 (defn- pack-chunk [{:keys [content] :as chunk}]
   (-> chunk
       (coerce-chunk-content)
-      (dissoc :file :release)))
+      (dissoc :file :raw-http-data)))
 
 (defn- decode-handler [req]
   (let [req' (mp/decode-request req {:memory-limit 12})
         chunks (s/stream->seq req')
         body (pr-str (map pack-chunk chunks))]
-    (doseq [{:keys [release file content]} chunks]
+    (doseq [{:keys [file content] :as chunk} chunks]
       ;; we should be able to read file before removal (if any)
       (when (some? file)
         (is (some? (slurp (.getAbsolutePath ^java.io.File file)))))
-      (release)
+      (is (netty/release chunk))
       ;; temp file is now removed (if any)
       (when (some? file)
         (is (not (.exists ^java.io.File file)))))
