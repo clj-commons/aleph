@@ -38,7 +38,9 @@
     InterfaceHttpData
     InterfaceHttpData$HttpDataType]))
 
-(defn boundary []
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
 
 (defn mime-type-descriptor
@@ -48,7 +50,9 @@
    (when encoding
      (str "; charset=" encoding))))
 
-(defn populate-part
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  populate-part
   "Generates a part map of the appropriate format"
   [{:keys [part-name content mime-type charset transfer-encoding name]}]
   (let [file? (instance? File content)
@@ -80,7 +84,9 @@
 ;;
 ;; Note, that you can use transfer-encoding=nil or :binary to leave data "as is".
 ;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
-(defn part-headers [^String part-name ^String mime-type transfer-encoding name]
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
              (when name (str "; filename=\"" name "\""))
              "\r\n")
@@ -90,7 +96,9 @@
               (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) "\r\n"))]
     (bs/to-byte-buffer (str cd ct cte "\r\n"))))
 
-(defn encode-part
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  encode-part
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
   (let [headers (part-headers part-name mime-type transfer-encoding name)
