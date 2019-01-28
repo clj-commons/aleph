@@ -34,7 +34,7 @@
      IdleStateEvent]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
-     HttpContent HttpHeaders
+     HttpContent HttpHeaders HttpUtil
      HttpContentCompressor
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
@@ -110,7 +110,7 @@
       (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
 
       [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.4" "Keep-Alive" "Close"])]
+      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.6" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
     (let [[^HttpResponse rsp body]
@@ -362,7 +362,7 @@
               req
               @previous-response
               body
-              (HttpHeaders/isKeepAlive req))))]
+              (HttpUtil/isKeepAlive req))))]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -451,6 +451,7 @@
            bootstrap-transform
            pipeline-transform
            ssl-context
+           manual-ssl?
            shutdown-executor?
            epoll?
            compression?]
@@ -481,7 +482,7 @@
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (boolean ssl-context)))
+        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context))))
       ssl-context
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))

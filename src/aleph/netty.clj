@@ -4,6 +4,7 @@
     [byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
+    [manifold.executor :as e]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
     [primitive-math :as p]
@@ -21,7 +22,8 @@
      ChannelHandler FileRegion
      ChannelInboundHandler
      ChannelOutboundHandler
-     ChannelHandlerContext]
+     ChannelHandlerContext
+     ChannelInitializer]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
@@ -50,12 +52,16 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     GenericFutureListener Future DefaultThreadFactory]
+     GenericFutureListener Future]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
     [java.util.concurrent
-     ConcurrentHashMap CancellationException ScheduledFuture TimeUnit]
+     ConcurrentHashMap
+     CancellationException
+     ScheduledFuture
+     TimeUnit
+     ThreadFactory]
     [java.util.concurrent.atomic
      AtomicLong]
     [io.netty.util.internal.logging
@@ -629,19 +635,9 @@
         (.write ctx msg promise)))))
 
 (defn pipeline-initializer [pipeline-builder]
-  (channel-handler
-
-    :channel-registered
-    ([this ctx]
-      (let [pipeline (.pipeline ctx)]
-        (try
-          (.remove pipeline this)
-          (pipeline-builder pipeline)
-          (.fireChannelRegistered ctx)
-          (catch Throwable e
-            (log/warn e "Failed to initialize channel")
-            (.close ctx))))
-      (.fireChannelRegistered ctx))))
+  (proxy [ChannelInitializer] []
+    (initChannel [^Channel ch]
+      (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
 
 (defn instrument!
   [stream]
@@ -655,61 +651,6 @@
             (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
-
-;;;
-
-(potemkin/def-map-type HeaderMap
-  [^Headers headers
-   added
-   removed
-   mta]
-  (meta [_]
-    mta)
-  (with-meta [_ m]
-    (HeaderMap.
-      headers
-      added
-      removed
-      m))
-  (keys [_]
-    (set/difference
-      (set/union
-        (set (map str/lower-case (.names headers)))
-        (set (keys added)))
-      (set removed)))
-  (assoc [_ k v]
-    (HeaderMap.
-      headers
-      (assoc added k v)
-      (disj removed k)
-      mta))
-  (dissoc [_ k]
-    (HeaderMap.
-      headers
-      (dissoc added k)
-      (conj (or removed #{}) k)
-      mta))
-  (get [_ k default-value]
-    (if (contains? removed k)
-      default-value
-      (if-let [e (find added k)]
-        (val e)
-        (let [k' (str/lower-case (name k))
-              vs (.getAll headers k')]
-          (if (.isEmpty vs)
-            default-value
-            (if (p/== 1 (.size vs))
-              (.get vs 0)
-              (reduce
-                (fn [v s]
-                  (if v
-                    (str v "," s)
-                    s)
-                  vs)
-                nil))))))))
-
-(defn headers [^Headers h]
-  (HeaderMap. h nil nil nil))
 
 ;;;
 
@@ -787,18 +728,26 @@
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
+(defn ^ThreadFactory enumerating-thread-factory [prefix daemon?]
+  (let [num-threads (atom 0)]
+    (e/thread-factory
+     #(str prefix "-" (swap! num-threads inc))
+     (deliver (promise) nil)
+     nil
+     daemon?)))
+
 (def ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
 (def epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
-          thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
+          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
 (def nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
-          thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
+          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
 (defn convert-address-types [address-types]
@@ -979,7 +928,7 @@
    epoll?]
   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
         num-threads    (* 2 num-cores)
-        thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" false)
+        thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
         closed?        (atom false)
 
         ^EventLoopGroup group

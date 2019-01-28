@@ -83,7 +83,10 @@
           #(bus/publish! chatrooms room %)
           (->> conn
             (s/map #(str name ": " %))
-            (s/buffer 100)))))))
+            (s/buffer 100)))
+
+        ;; Compojure expects some sort of HTTP response, so just give it `nil`
+        nil))))
 
 (def handler
   (params/wrap-params

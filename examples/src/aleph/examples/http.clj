@@ -32,7 +32,7 @@
    :body "hello world!"})
 
 (defn delayed-hello-world-handler
-  "A non-standard response handler which returns a deferred which yields a Ring response
+  "A non-standard response handler that returns a deferred which yields a Ring response
    after one second.  In a typical Ring-compliant server, this would require holding onto a
    thread via `Thread.sleep()` or a similar mechanism, but the use of a deferred allows for
    the thread to be immediately released without an immediate response.
@@ -52,8 +52,8 @@
 ;; deferred, we extend Compojure's `Renderable` protocol to pass the deferred
 ;; through unchanged so it can be handled asynchronously.
 (extend-protocol Renderable
-  manifold.deferred.IDeferred
-  (render [d _] d))
+  clojure.lang.IDeref
+  (render [d _] (d/->deferred d)))
 
 (defn delayed-hello-world-handler
   "Alternately, we can use a [core.async](https://github.com/clojure/core.async) goroutine to
