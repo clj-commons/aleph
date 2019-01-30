@@ -366,13 +366,10 @@
     (send-contiguous-body ch msg' (:body resp))))
 
 (defn send-chunked-file [ch ^HttpMessage msg ^File file]
-  (when-let [ci (try
-                  (let [raf (RandomAccessFile. file "r")]
-                    (try-set-content-length! msg (.length raf))
-                    (HttpChunkedInput. (ChunkedFile. raf)))
-                  (catch FileNotFoundException e
-                    (send-internal-error ch msg e)
-                    nil))]
+  (let [raf (RandomAccessFile. file "r")
+        len (.length raf)
+        ci (HttpChunkedInput. (ChunkedFile. raf))]
+    (try-set-content-length! msg len)
     (netty/write ch msg)
     (netty/write-and-flush ch ci)))
 
@@ -381,15 +378,11 @@
   (netty/write-and-flush ch body))
 
 (defn send-file-region [ch ^HttpMessage msg ^File file]
-  (when-let [fr (try
-                  (let [raf (RandomAccessFile. file "r")
-                        len (.length raf)
-                        fc (.getChannel raf)]
-                    (try-set-content-length! msg len)
-                    (DefaultFileRegion. fc 0 len))
-                  (catch FileNotFoundException e
-                    (send-internal-error ch msg e)
-                    nil))]
+  (let [raf (RandomAccessFile. file "r")
+        len (.length raf)
+        fc (.getChannel raf)
+        fr (DefaultFileRegion. fc 0 len)]
+    (try-set-content-length! msg len)
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
@@ -397,16 +390,22 @@
 (defn send-file-body [ch ssl? ^HttpMessage msg ^File file]
   (cond
     ssl?
-    (send-streaming-body ch msg
-      (-> file
-        (bs/to-byte-buffers {:chunk-size 1e6})
-        s/->source))
+    (let [source (-> file
+                     (bs/to-byte-buffers {:chunk-size 1e6})
+                     s/->source)]
+      (send-streaming-body ch msg source))
 
     (chunked-writer-enabled? ch)
     (send-chunked-file ch msg file)
 
     :else
     (send-file-region ch msg file)))
+
+(defn safe-send-file-body [ch ssl? ^HttpMessage msg ^File file]
+  (try
+    (send-file-body ch ssl? msg file)
+    (catch FileNotFoundException e
+      (send-internal-error ch msg e))))
 
 (let [ary-class (class (byte-array 0))
 
@@ -439,7 +438,7 @@
               (send-chunked-body ch msg body)
 
               (instance? File body)
-              (send-file-body ch ssl? msg body)
+              (safe-send-file-body ch ssl? msg body)
 
               :else
               (let [class-name (.getName (class body))]
