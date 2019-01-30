@@ -94,18 +94,7 @@
         TimeUnit/MILLISECONDS)
       (.get ref))))
 
-(defn error-response [^Throwable e]
-  (log/error e "error in HTTP handler")
-  {:status 500
-   :headers {"content-type" "text/plain"}
-   :body (let [w (java.io.StringWriter.)]
-           (.printStackTrace e (java.io.PrintWriter. w))
-           (str w))})
-
-(let [[server-name connection-name date-name]
-      (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
-
-      [server-value keep-alive-value close-value]
+(let [[server-value keep-alive-value close-value]
       (map #(HttpHeaders/newEntity %) ["Aleph/0.4.6" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
@@ -114,27 +103,27 @@
             [(http/ring-response->netty-response rsp)
              (get rsp :body)]
             (catch Throwable e
-              (let [rsp (error-response e)]
+              (let [rsp (http/error-response e)]
                 [(http/ring-response->netty-response rsp)
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
         (let [headers (.headers rsp)]
 
-          (when-not (.contains headers ^CharSequence server-name)
-            (.set headers ^CharSequence server-name server-value))
+          (when-not (.contains headers ^CharSequence http/server-name)
+            (.set headers ^CharSequence http/server-name server-value))
 
-          (when-not (.contains headers ^CharSequence date-name)
-            (.set headers ^CharSequence date-name (date-header-value ctx)))
+          (when-not (.contains headers ^CharSequence http/date-name)
+            (.set headers ^CharSequence http/date-name (date-header-value ctx)))
 
-          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+          (.set headers ^CharSequence http/connection-name (if keep-alive? keep-alive-value close-value))
 
           (http/send-message ctx keep-alive? ssl? rsp body))))))
 
 ;;;
 
 (defn invalid-value-response [req x]
-  (error-response
+  (http/error-response
     (IllegalArgumentException.
       (str "cannot treat "
         (pr-str x)
@@ -165,7 +154,7 @@
                     (try
                       (rejected-handler req')
                       (catch Throwable e
-                        (error-response e)))
+                        (http/error-response e)))
                     {:status 503
                      :headers {"content-type" "text/plain"}
                      :body "503 Service Unavailable"})))
@@ -174,7 +163,7 @@
               (try
                 (handler req')
                 (catch Throwable e
-                  (error-response e))))]
+                  (http/error-response e))))]
 
     (-> previous-response
       (d/chain'
@@ -183,7 +172,7 @@
           (netty/release req)
           (netty/release body)
           (-> rsp
-            (d/catch' error-response)
+            (d/catch' http/error-response)
             (d/chain'
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))

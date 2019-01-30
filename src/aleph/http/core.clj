@@ -39,12 +39,19 @@
     [java.io
      File
      RandomAccessFile
-     Closeable]
+     Closeable
+     FileNotFoundException
+     StringWriter
+     PrintWriter]
     [java.util.concurrent
      ConcurrentHashMap
      TimeUnit]
     [java.util.concurrent.atomic
      AtomicBoolean]))
+
+(def ^CharSequence server-name (HttpHeaders/newEntity "Server"))
+(def ^CharSequence connection-name (HttpHeaders/newEntity "Connection"))
+(def ^CharSequence date-name (HttpHeaders/newEntity "Date"))
 
 (def non-standard-keys
   (let [ks ["Content-MD5"
@@ -250,6 +257,14 @@
 (defn chunked-writer-enabled? [^Channel ch]
   (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
 
+(defn error-response [^Throwable e]
+  (log/error e "error in HTTP handler")
+  {:status 500
+   :headers {"content-type" "text/plain"}
+   :body (let [w (StringWriter.)]
+           (.printStackTrace e (PrintWriter. w))
+           (str w))})
+
 (defn send-streaming-body [ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
@@ -323,11 +338,41 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
+(defn send-contiguous-body [ch ^HttpMessage msg body]
+  (let [omitted? (identical? :aleph/omitted body)
+        body (if (or (nil? body) omitted?)
+               empty-last-content
+               (DefaultLastHttpContent. (netty/to-byte-buf ch body)))
+        length (-> ^HttpContent body .content .readableBytes)]
+
+    (when-not omitted?
+      (if (instance? HttpResponse msg)
+        (let [code (-> ^HttpResponse msg .status .code)]
+          (when-not (or (<= 100 code 199) (= 204 code))
+            (try-set-content-length! msg length)))
+        (try-set-content-length! msg length)))
+
+    (netty/write ch msg)
+    (netty/write-and-flush ch body)))
+
+(defn send-internal-error [ch ^HttpResponse msg ^Throwable e]
+  (let [raw-headers (.headers msg)
+        headers {:server (.get raw-headers server-name)
+                 :connection (.get raw-headers connection-name)
+                 :date (.get raw-headers date-name)}
+        resp (-> (error-response e)
+                 (update :headers merge headers))
+        msg' (ring-response->netty-response resp)]
+    (send-contiguous-body ch msg' (:body resp))))
+
 (defn send-chunked-file [ch ^HttpMessage msg ^File file]
-  (let [raf (RandomAccessFile. file "r")
-        len (.length raf)
-        ci (HttpChunkedInput. (ChunkedFile. raf))]
-    (try-set-content-length! msg len)
+  (when-let [ci (try
+                  (let [raf (RandomAccessFile. file "r")]
+                    (try-set-content-length! msg (.length raf))
+                    (HttpChunkedInput. (ChunkedFile. raf)))
+                  (catch FileNotFoundException e
+                    (send-internal-error ch msg e)
+                    nil))]
     (netty/write ch msg)
     (netty/write-and-flush ch ci)))
 
@@ -336,11 +381,15 @@
   (netty/write-and-flush ch body))
 
 (defn send-file-region [ch ^HttpMessage msg ^File file]
-  (let [raf (RandomAccessFile. file "r")
-        len (.length raf)
-        fc (.getChannel raf)
-        fr (DefaultFileRegion. fc 0 len)]
-    (try-set-content-length! msg len)
+  (when-let [fr (try
+                  (let [raf (RandomAccessFile. file "r")
+                        len (.length raf)
+                        fc (.getChannel raf)]
+                    (try-set-content-length! msg len)
+                    (DefaultFileRegion. fc 0 len))
+                  (catch FileNotFoundException e
+                    (send-internal-error ch msg e)
+                    nil))]
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
@@ -358,23 +407,6 @@
 
     :else
     (send-file-region ch msg file)))
-
-(defn send-contiguous-body [ch ^HttpMessage msg body]
-  (let [omitted? (identical? :aleph/omitted body)
-        body (if (or (nil? body) omitted?)
-               empty-last-content
-               (DefaultLastHttpContent. (netty/to-byte-buf ch body)))
-        length (-> ^HttpContent body .content .readableBytes)]
-
-    (when-not omitted?
-      (if (instance? HttpResponse msg)
-        (let [code (-> ^HttpResponse msg .status .code)]
-          (when-not (or (<= 100 code 199) (= 204 code))
-            (try-set-content-length! msg length)))
-        (try-set-content-length! msg length)))
-
-    (netty/write ch msg)
-    (netty/write-and-flush ch body)))
 
 (let [ary-class (class (byte-array 0))
 
