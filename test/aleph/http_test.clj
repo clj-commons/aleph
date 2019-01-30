@@ -353,6 +353,26 @@
                   :body
                   bs/to-string)))))
 
+(defn non-existing-file-handler [req]
+  {:status 200
+   :body (File. "this-file-does-not-exist.sure")})
+
+(defn- assert-file-error []
+  (is (= 500 (-> (http/get (str "http://localhost:" port)
+                           {:throw-exceptions? false})
+                 (d/timeout! 1e3)
+                 deref
+                 :status))))
+
+(deftest test-sending-non-existing-file
+  (testing "sending FileRegion"
+    (with-handler non-existing-file-handler
+      (assert-file-error)))
+
+  (testing "sending chunked body"
+    (with-compressed-handler non-existing-file-handler
+      (assert-file-error))))
+
 ;;;
 
 (defn get-netty-client-event-threads []
