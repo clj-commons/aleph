@@ -27,18 +27,18 @@
      HttpUtil
      HttpHeaderNames
      LastHttpContent
+     FullHttpRequest
      FullHttpResponse
-     HttpObjectAggregator]
+     HttpObjectAggregator
+     HttpContentDecompressor]
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
     [io.netty.handler.codec
      TooLongFrameException]
-    [io.netty.handler.stream 
+    [io.netty.handler.stream
      ChunkedWriteHandler]
-    [io.netty.handler.codec.http 
-     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -399,14 +399,16 @@
      proxy-options
      ssl?
      idle-timeout
-     log-activity]
+     log-activity
+     decompress-body?]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
      max-chunk-size 65536
-     idle-timeout 0}}]
+     idle-timeout 0
+     decompress-body? false}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -424,6 +426,10 @@
             false
             false))
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
+        (#(when decompress-body?
+            (.addLast ^ChannelPipeline %
+                      "deflater"
+                      ^ChannelHandler (HttpContentDecompressor.))))
         (.addLast "handler" ^ChannelHandler handler)
         (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
@@ -462,7 +468,8 @@
            on-closed
            response-executor
            epoll?
-           proxy-options]
+           proxy-options
+           decompress-body?]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
@@ -507,6 +514,9 @@
                         (get proxy-options :keep-alive? true)
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
+                (when (and decompress-body?
+                           (nil? (.get (.headers req') "Accept-Encoding")))
+                  (.set (.headers req') "Accept-Encoding" "gzip, deflate"))
 
                 (let [body (:body req)
                       parts (:multipart req)
@@ -745,7 +755,7 @@
                       max-frame-payload)]
     (d/chain'
       (netty/create-client
-        (fn [^ChannelPipeline pipeline]
+       (fn [^ChannelPipeline pipeline]
           (doto pipeline
             (.addLast "http-client" (HttpClientCodec.))
             (.addLast "aggregator" (HttpObjectAggregator. 16384))
