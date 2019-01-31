@@ -374,7 +374,7 @@
 
 (defn copy-encoding-header! [^HttpResponse msg]
   (let [headers (.headers msg)]
-    (when-let [encoding (.get headers "content-encoding")]
+    (when-let [encoding (.get headers http/content-encoding-name)]
       (.set headers http/origin-content-encoding-name encoding))))
 
 (defn copy-original-encoding-handler []
