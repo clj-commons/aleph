@@ -394,7 +394,6 @@
      response-buffer-size
      max-initial-line-length
      max-header-size
-     max-chunk-size
      raw-stream?
      proxy-options
      ssl?
@@ -405,7 +404,6 @@
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
-     max-chunk-size 65536
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
@@ -420,7 +418,7 @@
           (HttpClientCodec.
             max-initial-line-length
             max-header-size
-            max-chunk-size
+            Integer/MAX_VALUE
             false
             false))
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))

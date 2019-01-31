@@ -403,7 +403,6 @@
      request-buffer-size
      max-initial-line-length
      max-header-size
-     max-chunk-size
      raw-stream?
      ssl?
      compression?
@@ -413,7 +412,6 @@
     {request-buffer-size 16384
      max-initial-line-length 8192
      max-header-size 8192
-     max-chunk-size 16384
      compression? false
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
@@ -426,7 +424,7 @@
           (HttpServerCodec.
             max-initial-line-length
             max-header-size
-            max-chunk-size
+            Integer/MAX_VALUE
             false))
         (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
         (.addLast "request-handler" ^ChannelHandler handler)
