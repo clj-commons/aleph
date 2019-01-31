@@ -515,7 +515,7 @@
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
                 (when (and decompress-body?
-                           (nil? (.get (.headers req') "Accept-Encoding")))
+                           (not (.get (.headers req') "Accept-Encoding")))
                   (.set (.headers req') "Accept-Encoding" "gzip, deflate"))
 
                 (let [body (:body req)
