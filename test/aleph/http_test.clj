@@ -209,19 +209,17 @@
       (is (some? unzipped) 'should-be-valid-gzip)
       (is (= result unzipped) 'decompressed-body-is-correct))))
 
-;; xxx: note, that this test is not good enough...
-;; we can just skip "Accept-Encoding "request header and it will pass
-;; to be sure that the body was initially compressed, we need to
-;; catch original headers... like `clj-http` does with :orig-content-encoding
-;; ::thinking::
 (deftest test-client-decompress-response
   (let [decompress-pool (http/connection-pool
-                         {:connection-options {:decompress-body? true}})]
+                         {:connection-options {:decompress-body? true
+                                               :save-content-encoding? true}})]
     (with-compressed-handler basic-handler
       (doseq [[index [path result]] (map-indexed vector expected-results)
               :let [resp @(http/get (str "http://localhost:" port "/" path)
                                     {:pool decompress-pool})
                     body (bs/to-string (:body resp))]]
+        (is (= "gzip" (get-in resp [:headers :x-origin-content-encoding]))
+            'content-encoding-header-is-set)
         (is (= result body) 'auto-decompressed-body-is-correct)))))
 
 (deftest test-ssl-response-formats
