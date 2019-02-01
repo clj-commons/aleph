@@ -362,11 +362,13 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            ^ChannelFuture f (write-and-flush ch msg)
-            d (-> f
-                wrap-future
-                (d/chain' (fn [_] true))
-                (d/catch' IOException (fn [_] false)))]
+            d (if (nil? msg)
+                (d/success-deferred true)
+                (let [^ChannelFuture f (write-and-flush ch msg)]
+                  (-> f
+                    wrap-future
+                    (d/chain' (fn [_] true))
+                    (d/catch' IOException (fn [_] false)))))]
         (if blocking?
           @d
           d))))
