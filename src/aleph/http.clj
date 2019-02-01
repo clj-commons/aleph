@@ -21,7 +21,8 @@
      URI
      InetSocketAddress]
     [java.util.concurrent
-     TimeoutException]))
+     TimeoutException]
+    [io.netty.channel.unix DomainSocketAddress]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -54,16 +55,26 @@
   "Returns a deferred that yields a function which, given an HTTP request, returns
    a deferred representing the HTTP response.  If the server disconnects, all responses
    will be errors, and a new connection must be created."
-  [^URI uri options middleware on-closed]
+  [^URI uri {:keys [unix-socket] :as options} middleware on-closed]
   (let [scheme (.getScheme uri)
-        ssl? (= "https" scheme)]
+        ssl? (= "https" scheme)
+        remote-address (cond
+                         (and (some? unix-socket)
+                              (instance? DomainSocketAddress unix-socket))
+                         unix-socket
+
+                         (some? unix-socket)
+                         (DomainSocketAddress. ^String unix-socket)
+
+                         :else
+                         (InetSocketAddress/createUnresolved
+                          (.getHost uri)
+                          (int
+                           (or
+                            (when (pos? (.getPort uri)) (.getPort uri))
+                            (if ssl? 443 80)))))]
     (-> (client/http-connection
-          (InetSocketAddress/createUnresolved
-            (.getHost uri)
-            (int
-              (or
-                (when (pos? (.getPort uri)) (.getPort uri))
-                (if ssl? 443 80))))
+          remote-address
           ssl?
           (if on-closed
             (assoc options :on-closed on-closed)
@@ -104,6 +115,7 @@
    |:---|:---
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
+   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains

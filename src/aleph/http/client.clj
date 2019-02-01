@@ -473,12 +473,12 @@
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
-        unix-socket? (instance? DomainSocketAddress remote-address)
-        host (when-not unix-socket?
-               (.getHostName remote-address))
-        port (when-not unix-socket?
-               (.getPort remote-address))
-        explicit-port? (when-not unix-socket?
+        inet-socket? (instance? InetSocketAddress remote-address)
+        host (when inet-socket?
+               (.getHostName ^InetSocketAddress remote-address))
+        port (when inet-socket?
+               (.getPort ^InetSocketAddress remote-address))
+        explicit-port? (when inet-socket?
                          (and (pos? port) (not= port (if ssl? 443 80))))
         c (netty/create-client
             (pipeline-builder responses (assoc options :ssl? ssl?))
