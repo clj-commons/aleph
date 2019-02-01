@@ -918,7 +918,8 @@
                            (instance? AddressResolverGroup name-resolver)
                            name-resolver))
              b (doto (Bootstrap.)
-                 (.option ChannelOption/SO_REUSEADDR true)
+                 (#(when-not unix-socket?
+                     (.option ^Bootstrap % ChannelOption/SO_REUSEADDR true)))
                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                  (.group client-group)
                  (.channel channel)
