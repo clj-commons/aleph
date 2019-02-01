@@ -73,8 +73,8 @@
 
 ;;;
 
-(def ^FastThreadLocal date-format (FastThreadLocal.))
-(def ^FastThreadLocal date-value (FastThreadLocal.))
+(defonce ^FastThreadLocal date-format (FastThreadLocal.))
+(defonce ^FastThreadLocal date-value (FastThreadLocal.))
 
 (defn rfc-1123-date-string []
   (let [^DateFormat format
