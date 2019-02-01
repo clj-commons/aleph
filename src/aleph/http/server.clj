@@ -221,15 +221,15 @@
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
   (let [buffer-capacity (long buffer-capacity)
-        request (atom nil)
-        buffer (atom [])
+        request (volatile! nil)
+        buffer (volatile! [])
         buffer-size (AtomicInteger. 0)
-        stream (atom nil)
-        previous-response (atom nil)
+        stream (volatile! nil)
+        previous-response (volatile! nil)
 
         handle-request
         (fn [^ChannelHandlerContext ctx req body]
-          (reset! previous-response
+          (vreset! previous-response
             (handle-request
               ctx
               ssl?
@@ -245,9 +245,9 @@
         (fn [ctx req]
           (if (HttpHeaders/isTransferEncodingChunked req)
             (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
-              (reset! stream s)
+              (vreset! stream s)
               (handle-request ctx req s))
-            (reset! request req)))
+            (vreset! request req)))
 
         process-last-content
         (fn [ctx ^HttpContent msg]
@@ -274,9 +274,9 @@
                   (handle-request ctx @request bytes))))
 
             (.set buffer-size 0)
-            (reset! stream nil)
-            (reset! buffer [])
-            (reset! request nil)))
+            (vreset! stream nil)
+            (vreset! buffer [])
+            (vreset! request nil)))
 
         process-content
         (fn [ctx ^HttpContent msg]
@@ -291,7 +291,7 @@
               (let [len (.readableBytes ^ByteBuf content)]
 
                 (when-not (zero? len)
-                  (swap! buffer conj content))
+                  (vswap! buffer conj content))
 
                 (let [size (.addAndGet buffer-size len)]
 
@@ -304,8 +304,8 @@
                       (doseq [b bufs]
                         (netty/release b))
 
-                      (reset! buffer [])
-                      (reset! stream s)
+                      (vreset! buffer [])
+                      (vreset! stream s)
 
                       (handle-request ctx @request s))))))))]
 
@@ -343,12 +343,12 @@
 (defn raw-ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
   (let [buffer-capacity (long buffer-capacity)
-        stream (atom nil)
-        previous-response (atom nil)
+        stream (volatile! nil)
+        previous-response (volatile! nil)
 
         handle-request
         (fn [^ChannelHandlerContext ctx req body]
-          (reset! previous-response
+          (vreset! previous-response
             (handle-request
               ctx
               ssl?
@@ -380,7 +380,7 @@
             (reject-invalid-request ctx msg)
             (let [req msg]
               (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
-                (reset! stream s)
+                (vreset! stream s)
                 (handle-request ctx req s))))
 
           (instance? HttpContent msg)

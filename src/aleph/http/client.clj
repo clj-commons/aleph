@@ -96,8 +96,8 @@
 
 (defn raw-client-handler
   [response-stream buffer-capacity]
-  (let [stream (atom nil)
-        complete (atom nil)
+  (let [stream (volatile! nil)
+        complete (volatile! nil)
 
         handle-response
         (fn [response complete body]
@@ -130,8 +130,8 @@
 
             (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
                   c (d/deferred)]
-              (reset! stream s)
-              (reset! complete c)
+              (vreset! stream s)
+              (vreset! complete c)
               (s/on-closed s #(d/success! c true))
               (handle-response rsp c s)))
 
@@ -147,11 +147,11 @@
 
 (defn client-handler
   [response-stream ^long buffer-capacity]
-  (let [response (atom nil)
-        buffer (atom [])
+  (let [response (volatile! nil)
+        buffer (volatile! [])
         buffer-size (AtomicInteger. 0)
-        stream (atom nil)
-        complete (atom nil)
+        stream (volatile! nil)
+        complete (volatile! nil)
         handle-response (fn [rsp complete body]
                           (s/put! response-stream
                             (http/netty-response->ring-response
@@ -203,11 +203,11 @@
             (if (HttpUtil/isTransferEncodingChunked rsp)
               (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                     c (d/deferred)]
-                (reset! stream s)
-                (reset! complete c)
+                (vreset! stream s)
+                (vreset! complete c)
                 (s/on-closed s #(d/success! c true))
                 (handle-response rsp c s))
-              (reset! response rsp)))
+              (vreset! response rsp)))
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
@@ -229,9 +229,9 @@
                     (handle-response @response (d/success-deferred false) bytes)))
 
                 (.set buffer-size 0)
-                (reset! stream nil)
-                (reset! buffer [])
-                (reset! response nil))
+                (vreset! stream nil)
+                (vreset! buffer [])
+                (vreset! response nil))
 
               (if-let [s @stream]
 
@@ -243,7 +243,7 @@
                 (let [len (.readableBytes ^ByteBuf content)]
 
                   (when-not (zero? len)
-                    (swap! buffer conj content))
+                    (vswap! buffer conj content))
 
                   (let [size (.addAndGet buffer-size len)]
 
@@ -257,9 +257,9 @@
                         (doseq [b bufs]
                           (netty/release b))
 
-                        (reset! buffer [])
-                        (reset! stream s)
-                        (reset! complete c)
+                        (vreset! buffer [])
+                        (vreset! stream s)
+                        (vreset! complete c)
 
                         (s/on-closed s #(d/success! c true))
 
@@ -531,11 +531,11 @@
                     ;; note, that req' is effectively mutable, so
                     ;; it will "capture" all changes made during "send-message"
                     ;; execution
-                    (reset! save-message req'))
+                    (vreset! save-message req'))
 
                   (when-let [save-body (get req :aleph/save-request-body)]
                     ;; might be different in case we use :multipart
-                    (reset! save-body body))
+                    (vreset! save-body body))
 
                   (netty/safe-execute ch
                     (http/send-message ch true ssl? req' body))))
@@ -605,8 +605,8 @@
 
 (defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers max-frame-payload]
   (let [d (d/deferred)
-        in (atom nil)
-        desc (atom {})
+        in (volatile! nil)
+        desc (volatile! {})
         handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
 
     [d
@@ -630,7 +630,7 @@
        :channel-active
        ([_ ctx]
          (let [ch (.channel ctx)]
-           (reset! in (netty/buffered-source ch (constantly 1) 16))
+           (vreset! in (netty/buffered-source ch (constantly 1) 16))
            (.handshake handshaker ch))
          (.fireChannelActive ctx))
 
@@ -698,9 +698,8 @@
                (instance? CloseWebSocketFrame msg)
                (let [frame ^CloseWebSocketFrame msg]
                  (when (realized? d)
-                   (swap! desc assoc
-                     :websocket-close-code (.statusCode frame)
-                     :websocket-close-msg (.reasonText frame)))
+                   (vreset! desc {:websocket-close-code (.statusCode frame)
+                                  :websocket-close-msg (.reasonText frame)}))
                  (netty/close ctx))
 
                :else

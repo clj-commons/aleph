@@ -908,10 +908,10 @@
 (defn wrap-request-debug [req]
   (cond-> req
     (opt req :save-request)
-    (assoc :aleph/save-request-message (atom nil))
+    (assoc :aleph/save-request-message (volatile! nil))
 
     (opt req :debug-body)
-    (assoc :aleph/save-request-body (atom nil))))
+    (assoc :aleph/save-request-body (volatile! nil))))
 
 (defn handle-response-debug [req rsp]
   (let [saved-message (get req :aleph/save-request-message)
