@@ -15,7 +15,8 @@
      ChannelFuture
      ChannelFutureListener
      ChannelPipeline
-     ChannelHandler]
+     ChannelHandler
+     ChannelHandlerContext]
     [io.netty.buffer
      ByteBuf]
     [java.nio
@@ -36,12 +37,18 @@
      IdleStateHandler]
     [io.netty.handler.stream
      ChunkedInput ChunkedFile ChunkedWriteHandler]
+    [io.netty.handler.codec.http.websocketx
+     WebSocketFrame
+     PingWebSocketFrame
+     TextWebSocketFrame
+     BinaryWebSocketFrame]
     [java.io
      File
      RandomAccessFile
      Closeable]
     [java.util.concurrent
      ConcurrentHashMap
+     ConcurrentLinkedQueue
      TimeUnit]
     [java.util.concurrent.atomic
      AtomicBoolean]))
@@ -421,6 +428,43 @@
 
       f)))
 
+(deftype WebsocketPing [deferred payload])
+
+(defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
+  (loop []
+    (when-let [^WebsocketPing ping (.poll pending-pings)]
+      (let [d' (.-deferred ping)]
+        (when (not (realized? d'))
+          (try
+            (d/success! d' v)
+            (catch Throwable e
+              (log/error e "error in ping callback")))))
+      (recur))))
+
+(defn websocket-message-coerce-fn [^Channel ch ^ConcurrentLinkedQueue pending-pings]
+  (fn [msg]
+    (condp instance? msg
+      WebSocketFrame
+      msg
+
+      WebsocketPing
+      (let [^WebsocketPing msg msg
+            ;; this check should be safe as we rely on the strictly sequential
+            ;; processing of all messages put onto the same stream
+            send-ping? (.isEmpty pending-pings)]
+        (.offer pending-pings msg)
+        (when send-ping?
+          (if-some [payload (.-payload msg)]
+            (->> payload
+                 (netty/to-byte-buf ch)
+                 (PingWebSocketFrame.))
+            (PingWebSocketFrame.))))
+
+      CharSequence
+      (TextWebSocketFrame. (bs/to-string msg))
+
+      (BinaryWebSocketFrame. (netty/to-byte-buf ch (netty/acquire msg))))))
+
 (defn close-on-idle-handler []
   (netty/channel-handler
    :user-event-triggered
@@ -436,3 +480,33 @@
       (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
       (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
     pipeline))
+
+(defn websocket-ping [conn d' data]
+  (d/chain'
+   (s/put! conn (aleph.http.core.WebsocketPing. d' data))
+   #(when (and (false? %) (not (d/realized? d')))
+      ;; meaning connection is already closed
+      (d/success! d' false)))
+  d')
+
+(defn attach-heartbeats-handler [^ChannelPipeline pipeline heartbeats]
+  (when (and (some? heartbeats)
+             (pos? (:send-after-idle heartbeats)))
+    (let [after (:send-after-idle heartbeats)]
+      (.addLast pipeline
+                "websocket-heartbeats"
+                ^ChannelHandler
+                (IdleStateHandler. 0 0 after TimeUnit/MILLISECONDS)))))
+
+(defn handle-heartbeat [^ChannelHandlerContext ctx conn {:keys [payload
+                                                                timeout]}]
+  (let [done (d/deferred)]
+    (websocket-ping conn done payload)
+    (when (pos? timeout)
+      (-> done
+          (d/timeout! timeout ::ping-timeout)
+          (d/chain'
+           (fn [v]
+             (when (and (identical? ::ping-timeout v)
+                        (.isOpen ^Channel (.channel ctx)))
+               (netty/close ctx))))))))
