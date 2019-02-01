@@ -28,6 +28,7 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
+    [io.netty.channel.unix DomainSocketAddress]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
@@ -443,6 +444,7 @@
   [handler
    {:keys [port
            socket-address
+           unix-socket
            executor
            bootstrap-transform
            pipeline-transform
@@ -483,7 +485,16 @@
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
-      (if socket-address socket-address (InetSocketAddress. port))
+      ;; xxx: we should handler misconfiguration here
+      (cond
+        (some? socket-address)
+        socket-address
+
+        (some? unix-socket)
+        (DomainSocketAddress. ^String unix-socket)
+
+        (some? port)
+        (InetSocketAddress. port))
       epoll?)))
 
 ;;;

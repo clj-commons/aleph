@@ -12,6 +12,7 @@
      IOException]
     [java.net
      URI
+     SocketAddress
      InetSocketAddress
      IDN
      URL]
@@ -33,6 +34,7 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
+    [io.netty.channel.unix DomainSocketAddress]
     [io.netty.handler.codec
      TooLongFrameException]
     [io.netty.handler.stream 
@@ -449,7 +451,7 @@
      ::close true}))
 
 (defn http-connection
-  [^InetSocketAddress remote-address
+  [^SocketAddress remote-address
    ssl?
    {:keys [local-address
            raw-stream?
@@ -471,9 +473,13 @@
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
-        host (.getHostName remote-address)
-        port (.getPort remote-address)
-        explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
+        unix-socket? (instance? DomainSocketAddress remote-address)
+        host (when-not unix-socket?
+               (.getHostName remote-address))
+        port (when-not unix-socket?
+               (.getPort remote-address))
+        explicit-port? (when-not unix-socket?
+                         (and (pos? port) (not= port (if ssl? 443 80))))
         c (netty/create-client
             (pipeline-builder responses (assoc options :ssl? ssl?))
             (when ssl?
@@ -499,8 +505,11 @@
                                         (if (non-tunnel-proxy? proxy-options')
                                           (assoc req :uri (:request-url req))
                                           req))]
-                (when-not (.get (.headers req') "Host")
-                  (.set (.headers req') HttpHeaderNames/HOST (str host (when explicit-port? (str ":" port)))))
+                (when-not (and (.get (.headers req') "Host")
+                               (some? host))
+                  (.set (.headers req')
+                        HttpHeaderNames/HOST
+                        (str host (when explicit-port? (str ":" port)))))
                 (when-not (.get (.headers req') "Connection")
                   (HttpUtil/setKeepAlive req' keep-alive?))
                 (when (and (non-tunnel-proxy? proxy-options')
