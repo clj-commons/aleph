@@ -485,7 +485,7 @@
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
-      ;; xxx: we should handler misconfiguration here
+      ;; xxx: we should handle misconfiguration here
       (cond
         (some? socket-address)
         socket-address

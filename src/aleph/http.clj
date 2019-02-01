@@ -269,6 +269,23 @@
     (executor/with-executor response-executor
       ((middleware
          (fn [req]
+           ;; xxx: if I'm working with unix-socket here,
+           ;; I probably want to reshape the request slightly
+           ;; to prevent troubles caused by java.net.URL parser
+           ;; let's say I want to run something like
+           ;;
+           ;; (http/get "/images/json" {:unix-socket "/var/run/docker.sock"})
+           ;;
+           ;; "/images/json" is not a valid URL, no protocol, no host
+           ;; Which is a bad thing when I need to setup a connection to
+           ;; a remote address, but it's perfectly valid for unix socket
+           ;; What I can do here: take URL requested, try to parse it
+           ;; and if it fails just to put some dummy values to a host & port
+           ;; SSL will not work, but if don't pass any server name I should
+           ;; not expect it work at the first place. The only thing...
+           ;; I don't know the connection pool configuration here, meaning
+           ;; I have no idea if it's allowed to pass URI with no additional
+           ;; information
            (let [k (client/req->domain req)
                  start (System/currentTimeMillis)]
 
