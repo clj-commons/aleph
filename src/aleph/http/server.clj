@@ -185,7 +185,6 @@
         netty/wrap-future
         (fn [_]
           (netty/release req)
-          (netty/release body)
           (-> rsp
             (d/catch' error-response)
             (d/chain'
