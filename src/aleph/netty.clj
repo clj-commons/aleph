@@ -119,9 +119,10 @@
     (.array dst)))
 
 (defn release-buf->array [^ByteBuf buf]
-  (let [ary (buf->array buf)]
-    (release buf)
-    ary))
+  (try
+    (buf->array buf)
+    (finally
+      (release buf))))
 
 (defn bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
