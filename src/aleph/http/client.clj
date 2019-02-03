@@ -34,8 +34,15 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
-    [io.netty.handler.stream ChunkedWriteHandler]
-    [io.netty.handler.codec.http FullHttpRequest]
+    [io.netty.handler.codec
+     TooLongFrameException]
+    [io.netty.handler.timeout
+     IdleState
+     IdleStateEvent]
+    [io.netty.handler.stream
+     ChunkedWriteHandler]
+    [io.netty.handler.codec.http
+     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -60,7 +67,8 @@
      LoggingHandler
      LogLevel]
     [java.util.concurrent
-     Future]
+     Future
+     ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -163,7 +171,13 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
+        (cond
+          ; could happens when io.netty.handler.codec.http.HttpObjectAggregator
+          ; is part of the pipeline
+          (instance? TooLongFrameException ex)
+          (s/put! response-stream ex)
+
+          (not (instance? IOException ex))
           (log/warn ex "error in HTTP client")))
 
       :channel-inactive
@@ -179,6 +193,18 @@
       ([_ ctx msg]
 
         (cond
+
+          ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
+          (instance? FullHttpResponse msg)
+          (let [^FullHttpResponse rsp msg
+                content (.content rsp)
+                c (d/deferred)
+                s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+            (s/on-closed s #(d/success! c true))
+            (s/put! s (netty/buf->array content))
+            (netty/release content)
+            (handle-response rsp c s)
+            (s/close! s))
 
           (instance? HttpResponse msg)
           (let [rsp msg]
@@ -585,129 +611,160 @@
     (doto (DefaultHttpHeaders.) (http/map->headers! headers))
     max-frame-payload))
 
-(defn websocket-client-handler [raw-stream? uri sub-protocols extensions? headers max-frame-payload handshake-timeout]
-  (let [d (d/deferred)
-        in (atom nil)
-        desc (atom {})
-        handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)
-        timeout-task (atom nil)]
+(defn websocket-client-handler
+  ([raw-stream?
+    uri
+    sub-protocols
+    extensions?
+    headers
+    max-frame-payload]
+   (websocket-client-handler raw-stream?
+                             uri
+                             sub-protocols
+                             extensions?
+                             headers
+                             max-frame-payload
+                             nil
+                             0))
+  ([raw-stream?
+    uri
+    sub-protocols
+    extensions?
+    headers
+    max-frame-payload
+    heartbeats
+    handshake-timeout]
+   (let [d (d/deferred)
+         in (atom nil)
+         desc (atom {})
+         ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
+         handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)
+         timeout-task (atom nil)]
 
-    [d
+     [d
 
-     (netty/channel-inbound-handler
+      (netty/channel-inbound-handler
 
        :exception-caught
        ([_ ctx ex]
-         (when-not (d/error! d ex)
-           (log/warn ex "error in websocket client"))
-         (netty/close ctx))
+        (when-not (d/error! d ex)
+          (log/warn ex "error in websocket client"))
+        (netty/close ctx))
 
        :channel-inactive
        ([_ ctx]
-         (s/close! @in)
-         (when (realized? d)
-           ;; close only on success
-           (d/chain' d s/close!))
-         (.fireChannelInactive ctx))
+        (s/close! @in)
+        (when (realized? d)
+          ;; close only on success
+          (d/chain' d s/close!))
+        (http/resolve-pings! pending-pings false)
+        (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
-         (let [ch (.channel ctx)]
-           (reset! in (netty/buffered-source ch (constantly 1) 16))
+        (let [ch (.channel ctx)]
+          (reset! in (netty/buffered-source ch (constantly 1) 16))
 
-           ;; Start handshake timeout timer
-           (reset! timeout-task
-                   (.in time/*clock*
-                        handshake-timeout
-                        (fn []
-                          ;; if there was no answer after handshake was sent - close channel
-                          (d/error! d (WebSocketHandshakeTimeoutException. "WebSocket handshake timeout"))
-                          (netty/close ctx))))
+          ;; Start handshake timeout timer
+          (reset! timeout-task
+                  (.in time/*clock*
+                       handshake-timeout
+                       (fn []
+                         ;; if there was no answer after handshake was sent - close channel
+                         (d/error! d (WebSocketHandshakeTimeoutException. "WebSocket handshake timeout"))
+                         (netty/close ctx))))
 
-           (.handshake handshaker ch))
-         (.fireChannelActive ctx))
+          (.handshake handshaker ch))
+        (.fireChannelActive ctx))
+
+       :user-event-triggered
+       ([_ ctx evt]
+        (if (and (instance? IdleStateEvent evt)
+                 (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
+          (when (d/realized? d)
+            (http/handle-heartbeat ctx @d heartbeats))
+          (.fireUserEventTriggered ctx evt)))
 
        :channel-read
        ([_ ctx msg]
-         (try
-           (let [ch (.channel ctx)]
-             (cond
+        (try
+          (let [ch (.channel ctx)]
+            (cond
 
-               (not (.isHandshakeComplete handshaker))
-               ;; If timeout task cannot be cancelled there is no need to continue handshake
-               (when (.cancel ^Future @timeout-task false)
-                 (-> (netty/wrap-future (.processHandshake handshaker ch msg))
-                     ;; we want to check timeout here too
-                     (d/timeout! handshake-timeout)
-                     (d/chain'
-                       (fn [_]
-                         (let [out (netty/sink ch false
-                                               (fn [c]
-                                                 (if (instance? CharSequence c)
-                                                   (TextWebSocketFrame. (bs/to-string c))
-                                                   (BinaryWebSocketFrame. (netty/to-byte-buf ctx c))))
-                                               (fn [] @desc))]
+              (not (.isHandshakeComplete handshaker))
+              (when (.cancel ^Future @timeout-task false)
+                (-> (netty/wrap-future (.processHandshake handshaker ch msg))
+                    ;; we want to check timeout here too
+                    (d/timeout! handshake-timeout)
+                    (d/chain'
+                     (fn [_]
+                       (let [out (netty/sink ch false
+                                             (http/websocket-message-coerce-fn ch pending-pings)
+                                             (fn [] @desc))]
 
-                           (d/success! d
-                                       (doto
+                         (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
+
+                         (d/success! d
+                                     (doto
                                          (s/splice out @in)
-                                         (reset-meta! {:aleph/channel ch})))
+                                       (reset-meta! {:aleph/channel ch})))
 
-                           (s/on-drained @in
-                                         #(when (.isOpen ch)
-                                            (d/chain'
-                                              (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                                              (fn [_] (netty/close ctx))))))))
-                     (d/catch'
-                       (fn [ex]
-                         ;; handle handshake exception
-                         (d/error! d ex)
-                         (netty/close ctx)))))
+                         (s/on-drained @in
+                                       #(when (.isOpen ch)
+                                          (d/chain'
+                                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                                           (fn [_] (netty/close ctx))))))))
+                    (d/catch'
+                        (fn [ex]
+                          ;; handle handshake exception
+                          (d/error! d ex)
+                          (netty/close ctx)))))
 
-               (instance? FullHttpResponse msg)
-               (let [rsp ^FullHttpResponse msg]
-                 (throw
-                   (IllegalStateException.
-                     (str "unexpected HTTP response, status: "
+              (instance? FullHttpResponse msg)
+              (let [rsp ^FullHttpResponse msg]
+                (throw
+                 (IllegalStateException.
+                  (str "unexpected HTTP response, status: "
                        (.status rsp)
                        ", body: '"
                        (bs/to-string (.content rsp))
                        "'"))))
 
-               (instance? TextWebSocketFrame msg)
-               (netty/put! ch @in (.text ^TextWebSocketFrame msg))
+              (instance? TextWebSocketFrame msg)
+              (netty/put! ch @in (.text ^TextWebSocketFrame msg))
 
-               (instance? BinaryWebSocketFrame msg)
-               (let [frame (.content ^BinaryWebSocketFrame msg)]
-                 (netty/put! ch @in
-                   (if raw-stream?
-                     (netty/acquire frame)
-                     (netty/buf->array frame))))
+              (instance? BinaryWebSocketFrame msg)
+              (let [frame (.content ^BinaryWebSocketFrame msg)]
+                (netty/put! ch @in
+                            (if raw-stream?
+                              (netty/acquire frame)
+                              (netty/buf->array frame))))
 
-               (instance? PongWebSocketFrame msg)
-               nil
+              (instance? PongWebSocketFrame msg)
+              (http/resolve-pings! pending-pings true)
 
-               (instance? PingWebSocketFrame msg)
-               (let [frame (.content ^PingWebSocketFrame msg)]
-                 (netty/write-and-flush  ch (PongWebSocketFrame. (netty/acquire frame))))
+              (instance? PingWebSocketFrame msg)
+              (let [frame (.content ^PingWebSocketFrame msg)]
+                (netty/write-and-flush  ch (PongWebSocketFrame. (netty/acquire frame))))
 
-               (instance? CloseWebSocketFrame msg)
-               (let [frame ^CloseWebSocketFrame msg]
-                 (when (realized? d)
-                   (swap! desc assoc
-                     :websocket-close-code (.statusCode frame)
-                     :websocket-close-msg (.reasonText frame)))
-                 (netty/close ctx))
+              (instance? CloseWebSocketFrame msg)
+              (let [frame ^CloseWebSocketFrame msg]
+                (when (realized? d)
+                  (swap! desc assoc
+                         :websocket-close-code (.statusCode frame)
+                         :websocket-close-msg (.reasonText frame)))
+                (netty/close ctx))
 
-               :else
-               (.fireChannelRead ctx msg)))
-           (finally
-             (netty/release msg)))))]))
+              :else
+              (.fireChannelRead ctx msg)))
+          (finally
+            (netty/release msg)))))])))
 
 (defn websocket-connection
   [uri
    {:keys [raw-stream?
            insecure?
+           ssl-context
            headers
            local-address
            bootstrap-transform
@@ -718,7 +775,8 @@
            max-frame-payload
            max-frame-size
            handshake-timeout
-           compression?]
+           compression?
+           heartbeats]
     :or {bootstrap-transform identity
          pipeline-transform identity
          raw-stream? false
@@ -733,6 +791,12 @@
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
         ssl? (= "wss" scheme)
+        heartbeats (when (some? heartbeats)
+                     (merge
+                      {:send-after-idle 3e4
+                       :payload nil
+                       :timeout nil}
+                      heartbeats))
         [s handler] (websocket-client-handler
                       raw-stream?
                       uri
@@ -740,6 +804,7 @@
                       extensions?
                       headers
                       max-frame-payload
+                      heartbeats
                       handshake-timeout)]
     (d/chain'
       (netty/create-client
@@ -752,12 +817,14 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
+            (http/attach-heartbeats-handler heartbeats)
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))
         (when ssl?
-          (if insecure?
-            (netty/insecure-ssl-client-context)
-            (netty/ssl-client-context)))
+          (or ssl-context
+            (if insecure?
+              (netty/insecure-ssl-client-context)
+              (netty/ssl-client-context))))
         bootstrap-transform
         (InetSocketAddress.
           (.getHost uri)

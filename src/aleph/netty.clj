@@ -4,6 +4,7 @@
     [byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
+    [manifold.executor :as e]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
     [primitive-math :as p]
@@ -51,12 +52,16 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     GenericFutureListener Future DefaultThreadFactory]
+     GenericFutureListener Future]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
     [java.util.concurrent
-     ConcurrentHashMap CancellationException ScheduledFuture TimeUnit]
+     ConcurrentHashMap
+     CancellationException
+     ScheduledFuture
+     TimeUnit
+     ThreadFactory]
     [java.util.concurrent.atomic
      AtomicLong]
     [io.netty.util.internal.logging
@@ -114,9 +119,10 @@
     (.array dst)))
 
 (defn release-buf->array [^ByteBuf buf]
-  (let [ary (buf->array buf)]
-    (release buf)
-    ary))
+  (try
+    (buf->array buf)
+    (finally
+      (release buf))))
 
 (defn bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
@@ -357,11 +363,13 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            ^ChannelFuture f (write-and-flush ch msg)
-            d (-> f
-                wrap-future
-                (d/chain' (fn [_] true))
-                (d/catch' IOException (fn [_] false)))]
+            d (if (nil? msg)
+                (d/success-deferred true)
+                (let [^ChannelFuture f (write-and-flush ch msg)]
+                  (-> f
+                    wrap-future
+                    (d/chain' (fn [_] true))
+                    (d/catch' IOException (fn [_] false)))))]
         (if blocking?
           @d
           d))))
@@ -721,18 +729,26 @@
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
+(defn ^ThreadFactory enumerating-thread-factory [prefix daemon?]
+  (let [num-threads (atom 0)]
+    (e/thread-factory
+     #(str prefix "-" (swap! num-threads inc))
+     (deliver (promise) nil)
+     nil
+     daemon?)))
+
 (def ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
 (def epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
-          thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
+          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
 (def nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
-          thread-factory (DefaultThreadFactory. client-event-thread-pool-name true)]
+          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
 (defn convert-address-types [address-types]
@@ -825,9 +841,10 @@
                     (.optResourceEnabled opt-resources-enabled?)
                     (.ndots ndots)
                     (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?)
-                    (.resolvedAddressTypes (when (some? address-types)
-                                             (convert-address-types address-types))))
+                    (.recursionDesired recursion-desired?))
+
+            (some? address-types)
+            (.resolvedAddressTypes (convert-address-types address-types))
 
             (some? negative-ttl)
             (.negativeTtl negative-ttl)
@@ -913,7 +930,7 @@
    epoll?]
   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
         num-threads    (* 2 num-cores)
-        thread-factory (DefaultThreadFactory. "aleph-netty-server-event-pool" false)
+        thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
         closed?        (atom false)
 
         ^EventLoopGroup group

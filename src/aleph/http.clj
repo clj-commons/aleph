@@ -4,11 +4,13 @@
     [clojure.string :as str]
     [manifold.deferred :as d]
     [manifold.executor :as executor]
+    [manifold.stream :as s]
     [aleph.flow :as flow]
     [aleph.http
      [server :as server]
      [client :as client]
-     [client-middleware :as middleware]]
+     [client-middleware :as middleware]
+     [core :as http-core]]
     [aleph.netty :as netty])
   (:import
     [io.aleph.dirigiste Pools]
@@ -33,6 +35,7 @@
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object if an SSL connection is desired |
+   | `manual-ssl?` | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `executor` | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
    | `shutdown-executor?` | if `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true`.
@@ -192,6 +195,7 @@
    |:---|:---
    | `raw-stream?` | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `insecure?` | if `true`, the certificates for `wss://` will be ignored.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `extensions?` | if `true`, the websocket extensions will be supported.
    | `sub-protocols` | a string with a comma seperated list of supported sub-protocols.
    | `headers` | the headers that should be included in the handshake
@@ -200,7 +204,8 @@
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([url]
     (websocket-client url nil))
   ([url options]
@@ -218,11 +223,23 @@
    | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
-   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`"
+   | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`.
+   | `heartbeats` | optional configuration to send Ping frames to the client periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty uses empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([req]
     (websocket-connection req nil))
   ([req options]
-    (server/initialize-websocket-handler req options)))
+   (server/initialize-websocket-handler req options)))
+
+(defn websocket-ping
+  "Takes a websocket endpoint (either client or server) and returns a deferred that will
+   yield true whenever the PONG comes back, or false if the connection is closed. Subsequent
+   PINGs are supressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
+  ([conn]
+   (http-core/websocket-ping conn (d/deferred) nil))
+  ([conn d']
+   (http-core/websocket-ping conn d' nil))
+  ([conn d' data]
+   (http-core/websocket-ping conn d' data)))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
@@ -386,3 +403,14 @@
    rather than a comma-delimited string."
   [^aleph.http.core.HeaderMap headers ^String k]
   (-> headers ^io.netty.handler.codec.http.HttpHeaders (.headers) (.getAll k)))
+
+(defn wrap-ring-async-handler
+  "Converts given asynchronous Ring handler to Aleph-compliant handler.
+
+   More information about asynchronous Ring handlers and middleware:
+   https://www.booleanknot.com/blog/2016/07/15/asynchronous-ring.html"
+  [handler]
+  (fn [request]
+    (let [response (d/deferred)]
+      (handler request #(d/success! response %) #(d/error! response %))
+      response)))
