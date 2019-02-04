@@ -26,7 +26,8 @@
      ChannelInitializer]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
-     EpollSocketChannel]
+     EpollSocketChannel
+     EpollDatagramChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -815,7 +816,8 @@
            ndots
            decode-idn?
            recursion-desired?
-           name-servers]
+           name-servers
+           epoll?]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -825,14 +827,20 @@
          opt-resources-enabled? true
          ndots -1
          decode-idn? true
-         recursion-desired? true}}]
+         recursion-desired? true
+         epoll? false}}]
   (let [^EventLoopGroup
-        client-group (if (epoll-available?)
+        client-group (if (and epoll? (epoll-available?))
                        @epoll-client-group
                        @nio-client-group)
 
+        ^Class
+        channel-type (if (and epoll? (epoll-available?))
+                       EpollDatagramChannel
+                       NioDatagramChannel)
+
         b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
-                    (.channelType ^Class NioDatagramChannel)
+                    (.channelType channel-type)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
                     (.queryTimeoutMillis query-timeout)
