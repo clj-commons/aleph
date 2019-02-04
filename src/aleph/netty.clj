@@ -802,7 +802,8 @@
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
-   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
