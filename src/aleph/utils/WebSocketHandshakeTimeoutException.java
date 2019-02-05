@@ -19,5 +19,5 @@ public class WebSocketHandshakeTimeoutException extends TimeoutException {
         super(message);
         initCause(cause);
     }
-    
+
 }
