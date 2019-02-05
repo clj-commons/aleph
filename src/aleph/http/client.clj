@@ -66,6 +66,9 @@
     [io.netty.handler.logging
      LoggingHandler
      LogLevel]
+    [io.netty.util.concurrent
+     EventExecutor
+     ScheduledFuture]
     [java.util.concurrent
      Future
      ConcurrentLinkedQueue]
@@ -665,16 +668,22 @@
         (let [ch (.channel ctx)]
           (reset! in (netty/buffered-source ch (constantly 1) 16))
 
-          ;; Start handshake timeout timer
-          (reset! timeout-task
-                  (.in time/*clock*
-                       handshake-timeout
-                       (fn []
-                         ;; if there was no answer after handshake was sent - close channel
-                         (d/error! d (WebSocketHandshakeTimeoutException. "WebSocket handshake timeout"))
-                         (netty/close ctx))))
-
-          (.handshake handshaker ch))
+          (let [handshake-future (.handshake handshaker ch)]
+            ;; start handshake timeout timer if necessary only
+            ;; when handshake is written and flushedx
+            (when (pos? handshake-timeout)
+              (-> (netty/wrap-future handshake-future)
+                  (d/chain'
+                   (fn []
+                     (let [timeout (.schedule
+                                    ^EventExecutor (.executor ctx)
+                                    (fn []
+                                      ;; do nothing if handshake is already completed
+                                      (when (not (.isHandshakeComplete handshaker))
+                                        (d/error! d (WebSocketHandshakeTimeoutException.))
+                                        (netty/close ctx)))
+                                    handshake-timeout)]
+                       (reset! timeout-task timeout))))))))
         (.fireChannelActive ctx))
 
        :user-event-triggered
@@ -692,33 +701,35 @@
             (cond
 
               (not (.isHandshakeComplete handshaker))
-              (when (.cancel ^Future @timeout-task false)
-                (-> (netty/wrap-future (.processHandshake handshaker ch msg))
-                    ;; we want to check timeout here too
-                    (d/timeout! handshake-timeout)
-                    (d/chain'
-                     (fn [_]
-                       (let [out (netty/sink ch false
-                                             (http/websocket-message-coerce-fn ch pending-pings)
-                                             (fn [] @desc))]
+              (-> (.processHandshake handshaker ch msg)
+                  netty/wrap-future
+                  (d/chain'
+                   (fn [_]
+                     ;; cancel timeout if it was scheduled
+                     (when-let [^ScheduledFuture timeout-future @timeout-task]
+                       (.cancel timeout-future false)
+                       (reset! timeout-task nil))
+                     (let [out (netty/sink ch false
+                                           (http/websocket-message-coerce-fn ch pending-pings)
+                                           (fn [] @desc))]
 
-                         (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
+                       (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
 
-                         (d/success! d
-                                     (doto
-                                         (s/splice out @in)
-                                       (reset-meta! {:aleph/channel ch})))
+                       (d/success! d
+                                   (doto
+                                       (s/splice out @in)
+                                     (reset-meta! {:aleph/channel ch})))
 
-                         (s/on-drained @in
-                                       #(when (.isOpen ch)
-                                          (d/chain'
-                                           (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                                           (fn [_] (netty/close ctx))))))))
-                    (d/catch'
-                        (fn [ex]
-                          ;; handle handshake exception
-                          (d/error! d ex)
-                          (netty/close ctx)))))
+                       (s/on-drained @in
+                                     #(when (.isOpen ch)
+                                        (d/chain'
+                                         (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                                         (fn [_] (netty/close ctx))))))))
+                  (d/catch'
+                      (fn [ex]
+                        ;; handle handshake exception
+                        (d/error! d ex)
+                        (netty/close ctx))))
 
               (instance? FullHttpResponse msg)
               (let [rsp ^FullHttpResponse msg]
