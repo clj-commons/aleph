@@ -4,10 +4,13 @@
   (:require
     [manifold.deferred :as d]
     [manifold.stream :as s]
+    [manifold.time :as time]
     [aleph.netty :as netty]
     [byte-streams :as bs]
     [aleph.http :as http]
-    [clojure.tools.logging :as log]))
+    [clojure.tools.logging :as log])
+  (:import
+   [java.util.concurrent TimeoutException]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -123,3 +126,12 @@
       (is @(s/put! c "hello raw handler 2"))
       (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
+
+(defn handshake-timeout-handler [_]
+  (time/in 2000 (fn [] {:status 200})))
+
+(deftest test-handshake-timeout
+  (with-handler handshake-timeout-handler
+    (let [c (http/websocket-client "ws://localhost:8080"
+                                   {:handshake-timeout 1000})]
+      (is (thrown? TimeoutException @c)))))
