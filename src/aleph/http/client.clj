@@ -70,8 +70,9 @@
      EventExecutor
      ScheduledFuture]
     [java.util.concurrent
+     ConcurrentLinkedQueue
      Future
-     ConcurrentLinkedQueue]
+     TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -674,15 +675,17 @@
             (when (pos? handshake-timeout)
               (-> (netty/wrap-future handshake-future)
                   (d/chain'
-                   (fn []
+                   (fn [_]
                      (let [timeout (.schedule
                                     ^EventExecutor (.executor ctx)
+                                    ^Runnable
                                     (fn []
                                       ;; do nothing if handshake is already completed
                                       (when (not (.isHandshakeComplete handshaker))
                                         (d/error! d (WebSocketHandshakeTimeoutException.))
                                         (netty/close ctx)))
-                                    handshake-timeout)]
+                                    ^long (long handshake-timeout)
+                                    TimeUnit/MILLISECONDS)]
                        (reset! timeout-task timeout))))))))
         (.fireChannelActive ctx))
 
