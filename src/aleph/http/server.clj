@@ -500,29 +500,37 @@
     heartbeats]
    (let [d (d/deferred)
          ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
-         out (netty/sink ch false (http/websocket-message-coerce-fn ch pending-pings))
+         closing? (AtomicBoolean. false)
+         coerce-fn (http/websocket-message-coerce-fn
+                    ch
+                    pending-pings
+                    closing?
+                    #(.close handshaker ch ^CloseWebSocketFrame %))
+         out (netty/sink ch false coerce-fn)
          in (netty/buffered-source ch (constantly 1) 16)]
 
-     (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
+     (s/on-closed
+      out
+      (fn [] (http/resolve-pings! pending-pings false)))
 
-     (s/on-drained in
-                   ;; there's a change that the connection was closed by the server,
-                   ;; in that case *out* would be closed earlier and the underlying
-                   ;; netty channel is already terminated
-                   #(when (.isOpen ch)
-                      (.close handshaker ch (CloseWebSocketFrame.))))
+     (s/on-drained
+      in
+      ;; there's a chance that the connection was closed by the client,
+      ;; in that case *out* would be closed earlier and the underlying
+      ;; netty channel is already terminated
+      #(when (and (.isOpen ch)
+                  (compare-and-set! closing? false true))
+         (.close handshaker ch (CloseWebSocketFrame.))))
 
      (let [s (doto
                  (s/splice out in)
                (reset-meta! {:aleph/channel ch}))]
-
        [s
 
         (netty/channel-inbound-handler
 
          :exception-caught
          ([_ ctx ex]
-
           (when-not (instance? IOException ex)
             (log/warn ex "error in websocket handler"))
           (s/close! out)
@@ -574,9 +582,12 @@
              (http/resolve-pings! pending-pings true)
 
              (instance? CloseWebSocketFrame msg)
-             ;; reusing the same buffer
-             ;; will be deallocated by Netty
-             (.close handshaker ch msg)
+             (if-not (compare-and-set! closing? false true)
+               ;; closing already, nothing else could be done
+               (netty/release msg)
+               ;; reusing the same buffer
+               ;; will be deallocated by Netty
+               (.close handshaker ch msg))
 
              :else
              ;; no need to release buffer when passing to a next handler
