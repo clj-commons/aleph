@@ -258,7 +258,8 @@
    (when-not (<= 1000 status-code 4999)
      (throw (IllegalArgumentException.
              "websocket status code should be in range 1000-4999")))
-   (http-core/websocket-close! conn status-code reason-text deferred)))
+   (let [d' (or deferred (d/deferred))]
+     (http-core/websocket-close! conn status-code reason-text d'))))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request

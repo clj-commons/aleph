@@ -492,8 +492,7 @@
   d')
 
 (defn websocket-close! [conn status-code reason-text d']
-  (let [d' (or deferred (d/deferred))
-        payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
+  (let [payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
     (d/chain'
      (s/put! conn payload)
      (fn [put?]
