@@ -446,7 +446,6 @@
 
 (defn websocket-message-coerce-fn [^Channel ch
                                    ^ConcurrentLinkedQueue pending-pings
-                                   ^AtomicBoolean closing?
                                    close-handshake-fn]
   (fn [msg]
     (condp instance? msg
@@ -466,18 +465,14 @@
                  (PingWebSocketFrame.))
             (PingWebSocketFrame.))))
 
-      ;; it feels somewhat clumsy to make concurrent updates
-      ;; and realized deferred from internals of the function
-      ;; that meant to be a stateless coercer
       WebsocketClose
       (let [^WebsocketClose msg msg
-            succeed?
-            (if-not (compare-and-set! closing? false true)
-              false
-              (let [frame (CloseWebSocketFrame. (.-status-code msg)
-                                                (.-reason-text msg))]
-                (close-handshake-fn close-frame)
-                true))]
+            frame (CloseWebSocketFrame. (.-status-code msg)
+                                        (.-reason-text msg))
+            succeed? (close-handshake-fn close-frame)]
+        ;; it still feels somewhat clumsy to make concurrent
+        ;; updates and realized deferred from internals of the
+        ;; function that meant to be a stateless coercer
         (when-not (d/realized? (.-deferred msg))
           (d/success! (.-deferred msg) succeed?))
         ;; no need to write anything here

@@ -504,8 +504,12 @@
          coerce-fn (http/websocket-message-coerce-fn
                     ch
                     pending-pings
-                    closing?
-                    #(.close handshaker ch ^CloseWebSocketFrame %))
+                    (fn [^CloseWebSocketFrame frame]
+                      (if-not (compare-and-set! closing? false true)
+                        false
+                        (do
+                          (.close handshaker ch frame)
+                          true))))
          out (netty/sink ch false coerce-fn)
          in (netty/buffered-source ch (constantly 1) 16)]
 
