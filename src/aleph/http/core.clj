@@ -496,10 +496,11 @@
         payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
     (d/chain'
      (s/put! conn payload)
-     #(when (and (false? %) (not (d/realized? d')))
-        ;; if the stream does not accept new messages,
-        ;; connection is already closed
-        (d/success! d' false)))
+     (fn [put?]
+       (when (and (false? put?) (not (d/realized? d')))
+         ;; if the stream does not accept new messages,
+         ;; connection is already closed
+         (d/success! d' false))))
     d'))
 
 (defn attach-heartbeats-handler [^ChannelPipeline pipeline heartbeats]
