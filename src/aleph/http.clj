@@ -243,10 +243,11 @@
 
 (defn websocket-close!
   "Closes given websocket endpoint (either client or server) sending Close frame with provided
-   status code and reason text. Returns a deferred that will yield true whenever the connection was
-   closed after the successful write or false if it was already closed. Note, that for the server
-   closes the connection right after Close frame was flushed but the client waits for the connection
-   to be closed by the server (not longer than close handshake timeout)."
+   status code and reason text. Returns a deferred that will yield `true` whenever the closing
+   handshake was initiated with given params or `false` if the connection was already closed.
+   Note, that for the server closes the connection right after Close frame was flushed but the
+   client waits for the connection to be closed by the server (no longer than close handshake
+   timeout, see websocket connection configuration for more details)."
   ([conn]
    (websocket-close! conn 1000 "" nil))
   ([conn status-code]
