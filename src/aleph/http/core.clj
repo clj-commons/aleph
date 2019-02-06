@@ -41,7 +41,8 @@
      WebSocketFrame
      PingWebSocketFrame
      TextWebSocketFrame
-     BinaryWebSocketFrame]
+     BinaryWebSocketFrame
+     CloseWebSocketFrame]
     [java.io
      File
      RandomAccessFile
