@@ -671,7 +671,7 @@
 
           (let [handshake-future (.handshake handshaker ch)]
             ;; start handshake timeout timer if necessary only
-            ;; when handshake is written and flushedx
+            ;; when handshake is written and flushed
             (when (pos? handshake-timeout)
               (-> (netty/wrap-future handshake-future)
                   (d/chain'
@@ -684,7 +684,7 @@
                                       (when (not (.isHandshakeComplete handshaker))
                                         (d/error! d (WebSocketHandshakeTimeoutException.))
                                         (netty/close ctx)))
-                                    ^long (long handshake-timeout)
+                                    (long handshake-timeout)
                                     TimeUnit/MILLISECONDS)]
                        (reset! timeout-task timeout))))))))
         (.fireChannelActive ctx))
