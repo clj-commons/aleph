@@ -241,6 +241,24 @@
   ([conn d' data]
    (http-core/websocket-ping conn d' data)))
 
+(defn websocket-close!
+  "Closes given websocket endpoint (either client or server) sending Close frame with provided
+   status code and reason text. Returns a deferred that will yield true whenever the connection was
+   closed after the successful write or false if it was already closed. Note, that for the server
+   closes the connection right after Close frame was flushed but the client waits for the connection
+   to be closed by the server (not longer than close handshake timeout)."
+  ([conn]
+   (websocket-close! conn 1000 "" nil))
+  ([conn status-code]
+   (websocket-close! conn status-code "" nil))
+  ([conn status-code reason-text]
+   (websocket-close! conn status-code reason-text nil))
+  ([conn status-code reason-text deferred]
+   (when-not (<= 1000 status-code 4999)
+     (throw (IllegalArgumentException.
+             "websocket status code should be in range 1000-4999")))
+   (http-core/websocket-close! conn status-code reason-text deferred)))
+
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
     "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined

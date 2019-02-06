@@ -430,6 +430,8 @@
 
 (deftype WebsocketPing [deferred payload])
 
+(deftype WebsocketClose [deferred status-code reason-text])
+
 (defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
   (loop []
     (when-let [^WebsocketPing ping (.poll pending-pings)]
@@ -488,6 +490,17 @@
       ;; meaning connection is already closed
       (d/success! d' false)))
   d')
+
+(defn websocket-close! [conn status-code reason-text d']
+  (let [d' (or deferred (d/deferred))
+        payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
+    (d/chain'
+     (s/put! conn payload)
+     #(when (and (false? %) (not (d/realized? d')))
+        ;; if the stream does not accept new messages,
+        ;; connection is already closed
+        (d/success! d' false)))
+    d'))
 
 (defn attach-heartbeats-handler [^ChannelPipeline pipeline heartbeats]
   (when (and (some? heartbeats)
