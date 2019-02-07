@@ -135,6 +135,7 @@
 (deftest test-server-connection-close
   (testing "normal close"
     (let [handshake-started (d/deferred)
+          subsequent-write (d/deferred)
           subsequent-close (d/deferred)]
       (with-handler
         (fn [req]
@@ -148,10 +149,10 @@
                 (d/success! handshake-started r)
                 nil)
 
-              #_(fn [_]
+              (fn [_]
                 (d/chain'
                  (s/put! conn "Any other message")
-                 #(is (false? %) "subsequent writes are rejected")))
+                 #(d/success! subsequent-write %)))
 
               (fn [_]
                 (d/chain'
@@ -160,6 +161,7 @@
         (let [client @(http/websocket-client "ws://localhost:8080")]
           (with-closed client
             (is (true? @handshake-started) "normal close")
+            (is (false? @subsequent-write) "subsequent writes are rejected")
             (is (false? @subsequent-close) "already closed")
             (let [{:keys [websocket-close-code
                           websocket-close-msg]}

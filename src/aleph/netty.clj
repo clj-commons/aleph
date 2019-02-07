@@ -370,7 +370,9 @@
                 (d/success-deferred true)
 
                 (identical? sink-close-marker msg)
-                (d/success-deferred false)
+                (do
+                  (.markClosed this)
+                  (d/success-deferred false))
 
                 :else
                 (let [^ChannelFuture f (write-and-flush ch msg)]
