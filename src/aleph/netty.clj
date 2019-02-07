@@ -329,6 +329,8 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
+(def netty/sink-close-marker ::sink-close)
+
 (manifold/def-sink ChannelSink
   [coerce-fn
    downstream?
@@ -363,8 +365,14 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            d (if (nil? msg)
+            d (cond
+                (nil? msg)
                 (d/success-deferred true)
+
+                (identical? netty/sink-close-marker msg)
+                (d/success-deferred false)
+
+                :else
                 (let [^ChannelFuture f (write-and-flush ch msg)]
                   (-> f
                     wrap-future
