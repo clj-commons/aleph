@@ -477,9 +477,11 @@
            ;; function that meant to be a stateless coercer
            (when-not (d/realized? (.-deferred msg))
              (d/success! (.-deferred msg) succeed?))
+
            ;; we want to close the sink here to stop accepting
            ;; new messages from the user
-           netty/sink-close-marker))
+           (when succeed?
+             netty/sink-close-marker)))
 
        CharSequence
        (TextWebSocketFrame. (bs/to-string msg))
