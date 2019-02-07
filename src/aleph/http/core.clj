@@ -469,8 +469,8 @@
        WebsocketClose
        (when (some? close-handshake-fn)
          (let [^WebsocketClose msg msg
-               frame (CloseWebSocketFrame. (.-status-code msg)
-                                           (.-reason-text msg))
+               frame (CloseWebSocketFrame. ^int (.-status-code msg)
+                                           ^String (.-reason-text msg))
                succeed? (close-handshake-fn frame)]
            ;; it still feels somewhat clumsy to make concurrent
            ;; updates and realized deferred from internals of the

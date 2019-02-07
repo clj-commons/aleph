@@ -123,3 +123,21 @@
       (is @(s/put! c "hello raw handler 2"))
       (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
+
+(deftest test-server-connection-close
+  (testing "normal close"
+    (with-handler
+      (fn [req]
+        (d/chain'
+         (http/websocket-connection req)
+         (fn [conn]
+           (d/chain'
+            (http/websocket-close! conn 4001 "going away")
+            #(is (true? %))))))
+      @(http/websocket-client "ws://localhost:8080")))
+
+  (testing "rejected for closed connection")
+
+  (testing "subsequent write is rejected")
+
+  (testing "concurrent close attempts"))
