@@ -249,15 +249,12 @@
    client waits for the connection to be closed by the server (no longer than close handshake
    timeout, see websocket connection configuration for more details)."
   ([conn]
-   (websocket-close! conn 1000 "" nil))
+   (websocket-close! conn http-core/close-empty-status-code "" nil))
   ([conn status-code]
    (websocket-close! conn status-code "" nil))
   ([conn status-code reason-text]
    (websocket-close! conn status-code reason-text nil))
   ([conn status-code reason-text deferred]
-   (when-not (<= 1000 status-code 4999)
-     (throw (IllegalArgumentException.
-             "websocket status code should be in range 1000-4999")))
    (let [d' (or deferred (d/deferred))]
      (http-core/websocket-close! conn status-code reason-text d'))))
 

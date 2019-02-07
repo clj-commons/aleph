@@ -433,6 +433,8 @@
 
 (deftype WebsocketClose [deferred status-code reason-text])
 
+(def close-empty-status-code -1)
+
 (defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
   (loop []
     (when-let [^WebsocketPing ping (.poll pending-pings)]
@@ -469,8 +471,11 @@
        WebsocketClose
        (when (some? close-handshake-fn)
          (let [^WebsocketClose msg msg
-               frame (CloseWebSocketFrame. ^int (.-status-code msg)
-                                           ^String (.-reason-text msg))
+               code (.-status-code msg)
+               frame (if (identical? close-empty-status-code code)
+                       (CloseWebSocketFrame.)
+                       (CloseWebSocketFrame. ^int code
+                                             ^String (.-reason-text msg)))
                succeed? (close-handshake-fn frame)]
            ;; it still feels somewhat clumsy to make concurrent
            ;; updates and realized deferred from internals of the
@@ -513,6 +518,11 @@
   d')
 
 (defn websocket-close! [conn status-code reason-text d']
+  (when-not (or (identical? close-empty-status-code status-code)
+                (<= 1000 status-code 4999))
+    (throw (IllegalArgumentException.
+            "websocket status code should be in range 1000-4999")))
+
   (let [payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
     (d/chain'
      (s/put! conn payload)
