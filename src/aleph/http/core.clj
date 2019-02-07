@@ -444,44 +444,46 @@
               (log/error e "error in ping callback")))))
       (recur))))
 
-(defn websocket-message-coerce-fn [^Channel ch
-                                   ^ConcurrentLinkedQueue pending-pings
-                                   close-handshake-fn]
-  (fn [msg]
-    (condp instance? msg
-      WebSocketFrame
-      msg
+(defn websocket-message-coerce-fn
+  ([ch pending-pings]
+   (websocket-message-coerce-fn ch pending-pings nil))
+  ([^Channel ch ^ConcurrentLinkedQueue pending-pings close-handshake-fn]
+   (fn [msg]
+     (condp instance? msg
+       WebSocketFrame
+       msg
 
-      WebsocketPing
-      (let [^WebsocketPing msg msg
-            ;; this check should be safe as we rely on the strictly sequential
-            ;; processing of all messages put onto the same stream
-            send-ping? (.isEmpty pending-pings)]
-        (.offer pending-pings msg)
-        (when send-ping?
-          (if-some [payload (.-payload msg)]
-            (->> payload
-                 (netty/to-byte-buf ch)
-                 (PingWebSocketFrame.))
-            (PingWebSocketFrame.))))
+       WebsocketPing
+       (let [^WebsocketPing msg msg
+             ;; this check should be safe as we rely on the strictly sequential
+             ;; processing of all messages put onto the same stream
+             send-ping? (.isEmpty pending-pings)]
+         (.offer pending-pings msg)
+         (when send-ping?
+           (if-some [payload (.-payload msg)]
+             (->> payload
+                  (netty/to-byte-buf ch)
+                  (PingWebSocketFrame.))
+             (PingWebSocketFrame.))))
 
-      WebsocketClose
-      (let [^WebsocketClose msg msg
-            frame (CloseWebSocketFrame. (.-status-code msg)
-                                        (.-reason-text msg))
-            succeed? (close-handshake-fn close-frame)]
-        ;; it still feels somewhat clumsy to make concurrent
-        ;; updates and realized deferred from internals of the
-        ;; function that meant to be a stateless coercer
-        (when-not (d/realized? (.-deferred msg))
-          (d/success! (.-deferred msg) succeed?))
-        ;; no need to write anything here
-        nil)
+       WebsocketClose
+       (when (some? close-handshake-fn)
+         (let [^WebsocketClose msg msg
+               frame (CloseWebSocketFrame. (.-status-code msg)
+                                           (.-reason-text msg))
+               succeed? (close-handshake-fn frame)]
+           ;; it still feels somewhat clumsy to make concurrent
+           ;; updates and realized deferred from internals of the
+           ;; function that meant to be a stateless coercer
+           (when-not (d/realized? (.-deferred msg))
+             (d/success! (.-deferred msg) succeed?))
+           ;; no need to write anything here
+           nil))
 
-      CharSequence
-      (TextWebSocketFrame. (bs/to-string msg))
+       CharSequence
+       (TextWebSocketFrame. (bs/to-string msg))
 
-      (BinaryWebSocketFrame. (netty/to-byte-buf ch (netty/acquire msg))))))
+       (BinaryWebSocketFrame. (netty/to-byte-buf ch (netty/acquire msg)))))))
 
 (defn close-on-idle-handler []
   (netty/channel-handler
