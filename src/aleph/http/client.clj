@@ -64,6 +64,7 @@
     [io.netty.handler.logging
      LoggingHandler
      LogLevel]
+    [io.netty.channel.unix DomainSocketAddress]
     [java.util.concurrent.atomic
      AtomicInteger]
     [aleph.utils
@@ -451,9 +452,10 @@
      ::close true}))
 
 (defn http-connection
-  [^SocketAddress remote-address
+  [^InetSocketAddress remote-address
    ssl?
    {:keys [local-address
+           unix-socket
            raw-stream?
            bootstrap-transform
            name-resolver
@@ -473,11 +475,12 @@
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
-        inet-socket? (instance? InetSocketAddress remote-address)
-        host (when inet-socket?
-               (.getHostName ^InetSocketAddress remote-address))
-        port (when inet-socket?
-               (.getPort ^InetSocketAddress remote-address))
+        unix-socket' (when (some? unix-socket)
+                       (if (instance? DomainSocketAddress unix-socket)
+                         unix-socket
+                         (DomainSocketAddress. ^String unix-socket)))
+        host (.getHostName remote-address)
+        port (.getPort remote-address)
         explicit-port? (when inet-socket?
                          (and (pos? port) (not= port (if ssl? 443 80))))
         c (netty/create-client
@@ -491,7 +494,8 @@
             remote-address
             local-address
             epoll?
-            name-resolver)]
+            name-resolver
+            unix-socket')]
     (d/chain' c
       (fn [^Channel ch]
 

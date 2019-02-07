@@ -867,22 +867,38 @@
     remote-address
     local-address
     epoll?]
-    (create-client pipeline-builder
-      ssl-context
-      bootstrap-transform
-      remote-address
-      local-address
-      epoll?
-      nil))
+   (create-client pipeline-builder
+                  ssl-context
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  nil
+                  nil))
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    remote-address
+    local-address
+    epoll?
+    name-resolver]
+   (create-client pipeline-builder
+                  ssl-context
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  name-resolver
+                  nil))
   ([pipeline-builder
     ^SslContext ssl-context
     bootstrap-transform
-    ^SocketAddress remote-address
-    ^SocketAddress local-address
+    ^InetSocketAddress remote-address
+    ^InetSocketAddress local-address
     epoll?
-    name-resolver]
-   ;; xxx: move this checker to a helper
-   (let [unix-socket? (instance? DomainSocketAddress remote-address)
+    name-resolver
+    unix-socket]
+   (let [unix-socket? (some? unix-socket)
          ^Class
          channel (cond
                    unix-socket?
@@ -899,8 +915,8 @@
                               (.addLast p "ssl-handler"
                                         (.newHandler ^SslContext ssl-context
                                                      (-> p .channel .alloc)
-                                                     (.getHostName ^InetSocketAddress remote-address)
-                                                     (.getPort ^InetSocketAddress remote-address)))
+                                                     (.getHostName remote-address)
+                                                     (.getPort remote-address)))
                               (pipeline-builder p))
                             pipeline-builder)]
      (try
@@ -927,9 +943,11 @@
                  (.resolver resolver')
                  bootstrap-transform)
 
-             f (if local-address
-                 (.connect b remote-address local-address)
-                 (.connect b remote-address))]
+             ^SocketAddress
+             connect-to (if unix-socket? unix-socket remote-address)
+             f (if (some? local-address)
+                 (.connect b connect-to local-address)
+                 (.connect b connect-to))]
 
          (d/chain' (wrap-future f)
                    (fn [_]

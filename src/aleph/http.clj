@@ -21,8 +21,7 @@
      URI
      InetSocketAddress]
     [java.util.concurrent
-     TimeoutException]
-    [io.netty.channel.unix DomainSocketAddress]))
+     TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -55,24 +54,15 @@
   "Returns a deferred that yields a function which, given an HTTP request, returns
    a deferred representing the HTTP response.  If the server disconnects, all responses
    will be errors, and a new connection must be created."
-  [^URI uri {:keys [unix-socket] :as options} middleware on-closed]
+  [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
         ssl? (= "https" scheme)
-        remote-address (cond
-                         (and (some? unix-socket)
-                              (instance? DomainSocketAddress unix-socket))
-                         unix-socket
-
-                         (some? unix-socket)
-                         (DomainSocketAddress. ^String unix-socket)
-
-                         :else
-                         (InetSocketAddress/createUnresolved
-                          (.getHost uri)
-                          (int
-                           (or
-                            (when (pos? (.getPort uri)) (.getPort uri))
-                            (if ssl? 443 80)))))]
+        remote-address (InetSocketAddress/createUnresolved
+                        (.getHost uri)
+                        (int
+                         (or
+                          (when (pos? (.getPort uri)) (.getPort uri))
+                          (if ssl? 443 80))))]
     (-> (client/http-connection
           remote-address
           ssl?
