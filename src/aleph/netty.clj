@@ -124,9 +124,10 @@
     (.array dst)))
 
 (defn release-buf->array [^ByteBuf buf]
-  (let [ary (buf->array buf)]
-    (release buf)
-    ary))
+  (try
+    (buf->array buf)
+    (finally
+      (release buf))))
 
 (defn bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
@@ -367,11 +368,13 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            ^ChannelFuture f (write-and-flush ch msg)
-            d (-> f
-                wrap-future
-                (d/chain' (fn [_] true))
-                (d/catch' IOException (fn [_] false)))]
+            d (if (nil? msg)
+                (d/success-deferred true)
+                (let [^ChannelFuture f (write-and-flush ch msg)]
+                  (-> f
+                    wrap-future
+                    (d/chain' (fn [_] true))
+                    (d/catch' IOException (fn [_] false)))))]
         (if blocking?
           @d
           d))))
@@ -843,9 +846,10 @@
                     (.optResourceEnabled opt-resources-enabled?)
                     (.ndots ndots)
                     (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?)
-                    (.resolvedAddressTypes (when (some? address-types)
-                                             (convert-address-types address-types))))
+                    (.recursionDesired recursion-desired?))
+
+            (some? address-types)
+            (.resolvedAddressTypes (convert-address-types address-types))
 
             (some? negative-ttl)
             (.negativeTtl negative-ttl)
