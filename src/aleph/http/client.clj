@@ -650,8 +650,8 @@
        ([_ ctx]
         (when (realized? d)
           ;; close only on success
-          (d/chain' d s/close!))
-        (http/resolve-pings! pending-pings false)
+          (d/chain' d s/close!)
+          (http/resolve-pings! pending-pings false))
         (.fireChannelInactive ctx))
 
        :channel-active
