@@ -481,8 +481,7 @@
                          (DomainSocketAddress. ^String unix-socket)))
         host (.getHostName remote-address)
         port (.getPort remote-address)
-        explicit-port? (when inet-socket?
-                         (and (pos? port) (not= port (if ssl? 443 80))))
+        explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         c (netty/create-client
             (pipeline-builder responses (assoc options :ssl? ssl?))
             (when ssl?
@@ -509,13 +508,14 @@
                                         (if (non-tunnel-proxy? proxy-options')
                                           (assoc req :uri (:request-url req))
                                           req))]
-                (when-not (and (.get (.headers req') "Host")
-                               (some? host))
+                (when-not (.get (.headers req') "Host")
                   (.set (.headers req')
                         HttpHeaderNames/HOST
                         (str host (when explicit-port? (str ":" port)))))
+
                 (when-not (.get (.headers req') "Connection")
                   (HttpUtil/setKeepAlive req' keep-alive?))
+
                 (when (and (non-tunnel-proxy? proxy-options')
                         (get proxy-options :keep-alive? true)
                         (not (.get (.headers req') "Proxy-Connection")))
