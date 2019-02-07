@@ -4,9 +4,11 @@
   (:require
     [manifold.deferred :as d]
     [manifold.stream :as s]
+    [manifold.time :as time]
     [aleph.netty :as netty]
     [byte-streams :as bs]
     [aleph.http :as http]
+    [aleph.http.core :as http-core]
     [clojure.tools.logging :as log]))
 
 (defmacro with-server [server & body]
@@ -124,20 +126,65 @@
       (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
 
+(defmacro with-closed [client & body]
+  `(let [closed# (d/deferred)]
+     (s/on-closed ~client (fn [] (d/success! closed# true)))
+     @closed#
+     ~@body))
+
 (deftest test-server-connection-close
   (testing "normal close"
+    (let [handshake-started (d/deferred)
+          subsequent-close (d/deferred)]
+      (with-handler
+        (fn [req]
+          (d/chain'
+           (http/websocket-connection req)
+           (fn [conn]
+             (d/chain'
+              (http/websocket-close! conn 4001 "going away")
+
+              (fn [r]
+                (d/success! handshake-started r)
+                nil)
+
+              #_(fn [_]
+                (d/chain'
+                 (s/put! conn "Any other message")
+                 #(is (false? %) "subsequent writes are rejected")))
+
+              (fn [_]
+                (d/chain'
+                 (http/websocket-close! conn 4002 "going away again")
+                 #(d/success! subsequent-close %)))))))
+        (let [client @(http/websocket-client "ws://localhost:8080")]
+          (with-closed client
+            (is (true? @handshake-started) "normal close")
+            (is (false? @subsequent-close) "already closed")
+            (let [{:keys [websocket-close-code
+                          websocket-close-msg]}
+                  (-> client s/description :sink)]
+              (is (= 4001 websocket-close-code))
+              (is (= "going away" websocket-close-msg))))))))
+
+  (testing "rejected for closed stream"
     (with-handler
       (fn [req]
         (d/chain'
          (http/websocket-connection req)
          (fn [conn]
+           (s/close! conn)
            (d/chain'
-            (http/websocket-close! conn 4001 "going away")
-            #(is (true? %))))))
-      @(http/websocket-client "ws://localhost:8080")))
-
-  (testing "rejected for closed connection")
-
-  (testing "subsequent write is rejected")
+            (http/websocket-close! conn 4001 "going away attempt")
+            #(is (false? %) "should not be accepted")))))
+      (let [client @(http/websocket-client "ws://localhost:8080")]
+        (with-closed client
+          (let [{:keys [websocket-close-code
+                        websocket-close-msg]}
+                (-> client s/description :sink)]
+            ;; `-1` means that no code was provided
+            ;; Netty's internal implementation, nothing to do with RFCs
+            (is (= http-core/close-empty-status-code websocket-close-code))
+            (is (= "" websocket-close-msg)))))))
 
   (testing "concurrent close attempts"))
