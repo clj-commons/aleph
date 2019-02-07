@@ -505,7 +505,7 @@
                     ch
                     pending-pings
                     (fn [^CloseWebSocketFrame frame]
-                      (if-not (compare-and-set! closing? false true)
+                      (if-not (.compareAndSet closing? false true)
                         false
                         (do
                           (.close handshaker ch frame)
@@ -523,7 +523,7 @@
       ;; in that case *out* would be closed earlier and the underlying
       ;; netty channel is already terminated
       #(when (and (.isOpen ch)
-                  (compare-and-set! closing? false true))
+                  (.compareAndSet closing? false true))
          (.close handshaker ch (CloseWebSocketFrame.))))
 
      (let [s (doto
@@ -586,7 +586,7 @@
              (http/resolve-pings! pending-pings true)
 
              (instance? CloseWebSocketFrame msg)
-             (if-not (compare-and-set! closing? false true)
+             (if-not (.compareAndSet closing? false true)
                ;; closing already, nothing else could be done
                (netty/release msg)
                ;; reusing the same buffer
