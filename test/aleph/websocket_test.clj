@@ -187,4 +187,25 @@
             (is (= http-core/close-empty-status-code websocket-close-code))
             (is (= "" websocket-close-msg)))))))
 
-  (testing "concurrent close attempts"))
+  (testing "concurrent close attempts"
+    (let [attempts (d/deferred)]
+      (with-handler
+        (fn [req]
+          (d/chain'
+           (http/websocket-connection req)
+           (fn [conn]
+             (d/connect
+              (->> (range 10)
+                   (mapv #(time/in (inc (rand-int 1))
+                                   (fn []
+                                     (http/websocket-close! conn (+ % 4000)))))
+                   (apply d/zip'))
+              attempts))))
+        (let [client @(http/websocket-client "ws://localhost:8080")]
+          (with-closed client
+            (is (= 1 (count (filter true? @attempts))))
+            (let [{:keys [websocket-close-code
+                          websocket-close-msg]}
+                  (-> client s/description :sink)]
+              (is (<= 4000  websocket-close-code 4010))
+              (is (= "" websocket-close-msg)))))))))
