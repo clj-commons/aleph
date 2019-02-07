@@ -329,7 +329,7 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
-(def netty/sink-close-marker ::sink-close)
+(def sink-close-marker ::sink-close)
 
 (manifold/def-sink ChannelSink
   [coerce-fn
@@ -369,7 +369,7 @@
                 (nil? msg)
                 (d/success-deferred true)
 
-                (identical? netty/sink-close-marker msg)
+                (identical? sink-close-marker msg)
                 (d/success-deferred false)
 
                 :else
