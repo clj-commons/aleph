@@ -164,7 +164,23 @@
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
+  (when (and (some? (:unix-socket connection-options))
+             (or (some? dns-options)
+                 (some? (:name-resolver connection-options))))
+    (throw
+     (IllegalArgumentException.
+      "unix socket connection does not support custom name resolvers")))
+
+  (when (and (some? (:unix-socket connection-options))
+             (some? (:proxy-options connection-options)))
+    (throw
+     (IllegalArgumentException.
+      "unix socket connection does not support proxies")))
+
   (let [conn-options' (cond-> connection-options
+                        (some? (:unix-socket connection-options))
+                        (assoc :name-resolver :noop)
+
                         (some? dns-options)
                         (assoc :name-resolver (netty/dns-resolver-group dns-options)))
         p (promise)
