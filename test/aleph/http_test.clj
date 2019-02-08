@@ -169,14 +169,6 @@
   `(with-server (http/start-server ~handler {:port port})
      ~@body))
 
-(defmacro with-native-transport [handler & body]
-  `(binding [*connection-options* {:epoll? true
-                                   :kqueue? true}]
-     (with-server (http/start-server ~handler {:port port
-                                               :epoll? true
-                                               :kqueue? true})
-       ~@body)))
-
 (defmacro with-compressed-handler [handler & body]
   `(do
      (with-server (http/start-server ~handler {:port port :compression? true})
@@ -197,6 +189,19 @@
      (with-handler ~handler ~@body)
      (with-raw-handler ~handler ~@body)))
 
+(defmacro with-native-transport [handler & body]
+  `(binding [*connection-options* {:epoll? true
+                                   :kqueue? true}]
+     (with-server (http/start-server ~handler {:port port
+                                               :epoll? true
+                                               :kqueue? true})
+       ~@body)))
+
+(defmacro with-unix-domain [handler & body]
+  `(binding [*connection-options* {:unix-socket "/tmp/aleph-http.sock"}]
+     (with-server (http/start-server ~handler {:unix-socket "/tmp/aleph-http.sock"})
+       ~@body)))
+
 ;;;
 
 (deftest test-response-formats
@@ -216,6 +221,15 @@
           (bs/to-string
            (:body
             @(http-get (str "http://localhost:" port "/" path)))))))))
+
+(deftest test-response-formats-with-unix-domain
+  (with-unix-domain basic-handler
+    (doseq [[index [path result]] (map-indexed vector expected-results)]
+      (is
+       (= result
+          (bs/to-string
+           (:body
+            @(http-get (str "http://localhost/" path)))))))))
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
