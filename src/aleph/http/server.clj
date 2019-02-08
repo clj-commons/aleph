@@ -484,7 +484,9 @@
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context))))
+        (assoc options
+               :executor executor
+               :ssl? (or manual-ssl? (boolean ssl-context))))
       ssl-context
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
