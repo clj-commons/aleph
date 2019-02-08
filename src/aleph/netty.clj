@@ -31,6 +31,13 @@
      EpollDomainSocketChannel
      EpollServerSocketChannel
      EpollServerDomainSocketChannel]
+    [io.netty.channel.kqueue
+     KQueue
+     KQueueEventLoopGroup
+     KQueueSocketChannel
+     KQueueDomainSocketChannel
+     KQueueServerSocketChannel
+     KQueueServerDomainSocketChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -727,6 +734,9 @@
 (defn epoll-available? []
   (Epoll/isAvailable))
 
+(defn kqueue-available? []
+  (KQueue/isAvailable))
+
 (defn get-default-event-loop-threads
   "Determines the default number of threads to use for a Netty EventLoopGroup.
    This mimics the default used by Netty as of version 4.1."
@@ -750,11 +760,17 @@
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
+(def kqueue-client-group
+  (delay
+   (let [thread-count (get-default-event-loop-threads)
+         thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
+     (KQueueEventLoopGroup. (long thread-count) thread-factory))))
+
 (def nio-client-group
   (delay
-    (let [thread-count (get-default-event-loop-threads)
-          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (NioEventLoopGroup. (long thread-count) thread-factory))))
+   (let [thread-count (get-default-event-loop-threads)
+         thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
+     (NioEventLoopGroup. (long thread-count) thread-factory))))
 
 (defn convert-address-types [address-types]
   (case address-types
@@ -878,7 +894,8 @@
                   local-address
                   epoll?
                   nil
-                  nil))
+                  nil
+                  false))
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -893,7 +910,8 @@
                   local-address
                   epoll?
                   name-resolver
-                  nil))
+                  nil
+                  false))
   ([pipeline-builder
     ^SslContext ssl-context
     bootstrap-transform
@@ -901,7 +919,8 @@
     ^InetSocketAddress local-address
     epoll?
     name-resolver
-    unix-socket]
+    unix-socket
+    kqueue?]
    (let [unix-socket? (some? unix-socket)
          ^Class
          channel (cond
@@ -964,7 +983,8 @@
    bootstrap-transform
    on-close
    ^SocketAddress socket-address
-   epoll?]
+   epoll?
+   kqueue?]
   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
         num-threads    (* 2 num-cores)
         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)

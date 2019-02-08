@@ -455,6 +455,7 @@
            manual-ssl?
            shutdown-executor?
            epoll?
+           kqueue?
            compression?]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -498,7 +499,8 @@
 
         (some? port)
         (InetSocketAddress. port))
-      epoll?)))
+      epoll?
+      kqueue?)))
 
 ;;;
 

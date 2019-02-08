@@ -471,11 +471,13 @@
            on-closed
            response-executor
            epoll?
+           kqueue?
            proxy-options]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
          epoll? false
+         kqueue? false
          name-resolver :default}
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
@@ -499,7 +501,8 @@
             local-address
             epoll?
             name-resolver
-            unix-socket')]
+            unix-socket'
+            kqueue?)]
     (d/chain' c
       (fn [^Channel ch]
 
@@ -765,6 +768,7 @@
            bootstrap-transform
            pipeline-transform
            epoll?
+           kqueue?
            sub-protocols
            extensions?
            max-frame-payload
@@ -825,6 +829,9 @@
               (if ssl? 443 80)
               (.getPort uri))))
         local-address
-        epoll?)
+        epoll?
+        nil
+        nil
+        kqueue?)
       (fn [_]
         s))))
