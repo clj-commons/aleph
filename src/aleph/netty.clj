@@ -1015,10 +1015,18 @@
 
          [^Class channel ^EventLoopGroup group]
          (cond
-           ;; xxx: should try KQueue too
-           unix-socket?
+           (and unix-socket? (epoll-available?))
            [EpollServerDomainSocketChannel
             (EpollEventLoopGroup. num-threads thread-factory)]
+
+           (and unix-socket? (kqueue-available?))
+           [KQueueServerDomainSocketChannel
+            (KQueueEventLoopGroup. num-threads thread-factory)]
+
+           unix-socket?
+           (throw
+            (IllegalArgumentException.
+             "unix socket supports only native transports: epoll or KQueue"))
 
            (and epoll? (epoll-available?))
            [EpollServerSocketChannel
