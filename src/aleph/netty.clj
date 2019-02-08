@@ -927,7 +927,7 @@
            (and unix-socket? (epoll-available?))
            [EpollDomainSocketChannel @epoll-client-group]
 
-           (and unix-socket? (kqueue?-available?))
+           (and unix-socket? (kqueue-available?))
            [KQueueDomainSocketChannel @kqueue-client-group]
 
            unix-socket?
@@ -936,10 +936,10 @@
              "unix socket supports only native transports: epoll or KQueue"))
 
            (and epoll? (epoll-available?))
-           [EpollSocketChannel @epoll-client-groupl]
+           [EpollSocketChannel @epoll-client-group]
 
-           (and kqueue? (kqueue?-available?))
-           [KQueueSocketChannel @kqueue-client-groupl]
+           (and kqueue? (kqueue-available?))
+           [KQueueSocketChannel @kqueue-client-group]
 
            :else
            [NioSocketChannel @nio-client-group])
