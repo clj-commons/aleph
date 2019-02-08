@@ -489,16 +489,9 @@
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
-      ;; xxx: we should handle misconfiguration here
-      (cond
-        (some? socket-address)
-        socket-address
-
-        (some? unix-socket)
-        (DomainSocketAddress. ^String unix-socket)
-
-        (some? port)
-        (InetSocketAddress. port))
+      (netty/coerce-socket-address {:socket-address socket-address
+                                    :unix-socket unix-socket
+                                    :port port})
       epoll?
       kqueue?)))
 

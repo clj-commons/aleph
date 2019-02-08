@@ -986,6 +986,27 @@
           (fn [_]
             (.channel ^ChannelFuture f)))))))
 
+(defn ^SocketAddress coerce-socket-address [{:keys [socket-address
+                                                    unix-socket
+                                                    port]}]
+  (cond
+    (some? socket-address)
+    socket-address
+
+    (instance? DomainSocketAddress unix-socket)
+    unix-socket
+
+    (string? unix-socket)
+    (DomainSocketAddress. ^String unix-socket)
+
+    (some? port)
+    (InetSocketAddress. port)
+
+    :else
+    (throw
+     (IllegalArgumentException.
+      "either port, socket-address or unix-address should be specified"))))
+
 (defn start-server
   ([pipeline-builder
     ^SslContext ssl-context

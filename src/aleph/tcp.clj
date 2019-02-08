@@ -69,6 +69,7 @@
    |:---|:-----
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
    | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
@@ -78,6 +79,7 @@
   [handler
    {:keys [port
            socket-address
+           unix-socket
            ssl-context
            bootstrap-transform
            pipeline-transform
@@ -95,9 +97,9 @@
     ssl-context
     bootstrap-transform
     nil
-    (if socket-address
-      socket-address
-      (InetSocketAddress. port))
+    (netty/coerce-socket-address {:socket-address socket-address
+                                  :unix-socket unix-socket
+                                  :port port})
     epoll?
     kqueue?))
 
