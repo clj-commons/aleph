@@ -213,23 +213,25 @@
            (:body
             @(http-get (str "http://localhost:" port "/" path)))))))))
 
-(deftest test-response-formats-with-native-transports
-  (with-native-transport basic-handler
-    (doseq [[index [path result]] (map-indexed vector expected-results)]
-      (is
-       (= result
-          (bs/to-string
-           (:body
-            @(http-get (str "http://localhost:" port "/" path)))))))))
+(when (netty/native-transport-available?)
+  (deftest test-response-formats-with-native-transports
+    (with-native-transport basic-handler
+      (doseq [[index [path result]] (map-indexed vector expected-results)]
+        (is
+         (= result
+            (bs/to-string
+             (:body
+              @(http-get (str "http://localhost:" port "/" path))))))))))
 
-(deftest test-response-formats-with-unix-domain
-  (with-unix-domain basic-handler
-    (doseq [[index [path result]] (map-indexed vector expected-results)]
-      (is
-       (= result
-          (bs/to-string
-           (:body
-            @(http-get (str "http://localhost/" path)))))))))
+(when (netty/native-transport-available?)
+  (deftest test-response-formats-with-unix-domain
+    (with-unix-domain basic-handler
+      (doseq [[index [path result]] (map-indexed vector expected-results)]
+        (is
+         (= result
+            (bs/to-string
+             (:body
+              @(http-get (str "http://localhost/" path))))))))))
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
