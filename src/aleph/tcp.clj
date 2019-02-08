@@ -149,6 +149,7 @@
    | `port` | the port of the server.
    | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
+   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
    | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
@@ -161,6 +162,7 @@
            port
            remote-address
            local-address
+           unix-socket
            ssl-context
            ssl?
            insecure?
@@ -190,7 +192,7 @@
         local-address
         epoll?
         nil
-        nil
+        unix-socket
         kqueue?)
       (d/catch' #(d/error! s %)))
     s))
