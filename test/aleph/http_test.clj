@@ -30,6 +30,7 @@
 (set! *warn-on-reflection* false)
 
 (def ^:dynamic ^io.aleph.dirigiste.IPool *pool* nil)
+(def ^:dynamic *connection-options* nil)
 
 (netty/leak-detector-level! :paranoid)
 
@@ -153,7 +154,10 @@
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool {:connection-options {:insecure? true}})]
+     (binding [*pool* (http/connection-pool
+                       {:connection-options
+                        (merge *connection-options*
+                               {:insecure? true})})]
        (try
          ~@body
          (finally
@@ -164,6 +168,14 @@
 (defmacro with-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port})
      ~@body))
+
+(defmacro with-native-transport [handler & body]
+  `(binding [*connection-options* {:epoll? true
+                                   :kqueue? true}]
+     (with-server (http/start-server ~handler {:port port
+                                               :epoll? true
+                                               :kqueue? true})
+       ~@body)))
 
 (defmacro with-compressed-handler [handler & body]
   `(do
@@ -191,10 +203,19 @@
   (with-handler basic-handler
     (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
-        (= result
+       (= result
           (bs/to-string
-            (:body
-              @(http-get (str "http://localhost:" port "/" path)))))))))
+           (:body
+            @(http-get (str "http://localhost:" port "/" path)))))))))
+
+(deftest test-response-formats-with-native-transports
+  (with-native-transport basic-handler
+    (doseq [[index [path result]] (map-indexed vector expected-results)]
+      (is
+       (= result
+          (bs/to-string
+           (:body
+            @(http-get (str "http://localhost:" port "/" path)))))))))
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler

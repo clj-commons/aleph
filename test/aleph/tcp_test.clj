@@ -24,3 +24,14 @@
     (let [c @(tcp/client {:host "localhost", :port 10001})]
       (s/put! c "foo")
       (is (= "foo" (bs/to-string @(s/take! c)))))))
+
+(deftest test-echo-with-native-transport
+  (with-server (tcp/start-server echo-handler {:port 10001
+                                               :epoll? true
+                                               :kqueue? true})
+    (let [c @(tcp/client {:host "localhost"
+                          :port 10001
+                          :epoll? true
+                          :kqueue? true})]
+      (s/put! c "foo")
+      (is (= "foo" (bs/to-string @(s/take! c)))))))

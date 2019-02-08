@@ -17,7 +17,9 @@
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-echo
-  (let [s @(udp/socket {:port 10001, :epoll? true})]
+  (let [s @(udp/socket {:port 10001
+                        :epoll? true
+                        :kqueue? true})]
     (s/put! s {:host "localhost", :port 10001, :message "foo"})
     (is (= "foo"
           (bs/to-string
