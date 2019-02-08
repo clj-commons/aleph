@@ -925,7 +925,7 @@
     unix-socket
     kqueue?]
    (when (and (some? ssl-context)
-              (not (intstance? InetSocketAddress remote-address)))
+              (not (instance? InetSocketAddress remote-address)))
      (throw
       (IllegalArgumentException.
        "to setup SSL, host and port should be provided")))
@@ -999,7 +999,8 @@
 (defn ^SocketAddress coerce-socket-address [{:keys [socket-address
                                                     unix-socket
                                                     host
-                                                    port]}]
+                                                    port]
+                                             :as options}]
   (cond
     (some? socket-address)
     socket-address
@@ -1022,7 +1023,9 @@
     :else
     (throw
      (IllegalArgumentException.
-      "either host, port, socket-address or unix-address should be specified"))))
+      (str "either "
+           (if (contains? options :host) "host, " "")
+           "port, socket-address or unix-socket should be specified")))))
 
 (defn start-server
   ([pipeline-builder
