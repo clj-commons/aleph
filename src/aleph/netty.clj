@@ -966,9 +966,10 @@
 
          resolver' (when (some? name-resolver)
                      (cond
-                       (= :default name-resolver) nil
+                       (identical? :default name-resolver)
+                       nil
 
-                       (= :noop name-resolver)
+                       (identical? :noop name-resolver)
                        NoopAddressResolverGroup/INSTANCE
 
                        (instance? AddressResolverGroup name-resolver)
