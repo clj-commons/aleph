@@ -941,41 +941,40 @@
                                                      (.getHostName remote-address)
                                                      (.getPort remote-address)))
                               (pipeline-builder p))
-                            pipeline-builder)]
-     (try
-       (let [client-group (if (and (or epoll? unix-socket?)
-                                   (epoll-available?))
-                            @epoll-client-group
-                            @nio-client-group)
-             resolver' (when (some? name-resolver)
-                         (cond
-                           (= :default name-resolver) nil
+                            pipeline-builder)
 
-                           (= :noop name-resolver)
-                           NoopAddressResolverGroup/INSTANCE
+         client-group (if (and (or epoll? unix-socket?)
+                               (epoll-available?))
+                        @epoll-client-group
+                        @nio-client-group)
+         resolver' (when (some? name-resolver)
+                     (cond
+                       (= :default name-resolver) nil
 
-                           (instance? AddressResolverGroup name-resolver)
-                           name-resolver))
-             b (doto (Bootstrap.)
-                 (#(when-not unix-socket?
-                     (.option ^Bootstrap % ChannelOption/SO_REUSEADDR true)))
-                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                 (.group client-group)
-                 (.channel channel)
-                 (.handler (pipeline-initializer pipeline-builder))
-                 (.resolver resolver')
-                 bootstrap-transform)
+                       (= :noop name-resolver)
+                       NoopAddressResolverGroup/INSTANCE
 
-             ^SocketAddress
-             connect-to (if unix-socket? unix-socket remote-address)
-             f (if (some? local-address)
-                 (.connect b connect-to local-address)
-                 (.connect b connect-to))]
+                       (instance? AddressResolverGroup name-resolver)
+                       name-resolver))
+         b (doto (Bootstrap.)
+             (#(when-not unix-socket?
+                 (.option ^Bootstrap % ChannelOption/SO_REUSEADDR true)))
+             (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+             (.group client-group)
+             (.channel channel)
+             (.handler (pipeline-initializer pipeline-builder))
+             (.resolver resolver')
+             bootstrap-transform)
 
-         (d/chain' (wrap-future f)
-                   (fn [_]
-                     (let [ch (.channel ^ChannelFuture f)]
-                       ch))))))))
+         ^SocketAddress
+         connect-to (if unix-socket? unix-socket remote-address)
+         f (if (some? local-address)
+             (.connect b connect-to local-address)
+             (.connect b connect-to))]
+     (d/chain' (wrap-future f)
+               (fn [_]
+                 (let [ch (.channel ^ChannelFuture f)]
+                   ch))))))
 
 (defn start-server
   [pipeline-builder
