@@ -53,7 +53,6 @@
          bootstrap-transform identity}}]
   (let [in (atom nil)
         d (d/deferred)
-        epoll? 
 
         [g ^Class channel]
         (cond
