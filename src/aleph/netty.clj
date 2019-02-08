@@ -922,15 +922,27 @@
     unix-socket
     kqueue?]
    (let [unix-socket? (some? unix-socket)
-         ^Class channel (cond
-                          unix-socket?
-                          EpollDomainSocketChannel
+         [^Class channel client-group]
+         (cond
+           (and unix-socket? (epoll-available?))
+           [EpollDomainSocketChannel @epoll-client-group]
 
-                          (and epoll? (epoll-available?))
-                          EpollSocketChannel
+           (and unix-socket? (kqueue?-available?))
+           [KQueueDomainSocketChannel @kqueue-client-group]
 
-                          :else
-                          NioSocketChannel)
+           unix-socket?
+           (throw
+            (IllegalArgumentException.
+             "unix socket supports only native transports: epoll or KQueue"))
+
+           (and epoll? (epoll-available?))
+           [EpollSocketChannel @epoll-client-groupl]
+
+           (and kqueue? (kqueue?-available?))
+           [KQueueSocketChannel @kqueue-client-groupl]
+
+           :else
+           [NioSocketChannel @nio-client-group])
 
          pipeline-builder (if (nil? ssl-context)
                             pipeline-builder
@@ -941,11 +953,6 @@
                                                      (.getHostName remote-address)
                                                      (.getPort remote-address)))
                               (pipeline-builder p)))
-
-         client-group (if (and (or epoll? unix-socket?)
-                               (epoll-available?))
-                        @epoll-client-group
-                        @nio-client-group)
 
          resolver' (when (some? name-resolver)
                      (cond
