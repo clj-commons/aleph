@@ -15,7 +15,9 @@
      ChannelHandler
      ChannelPipeline]
     [io.netty.handler.ssl
-     SslHandler]))
+     SslHandler]
+    [io.netty.channel.unix
+     DomainSocketAddress]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -192,7 +194,10 @@
         local-address
         epoll?
         nil
-        unix-socket
+        (when (some? unix-socket)
+          (if (instance? DomainSocketAddress unix-socket)
+            unix-socket
+            (DomainSocketAddress. ^String unix-socket)))
         kqueue?)
       (d/catch' #(d/error! s %)))
     s))
