@@ -3,6 +3,7 @@
 (def netty-modules
   '[transport
     transport-native-epoll
+    transport-native-kqueue
     codec
     codec-http
     handler
