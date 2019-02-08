@@ -737,6 +737,9 @@
 (defn kqueue-available? []
   (KQueue/isAvailable))
 
+(defn native-transport-available? []
+  (or (epoll-available?) (kqueue-available?)))
+
 (defn get-default-event-loop-threads
   "Determines the default number of threads to use for a Netty EventLoopGroup.
    This mimics the default used by Netty as of version 4.1."

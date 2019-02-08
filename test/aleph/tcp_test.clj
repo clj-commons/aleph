@@ -35,3 +35,10 @@
                           :kqueue? true})]
       (s/put! c "foo")
       (is (= "foo" (bs/to-string @(s/take! c)))))))
+
+(deftest test-echo-with-unix-socket
+  (when (netty/native-transport-available?)
+    (with-server (tcp/start-server echo-handler {:unix-socket "/tmp/aleph.sock"})
+      (let [c @(tcp/client {:unix-socket "/tmp/aleph.sock"})]
+        (s/put! c "foo")
+        (is (= "foo" (bs/to-string @(s/take! c))))))))
