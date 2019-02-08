@@ -192,10 +192,15 @@
               (netty/insecure-ssl-client-context)
               (netty/ssl-client-context))))
         bootstrap-transform
-        (or remote-address (InetSocketAddress. ^String host (int port)))
+        (netty/coerce-socket-address {:scoket-address remote-address
+                                      :unix-socket unix-socket
+                                      :host host
+                                      :port port})
         local-address
         epoll?
         nil
+        ;; hack so we can define both host/port and unix domain socket
+        ;; to setup SSL handler properly
         (when (some? unix-socket)
           (if (instance? DomainSocketAddress unix-socket)
             unix-socket

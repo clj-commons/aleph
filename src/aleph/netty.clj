@@ -918,12 +918,18 @@
   ([pipeline-builder
     ^SslContext ssl-context
     bootstrap-transform
-    ^InetSocketAddress remote-address
+    ^SocketAddress remote-address
     ^InetSocketAddress local-address
     epoll?
     name-resolver
     unix-socket
     kqueue?]
+   (when (and (some? ssl-context)
+              (not (intstance? InetSocketAddress remote-address)))
+     (throw
+      (IllegalArgumentException.
+       "to setup SSL, host and port should be provided")))
+
    (let [unix-socket? (some? unix-socket)
          [^Class channel client-group]
          (cond
@@ -947,15 +953,16 @@
            :else
            [NioSocketChannel @nio-client-group])
 
-         pipeline-builder (if (nil? ssl-context)
-                            pipeline-builder
+         pipeline-builder (if (and (some? ssl-context)
+                                   (instance? InetSocketAddress remote-address))
                             (fn [^ChannelPipeline p]
                               (.addLast p "ssl-handler"
                                         (.newHandler ^SslContext ssl-context
                                                      (-> p .channel .alloc)
-                                                     (.getHostName remote-address)
-                                                     (.getPort remote-address)))
-                              (pipeline-builder p)))
+                                                     (.getHostName ^InetSocketAddress remote-address)
+                                                     (.getPort ^InetSocketAddress remote-address)))
+                              (pipeline-builder p))
+                            pipeline-builder)
 
          resolver' (when (some? name-resolver)
                      (cond
@@ -991,10 +998,20 @@
 
 (defn ^SocketAddress coerce-socket-address [{:keys [socket-address
                                                     unix-socket
+                                                    host
                                                     port]}]
   (cond
     (some? socket-address)
     socket-address
+
+    (and (some? host) (some? port))
+    (InetSocketAddress. ^String host (int port))
+
+    (some? host)
+    (InetSocketAddress. ^String host -1)
+
+    (some? port)
+    (InetSocketAddress. port)
 
     (instance? DomainSocketAddress unix-socket)
     unix-socket
@@ -1002,13 +1019,10 @@
     (string? unix-socket)
     (DomainSocketAddress. ^String unix-socket)
 
-    (some? port)
-    (InetSocketAddress. port)
-
     :else
     (throw
      (IllegalArgumentException.
-      "either port, socket-address or unix-address should be specified"))))
+      "either host, port, socket-address or unix-address should be specified"))))
 
 (defn start-server
   ([pipeline-builder
