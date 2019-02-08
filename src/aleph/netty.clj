@@ -922,31 +922,31 @@
     unix-socket
     kqueue?]
    (let [unix-socket? (some? unix-socket)
-         ^Class
-         channel (cond
-                   unix-socket?
-                   EpollDomainSocketChannel
+         ^Class channel (cond
+                          unix-socket?
+                          EpollDomainSocketChannel
 
-                   (and epoll? (epoll-available?))
-                   EpollSocketChannel
+                          (and epoll? (epoll-available?))
+                          EpollSocketChannel
 
-                   :else
-                   NioSocketChannel)
+                          :else
+                          NioSocketChannel)
 
-         pipeline-builder (if ssl-context
+         pipeline-builder (if (nil? ssl-context)
+                            pipeline-builder
                             (fn [^ChannelPipeline p]
                               (.addLast p "ssl-handler"
                                         (.newHandler ^SslContext ssl-context
                                                      (-> p .channel .alloc)
                                                      (.getHostName remote-address)
                                                      (.getPort remote-address)))
-                              (pipeline-builder p))
-                            pipeline-builder)
+                              (pipeline-builder p)))
 
          client-group (if (and (or epoll? unix-socket?)
                                (epoll-available?))
                         @epoll-client-group
                         @nio-client-group)
+
          resolver' (when (some? name-resolver)
                      (cond
                        (= :default name-resolver) nil
@@ -956,6 +956,7 @@
 
                        (instance? AddressResolverGroup name-resolver)
                        name-resolver))
+
          b (doto (Bootstrap.)
              (#(when-not unix-socket?
                  (.option ^Bootstrap % ChannelOption/SO_REUSEADDR true)))
@@ -968,13 +969,15 @@
 
          ^SocketAddress
          connect-to (if unix-socket? unix-socket remote-address)
+
          f (if (some? local-address)
              (.connect b connect-to local-address)
              (.connect b connect-to))]
-     (d/chain' (wrap-future f)
-               (fn [_]
-                 (let [ch (.channel ^ChannelFuture f)]
-                   ch))))))
+
+     (-> (wrap-future f)
+         (d/chain'
+          (fn [_]
+            (.channel ^ChannelFuture f)))))))
 
 (defn start-server
   [pipeline-builder
