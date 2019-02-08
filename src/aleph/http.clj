@@ -108,7 +108,7 @@
    |:---|:---
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
-   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to
+   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
