@@ -91,17 +91,17 @@
          kqueue? false}
     :as options}]
   (netty/start-server
-    (fn [^ChannelPipeline pipeline]
-      (.addLast pipeline "handler" (server-channel-handler handler options))
-      (pipeline-transform pipeline))
-    ssl-context
-    bootstrap-transform
-    nil
-    (netty/coerce-socket-address {:socket-address socket-address
-                                  :unix-socket unix-socket
-                                  :port port})
-    epoll?
-    kqueue?))
+   (fn [^ChannelPipeline pipeline]
+     (.addLast pipeline "handler" (server-channel-handler handler options))
+     (pipeline-transform pipeline))
+   ssl-context
+   bootstrap-transform
+   nil
+   (netty/coerce-socket-address {:socket-address socket-address
+                                 :unix-socket unix-socket
+                                 :port port})
+   epoll?
+   kqueue?))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
