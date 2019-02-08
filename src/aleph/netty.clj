@@ -1073,12 +1073,18 @@
      (try
        (let [b (doto (ServerBootstrap.)
                  (.option ChannelOption/SO_BACKLOG (int 1024))
-                 (.option ChannelOption/SO_REUSEADDR true)
+                 (#(when-not unix-socket?
+                     (.option ^ServerBootstrap %
+                              ChannelOption/SO_REUSEADDR
+                              true)))
                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                  (.group group)
                  (.channel channel)
                  (.childHandler (pipeline-initializer pipeline-builder))
-                 (.childOption ChannelOption/SO_REUSEADDR true)
+                 (#(when-not unix-socket?
+                     (.childOption ^ServerBootstrap %
+                                   ChannelOption/SO_REUSEADDR
+                                   true)))
                  (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                  bootstrap-transform)
 
