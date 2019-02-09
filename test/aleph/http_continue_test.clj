@@ -1,7 +1,6 @@
 (ns aleph.http-continue-test
   (:use [clojure test])
-  (:require [aleph.http :as sut]
-            [aleph
+  (:require [aleph
              [http :as http]
              [netty :as netty]
              [flow :as flow]
@@ -9,7 +8,8 @@
             [byte-streams :as bs]
             [manifold.deferred :as d]
             [manifold.stream :as s]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.util.concurrent ExecutorService]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -28,7 +28,7 @@
 (defn pack-lines [lines]
   (str (str/join "\r\n" lines) "\r\n\r\n"))
 
-(defn- run [server-options]
+(defn- run-test [server-options]
   (with-server (http/start-server ok-handler (merge
                                               server-options
                                               {:port port}))
@@ -44,7 +44,20 @@
         (is (str/includes? (bs/to-string finish-line) "OK"))))))
 
 (deftest test-default-continue-handler
-  (run {}))
+  (run-test {}))
 
-(deftest test-continue-handler-accept-all
-  (run {:continue-handler (constantly true)}))
+(deftest test-custom-continue-handler-accept-all
+  (testing "custom handler with realized response"
+    (run-test {:continue-handler (constantly true)}))
+
+  (testing "custom handler with deferred response"
+    (run-test {:continue-handler (constantly (d/success-deferred true))}))
+
+  (testing "custom handler with custom executor"
+    (let [exec (flow/utilization-executor 0.9 512)]
+      (run-test {:continue-handler (constantly (d/success-deferred true))
+                 :continue-executor exec})))
+
+  (testing "custom handler with inlined execution"
+    (run-test {:continue-handler (constantly true)
+               :continue-executor :none})))
