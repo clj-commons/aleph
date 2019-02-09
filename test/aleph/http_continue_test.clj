@@ -34,7 +34,7 @@
     (is (not= ::timeout packet))
     (is (str/includes? (bs/to-string packet) pattern))))
 
-(defn- run-test [server-options]
+(defn- test-accept [server-options]
   (with-server (http/start-server ok-handler (merge
                                               server-options
                                               {:port port}))
@@ -48,20 +48,61 @@
       (wait-for c "OK"))))
 
 (deftest test-default-continue-handler
-  (run-test {}))
+  (test-accept {}))
 
 (deftest test-custom-continue-handler-accept-all
   (testing "custom handler with realized response"
-    (run-test {:continue-handler (constantly true)}))
+    (test-accept {:continue-handler (constantly true)}))
 
   (testing "custom handler with deferred response"
-    (run-test {:continue-handler (constantly (d/success-deferred true))}))
+    (test-accept {:continue-handler (constantly (d/success-deferred true))}))
 
   (testing "custom handler with custom executor"
     (let [exec (flow/utilization-executor 0.9 512)]
-      (run-test {:continue-handler (constantly (d/success-deferred true))
-                 :continue-executor exec})))
+      (test-accept {:continue-handler (constantly (d/success-deferred true))
+                    :continue-executor exec})))
 
   (testing "custom handler with inlined execution"
-    (run-test {:continue-handler (constantly true)
-               :continue-executor :none})))
+    (test-accept {:continue-handler (constantly true)
+                  :continue-executor :none})))
+
+(defn- test-reject [server-options & [resp]]
+  (let [resp (or resp "417 Expectation Failed")]
+    (with-server (http/start-server ok-handler (merge
+                                                server-options
+                                                {:port port}))
+      (let [c @(tcp/client {:host "localhost" :port port})]
+        @(s/put! c (pack-lines ["PUT /file HTTP/1.1"
+                                "Host: localhost"
+                                "Content-Length: 3000"
+                                "Expect: 100-continue"]))
+        (wait-for c resp)))))
+
+(deftest test-custom-continue-handler-reject-all
+  (testing "custom handler with realized response"
+    (test-reject {:continue-handler (constantly false)}))
+
+  (testing "custom handler with deferred response"
+    (test-reject {:continue-handler (constantly (d/success-deferred false))}))
+
+  (testing "custom handler with custom executor"
+    (let [exec (flow/utilization-executor 0.9 512)]
+      (test-reject {:continue-handler (constantly (d/success-deferred false))
+                    :continue-executor exec})))
+
+  (testing "custom handler with inlined execution"
+    (test-reject {:continue-handler (constantly false)
+                  :continue-executor :none}))
+
+  (testing "custom handler with custom realized response"
+    (test-reject {:continue-handler (constantly {:status 417})})
+    (test-reject {:continue-handler (constantly {:status 401})}
+                 "401 Unauthorized")
+    (test-reject {:continue-handler (constantly {:status 403
+                                                 :headers {"X-Via" "Test"}})}
+                 "X-Via: Test"))
+
+  (testing "custom handler with custom deferred response"
+    (test-reject {:continue-handler
+                  (constantly (d/success-deferred {:status 401}))}
+                 "401 Unauthorized")))
