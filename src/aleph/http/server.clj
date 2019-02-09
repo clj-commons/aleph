@@ -415,16 +415,24 @@
             ch (.channel ctx)
             ring-req (core/netty-request->ring-request req ch nil)
             resume (fn [accept?]
-                     (if accept?
+                     (if (true? accept?)
                        (let [response (.retainedDuplicate
                                        default-accept-response)]
                          (netty/write-and-flush ctx response)
                          (.remove (.headers req) HttpHeaderNames/EXPECT)
                          (.fireChannelRead ctx req))
-                       (let [response (.retainedDuplicate
-                                       default-expectation-failed-response)]
+                       (let [r (cond
+                                 (false? accept?)
+                                 (.retainedDuplicate
+                                  default-expectation-failed-response)
+
+                                 (instance? HttpResponse accept?)
+                                 accept?
+
+                                 :else
+                                 (core/ring-response->netty-response accept?))]
                          (netty/release msg)
-                         (netty/write-and-flush ctx response))))]
+                         (netty/write-and-flush ctx r))))]
         (if (nil? continue-executor)
           (resume (continue-handler ring-req))
           (d/chain'
