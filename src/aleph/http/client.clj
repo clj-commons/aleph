@@ -779,6 +779,7 @@
          pipeline-transform identity
          raw-stream? false
          epoll? false
+         kqueue? false
          sub-protocols nil
          extensions? false
          max-frame-payload 65536
