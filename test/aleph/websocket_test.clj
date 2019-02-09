@@ -29,6 +29,12 @@
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
 
+(defmacro with-native-transport [handler & body]
+  `(with-server (http/start-server ~handler {:port 8080
+                                             :epoll? true
+                                             :kqueue? true})
+     ~@body))
+
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
     (d/chain #(s/connect % %))
@@ -79,7 +85,15 @@
   (with-compressing-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (is @(s/put! c "hello compressed"))
-      (is (= "hello compressed" @(s/try-take! c 5e3))))))
+      (is (= "hello compressed" @(s/try-take! c 5e3)))))
+
+  (when (netty/native-transport-available?)
+    (testing "webscoket server with native transport"
+      (with-native-transport
+        (let [c @(http/websocket-client "ws://localhost:8080"
+                                        {:epoll? true :kqueue? true})]
+          (is @(s/put! c "hello with native transport"))
+          (is (= "hello with native transport" @(s/try-take! c 5e3))))))))
 
 (deftest test-ping-pong-protocol
   (testing "empty ping from the client"
