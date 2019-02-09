@@ -85,15 +85,15 @@
   (with-compressing-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (is @(s/put! c "hello compressed"))
-      (is (= "hello compressed" @(s/try-take! c 5e3)))))
+      (is (= "hello compressed" @(s/try-take! c 5e3))))))
 
-  (when (netty/native-transport-available?)
-    (testing "webscoket server with native transport"
-      (with-native-transport
-        (let [c @(http/websocket-client "ws://localhost:8080"
-                                        {:epoll? true :kqueue? true})]
-          (is @(s/put! c "hello with native transport"))
-          (is (= "hello with native transport" @(s/try-take! c 5e3))))))))
+(when (netty/native-transport-available?)
+  (deftest test-websocket-with-native-transport
+    (with-native-transport
+      (let [c @(http/websocket-client "ws://localhost:8080"
+                                      {:epoll? true :kqueue? true})]
+        (is @(s/put! c "hello with native transport"))
+        (is (= "hello with native transport" @(s/try-take! c 5e3)))))))
 
 (deftest test-ping-pong-protocol
   (testing "empty ping from the client"
