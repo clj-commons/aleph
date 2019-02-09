@@ -397,6 +397,40 @@
           :else
           (.fireChannelRead ctx msg))))))
 
+(def ^HttpResponse default-accept-response
+  (HttpServerExpectContinueHandler/ACCEPT))
+
+(def ^HttpResponse default-expectation-failed-response
+  (HttpServerExpectContinueHandler/EXPECTATION_FAILED))
+
+(defn new-continue-handler [ssl? continue-handler continue-executor]
+  (netty/channel-inbound-handler
+
+   :channel-read
+   ([_ ctx msg]
+    (if-not (and (instance? HttpRequest msg)
+                 (HttpUtil/is100ContinueExpected ^HttpRequest msg))
+      (.fireChannelRead ctx msg)
+      (let [^HttpRequest req msg
+            ch (.channel ctx)
+            ring-req (core/netty-request->ring-request req ch nil)
+            resume (fn [accept?]
+                     (if accept?
+                       (let [response (.retainedDuplicate
+                                       default-accept-response)]
+                         (netty/write-and-flush ctx response)
+                         (.remove (.headers req) HttpHeaderNames/EXPECT)
+                         (.fireChannelRead ctx req))
+                       (let [response (.retainedDuplicate
+                                       default-expectation-failed-response)]
+                         (netty/release msg)
+                         (netty/write-and-flush ctx response))))]
+        (if (nil? continue-executor)
+          (resume (continue-handler ring-req))
+          (d/chain'
+           (d/future-with continue-executor (continue-handler ring-req))
+           resume)))))))
+
 (defn pipeline-builder
   [handler
    pipeline-transform
@@ -411,7 +445,9 @@
      ssl?
      compression?
      compression-level
-     idle-timeout]
+     idle-timeout
+     continue-handler
+     continue-executor]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -422,7 +458,12 @@
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))]
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+          continue-handler (if (nil? continue-handler)
+                             (HttpServerExpectContinueHandler.)
+                             (new-continue-handler ssl?
+                                                   continue-handler
+                                                   continue-executor))]
 
       (doto pipeline
         (.addLast "http-server"
@@ -431,7 +472,7 @@
             max-header-size
             max-chunk-size
             false))
-        (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
+        (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
             (let [compressor (HttpContentCompressor. (or compression-level 6))]
@@ -453,7 +494,9 @@
            manual-ssl?
            shutdown-executor?
            epoll?
-           compression?]
+           compression?
+           continue-handler
+           continue-executor]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
@@ -475,13 +518,28 @@
 
                    :else
                    (throw
-                     (IllegalArgumentException.
-                       (str "invalid executor specification: " (pr-str executor)))))]
+                    (IllegalArgumentException.
+                     (str "invalid executor specification: " (pr-str executor)))))
+        continue-executor (cond
+                            (nil? continue-executor)
+                            executor
+
+                            (identical? :none continue-executor)
+                            nil
+
+                            (instance? continue-executor)
+                            continue-executor
+
+                            :else
+                            (throw
+                             (IllegalArgumentException.
+                              (str "invalid continue-executor specification: "
+                                   (pr-str continue-executor)))))]
     (netty/start-server
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context))))
+        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor))
       ssl-context
       bootstrap-transform
       (when (and shutdown-executor? (instance? ExecutorService executor))
