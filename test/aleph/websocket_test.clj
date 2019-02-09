@@ -89,7 +89,7 @@
 
 (when (netty/native-transport-available?)
   (deftest test-websocket-with-native-transport
-    (with-native-transport
+    (with-native-transport echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080"
                                       {:epoll? true :kqueue? true})]
         (is @(s/put! c "hello with native transport"))
