@@ -13,7 +13,7 @@
      [set :as set]]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
-    [java.io IOException]
+    [java.io IOException File]
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.channel
@@ -997,6 +997,23 @@
           (fn [_]
             (.channel ^ChannelFuture f)))))))
 
+(defn ^DomainSocketAddress coerce-unix-socket [unix-socket]
+  (cond
+    (instance? DomainSocketAddress unix-socket)
+    unix-socket
+
+    (string? unix-socket)
+    (DomainSocketAddress. ^String unix-socket)
+
+    (instance? File unix-socket)
+    (DomainSocketAddress. ^File unix-socket)
+
+    :else
+    (throw
+     (IllegalArgumentException.
+      (str "failed to create SocketAddress from " (class unix-socket)
+           ", should be either DomainSocketAddress, string or File")))))
+
 (defn ^SocketAddress coerce-socket-address [{:keys [socket-address
                                                     unix-socket
                                                     host
@@ -1015,11 +1032,8 @@
     (some? port)
     (InetSocketAddress. port)
 
-    (instance? DomainSocketAddress unix-socket)
-    unix-socket
-
-    (string? unix-socket)
-    (DomainSocketAddress. ^String unix-socket)
+    (some? unix-socket)
+    (coerce-unix-socket unix-socket)
 
     :else
     (throw

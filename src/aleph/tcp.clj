@@ -69,7 +69,7 @@
    |:---|:-----
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
+   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
    | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
@@ -153,7 +153,7 @@
    | `port` | the port of the server.
    | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
-   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
+   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
    | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
@@ -202,9 +202,7 @@
         ;; hack so we can define both host/port and unix domain socket
         ;; to setup SSL handler properly
         (when (some? unix-socket)
-          (if (instance? DomainSocketAddress unix-socket)
-            unix-socket
-            (DomainSocketAddress. ^String unix-socket)))
+          (netty/coerce-unix-socket unix-socket))
         kqueue?)
       (d/catch' #(d/error! s %)))
     s))

@@ -483,9 +483,7 @@
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
         unix-socket' (when (some? unix-socket)
-                       (if (instance? DomainSocketAddress unix-socket)
-                         unix-socket
-                         (DomainSocketAddress. ^String unix-socket)))
+                       (netty/coerce-unix-socket unix-socket))
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))

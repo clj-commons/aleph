@@ -33,7 +33,7 @@
    |:---------|:-------------
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
+   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object if an SSL connection is desired |
    | `manual-ssl?` | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
@@ -109,7 +109,7 @@
    |:---|:---
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
-   | `unix-socket` | an optional path to unix domain socket endpoint or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
+   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
