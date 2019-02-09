@@ -424,14 +424,14 @@
       (.fireChannelRead ctx msg)
       (let [^HttpRequest req msg
             ch (.channel ctx)
-            ring-req (http/netty-request->ring-request req ch nil)
+            ring-req (http/netty-request->ring-request req ssl? ch nil)
             resume (fn [accept?]
                      (if (true? accept?)
                        ;; accepted
-                       (let [response (.retainedDuplicate
+                       (let [rsp (.retainedDuplicate
                                        ^ByteBufHolder
                                        default-accept-response)]
-                         (netty/write-and-flush ctx response)
+                         (netty/write-and-flush ctx rsp)
                          (.remove (.headers req) HttpHeaderNames/EXPECT)
                          (.fireChannelRead ctx req))
                        ;; rejected, use the default reject response if
@@ -542,30 +542,35 @@
                    (throw
                     (IllegalArgumentException.
                      (str "invalid executor specification: " (pr-str executor)))))
-        continue-executor (cond
-                            (nil? continue-executor)
-                            executor
+        continue-executor' (cond
+                             (nil? continue-executor)
+                             executor
 
-                            (identical? :none continue-executor)
-                            nil
+                             (identical? :none continue-executor)
+                             nil
 
-                            (instance? continue-executor)
-                            continue-executor
+                             (instance? Executor continue-executor)
+                             continue-executor
 
-                            :else
-                            (throw
-                             (IllegalArgumentException.
-                              (str "invalid continue-executor specification: "
-                                   (pr-str continue-executor)))))]
+                             :else
+                             (throw
+                              (IllegalArgumentException.
+                               (str "invalid continue-executor specification: "
+                                    (pr-str continue-executor)))))]
     (netty/start-server
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor))
+        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor'))
       ssl-context
       bootstrap-transform
-      (when (and shutdown-executor? (instance? ExecutorService executor))
-        #(.shutdown ^ExecutorService executor))
+      (when (and shutdown-executor? (or (instance? ExecutorService executor)
+                                        (instance? ExecutorService continue-executor)))
+        #(do
+           (when (instance? ExecutorService executor)
+             (.shutdown ^ExecutorService executor))
+           (when (instance? ExecutorService continue-executor)
+             (.shutdown ^ExecutorService continue-executor))))
       (if socket-address socket-address (InetSocketAddress. port))
       epoll?)))
 
