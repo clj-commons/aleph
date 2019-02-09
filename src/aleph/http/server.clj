@@ -22,7 +22,9 @@
     [aleph.http.core
      NettyRequest]
     [io.netty.buffer
-     ByteBuf]
+     ByteBuf
+     ByteBufHolder
+     Unpooled]
     [io.netty.channel
      Channel
      ChannelHandlerContext
@@ -39,7 +41,8 @@
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent HttpServerExpectContinueHandler]
+     LastHttpContent HttpServerExpectContinueHandler
+     HttpHeaderNames]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
      WebSocketServerHandshaker
@@ -398,12 +401,20 @@
           (.fireChannelRead ctx msg))))))
 
 (def ^HttpResponse default-accept-response
-  (HttpServerExpectContinueHandler/ACCEPT))
+  (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
+                            HttpResponseStatus/CONTINUE
+                            Unpooled/EMPTY_BUFFER))
+
+(HttpHeaders/setContentLength default-accept-response 0)
 
 (def ^HttpResponse default-expectation-failed-response
-  (HttpServerExpectContinueHandler/EXPECTATION_FAILED))
+  (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
+                            HttpResponseStatus/EXPECTATION_FAILED
+                            Unpooled/EMPTY_BUFFER))
 
-(defn new-continue-handler [ssl? continue-handler continue-executor]
+(HttpHeaders/setContentLength default-expectation-failed-response 0)
+
+(defn new-continue-handler [continue-handler continue-executor ssl?]
   (netty/channel-inbound-handler
 
    :channel-read
@@ -413,26 +424,28 @@
       (.fireChannelRead ctx msg)
       (let [^HttpRequest req msg
             ch (.channel ctx)
-            ring-req (core/netty-request->ring-request req ch nil)
+            ring-req (http/netty-request->ring-request req ch nil)
             resume (fn [accept?]
                      (if (true? accept?)
+                       ;; accepted
                        (let [response (.retainedDuplicate
+                                       ^ByteBufHolder
                                        default-accept-response)]
                          (netty/write-and-flush ctx response)
                          (.remove (.headers req) HttpHeaderNames/EXPECT)
                          (.fireChannelRead ctx req))
-                       (let [r (cond
-                                 (false? accept?)
-                                 (.retainedDuplicate
-                                  default-expectation-failed-response)
-
-                                 (instance? HttpResponse accept?)
-                                 accept?
-
-                                 :else
-                                 (core/ring-response->netty-response accept?))]
+                       ;; rejected, use the default reject response if
+                       ;; alternative is not provided
+                       (do
                          (netty/release msg)
-                         (netty/write-and-flush ctx r))))]
+                         (if (false? accept?)
+                           (let [rsp (.retainedDuplicate
+                                      ^ByteBufHolder
+                                      default-expectation-failed-response)]
+                             (netty/write-and-flush ctx rsp))
+                           (let [keep-alive? (HttpUtil/isKeepAlive req)
+                                 rsp (http/ring-response->netty-response accept?)]
+                             (http/send-message ctx keep-alive? ssl? rsp nil))))))]
         (if (nil? continue-executor)
           (resume (continue-handler ring-req))
           (d/chain'
@@ -467,11 +480,12 @@
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
                     (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+          ^ChannelHandler
           continue-handler (if (nil? continue-handler)
                              (HttpServerExpectContinueHandler.)
-                             (new-continue-handler ssl?
-                                                   continue-handler
-                                                   continue-executor))]
+                             (new-continue-handler continue-handler
+                                                   continue-executor
+                                                   ssl?))]
 
       (doto pipeline
         (.addLast "http-server"
