@@ -1,13 +1,14 @@
 (ns aleph.websocket-test
   (:use
-    [clojure test])
+   [clojure test])
   (:require
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [aleph.netty :as netty]
-    [byte-streams :as bs]
-    [aleph.http :as http]
-    [clojure.tools.logging :as log]))
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [aleph.netty :as netty]
+   [byte-streams :as bs]
+   [aleph.http :as http]
+   [clojure.tools.logging :as log]
+   [clojure.string :as str]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -35,15 +36,21 @@
                                              :kqueue? true})
      ~@body))
 
+(defn log-upgrade-error [^Throwable e]
+  (log/error "upgrade to websocket conn failed"
+             (if-not (str/ends-with? (.getMessage e) "missing upgrade")
+               e
+               ": missing upgrade")))
+
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
-    (d/chain #(s/connect % %))
-    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
+    (d/chain' #(s/connect % %))
+    (d/catch' (fn [e] (log-upgrade-error e) {}))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
-    (d/chain #(s/connect % %))
-    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
+    (d/chain' #(s/connect % %))
+    (d/catch' (fn [e] (log-upgrade-error e) {}))))
 
 (deftest test-echo-handler
   (with-handler echo-handler
