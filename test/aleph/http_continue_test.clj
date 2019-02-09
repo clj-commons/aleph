@@ -28,6 +28,12 @@
 (defn pack-lines [lines]
   (str (str/join "\r\n" lines) "\r\n\r\n"))
 
+(defn wait-for [client pattern]
+  (let [packet @(s/try-take! client ::drained 1e3 ::timeout)]
+    (is (not= ::drained packet))
+    (is (not= ::timeout packet))
+    (is (str/includes? (bs/to-string packet) pattern))))
+
 (defn- run-test [server-options]
   (with-server (http/start-server ok-handler (merge
                                               server-options
@@ -37,11 +43,9 @@
                               "Host: localhost"
                               "Content-Length: 3"
                               "Expect: 100-continue"]))
-      (let [resp-line @(s/try-take! c ::drained 1e3 ::timeout)]
-        (is (str/includes? (bs/to-string resp-line) "100 Continue")))
+      (wait-for c "100 Continue")
       @(s/put! c (pack-lines ["OK?"]))
-      (let [finish-line @(s/try-take! c ::drained 1e3 ::timeout)]
-        (is (str/includes? (bs/to-string finish-line) "OK"))))))
+      (wait-for c "OK"))))
 
 (deftest test-default-continue-handler
   (run-test {}))
