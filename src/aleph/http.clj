@@ -419,12 +419,12 @@
       response)))
 
 (defn file
-  "Specifies file or region of the file to be sent over the network"
+  "Specifies a file or a region of the file to be sent over the network"
   ([path]
    (file path nil nil nil))
   ([path offset length]
    (file path offset length nil))
-  ([path ^long offset ^long length ^long chunk-size]
+  ([path offset length chunk-size]
    (let [^File
          fd (cond
               (string? path)
