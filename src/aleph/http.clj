@@ -468,7 +468,7 @@
            [p c] (if region?
                    [offset length]
                    [0 len])
-           chunk-size (or chunk-size ChunkedStream/DEFAULT_CHUNK_SIZE)]
+           chunk-size (or chunk-size http-core/default-chunk-size)]
        (when (and region? (< len (+ offset length)))
          (throw
           (IllegalArgumentException.

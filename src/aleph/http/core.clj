@@ -333,10 +333,12 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
+(def default-chunk-size 8192)
+
 (deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 
 (defn ^HttpFile file->http-file [^File fd]
-  (HttpFile. fd 0 (.length fd) ChunkedStream/DEFAULT_CHUNK_SIZE))
+  (HttpFile. fd 0 (.length fd) default-chunk-size))
 
 (defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. (.-fd file) "r")
