@@ -428,6 +428,8 @@
 
       f)))
 
+(deftype HttpFile [fd position count])
+
 (deftype WebsocketPing [deferred payload])
 
 (defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]

@@ -1,29 +1,32 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
-    [clojure.string :as str]
-    [manifold.deferred :as d]
-    [manifold.executor :as executor]
-    [manifold.stream :as s]
-    [aleph.flow :as flow]
-    [aleph.http
-     [server :as server]
-     [client :as client]
-     [client-middleware :as middleware]
-     [core :as http-core]]
-    [aleph.netty :as netty])
+   [clojure.string :as str]
+   [manifold.deferred :as d]
+   [manifold.executor :as executor]
+   [manifold.stream :as s]
+   [aleph.flow :as flow]
+   [aleph.http
+    [server :as server]
+    [client :as client]
+    [client-middleware :as middleware]
+    [core :as http-core]]
+   [aleph.netty :as netty]
+   [clojure.java.io :as io])
   (:import
-    [io.aleph.dirigiste Pools]
-    [aleph.utils
-     PoolTimeoutException
-     ConnectionTimeoutException
-     RequestTimeoutException
-     ReadTimeoutException]
-    [java.net
-     URI
-     InetSocketAddress]
-    [java.util.concurrent
-     TimeoutException]))
+   [io.aleph.dirigiste Pools]
+   [aleph.utils
+    PoolTimeoutException
+    ConnectionTimeoutException
+    RequestTimeoutException
+    ReadTimeoutException]
+   [java.net
+    URI
+    InetSocketAddress]
+   [java.util.concurrent
+    TimeoutException]
+   [java.io File]
+   [java.nio.file Path]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -414,3 +417,61 @@
     (let [response (d/deferred)]
       (handler request #(d/success! response %) #(d/error! response %))
       response)))
+
+(defn file
+  "Specifies file or region of the file to be sent over the network"
+  ([path]
+   (file path nil nil))
+  ([path ^long position ^long count]
+   (let [^File
+         fd (cond
+              (string? path)
+              (io/file path)
+
+              (instance? File path)
+              path
+
+              (instance? Path path)
+              (.toFile ^Path path)
+
+              :else
+              (throw
+               (IllegalArgumentException.
+                (str "cannot conver " (class path) " to file, "
+                     "expected either string, java.io.File "
+                     "or java.nio.file.Path"))))
+         region? (or (some? position)
+                     (some? count))]
+     (when-not (.exists fd)
+       (throw
+        (IllegalArgumentException.
+         (str fd " file does not exist"))))
+
+     (when (.isDirectory fd)
+       (throw
+        (IllegalArgumentException.
+         (str fd " is a directory, file expected"))))
+
+     (when (and region?
+                (not (pos? position)))
+       (throw
+        (IllegalArgumentException.
+         "position of the region of the file should be greater than 0")))
+
+     (when (and region?
+                (not (pos? count)))
+       (throw
+        (IllegalArgumentException.
+         "size of the region should be greater than 0")))
+
+     (let [len (.length fd)
+           [p c] (if region?
+                   [position count]
+                   [0 len])]
+       (when (and region?
+                  (< len (+ position count)))
+         (throw
+          (IllegalArgumentException.
+           "the region exceeds the size of the file")))
+
+       (aleph.http.core.HttpFile. fd p c)))))
