@@ -340,7 +340,7 @@
   (HttpFile. fd 0 (.length fd) default-chunk-size))
 
 (defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
-  (let [raf (RandomAccessFile. (.-fd file) "r")
+  (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
                          (.-offset file)
                          (.-length file)
@@ -354,7 +354,7 @@
   (netty/write-and-flush ch body))
 
 (defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
-  (let [raf (RandomAccessFile. (.-fd file) "r")
+  (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
         fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
     (try-set-content-length! msg (.-length file))
