@@ -346,7 +346,7 @@
                          (.-offset file)
                          (.-length file)
                          (.-chunk-size file))]
-    (try-set-content-length! msg len)
+    (try-set-content-length! msg (.-length file))
     (netty/write ch msg)
     (netty/write-and-flush ch (HttpChunkedInput. cf))))
 
@@ -358,7 +358,7 @@
   (let [raf (RandomAccessFile. (.-fd file) "r")
         fc (.getChannel raf)
         fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
-    (try-set-content-length! msg len)
+    (try-set-content-length! msg (.-length file))
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
