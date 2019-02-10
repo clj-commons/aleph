@@ -423,9 +423,9 @@
   "Specifies file or region of the file to be sent over the network"
   ([path]
    (file path nil nil nil))
-  ([path offset lenght]
-   (file path offset lenght nil))
-  ([path ^long offset ^long lenght ^long chunk-size]
+  ([path offset length]
+   (file path offset length nil))
+  ([path ^long offset ^long length ^long chunk-size]
    (let [^File
          fd (cond
               (string? path)
@@ -443,7 +443,7 @@
                 (str "cannot conver " (class path) " to file, "
                      "expected either string, java.io.File "
                      "or java.nio.file.Path"))))
-         region? (or (some? offset) (some? lenght))]
+         region? (or (some? offset) (some? length))]
      (when-not (.exists fd)
        (throw
         (IllegalArgumentException.
@@ -459,7 +459,7 @@
         (IllegalArgumentException.
          "offset of the region should be 0 or greater")))
 
-     (when (and region? (not (pos? lenght)))
+     (when (and region? (not (pos? length)))
        (throw
         (IllegalArgumentException.
          "length of the region should be greater than 0")))
