@@ -24,9 +24,7 @@
     URI
     InetSocketAddress]
    [java.util.concurrent
-    TimeoutException]
-   [java.io File]
-   [java.nio.file Path]))
+    TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -419,58 +417,12 @@
       response)))
 
 (defn file
-  "Specifies a file or a region of the file to be sent over the network"
+  "Specifies a file or a region of the file to be sent over the network.
+   Accepts string path to the file, instance of java.io.File or instance of
+   java.nio.file.Path."
   ([path]
-   (file path nil nil nil))
+   (http-core/new-http-file path nil nil nil))
   ([path offset length]
-   (file path offset length nil))
+   (http-core/new-http-file path offset length nil))
   ([path offset length chunk-size]
-   (let [^File
-         fd (cond
-              (string? path)
-              (io/file path)
-
-              (instance? File path)
-              path
-
-              (instance? Path path)
-              (.toFile ^Path path)
-
-              :else
-              (throw
-               (IllegalArgumentException.
-                (str "cannot conver " (class path) " to file, "
-                     "expected either string, java.io.File "
-                     "or java.nio.file.Path"))))
-         region? (or (some? offset) (some? length))]
-     (when-not (.exists fd)
-       (throw
-        (IllegalArgumentException.
-         (str fd " file does not exist"))))
-
-     (when (.isDirectory fd)
-       (throw
-        (IllegalArgumentException.
-         (str fd " is a directory, file expected"))))
-
-     (when (and region? (not (<= 0 offset)))
-       (throw
-        (IllegalArgumentException.
-         "offset of the region should be 0 or greater")))
-
-     (when (and region? (not (pos? length)))
-       (throw
-        (IllegalArgumentException.
-         "length of the region should be greater than 0")))
-
-     (let [len (.length fd)
-           [p c] (if region?
-                   [offset length]
-                   [0 len])
-           chunk-size (or chunk-size http-core/default-chunk-size)]
-       (when (and region? (< len (+ offset length)))
-         (throw
-          (IllegalArgumentException.
-           "the region exceeds the size of the file")))
-
-       (aleph.http.core.HttpFile. fd p c chunk-size)))))
+   (http-core/new-http-file path offset length chunk-size)))

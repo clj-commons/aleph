@@ -7,7 +7,8 @@
     [clojure.set :as set]
     [clojure.string :as str]
     [byte-streams :as bs]
-    [potemkin :as p])
+    [potemkin :as p]
+    [clojure.java.io :as io])
   (:import
     [io.netty.channel
      Channel
@@ -48,6 +49,7 @@
      File
      RandomAccessFile
      Closeable]
+    [java.nio.file Path]
     [java.util.concurrent
      ConcurrentHashMap
      ConcurrentLinkedQueue
@@ -336,8 +338,61 @@
 
 (deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 
-(defn ^HttpFile file->http-file [^File fd]
-  (HttpFile. fd 0 (.length fd) default-chunk-size))
+(defn new-http-file
+  ([path]
+   (new-http-file path nil nil default-chunk-size))
+  ([path offset length]
+   (new-http-file path offset length default-chunk-size))
+  ([path offset length chunk-size]
+   (let [^File
+         fd (cond
+              (string? path)
+              (io/file path)
+
+              (instance? File path)
+              path
+
+              (instance? Path path)
+              (.toFile ^Path path)
+
+              :else
+              (throw
+               (IllegalArgumentException.
+                (str "cannot conver " (class path) " to file, "
+                     "expected either string, java.io.File "
+                     "or java.nio.file.Path"))))
+         region? (or (some? offset) (some? length))]
+     (when-not (.exists fd)
+       (throw
+        (IllegalArgumentException.
+         (str fd " file does not exist"))))
+
+     (when (.isDirectory fd)
+       (throw
+        (IllegalArgumentException.
+         (str fd " is a directory, file expected"))))
+
+     (when (and region? (not (<= 0 offset)))
+       (throw
+        (IllegalArgumentException.
+         "offset of the region should be 0 or greater")))
+
+     (when (and region? (not (pos? length)))
+       (throw
+        (IllegalArgumentException.
+         "length of the region should be greater than 0")))
+
+     (let [len (.length fd)
+           [p c] (if region?
+                   [offset length]
+                   [0 len])
+           chunk-size (or chunk-size default-chunk-size)]
+       (when (and region? (< len (+ offset length)))
+         (throw
+          (IllegalArgumentException.
+           "the region exceeds the size of the file")))
+
+       (aleph.http.core.HttpFile. fd p c chunk-size)))))
 
 (defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
@@ -424,7 +479,10 @@
               (send-chunked-body ch msg body)
 
               (instance? File body)
-              (send-file-body ch ssl? msg (file->http-file body))
+              (send-file-body ch ssl? msg (new-http-file body))
+
+              (instance? Path body)
+              (send-file-body ch ssl? msg (new-http-file body))
 
               (instance? HttpFile body)
               (send-file-body ch ssl? msg body)
