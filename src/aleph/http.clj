@@ -26,8 +26,7 @@
    [java.util.concurrent
     TimeoutException]
    [java.io File]
-   [java.nio.file Path]
-   [io.netty.handler.stream ChunkedStream]))
+   [java.nio.file Path]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped

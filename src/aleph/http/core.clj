@@ -38,7 +38,6 @@
     [io.netty.handler.stream
      ChunkedInput
      ChunkedFile
-     ChunkedStream
      ChunkedWriteHandler]
     [io.netty.handler.codec.http.websocketx
      WebSocketFrame
