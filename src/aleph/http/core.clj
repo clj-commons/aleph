@@ -7,6 +7,7 @@
     [clojure.set :as set]
     [clojure.string :as str]
     [byte-streams :as bs]
+    [byte-streams.graph :as g]
     [potemkin :as p]
     [clojure.java.io :as io])
   (:import
@@ -50,6 +51,9 @@
      RandomAccessFile
      Closeable]
     [java.nio.file Path]
+    [java.nio.channels
+     FileChannel
+     FileChannel$MapMode]
     [java.util.concurrent
      ConcurrentHashMap
      ConcurrentLinkedQueue
@@ -394,6 +398,33 @@
 
        (aleph.http.core.HttpFile. fd p c chunk-size)))))
 
+(bs/def-conversion ^{:cost 0} [HttpFile (bs/seq-of ByteBuffer)]
+  [file {:keys [chunk-size writable?]
+         :or {chunk-size (int default-chunk-size)
+              writable? false}}]
+  (let [^RandomAccessFile raf (RandomAccessFile. ^File (.-fd file)
+                                                 (if writable? "rw" "r"))
+        ^FileChannel fc (.getChannel raf)
+        size (.-length file)
+        buf-seq (fn buf-seq [offset]
+                  (when-not (<= size offset)
+                    (let [remaining (- size offset)]
+                      (lazy-seq
+                       (cons
+                        (.map fc
+                              (if writable?
+                                FileChannel$MapMode/READ_WRITE
+                                FileChannel$MapMode/READ_ONLY)
+                              offset
+                              (min remaining chunk-size))
+                        (buf-seq (+ offset chunk-size)))))))]
+    (g/closeable-seq
+     (buf-seq (.-offset file))
+     false
+     #(do
+        (.close raf)
+        (.close fc)))))
+
 (defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
@@ -422,7 +453,7 @@
     ssl?
     (send-streaming-body ch msg
       (-> file
-        (bs/to-byte-buffers {:chunk-size 1e6})
+        (bs/to-byte-buffers {:chunk-size (.-chunk-size file)})
         s/->source))
 
     (chunked-writer-enabled? ch)
