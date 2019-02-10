@@ -36,7 +36,10 @@
      IdleStateEvent
      IdleStateHandler]
     [io.netty.handler.stream
-     ChunkedInput ChunkedFile ChunkedWriteHandler]
+     ChunkedInput
+     ChunkedFile
+     ChunkedStream
+     ChunkedWriteHandler]
     [io.netty.handler.codec.http.websocketx
      WebSocketFrame
      PingWebSocketFrame
@@ -330,29 +333,35 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-chunked-file [ch ^HttpMessage msg ^File file]
-  (let [raf (RandomAccessFile. file "r")
-        len (.length raf)
-        ci (HttpChunkedInput. (ChunkedFile. raf))]
+(deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
+
+(defn ^HttpFile file->http-file [^File fd]
+  (HttpFile. fd 0 (.length fd) ChunkedStream/DEFAULT_CHUNK_SIZE))
+
+(defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
+  (let [raf (RandomAccessFile. (.-fd file) "r")
+        cf (ChunkedFile. raf
+                         (.-offset file)
+                         (.-length file)
+                         (.-chunk-size file))]
     (try-set-content-length! msg len)
     (netty/write ch msg)
-    (netty/write-and-flush ch ci)))
+    (netty/write-and-flush ch (HttpChunkedInput. cf))))
 
 (defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
   (netty/write ch msg)
   (netty/write-and-flush ch body))
 
-(defn send-file-region [ch ^HttpMessage msg ^File file]
-  (let [raf (RandomAccessFile. file "r")
-        len (.length raf)
+(defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
+  (let [raf (RandomAccessFile. (.-fd file) "r")
         fc (.getChannel raf)
-        fr (DefaultFileRegion. fc 0 len)]
+        fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
     (try-set-content-length! msg len)
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-file-body [ch ssl? ^HttpMessage msg ^File file]
+(defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
     (send-streaming-body ch msg
@@ -414,6 +423,9 @@
               (send-chunked-body ch msg body)
 
               (instance? File body)
+              (send-file-body ch ssl? msg (file->http-file body))
+
+              (instance? HttpFile body)
               (send-file-body ch ssl? msg body)
 
               :else
@@ -427,8 +439,6 @@
         (handle-cleanup ch f))
 
       f)))
-
-(deftype HttpFile [fd position count])
 
 (deftype WebsocketPing [deferred payload])
 

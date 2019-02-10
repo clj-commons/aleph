@@ -26,7 +26,8 @@
    [java.util.concurrent
     TimeoutException]
    [java.io File]
-   [java.nio.file Path]))
+   [java.nio.file Path]
+   [io.netty.handler.stream ChunkedStream]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -421,8 +422,10 @@
 (defn file
   "Specifies file or region of the file to be sent over the network"
   ([path]
-   (file path nil nil))
-  ([path ^long position ^long count]
+   (file path nil nil nil))
+  ([path offset lenght]
+   (file path offset lenght nil))
+  ([path ^long offset ^long lenght ^long chunk-size]
    (let [^File
          fd (cond
               (string? path)
@@ -440,8 +443,7 @@
                 (str "cannot conver " (class path) " to file, "
                      "expected either string, java.io.File "
                      "or java.nio.file.Path"))))
-         region? (or (some? position)
-                     (some? count))]
+         region? (or (some? offset) (some? lenght))]
      (when-not (.exists fd)
        (throw
         (IllegalArgumentException.
@@ -452,26 +454,24 @@
         (IllegalArgumentException.
          (str fd " is a directory, file expected"))))
 
-     (when (and region?
-                (not (pos? position)))
+     (when (and region? (not (<= 0 offset)))
        (throw
         (IllegalArgumentException.
-         "position of the region of the file should be greater than 0")))
+         "offset of the region should be 0 or greater")))
 
-     (when (and region?
-                (not (pos? count)))
+     (when (and region? (not (pos? lenght)))
        (throw
         (IllegalArgumentException.
-         "size of the region should be greater than 0")))
+         "length of the region should be greater than 0")))
 
      (let [len (.length fd)
            [p c] (if region?
-                   [position count]
-                   [0 len])]
-       (when (and region?
-                  (< len (+ position count)))
+                   [offset length]
+                   [0 len])
+           chunk-size (or chunk-size ChunkedStream/DEFAULT_CHUNK_SIZE)]
+       (when (and region? (< len (+ offset length)))
          (throw
           (IllegalArgumentException.
            "the region exceeds the size of the file")))
 
-       (aleph.http.core.HttpFile. fd p c)))))
+       (aleph.http.core.HttpFile. fd p c chunk-size)))))
