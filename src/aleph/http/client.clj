@@ -195,13 +195,9 @@
           (instance? FullHttpResponse msg)
           (let [^FullHttpResponse rsp msg
                 content (.content rsp)
-                c (d/deferred)
-                s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
-            (s/on-closed s #(d/success! c true))
-            (s/put! s (netty/buf->array content))
+                body (netty/buf->array content)]
             (netty/release content)
-            (handle-response rsp c s)
-            (s/close! s))
+            (handle-response rsp (d/success-deferred false) body))
 
           (instance? HttpResponse msg)
           (let [rsp msg]
