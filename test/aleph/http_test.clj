@@ -228,10 +228,11 @@
   (with-ssl-handler basic-handler
     (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
-        (= result
+       (= result
           (bs/to-string
-            (:body
-              @(http-get (str "https://localhost:" port "/" path)))))))))
+           (:body
+            @(http-get (str "https://localhost:" port "/" path)))))
+       (str path "path failed")))))
 
 (def words (slurp "/usr/share/dict/words"))
 
