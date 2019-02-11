@@ -38,6 +38,7 @@
      TooLongFrameException]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
+     FullHttpRequest
      HttpContent HttpHeaders HttpUtil
      HttpContentCompressor
      HttpRequest HttpResponse
@@ -272,6 +273,16 @@
               (handle-request ctx req s))
             (reset! request req)))
 
+        process-full-request
+        (fn [ctx ^FullHttpRequest req]
+          ;; HttpObjectAggregator disables chunked encoding, no need to check for it.
+          (let [content (.content req)
+                body (when (pos? (.readableBytes content))
+                       (netty/buf->array content))]
+            ;; Don't release content as it will happen automatically once whole
+            ;; request is released.
+            (handle-request ctx req body)))
+
         process-last-content
         (fn [ctx ^HttpContent msg]
           (let [content (.content msg)]
@@ -350,6 +361,12 @@
       ([_ ctx msg]
         (cond
 
+          ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
+          (instance? FullHttpRequest msg)
+          (if (invalid-request? msg)
+            (reject-invalid-request ctx msg)
+            (process-full-request ctx msg))
+
           (instance? HttpRequest msg)
           (if (invalid-request? msg)
             (reject-invalid-request ctx msg)
@@ -397,6 +414,21 @@
       :channel-read
       ([_ ctx msg]
         (cond
+
+          ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
+          (instance? FullHttpRequest msg)
+          (if (invalid-request? msg)
+            (reject-invalid-request ctx msg)
+            (let [^FullHttpRequest req msg
+                  content (.content req)
+                  ch (netty/channel ctx)
+                  s (netty/source ch)]
+              (when-not (zero? (.readableBytes content))
+                ;; Retain the content of FullHttpRequest one extra time to
+                ;; compensate for it being released together with the request.
+                (netty/put! ch s (netty/acquire content)))
+              (s/close! s)
+              (handle-request ctx req s)))
 
           (instance? HttpRequest msg)
           (if (invalid-request? msg)
