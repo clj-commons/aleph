@@ -178,31 +178,33 @@
          epoll? false
          kqueue? false}
     :as options}]
-  (let [[s handler] (client-channel-handler options)]
-    (->
-      (netty/create-client
+  (let [[s handler] (client-channel-handler options)
+
+        pipeline-builder
         (fn [^ChannelPipeline pipeline]
           (.addLast pipeline "handler" ^ChannelHandler handler)
           (when pipeline-transform
-            (pipeline-transform pipeline)))
-        (if ssl-context
-          ssl-context
-          (when ssl?
-            (if insecure?
-              (netty/insecure-ssl-client-context)
-              (netty/ssl-client-context))))
-        bootstrap-transform
-        (netty/coerce-socket-address {:scoket-address remote-address
-                                      :unix-socket unix-socket
-                                      :host host
-                                      :port port})
-        local-address
-        epoll?
-        nil
-        ;; hack so we can define both host/port and unix domain socket
-        ;; to setup SSL handler properly
-        (when (some? unix-socket)
-          (netty/coerce-unix-socket unix-socket))
-        kqueue?)
-      (d/catch' #(d/error! s %)))
+            (pipeline-transform pipeline)))]
+    (-> (netty/create-client
+         {:pipeline-builder pipeline-builder
+          :ssl-context (if ssl-context
+                         ssl-context
+                         (when ssl?
+                           (if insecure?
+                             (netty/insecure-ssl-client-context)
+                             (netty/ssl-client-context))))
+          :bootstrap-transform bootstrap-transform
+          :remote-address (netty/coerce-socket-address
+                           {:scoket-address remote-address
+                            :unix-socket unix-socket
+                            :host host
+                            :port port})
+          :local-address local-address
+          :epoll? epoll?
+          :kqueue? kqueue?
+          ;; hack so we can define both host/port and unix domain socket
+          ;; to setup SSL handler properly
+          :unix-socket (when (some? unix-socket)
+                         (netty/coerce-unix-socket unix-socket))})
+        (d/catch' #(d/error! s %)))
     s))

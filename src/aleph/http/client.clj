@@ -487,20 +487,21 @@
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
+        options' (assoc options :ssl? ssl?)
         c (netty/create-client
-            (pipeline-builder responses (assoc options :ssl? ssl?))
-            (when ssl?
-              (or ssl-context
-                (if insecure?
-                  (netty/insecure-ssl-client-context)
-                  (netty/ssl-client-context))))
-            bootstrap-transform
-            remote-address
-            local-address
-            epoll?
-            name-resolver
-            unix-socket'
-            kqueue?)]
+           {:pipeline-builder (pipeline-builder responses options')
+            :ssl-context (when ssl?
+                           (or ssl-context
+                               (if insecure?
+                                 (netty/insecure-ssl-client-context)
+                                 (netty/ssl-client-context))))
+            :bootstrap-transform bootstrap-transform
+            :remote-address remote-address
+            :local-address local-address
+            :epoll? epoll?
+            :kqueue? kqueue?
+            :name-resolver name-resolver
+            :unix-socket unix-socket'})]
     (d/chain' c
       (fn [^Channel ch]
 
@@ -800,9 +801,9 @@
                       extensions?
                       headers
                       max-frame-payload
-                      heartbeats)]
-    (d/chain'
-      (netty/create-client
+                      heartbeats)
+
+        pipeline-builder
         (fn [^ChannelPipeline pipeline]
           (doto pipeline
             (.addLast "http-client" (HttpClientCodec.))
@@ -814,23 +815,22 @@
                           WebSocketClientCompressionHandler/INSTANCE)))
             (http/attach-heartbeats-handler heartbeats)
             (.addLast "handler" ^ChannelHandler handler)
-            pipeline-transform))
-        (when ssl?
-          (or ssl-context
-            (if insecure?
-              (netty/insecure-ssl-client-context)
-              (netty/ssl-client-context))))
-        bootstrap-transform
-        (InetSocketAddress.
-          (.getHost uri)
-          (int
-            (if (neg? (.getPort uri))
-              (if ssl? 443 80)
-              (.getPort uri))))
-        local-address
-        epoll?
-        nil
-        nil
-        kqueue?)
-      (fn [_]
-        s))))
+            pipeline-transform))]
+    (-> (netty/create-client
+         {:pipeline-builder pipeline-builder
+          :ssl-context (when ssl?
+                         (or ssl-context
+                             (if insecure?
+                               (netty/insecure-ssl-client-context)
+                               (netty/ssl-client-context))))
+          :bootstrap-transform bootstrap-transform
+          :remote-address (InetSocketAddress.
+                           (.getHost uri)
+                           (int
+                            (if (neg? (.getPort uri))
+                              (if ssl? 443 80)
+                              (.getPort uri))))
+          :local-address local-address
+          :epoll? epoll?
+          :kqueue? kqueue?})
+        (d/chain' (fn [_] s)))))

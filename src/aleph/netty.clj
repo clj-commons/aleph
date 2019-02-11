@@ -884,52 +884,19 @@
     (DnsAddressResolverGroup. b)))
 
 (defn create-client
-  ([pipeline-builder
-    ssl-context
-    bootstrap-transform
-    remote-address
-    local-address
-    epoll?]
-   (create-client pipeline-builder
-                  ssl-context
-                  bootstrap-transform
-                  remote-address
-                  local-address
-                  epoll?
-                  nil
-                  nil
-                  false))
-  ([pipeline-builder
-    ssl-context
-    bootstrap-transform
-    remote-address
-    local-address
-    epoll?
-    name-resolver]
-   (create-client pipeline-builder
-                  ssl-context
-                  bootstrap-transform
-                  remote-address
-                  local-address
-                  epoll?
-                  name-resolver
-                  nil
-                  false))
-  ([pipeline-builder
-    ^SslContext ssl-context
-    bootstrap-transform
-    ^SocketAddress remote-address
-    ^InetSocketAddress local-address
-    epoll?
-    name-resolver
-    unix-socket
-    kqueue?]
-   (when (and (some? ssl-context)
-              (not (instance? InetSocketAddress remote-address)))
-     (throw
-      (IllegalArgumentException.
-       "to setup SSL, host and port should be provided")))
-
+  ([{:keys [pipeline-builder
+            ^SslContext ssl-context
+            bootstrap-transform
+            ^SocketAddress remote-address
+            ^InetSocketAddress local-address
+            epoll?
+            kqueue?
+            name-resolver
+            unix-socket]
+     :or {epoll? false
+          kqueue? false
+          name-resolver nil
+          unix-socket nil}}]
    (let [unix-socket? (some? unix-socket)
          [^Class channel client-group]
          (cond
@@ -942,7 +909,7 @@
            unix-socket?
            (throw
             (IllegalArgumentException.
-             "unix socket supports only native transports: epoll or KQueue"))
+             "unix socket supports only native transports: epoll or kqueue"))
 
            (and epoll? (epoll-available?))
            [EpollSocketChannel @epoll-client-group]
@@ -953,16 +920,20 @@
            :else
            [NioSocketChannel @nio-client-group])
 
-         pipeline-builder (if (and (some? ssl-context)
-                                   (instance? InetSocketAddress remote-address))
-                            (fn [^ChannelPipeline p]
-                              (.addLast p "ssl-handler"
-                                        (.newHandler ^SslContext ssl-context
-                                                     (-> p .channel .alloc)
-                                                     (.getHostName ^InetSocketAddress remote-address)
-                                                     (.getPort ^InetSocketAddress remote-address)))
-                              (pipeline-builder p))
-                            pipeline-builder)
+         pipeline-builder
+         (if (nil? ssl-context)
+           pipeline-builder
+           (fn [^ChannelPipeline p]
+             (let [^ChannelHandler
+                   ssl (if-not (instance? InetSocketAddress remote-address)
+                         (.newHandler ^SslContext ssl-context
+                                      (-> p .channel .alloc))
+                         (.newHandler ^SslContext ssl-context
+                                      (-> p .channel .alloc)
+                                      (.getHostName ^InetSocketAddress remote-address)
+                                      (.getPort ^InetSocketAddress remote-address)))]
+               (.addLast p "ssl-handler" ssl)
+               (pipeline-builder p))))
 
          resolver' (when (some? name-resolver)
                      (cond
@@ -994,8 +965,34 @@
 
      (-> (wrap-future f)
          (d/chain'
-          (fn [_]
-            (.channel ^ChannelFuture f)))))))
+          (fn [_] (.channel ^ChannelFuture f))))))
+
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    remote-address
+    local-address
+    epoll?]
+   (create-client {:pipeline-builder pipeline-builder
+                   :ssl-context ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address remote-address
+                   :local-address local-address
+                   :epoll? epoll?}))
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    remote-address
+    local-address
+    epoll?
+    name-resolver]
+   (create-client {:pipeline-builder pipeline-builder
+                   :ssl-context ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address remote-address
+                   :local-address local-address
+                   :epoll? epoll?
+                   :name-resolver name-resolver})))
 
 (defn ^DomainSocketAddress coerce-unix-socket [unix-socket]
   (cond
