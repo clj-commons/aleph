@@ -396,7 +396,7 @@
           (IllegalArgumentException.
            "the region exceeds the size of the file")))
 
-       (aleph.http.core.HttpFile. fd p c chunk-size)))))
+       (HttpFile. fd p c chunk-size)))))
 
 (bs/def-conversion ^{:cost 0} [HttpFile (bs/seq-of ByteBuffer)]
   [file {:keys [chunk-size writable?]
@@ -405,10 +405,10 @@
   (let [^RandomAccessFile raf (RandomAccessFile. ^File (.-fd file)
                                                  (if writable? "rw" "r"))
         ^FileChannel fc (.getChannel raf)
-        size (.-length file)
+        end-offset (+ (.-offset file) (.-length file))
         buf-seq (fn buf-seq [offset]
-                  (when-not (<= size offset)
-                    (let [remaining (- size offset)]
+                  (when-not (<= end-offset offset)
+                    (let [remaining (- end-offset offset)]
                       (lazy-seq
                        (cons
                         (.map fc
