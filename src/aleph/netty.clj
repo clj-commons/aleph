@@ -27,7 +27,11 @@
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
-    [io.netty.util Attribute AttributeKey]
+    [io.netty.util
+     Attribute
+     AttributeKey
+     DomainNameMappingBuilder
+     DomainNameMapping]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
@@ -35,7 +39,10 @@
      NioServerSocketChannel
      NioSocketChannel
      NioDatagramChannel]
-    [io.netty.handler.ssl SslContext SslContextBuilder]
+    [io.netty.handler.ssl
+     SslContext
+     SslContextBuilder
+     SniHandler]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
     [io.netty.resolver
@@ -713,6 +720,18 @@
 
 (set! *warn-on-reflection* true)
 
+;; xxx: support async mapping as well
+(defn ^DomainNameMapping sni-mapping
+  "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
+   Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering. Domain resolution
+   supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io."
+  [contexts]
+  (let [size (count contexts)
+        mapping (DomainNameMappingBuilder. size nil)]
+    (doseq [[domain context] contexts]
+      (.add mapping ^String domain ^SslContext context))
+    (.build mapping)))
+
 ;;;
 
 (defprotocol AlephServer
@@ -923,7 +942,7 @@
 
 (defn start-server
   [pipeline-builder
-   ^SslContext ssl-context
+   ssl-context
    bootstrap-transform
    on-close
    ^SocketAddress socket-address
@@ -944,13 +963,22 @@
           NioServerSocketChannel)
 
         pipeline-builder
-        (if ssl-context
+        (cond
+          (nil? ssl-context)
+          pipeline-builder
+
+          (instance? SslContext ssl-context)
           (fn [^ChannelPipeline p]
             (.addLast p "ssl-handler"
               (.newHandler ssl-context
                 (-> p .channel .alloc)))
             (pipeline-builder p))
-          pipeline-builder)]
+
+          (or (map? ssl-context) (vec? ssl-context))
+          (fn [^ChannelPipeline p]
+            (.addLast p "ssl-handler"
+              (SniHandler. (sni-mapping ssl-context)))
+            (pipeline-builder p)))]
 
     (try
       (let [b (doto (ServerBootstrap.)
