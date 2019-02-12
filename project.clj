@@ -2,8 +2,6 @@
 
 (def netty-modules
   '[transport
-    transport-native-epoll
-    transport-native-kqueue
     codec
     codec-http
     handler
@@ -15,7 +13,11 @@
   '[[org.clojure/tools.logging "0.4.1" :exclusions [org.clojure/clojure]]
     [manifold "0.1.9-alpha3"]
     [byte-streams "0.2.5-alpha2"]
-    [potemkin "0.4.5"]])
+    [potemkin "0.4.5"]
+    [io.netty/netty-transport-native-epoll netty-version
+     :classifier "linux-x86_64"]
+    [io.netty/netty-transport-native-kqueue netty-version
+     :classifier "osx-x86_64"]])
 
 (defproject aleph "0.4.7-alpha4"
   :description "a framework for asynchronous communication"
