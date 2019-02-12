@@ -970,14 +970,16 @@
           (instance? SslContext ssl-context)
           (fn [^ChannelPipeline p]
             (.addLast p "ssl-handler"
-              (.newHandler ssl-context
-                (-> p .channel .alloc)))
+                      ^ChannelHandler
+                      (.newHandler ^SslContext ssl-context
+                                   (-> p .channel .alloc)))
             (pipeline-builder p))
 
-          (or (map? ssl-context) (vec? ssl-context))
+          (or (map? ssl-context) (vector? ssl-context))
           (fn [^ChannelPipeline p]
             (.addLast p "ssl-handler"
-              (SniHandler. (sni-mapping ssl-context)))
+                      ^ChannelHandler
+                      (SniHandler. (sni-mapping ssl-context)))
             (pipeline-builder p)))]
 
     (try
