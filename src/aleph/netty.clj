@@ -720,15 +720,26 @@
 
 (set! *warn-on-reflection* true)
 
+(defn- default-context? [domain]
+  (or (= "*" domain) (identical? :default domain)))
+
 ;; xxx: support async mapping as well
 (defn ^DomainNameMapping sni-mapping
   "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
-   Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering. Domain resolution
-   supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io."
+  Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering. Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io. Default context should be specified (required) as `*` or `:default`."
   [contexts]
   (let [size (count contexts)
-        mapping (DomainNameMappingBuilder. size nil)]
-    (doseq [[domain context] contexts]
+        [_ ssl-default] (->> contexts
+                             (filter #(default-context? (first %)))
+                             first)
+        _ (when (nil? ssl-default)
+            (throw
+             (IllegalArgumentException.
+              (str "default SSL context should be specified "
+                   "using either '*' or :default key"))))
+        mapping (DomainNameMappingBuilder. (dec size) ssl-default)]
+    (doseq [[domain context] contexts
+            :when (not (default-context? domain))]
       (.add mapping ^String domain ^SslContext context))
     (.build mapping)))
 
