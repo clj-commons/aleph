@@ -893,7 +893,17 @@
               (dns-name-servers-provider name-servers)))]
     (DnsAddressResolverGroup. b)))
 
-(defn static-name-resolver [hosts]
+(defn static-name-resolver
+  "Creates an instance of StaticAddressResolverGroup that might be passed as a name resolver to Bootstrap when creating client.
+
+   Accepts a mapping from hosts to IP addresses either in form of a map or a sequence of pairs to preserve resolution order. Wildcard domains are supported. E.g.
+
+   ```
+   (netty/static-name-resolver {\"aleph.io\"   \"127.0.0.1\"
+                                \"netty.io\"   \"127.0.0.2\"
+                                \"*.netty.io\" \"127.0.0.3\"})
+   ```"
+  [hosts]
   (let [size (count hosts)
         mapping (DomainNameMappingBuilder.
                  size
