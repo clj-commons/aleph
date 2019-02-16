@@ -1159,7 +1159,8 @@
                                    (-> p .channel .alloc)))
             (pipeline-builder p))
 
-          (or (map? ssl-context) (vector? ssl-context))
+          (or (map? ssl-context)
+              (sequential? ssl-context))
           (fn [^ChannelPipeline p]
             (.addLast p "ssl-handler"
                       ^ChannelHandler
