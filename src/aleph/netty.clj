@@ -670,57 +670,100 @@
   "A self-signed SSL context for servers."
   []
   (let [cert (SelfSignedCertificate.)]
-    (.build (SslContextBuilder/forServer (.certificate cert) (.privateKey cert)))))
+    (.build (SslContextBuilder/forServer
+             (.certificate cert)
+             (.privateKey cert)))))
 
 (defn insecure-ssl-client-context []
   (-> (SslContextBuilder/forClient)
       (.trustManager InsecureTrustManagerFactory/INSTANCE)
       .build))
 
-(defn- check-ssl-args
-  [private-key certificate-chain]
-  (when-not
-    (or (and (instance? File private-key) (instance? File certificate-chain))
-      (and (instance? InputStream private-key) (instance? InputStream certificate-chain))
-      (and (instance? PrivateKey private-key) (instance? (class (into-array X509Certificate [])) certificate-chain)))
-    (throw (IllegalArgumentException. "ssl-client-context arguments invalid"))))
-
 (set! *warn-on-reflection* false)
 
-(defn ssl-client-context
-  "Creates a new client SSL context.
+(let [cert-array-class (class (into-array X509Certificate []))]
+  (defn- check-ssl-args! [private-key certificate-chain]
+    (when-not (or
+               (and (instance? File private-key)
+                    (instance? File certificate-chain))
+               (and (instance? InputStream private-key)
+                    (instance? InputStream certificate-chain))
+               (and (instance? PrivateKey private-key)
+                    (instance? cert-array-class certificate-chain)))
+      (throw
+       (IllegalArgumentException.
+        "ssl-client-context arguments invalid"))))
 
-  Keyword arguments are:
+  (defn ssl-client-context
+    "Creates a new client SSL context.
 
-  |:---|:----
-  | `private-key` | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
-  | `certificate-chain` | A `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
-  | `private-key-password` | A string, the private key's password (optional).
-  | `trust-store` | A `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     Keyword arguments are:
 
-  Note that if specified, the types of `private-key` and `certificate-chain` must be
-  \"compatible\": either both input streams, both files, or a private key and an array
-  of certificates."
-  ([] (ssl-client-context {}))
-  ([{:keys [private-key private-key-password certificate-chain trust-store]}]
-    (-> (SslContextBuilder/forClient)
-      (#(if (and private-key certificate-chain)
-          (do
-            (check-ssl-args private-key certificate-chain)
-            (if (instance? (class (into-array X509Certificate [])) certificate-chain)
-              (.keyManager %
-                private-key
-                private-key-password
-                certificate-chain)
-              (.keyManager %
-                certificate-chain
-                private-key
-                private-key-password)))
-          %))
-      (#(if trust-store
-          (.trustManager % trust-store)
-          %))
-      .build)))
+     |:---|:----
+     | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
+     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
+     | `private-key-password` | a string, the private key's password (optional).
+     | `trust-store` | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ciphers` | a sequence of string, the cipher suites to enable, in the order of preference.
+     | `protocols` | a sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size` | the size of the cache used for storing SSL session objects.
+     | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
+
+     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+    ([] (ssl-client-context {}))
+    ([{:keys [private-key
+              private-key-password
+              certificate-chain
+              trust-store
+              ssl-provider
+              ciphers
+              protocols
+              session-cache-size
+              session-timeout]}]
+     (let [^SslContextBuilder builder (SslContextBuilder/forClient)
+           certificate-chain' (if-not (sequential? certificate-chain)
+                               certificate-chain
+                               (into-array X509Certificate certificate-chain))]
+       (when (and private-key certificate-chain')
+         (check-ssl-args! private-key certificate-chain')
+         (if (instance? cert-array-class certificate-chain')
+           (.keyManager builder
+                        private-key
+                        private-key-password
+                        certificate-chain')
+           (.keyManager builder
+                        certificate-chain'
+                        private-key
+                        private-key-password)))
+
+       (when (some? trust-store)
+         (let [trust-manager (cond
+                               (instance? cert-array-class trust-store)
+                               trust-store
+
+                               (sequential? trust-store)
+                               (into-array X509Certificate trust-store)
+
+                               :else
+                               (throw
+                                (IllegalArgumentException.
+                                 (str "malformed trust-store argument "
+                                      (class trust-store)))))]
+           (.trustManager builder trust-store)))
+
+       (when (some? ciphers)
+         (.ciphers builder ciphers))
+
+       (when (some? protocols)
+         (.protocols builder (into-array String protocols)))
+
+       (when (some? session-cache-size)
+         (.sessionCacheSize builder session-cache-size))
+
+       (when (some? session-timeout)
+         (.sessionTimeout builder session-timeout))
+
+       (.build builder)))))
 
 (set! *warn-on-reflection* true)
 
