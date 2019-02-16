@@ -114,13 +114,14 @@
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
-   | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `65536`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `65536`
-   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
+   | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`.
+   | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `65536`.
+   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `65536`.
+   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used.
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
-   | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks
-   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
+   | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks.
+   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly).
+   | `sni` | optional configuration for Server Name Indication TLS extention. By default, Aleph client uses hostname given with the request as the value for server_name extension when processing TLS handshake. Set to `:none` to disable server_name extention or provide another host to be used as a map `{:host <host> :port <port>}`.
 
    Supported `proxy-options` are
 
