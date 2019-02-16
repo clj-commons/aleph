@@ -37,7 +37,13 @@
                  :ssl-context ssl-test/client-ssl-context}})
         pool3 (http/connection-pool
                {:connection-options
-                {:ssl-context ssl-test/client-ssl-context}})]
+                {:ssl-context ssl-test/client-ssl-context}})
+        pool4 (http/connection-pool
+               {:connection-options
+                {:sni :none
+                 :name-resolver (netty/static-name-resolver
+                                 {"aleph.io.local" "127.0.0.1"})
+                 :ssl-context ssl-test/client-ssl-context}})]
     (with-sni-handler ok-handler
       (testing "succcess on manually specified host"
         (let [resp (http/get (str "https://127.0.0.1:" port)
@@ -59,7 +65,13 @@
       (testing "fails on unrecognized host"
         (is (thrown? Exception
                      @(http/get (str "https://127.0.0.1:" port)
-                                {:pool pool3})))))
+                                {:pool pool3}))))
+
+      (testing "fails when SNI is disabled"
+        (is (thrown? Exception
+                     @(http/get (str "https://aleph.io.local:" port)
+                                {:pool pool4})))))
     (.shutdown ^IPool pool1)
     (.shutdown ^IPool pool2)
-    (.shutdown ^IPool pool3)))
+    (.shutdown ^IPool pool3)
+    (.shutdown ^IPool pool4)))
