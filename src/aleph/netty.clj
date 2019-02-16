@@ -899,8 +899,12 @@
                  size
                  StaticNameResolver/UNKNOWN_HOST_MARKER)]
     (doseq [[host ip] hosts
-            ;; xxx: this might be NULL
             :let [inet (NetUtil/createByteArrayFromIpAddressString ip)]]
+      (when (nil? inet)
+        (throw
+         (IllegalArgumentException.
+          (format "can't parse IP address from '%s'" ip))))
+
       (.add mapping host (InetAddress/getByAddress inet)))
     (StaticAddressResolverGroup. (.build mapping))))
 
