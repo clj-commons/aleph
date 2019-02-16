@@ -41,9 +41,11 @@
      NioSocketChannel
      NioDatagramChannel]
     [io.netty.handler.ssl
+     ClientAuth
+     SniHandler
      SslContext
      SslContextBuilder
-     SniHandler]
+     SslProvider]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
     [io.netty.resolver
@@ -666,6 +668,12 @@
 
 ;;;
 
+(defn coerce-ssl-provider [provider]
+  (case provider
+    :jdk SslProvider/JDK
+    :openssl SslProvider/OPENSSL
+    :openssl-refcnt SslProvider/OPENSSL_REFCNT))
+
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
   []
@@ -701,10 +709,11 @@
 
      |:---|:----
      | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
-     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
+     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
      | `private-key-password` | a string, the private key's password (optional).
      | `trust-store` | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ciphers` | a sequence of string, the cipher suites to enable, in the order of preference.
+     | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
      | `protocols` | a sequence of strings, the TLS protocol versions to enable.
      | `session-cache-size` | the size of the cache used for storing SSL session objects.
      | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
@@ -737,19 +746,13 @@
                         private-key-password)))
 
        (when (some? trust-store)
-         (let [trust-manager (cond
-                               (instance? cert-array-class trust-store)
-                               trust-store
+         (let [trust-store' (if-not (sequential? trust-store)
+                              trust-store
+                              (into-array X509Certificate trust-store))]
+           (.trustManager builder trust-store')))
 
-                               (sequential? trust-store)
-                               (into-array X509Certificate trust-store)
-
-                               :else
-                               (throw
-                                (IllegalArgumentException.
-                                 (str "malformed trust-store argument "
-                                      (class trust-store)))))]
-           (.trustManager builder trust-manager)))
+       (when (some? ssl-provider)
+         (.provider builder (coerce-ssl-provider ssl-provider)))
 
        (when (some? ciphers)
          (.ciphers builder ciphers))
@@ -763,7 +766,83 @@
        (when (some? session-timeout)
          (.sessionTimeout builder session-timeout))
 
-       (.build builder)))))
+       (.build builder))))
+
+  (defn ssl-server-context
+    "Creates a new client SSL context.
+
+     Keyword arguments are:
+
+     |:---|:----
+     | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
+     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
+     | `private-key-password` | a string, the private key's password (optional).
+     | `trust-store` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols` | a sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size` | the size of the cache used for storing SSL session objects.
+     | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
+     | `start-tls` | if the first write request shouldn't be encrypted.
+     | `client-auth` | the client authentication mode, one of `:none`, `:optional` or `:require`.
+
+     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+    ([] (ssl-server-context {}))
+    ([{:keys [private-key
+              private-key-password
+              certificate-chain
+              trust-store
+              ssl-provider
+              ciphers
+              protocols
+              session-cache-size
+              session-timeout
+              start-tls
+              client-auth]}]
+     (let [certificate-chain' (if-not (sequential? certificate-chain)
+                                certificate-chain
+                                (into-array X509Certificate certificate-chain))]
+       (check-ssl-args! private-key certificate-chain')
+       (let [^SslContextBuilder
+             builder (if (instance? cert-array-class certificate-chain')
+                       (SslContextBuilder/forServer private-key
+                                                    private-key-password
+                                                    certificate-chain')
+                       (SslContextBuilder/forServer certificate-chain'
+                                                    private-key
+                                                    private-key-password))]
+
+         (when (some? trust-store)
+           (let [trust-store' (if-not (sequential? trust-store)
+                                trust-store
+                                (into-array X509Certificate trust-store))]
+             (.trustManager builder trust-store')))
+
+         (when (some? ssl-provider)
+           (.provider builder (coerce-ssl-provider ssl-provider)))
+
+         (when (some? ciphers)
+           (.ciphers builder ciphers))
+
+         (when (some? protocols)
+           (.protocols builder (into-array String protocols)))
+
+         (when (some? session-cache-size)
+           (.sessionCacheSize builder session-cache-size))
+
+         (when (some? session-timeout)
+           (.sessionTimeout builder session-timeout))
+
+         (when (some? start-tls)
+           (.startTls builder (boolean start-tls)))
+
+         (when (some? client-auth)
+           (.clientAuth builder (case client-auth
+                                  :none ClientAuth/NONE
+                                  :optional ClientAuth/OPTIONAL
+                                  :require ClientAuth/REQUIRE)))
+
+         (.build builder))))))
 
 (set! *warn-on-reflection* true)
 

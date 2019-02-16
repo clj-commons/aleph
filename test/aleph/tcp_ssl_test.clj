@@ -11,7 +11,6 @@
    [java.security.cert CertificateFactory X509Certificate]
    [java.io ByteArrayInputStream]
    [java.security.spec RSAPrivateCrtKeySpec]
-   [io.netty.handler.ssl SslContextBuilder ClientAuth]
    [org.apache.commons.codec.binary Base64]))
 
 (set! *warn-on-reflection* false)
@@ -53,10 +52,11 @@
 (def client-key (gen-key 65537 (read-string (slurp "test/client_key.edn"))))
 
 (def server-ssl-context
-  (-> (SslContextBuilder/forServer server-key (into-array X509Certificate [server-cert]))
-    (.trustManager (into-array X509Certificate [ca-cert]))
-    (.clientAuth ClientAuth/OPTIONAL)
-    .build))
+  (netty/ssl-server-context
+   {:private-key server-key
+    :certificate-chain [server-cert]
+    :trust-store [ca-cert]
+    :client-auth :optional}))
 
 (def client-ssl-context
   (netty/ssl-client-context
@@ -77,7 +77,11 @@
     s))
 
 (deftest test-ssl-echo
-  (with-server (tcp/start-server ssl-echo-handler {:port 10001 :ssl-context server-ssl-context})
-    (let [c @(tcp/client {:host "localhost" :port 10001 :ssl-context client-ssl-context})]
+  (with-server (tcp/start-server ssl-echo-handler
+                                 {:port 10001
+                                  :ssl-context server-ssl-context})
+    (let [c @(tcp/client {:host "localhost"
+                          :port 10001
+                          :ssl-context client-ssl-context})]
       (s/put! c "foo")
       (is (= "foo" (bs/to-string @(s/take! c)))))))
