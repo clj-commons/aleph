@@ -4,74 +4,66 @@
    [aleph.tcp-ssl-test :as ssl-test]
    [aleph.http-test :refer [with-server]]
    [aleph.http :as http]
-   [aleph.netty :as netty])
+   [aleph.netty :as netty]
+   [manifold.deferred :as d])
   (:import
    [io.aleph.dirigiste IPool]))
 
 (def port 8092)
 
+(def ^:dynamic *sni-pool* nil)
+
 (defn ok-handler [_]
   {:status 200
    :body "OK"})
 
-(defmacro with-sni-handler [handler & body]
-  `(let [ssl# ssl-test/server-ssl-context
-         default-ssl# (netty/self-signed-ssl-context)]
-     (with-server (http/start-server ~handler
-                                     {:port port
-                                      :ssl-context {"aleph.io.local" ssl#
-                                                    "*.netty.io.local" ssl#
-                                                    "*" default-ssl#}})
-       ~@body)))
+(defmacro with-sni-pool [^IPool pool & body]
+  `(binding [*sni-pool* ~pool]
+     (let [ssl# ssl-test/server-ssl-context
+           default-ssl# (netty/self-signed-ssl-context)]
+       (with-server (http/start-server ok-handler
+                                       {:port port
+                                        :ssl-context {"aleph.io.local" ssl#
+                                                      "*.netty.io.local" ssl#
+                                                      "*" default-ssl#}})
+         ~@body)
+       (.shutdown ~pool))))
 
-(deftest test-sni-handler
-  (let [pool1 (http/connection-pool
-               {:connection-options
-                {:sni {:peer-host "aleph.io.local"}
-                 :ssl-context ssl-test/client-ssl-context}})
-        pool2 (http/connection-pool
-               {:connection-options
-                {:name-resolver (netty/static-name-resolver
-                                 {"aleph.io.local" "127.0.0.1"
-                                  "docs.netty.io.local" "127.0.0.1"})
-                 :ssl-context ssl-test/client-ssl-context}})
-        pool3 (http/connection-pool
-               {:connection-options
-                {:ssl-context ssl-test/client-ssl-context}})
-        pool4 (http/connection-pool
-               {:connection-options
-                {:sni :none
-                 :name-resolver (netty/static-name-resolver
-                                 {"aleph.io.local" "127.0.0.1"})
-                 :ssl-context ssl-test/client-ssl-context}})]
-    (with-sni-handler ok-handler
-      (testing "succcess on manually specified host"
-        (let [resp (http/get (str "https://127.0.0.1:" port)
-                             {:pool pool1})]
-          (is (= 200 (:status @resp)))))
+(defn get-status [host]
+  (-> (http/get (str "https://" host ":" port) {:pool *sni-pool*})
+      (d/chain' :status)))
 
-      (testing "succcess on resolved host"
-        (let [resp (http/get (str "https://aleph.io.local:" port)
-                             {:pool pool2})]
-          (is (= 200 (:status @resp)))))
+(deftest test-sni-handler-with-manual-peer
+  (with-sni-pool (http/connection-pool
+                  {:connection-options
+                   {:sni {:peer-host "aleph.io.local"}
+                    :ssl-context ssl-test/client-ssl-context}})
+    (is (= 200 @(get-status "127.0.0.1")))))
 
-      (testing "success on wildcard domain"
-        (let [resp (http/get (str "https://docs.netty.io.local:" port)
-                             {:pool pool2})]
-          (is (= 200 (:status @resp)))))
+(deftest test-sni-handler-resolved-host
+  (with-sni-pool (http/connection-pool
+                  {:connection-options
+                   {:name-resolver (netty/static-name-resolver
+                                    {"aleph.io.local" "127.0.0.1"
+                                     "docs.netty.io.local" "127.0.0.1"})
+                    :ssl-context ssl-test/client-ssl-context}})
+    (testing "one-to-one match"
+      (is (= 200 @(get-status "aleph.io.local"))))
 
-      ;; do not specify SNI host manually
-      ;; self-signed should not be trusted
-      (testing "fails on unrecognized host"
-        (is (thrown? Exception
-                     @(http/get (str "https://127.0.0.1:" port)
-                                {:pool pool3}))))
+    (testing "wildcard support"
+      (is (= 200 @(get-status "docs.netty.io.local"))))))
 
-      (testing "fails when SNI is disabled"
-        (is (thrown? Exception
-                     @(http/get (str "https://aleph.io.local:" port)
-                                {:pool pool4})))))
-    (.shutdown ^IPool pool1)
-    (.shutdown ^IPool pool2)
-    (.shutdown ^IPool pool3)
-    (.shutdown ^IPool pool4)))
+(deftest test-sni-handler-unrecognized-host
+  (with-sni-pool (http/connection-pool
+                  {:connection-options
+                   {:ssl-context ssl-test/client-ssl-context}})
+    (is (thrown? Exception @(get-status "127.0.0.1")))))
+
+(deftest test-disable-sni-setting
+  (with-sni-pool (http/connection-pool
+                  {:connection-options
+                   {:sni :none
+                    :name-resolver (netty/static-name-resolver
+                                    {"aleph.io.local" "127.0.0.1"})
+                    :ssl-context ssl-test/client-ssl-context}})
+    (is (thrown? Exception @(get-status "aleph.io.local")))))

@@ -121,7 +121,7 @@
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks.
    | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly).
-   | `sni` | optional configuration for Server Name Indication TLS extention. By default, Aleph client uses hostname given with the request as the value for server_name extension when processing TLS handshake. Set to `:none` to disable server_name extention or provide another host to be used as a map `{:host <host> :port <port>}`.
+   | `sni` | optional configuration for Server Name Indication TLS extention. By default, Aleph client uses hostname given with the request as the value for server_name extension when processing TLS handshake. Set to `:none` to disable server_name extention or provide another host to be used as a map `{:peer-host <host> :peer-port <port>}`.
 
    Supported `proxy-options` are
 
