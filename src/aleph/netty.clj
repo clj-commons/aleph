@@ -749,7 +749,7 @@
                                 (IllegalArgumentException.
                                  (str "malformed trust-store argument "
                                       (class trust-store)))))]
-           (.trustManager builder trust-store)))
+           (.trustManager builder trust-manager)))
 
        (when (some? ciphers)
          (.ciphers builder ciphers))

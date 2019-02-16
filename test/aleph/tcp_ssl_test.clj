@@ -61,8 +61,8 @@
 (def client-ssl-context
   (netty/ssl-client-context
     {:private-key client-key
-     :certificate-chain (into-array X509Certificate [client-cert])
-     :trust-store (into-array X509Certificate [ca-cert])}))
+     :certificate-chain [client-cert]
+     :trust-store [ca-cert]}))
 
 (defn ssl-echo-handler
   [s c]
