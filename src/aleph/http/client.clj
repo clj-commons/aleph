@@ -467,7 +467,8 @@
            on-closed
            response-executor
            epoll?
-           proxy-options]
+           proxy-options
+           sni]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
@@ -480,17 +481,18 @@
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         c (netty/create-client
-            (pipeline-builder responses (assoc options :ssl? ssl?))
-            (when ssl?
-              (or ssl-context
-                (if insecure?
-                  (netty/insecure-ssl-client-context)
-                  (netty/ssl-client-context))))
-            bootstrap-transform
-            remote-address
-            local-address
-            epoll?
-            name-resolver)]
+           {:pipeline-builder (pipeline-builder responses (assoc options :ssl? ssl?))
+            :ssl-context (when ssl?
+                           (or ssl-context
+                               (if insecure?
+                                 (netty/insecure-ssl-client-context)
+                                 (netty/ssl-client-context))))
+            :bootstrap-transform bootstrap-transform
+            :remote-address remote-address
+            :local-address local-address
+            :epoll? epoll?
+            :name-resolver name-resolver
+            :sni sni})]
     (d/chain' c
       (fn [^Channel ch]
 

@@ -890,19 +890,74 @@
     (DnsAddressResolverGroup. b)))
 
 (defn create-client
+  ([{:keys [pipeline-builder
+            ^SslContext ssl-context
+            bootstrap-transform
+            ^SocketAddress remote-address
+            ^SocketAddress local-address
+            epoll?
+            name-resolver
+            sni]
+     :or {sni {:peer-host nil :peer-port nil}}}]
+   (let [^Class
+         channel (if (and epoll? (epoll-available?))
+                   EpollSocketChannel
+                   NioSocketChannel)
+
+         pipeline-builder
+         (if ssl-context
+           (fn [^ChannelPipeline p]
+             (let [h (if (identical? :none sni)
+                       (.newHandler ^SslContext ssl-context
+                                    (-> p .channel .alloc))
+                       (.newHandler ^SslContext ssl-context
+                                    (-> p .channel .alloc)
+                                    (or (:peer-host sni)
+                                        (.getHostName ^InetSocketAddress remote-address))
+                                    (or (:peer-port sni)
+                                        (.getPort ^InetSocketAddress remote-address))))]
+               (.addLast p "ssl-handler" ^ChannelHandler h))
+             (pipeline-builder p))
+           pipeline-builder)]
+     (try
+       (let [client-group (if (and epoll? (epoll-available?))
+                            @epoll-client-group
+                            @nio-client-group)
+             resolver' (when (some? name-resolver)
+                         (cond
+                           (= :default name-resolver) nil
+                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                           (instance? AddressResolverGroup name-resolver) name-resolver))
+             b (doto (Bootstrap.)
+                 (.option ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group client-group)
+                 (.channel channel)
+                 (.handler (pipeline-initializer pipeline-builder))
+                 (.resolver resolver')
+                 bootstrap-transform)
+
+             f (if local-address
+                 (.connect b remote-address local-address)
+                 (.connect b remote-address))]
+
+         (d/chain' (wrap-future f)
+                   (fn [_]
+                     (let [ch (.channel ^ChannelFuture f)]
+                       ch)))))))
   ([pipeline-builder
     ssl-context
     bootstrap-transform
     remote-address
     local-address
     epoll?]
-    (create-client pipeline-builder
-      ssl-context
-      bootstrap-transform
-      remote-address
-      local-address
-      epoll?
-      nil))
+   (create-client {:pipeline-builder pipeline-builder
+                   :ssl-context ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address remote-address
+                   :local-address local-address
+                   :epoll? epoll?
+                   :name-resolver nil}))
   ([pipeline-builder
     ^SslContext ssl-context
     bootstrap-transform
@@ -910,46 +965,13 @@
     ^SocketAddress local-address
     epoll?
     name-resolver]
-    (let [^Class
-          channel (if (and epoll? (epoll-available?))
-                    EpollSocketChannel
-                    NioSocketChannel)
-
-          pipeline-builder (if ssl-context
-                             (fn [^ChannelPipeline p]
-                               (.addLast p "ssl-handler"
-                                 (.newHandler ^SslContext ssl-context
-                                   (-> p .channel .alloc)
-                                   (.getHostName ^InetSocketAddress remote-address)
-                                   (.getPort ^InetSocketAddress remote-address)))
-                               (pipeline-builder p))
-                             pipeline-builder)]
-      (try
-        (let [client-group (if (and epoll? (epoll-available?))
-                             @epoll-client-group
-                             @nio-client-group)
-              resolver' (when (some? name-resolver)
-                          (cond
-                            (= :default name-resolver) nil
-                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                            (instance? AddressResolverGroup name-resolver) name-resolver))
-              b (doto (Bootstrap.)
-                  (.option ChannelOption/SO_REUSEADDR true)
-                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                  (.group client-group)
-                  (.channel channel)
-                  (.handler (pipeline-initializer pipeline-builder))
-                  (.resolver resolver')
-                  bootstrap-transform)
-
-              f (if local-address
-                  (.connect b remote-address local-address)
-                  (.connect b remote-address))]
-
-          (d/chain' (wrap-future f)
-            (fn [_]
-              (let [ch (.channel ^ChannelFuture f)]
-                ch))))))))
+   (create-client {:pipeline-builder pipeline-builder
+                   :ssl-context ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address remote-address
+                   :local-address local-address
+                   :epoll? epoll?
+                   :name-resolver name-resolver})))
 
 (defn start-server
   [pipeline-builder
