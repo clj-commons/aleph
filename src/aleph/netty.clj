@@ -58,7 +58,7 @@
      SequentialDnsServerAddressStreamProvider]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
-    [java.net URI SocketAddress InetSocketAddress]
+    [java.net URI SocketAddress InetAddress InetSocketAddress]
     [io.netty.util.concurrent
      GenericFutureListener Future]
     [java.io InputStream File]
@@ -901,7 +901,7 @@
     (doseq [[host ip] hosts
             ;; xxx: this might be NULL
             :let [inet (NetUtil/createByteArrayFromIpAddressString ip)]]
-      (.add mapping host inet))
+      (.add mapping host (InetAddress/getByAddress inet)))
     (StaticAddressResolverGroup. (.build mapping))))
 
 (defn create-client
