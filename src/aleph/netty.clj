@@ -31,7 +31,8 @@
      Attribute
      AttributeKey
      DomainNameMappingBuilder
-     DomainNameMapping]
+     DomainNameMapping
+     NetUtil]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
@@ -78,7 +79,10 @@
      JdkLoggerFactory
      Log4J2LoggerFactory]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]))
+    [java.security PrivateKey]
+    [aleph.utils
+     StaticNameResolver
+     StaticAddressResolverGroup]))
 
 ;;;
 
@@ -888,6 +892,17 @@
             (.nameServerProvider ^DnsServerAddressStreamProvider
               (dns-name-servers-provider name-servers)))]
     (DnsAddressResolverGroup. b)))
+
+(defn static-name-resolver [hosts]
+  (let [size (count hosts)
+        mapping (DomainNameMappingBuilder.
+                 size
+                 StaticNameResolver/UNKNOWN_HOST_MARKER)]
+    (doseq [[host ip] hosts
+            ;; xxx: this might be NULL
+            :let [inet (NetUtil/createByteArrayFromIpAddressString ip)]]
+      (.add mapping host inet))
+    (StaticAddressResolverGroup. (.build mapping))))
 
 (defn create-client
   ([{:keys [pipeline-builder
