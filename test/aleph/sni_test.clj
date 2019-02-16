@@ -7,11 +7,12 @@
    [aleph.netty :as netty]
    [manifold.deferred :as d])
   (:import
-   [io.aleph.dirigiste IPool]))
+   [io.aleph.dirigiste IPool]
+   [javax.net.ssl SSLHandshakeException]))
 
 (def port 8092)
 
-(def ^:dynamic *sni-pool* nil)
+(def ^:dynamic ^IPool *sni-pool* nil)
 
 (defn ok-handler [_]
   {:status 200
@@ -27,7 +28,7 @@
                                                       "*.netty.io.local" ssl#
                                                       "*" default-ssl#}})
          ~@body)
-       (.shutdown ~pool))))
+       (.shutdown *sni-pool*))))
 
 (defn get-status [host]
   (-> (http/get (str "https://" host ":" port) {:pool *sni-pool*})
@@ -57,7 +58,7 @@
   (with-sni-pool (http/connection-pool
                   {:connection-options
                    {:ssl-context ssl-test/client-ssl-context}})
-    (is (thrown? Exception @(get-status "127.0.0.1")))))
+    (is (thrown? SSLHandshakeException @(get-status "127.0.0.1")))))
 
 (deftest test-disable-sni-setting
   (with-sni-pool (http/connection-pool
@@ -66,4 +67,4 @@
                     :name-resolver (netty/static-name-resolver
                                     {"aleph.io.local" "127.0.0.1"})
                     :ssl-context ssl-test/client-ssl-context}})
-    (is (thrown? Exception @(get-status "aleph.io.local")))))
+    (is (thrown? SSLHandshakeException @(get-status "aleph.io.local")))))

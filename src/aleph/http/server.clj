@@ -205,7 +205,14 @@
                       (invalid-value-response req rsp))))))))))))
 
 (defn exception-handler [ctx ex]
-  (when-not (instance? IOException ex)
+  (cond
+    ;; do not need to log an entire stack trace
+    ;; when SSL handshake failed
+    (http/ssl-handshake-error? ex)
+    (log/warn "SSL handshake failure:"
+              (.getMessage ^Throwable (.getCause ^Throwable ex)))
+
+    (not (instance? IOException ex))
     (log/warn ex "error in HTTP server")))
 
 (defn invalid-request? [^HttpRequest req]
