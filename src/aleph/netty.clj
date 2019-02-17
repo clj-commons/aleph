@@ -843,19 +843,30 @@
 (set! *warn-on-reflection* true)
 
 ;; todo(kachayev): support async mapping as well
+;; todo(kachayev): providing default context still might be undesirable
+;;                 but Netty's implementation of SniHandler is very
+;;                 "liberal". to implement a strict version of SNI matching
+;;                 we need either to update Netty or move AbstractSniHandler
+;;                 to our codebase
 (defn ^DomainNameMapping sni-mapping
   "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
    Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering.
    Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io.
-   In case the domain doesn't match any of the provided domains (or not provided at all), SSL handshake would be interrupted. Use `*` domain to specify default SslContext if the described behavior is not desired."
+   Default `SslContext` should be provided using `*` domain or `:default` keyword instead of domain. The default context would be applied for non-SNI clients or in case when the given hostname does not match any of the provided options."
   [contexts]
   (let [size (count contexts)
-        [_ default-context ] (->> contexts
-                                  (filter (fn [[domain _]]
-                                            (= "*" domain)))
-                                  first)
+        [_ default-context] (->> contexts
+                                 (filter (fn [[domain _]]
+                                           (or (= "*" domain)
+                                               (identical? :default domain))))
+                                 first)
+        _ (when (nil? default-context)
+            (throw
+             (IllegalArgumentException.
+              "default SslContext should be provided to configure SNI")))
         mapping (DomainNameMapping. (dec size) default-context)]
-    (doseq [[domain context] contexts]
+    (doseq [[domain context] contexts
+            :when (not (identical? :default domain))]
       (.add mapping ^String domain ^SslContext context))
     mapping))
 
