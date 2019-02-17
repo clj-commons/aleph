@@ -830,17 +830,12 @@
          decode-idn? true
          recursion-desired? true
          epoll? false}}]
-  (let [^EventLoopGroup
-        client-group (if (and epoll? (epoll-available?))
-                       @epoll-client-group
-                       @nio-client-group)
-
-        ^Class
+  (let [^Class
         channel-type (if (and epoll? (epoll-available?))
                        EpollDatagramChannel
                        NioDatagramChannel)
 
-        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
+        b (cond-> (doto (DnsNameResolverBuilder.)
                     (.channelType channel-type)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
