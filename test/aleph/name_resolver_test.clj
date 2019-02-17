@@ -6,7 +6,7 @@
    [aleph.netty :as netty]
    [manifold.deferred :as d])
   (:import
-   [java.net UnknownHostException]
+   [aleph.utils UnrecognizedHostException]
    [io.aleph.dirigiste IPool]))
 
 (def port 8072)
@@ -44,5 +44,5 @@
       (is (= 200 @(get-status "downloads.netty.io"))))
 
     (testing "unknown host"
-      (is (thrown? UnknownHostException
+      (is (thrown? UnrecognizedHostException
                    @(get-status "google.com"))))))

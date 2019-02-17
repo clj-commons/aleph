@@ -30,8 +30,6 @@
     [io.netty.util
      Attribute
      AttributeKey
-     DomainNameMappingBuilder
-     DomainNameMapping
      NetUtil]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -83,7 +81,7 @@
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
     [aleph.utils
-     StaticNameResolver
+     DomainNameMapping
      StaticAddressResolverGroup]))
 
 ;;;
@@ -844,28 +842,22 @@
 
 (set! *warn-on-reflection* true)
 
-(defn- default-context? [domain]
-  (or (= "*" domain) (identical? :default domain)))
-
-;; xxx: support async mapping as well
+;; todo(kachayev): support async mapping as well
 (defn ^DomainNameMapping sni-mapping
   "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
-   Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering. Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io. Default context should be specified (required) as `*` or `:default`."
+   Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering.
+   Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io.
+   In case the domain doesn't match any of the provided domains (or not provided at all), SSL handshake would be interrupted. Use `*` domain to specify default SslContext if the described behavior is not desired."
   [contexts]
   (let [size (count contexts)
-        [_ ssl-default] (->> contexts
-                             (filter #(default-context? (first %)))
+        default-context (->> contexts
+                             (filter (fn [[domain _]]
+                                       (= "*" domain)))
                              first)
-        _ (when (nil? ssl-default)
-            (throw
-             (IllegalArgumentException.
-              (str "default SSL context should be specified "
-                   "using either '*' or :default key"))))
-        mapping (DomainNameMappingBuilder. (dec size) ssl-default)]
-    (doseq [[domain context] contexts
-            :when (not (default-context? domain))]
+        mapping (DomainNameMapping. (dec size) default-context)]
+    (doseq [[domain context] contexts]
       (.add mapping ^String domain ^SslContext context))
-    (.build mapping)))
+    mapping))
 
 ;;;
 
@@ -1025,9 +1017,7 @@
    ```"
   [hosts]
   (let [size (count hosts)
-        mapping (DomainNameMappingBuilder.
-                 size
-                 StaticNameResolver/UNKNOWN_HOST_MARKER)]
+        mapping (DomainNameMapping. size)]
     (doseq [[host ip] hosts
             :let [inet (NetUtil/createByteArrayFromIpAddressString ip)]]
       (when (nil? inet)
@@ -1036,7 +1026,7 @@
           (format "can't parse IP address from '%s'" ip))))
 
       (.add mapping host (InetAddress/getByAddress inet)))
-    (StaticAddressResolverGroup. (.build mapping))))
+    (StaticAddressResolverGroup. mapping)))
 
 (defn create-client
   ([{:keys [pipeline-builder

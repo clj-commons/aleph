@@ -1,6 +1,5 @@
 package aleph.utils;
 
-import io.netty.util.DomainNameMapping;
 import io.netty.util.concurrent.EventExecutor;
 import io.netty.resolver.AddressResolver;
 import io.netty.resolver.AddressResolverGroup;
