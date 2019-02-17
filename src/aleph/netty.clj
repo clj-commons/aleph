@@ -850,10 +850,10 @@
    In case the domain doesn't match any of the provided domains (or not provided at all), SSL handshake would be interrupted. Use `*` domain to specify default SslContext if the described behavior is not desired."
   [contexts]
   (let [size (count contexts)
-        default-context (->> contexts
-                             (filter (fn [[domain _]]
-                                       (= "*" domain)))
-                             first)
+        [_ default-context ] (->> contexts
+                                  (filter (fn [[domain _]]
+                                            (= "*" domain)))
+                                  first)
         mapping (DomainNameMapping. (dec size) default-context)]
     (doseq [[domain context] contexts]
       (.add mapping ^String domain ^SslContext context))
