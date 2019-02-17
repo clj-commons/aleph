@@ -745,26 +745,26 @@
                         private-key
                         private-key-password)))
 
-       (when (some? trust-store)
-         (let [trust-store' (if-not (sequential? trust-store)
-                              trust-store
-                              (into-array X509Certificate trust-store))]
-           (.trustManager builder trust-store')))
+       (cond-> builder
+         (some? trust-store)
+         (.trustManager (if-not (sequential? trust-store)
+                          trust-store
+                          (into-array X509Certificate trust-store)))
 
-       (when (some? ssl-provider)
-         (.provider builder (coerce-ssl-provider ssl-provider)))
+         (some? ssl-provider)
+         (.provider (coerce-ssl-provider ssl-provider))
 
-       (when (some? ciphers)
-         (.ciphers builder ciphers))
+         (some? ciphers)
+         (.ciphers ciphers)
 
-       (when (some? protocols)
-         (.protocols builder (into-array String protocols)))
+         (some? protocols)
+         (.protocols (into-array String protocols))
 
-       (when (some? session-cache-size)
-         (.sessionCacheSize builder session-cache-size))
+         (some? session-cache-size)
+         (.sessionCacheSize session-cache-size)
 
-       (when (some? session-timeout)
-         (.sessionTimeout builder session-timeout))
+         (some? session-timeout)
+         (.sessionTimeout session-timeout))
 
        (.build builder))))
 
@@ -804,45 +804,43 @@
                                 (into-array X509Certificate certificate-chain))]
        (check-ssl-args! private-key certificate-chain')
        (let [^SslContextBuilder
-             builder (if (instance? cert-array-class certificate-chain')
-                       (SslContextBuilder/forServer private-key
-                                                    private-key-password
-                                                    certificate-chain')
-                       (SslContextBuilder/forServer certificate-chain'
-                                                    private-key
-                                                    private-key-password))]
+             b (cond-> (if (instance? cert-array-class certificate-chain')
+                         (SslContextBuilder/forServer private-key
+                                                      private-key-password
+                                                      certificate-chain')
+                         (SslContextBuilder/forServer certificate-chain'
+                                                      private-key
+                                                      private-key-password))
 
-         (when (some? trust-store)
-           (let [trust-store' (if-not (sequential? trust-store)
-                                trust-store
-                                (into-array X509Certificate trust-store))]
-             (.trustManager builder trust-store')))
+                 (some? trust-store)
+                 (.trustManager (if-not (sequential? trust-store)
+                                  trust-store
+                                  (into-array X509Certificate trust-store)))
 
-         (when (some? ssl-provider)
-           (.provider builder (coerce-ssl-provider ssl-provider)))
+                 (some? ssl-provider)
+                 (.provider (coerce-ssl-provider ssl-provider))
 
-         (when (some? ciphers)
-           (.ciphers builder ciphers))
+                 (some? ciphers)
+                 (.ciphers ciphers)
 
-         (when (some? protocols)
-           (.protocols builder (into-array String protocols)))
+                 (some? protocols)
+                 (.protocols (into-array String protocols))
 
-         (when (some? session-cache-size)
-           (.sessionCacheSize builder session-cache-size))
+                 (some? session-cache-size)
+                 (.sessionCacheSize session-cache-size)
 
-         (when (some? session-timeout)
-           (.sessionTimeout builder session-timeout))
+                 (some? session-timeout)
+                 (.sessionTimeout session-timeout)
 
-         (when (some? start-tls)
-           (.startTls builder (boolean start-tls)))
+                 (some? start-tls)
+                 (.startTls (boolean start-tls))
 
-         (when (some? client-auth)
-           (.clientAuth builder (case client-auth
-                                  :none ClientAuth/NONE
-                                  :optional ClientAuth/OPTIONAL
-                                  :require ClientAuth/REQUIRE)))
-
-         (.build builder))))))
+                 (some? client-auth)
+                 (.clientAuth (case client-auth
+                                :none ClientAuth/NONE
+                                :optional ClientAuth/OPTIONAL
+                                :require ClientAuth/REQUIRE)))]
+         (.build b))))))
 
 (set! *warn-on-reflection* true)
 
@@ -1006,13 +1004,13 @@
             (.negativeTtl negative-ttl)
 
             (and (some? search-domains)
-              (not (empty? search-domains)))
+                 (not (empty? search-domains)))
             (.searchDomains search-domains)
 
             (and (some? name-servers)
-              (not (empty? name-servers)))
+                 (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
-              (dns-name-servers-provider name-servers)))]
+                                 (dns-name-servers-provider name-servers)))]
     (DnsAddressResolverGroup. b)))
 
 (defn static-name-resolver
