@@ -21,7 +21,7 @@ public class StaticNameResolver extends InetNameResolver {
     protected void doResolve(String inetHost, Promise<InetAddress> promise) {
         try {
             promise.setSuccess(hosts.map(inetHost));
-        } catch (UnknownHostException e) {
+        } catch (UnrecognizedHostException e) {
             promise.setFailure(e);
         }
     }
@@ -30,7 +30,7 @@ public class StaticNameResolver extends InetNameResolver {
     protected void doResolveAll(String inetHost, Promise<List<InetAddress>> promise) {
         try {
             promise.setSuccess(Arrays.asList(hosts.map(inetHost)));
-        } catch (UnknownHostException e) {
+        } catch (UnrecognizedHostException e) {
             promise.setFailure(e);
         }
     }
