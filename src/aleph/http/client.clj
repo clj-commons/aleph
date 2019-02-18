@@ -757,6 +757,8 @@
            max-frame-payload
            max-frame-size
            compression?
+           proxy-options
+           dns-options
            heartbeats]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -771,12 +773,24 @@
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
         ssl? (= "wss" scheme)
+        remote-address (InetSocketAddress/createUnresolved
+                        (.getHost uri)
+                        (int
+                         (or
+                          (when (pos? (.getPort uri)) (.getPort uri))
+                          (if ssl? 443 80))))
+        host (.getHostName remote-address)
+        port (.getPort remote-address)
+        explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         heartbeats (when (some? heartbeats)
                      (merge
                       {:send-after-idle 3e4
                        :payload nil
                        :timeout nil}
                       heartbeats))
+        name-resolver (if (some? dns-options)
+                        (netty/dns-resolver-group dns-options)
+                        :default)
         [s handler] (websocket-client-handler
                       raw-stream?
                       uri
@@ -796,6 +810,18 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
+            (#(when (some? proxy-options)
+               (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
+                 (.addFirst % "proxy" ^ChannelHandler proxy)
+                 ;; well, we need to wait before the proxy responded with
+                 ;; HTTP/1.1 200 Connection established
+                 ;; before sending any requests
+                 (when (instance? ProxyHandler proxy)
+                   (.addAfter %
+                              "proxy"
+                              "pending-proxy-connection"
+                              ^ChannelHandler
+                              (pending-proxy-connection-handler s))))))
             (http/attach-heartbeats-handler heartbeats)
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))
@@ -805,13 +831,9 @@
               (netty/insecure-ssl-client-context)
               (netty/ssl-client-context))))
         bootstrap-transform
-        (InetSocketAddress.
-          (.getHost uri)
-          (int
-            (if (neg? (.getPort uri))
-              (if ssl? 443 80)
-              (.getPort uri))))
+        remote-address
         local-address
-        epoll?)
+        epoll?
+        name-resolver)
       (fn [_]
         s))))
