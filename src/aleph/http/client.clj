@@ -758,7 +758,7 @@
            max-frame-size
            compression?
            proxy-options
-           dns-options
+           name-resolver
            heartbeats]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -767,6 +767,7 @@
          sub-protocols nil
          extensions? false
          max-frame-payload 65536
+         name-resolver :default
          max-frame-size 1048576
          compression? false}}]
   (let [uri (URI. uri)
@@ -788,9 +789,6 @@
                        :payload nil
                        :timeout nil}
                       heartbeats))
-        name-resolver (if (some? dns-options)
-                        (netty/dns-resolver-group dns-options)
-                        :default)
         [s handler] (websocket-client-handler
                       raw-stream?
                       uri
