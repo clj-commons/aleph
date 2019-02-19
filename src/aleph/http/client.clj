@@ -759,6 +759,7 @@
            compression?
            proxy-options
            name-resolver
+           keep-alive?
            heartbeats]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -769,6 +770,7 @@
          max-frame-payload 65536
          name-resolver :default
          max-frame-size 1048576
+         keep-alive? true
          compression? false}}]
   (let [uri (URI. uri)
         scheme (.getScheme uri)
@@ -809,7 +811,7 @@
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
             (#(when (some? proxy-options)
-               (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
+               (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl? :keep-alive? keep-alive?))]
                  (.addFirst % "proxy" ^ChannelHandler proxy)
                  ;; well, we need to wait before the proxy responded with
                  ;; HTTP/1.1 200 Connection established
