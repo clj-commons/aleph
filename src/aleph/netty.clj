@@ -842,7 +842,7 @@
 
 (set! *warn-on-reflection* true)
 
-(defn coerce-ssl-context [ssl-context]
+(defn- coerce-ssl-context [ssl-context]
   (cond
     (instance? SslContext ssl-context)
     ssl-context
@@ -883,7 +883,7 @@
              (throw
               (IllegalArgumentException.
                "default SslContext should be provided to configure SNI")))
-         mapping (DomainNameMapping. size default-context)]
+         mapping (DomainNameMapping. size (coerce-ssl-context default-context))]
      (doseq [[domain context] contexts
              :when (not (identical? :default domain))]
        (.add mapping ^String domain ^SslContext (coerce-ssl-context context)))
