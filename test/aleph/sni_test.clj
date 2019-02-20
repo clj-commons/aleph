@@ -26,9 +26,8 @@
                          "*.netty.io.local" ssl#}
                   ~default?
                   (assoc "*" default-ssl#))]
-       (with-server (http/start-server ok-handler
-                                       {:port port
-                                        :ssl-context sni#})
+       (with-server (http/start-server ok-handler {:port port
+                                                   :sni sni#})
          ~@body)
        (.shutdown *sni-pool*))))
 

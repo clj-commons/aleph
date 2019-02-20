@@ -457,6 +457,7 @@
            bootstrap-transform
            pipeline-transform
            ssl-context
+           sni
            manual-ssl?
            shutdown-executor?
            epoll?
@@ -485,16 +486,22 @@
                      (IllegalArgumentException.
                        (str "invalid executor specification: " (pr-str executor)))))]
     (netty/start-server
-      (pipeline-builder
-        handler
-        pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context))))
-      ssl-context
-      bootstrap-transform
-      (when (and shutdown-executor? (instance? ExecutorService executor))
-        #(.shutdown ^ExecutorService executor))
-      (if socket-address socket-address (InetSocketAddress. port))
-      epoll?)))
+     {:pipeline-builder (pipeline-builder
+                         handler
+                         pipeline-transform
+                         (assoc options
+                                :executor executor
+                                :ssl? (or manual-ssl? (boolean ssl-context))))
+      :ssl-context ssl-context
+      :sni sni
+      :bootstrap-transform bootstrap-transform
+      :on-close (when (and shutdown-executor?
+                           (instance? ExecutorService executor))
+                  #(.shutdown ^ExecutorService executor))
+      :socket-address (if (some? socket-address)
+                        socket-address
+                        (InetSocketAddress. port))
+      :epoll? epoll?})))
 
 ;;;
 

@@ -842,6 +842,20 @@
 
 (set! *warn-on-reflection* true)
 
+(defn coerce-ssl-context [ssl-context]
+  (cond
+    (instance? SslContext ssl-context)
+    ssl-context
+
+    ;; in future this option might be interesing
+    ;; for turning application config (e.g. ALPN)
+    ;; depending on the server's capabilities
+    (instance? SslContextBuilder ssl-context)
+    (.build ^SslContextBuilder ssl-context)
+
+    (map? ssl-context)
+    (ssl-server-context ssl-context)))
+
 ;; todo(kachayev): support async mapping as well
 ;; todo(kachayev): providing default context still might be undesirable
 ;;                 but Netty's implementation of SniHandler is very
@@ -852,23 +866,28 @@
   "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
    Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering.
    Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io.
-   Default `SslContext` should be provided using `*` domain or `:default` keyword instead of domain. The default context would be applied for non-SNI clients or in case when the given hostname does not match any of the provided options."
-  [contexts]
-  (let [size (count contexts)
-        [_ default-context] (->> contexts
-                                 (filter (fn [[domain _]]
-                                           (or (= "*" domain)
-                                               (identical? :default domain))))
-                                 first)
-        _ (when (nil? default-context)
-            (throw
-             (IllegalArgumentException.
-              "default SslContext should be provided to configure SNI")))
-        mapping (DomainNameMapping. (dec size) default-context)]
-    (doseq [[domain context] contexts
-            :when (not (identical? :default domain))]
-      (.add mapping ^String domain ^SslContext context))
-    mapping))
+   Default `SslContext` should be provided either separately or using `*` domain or `:default` keyword instead of domain. The default context would be applied for non-SNI clients or in case when the given hostname does not match any of the provided options."
+  ([contexts]
+   (sni-mapping contexts nil))
+  ([contexts default-context]
+   (let [size (count contexts)
+         default-context (if (some? default-context)
+                           default-context
+                           (->> contexts
+                                (filter (fn [[domain _]]
+                                          (or (= "*" domain)
+                                              (identical? :default domain))))
+                                first
+                                second))
+         _ (when (nil? default-context)
+             (throw
+              (IllegalArgumentException.
+               "default SslContext should be provided to configure SNI")))
+         mapping (DomainNameMapping. size default-context)]
+     (doseq [[domain context] contexts
+             :when (not (identical? :default domain))]
+       (.add mapping ^String domain ^SslContext (coerce-ssl-context context)))
+     mapping)))
 
 ;;;
 
@@ -1124,80 +1143,96 @@
                    :name-resolver name-resolver})))
 
 (defn start-server
-  [pipeline-builder
-   ssl-context
-   bootstrap-transform
-   on-close
-   ^SocketAddress socket-address
-   epoll?]
-  (let [num-cores      (.availableProcessors (Runtime/getRuntime))
-        num-threads    (* 2 num-cores)
-        thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
-        closed?        (atom false)
+  ([{:keys [pipeline-builder
+            ssl-context
+            sni
+            bootstrap-transform
+            on-close
+            ^SocketAddress socket-address
+            epoll?]}]
+   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
+         num-threads    (* 2 num-cores)
+         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
+         closed?        (atom false)
 
-        ^EventLoopGroup group
-        (if (and epoll? (epoll-available?))
-          (EpollEventLoopGroup. num-threads thread-factory)
-          (NioEventLoopGroup. num-threads thread-factory))
+         ^EventLoopGroup group
+         (if (and epoll? (epoll-available?))
+           (EpollEventLoopGroup. num-threads thread-factory)
+           (NioEventLoopGroup. num-threads thread-factory))
 
-        ^Class channel
-        (if (and epoll? (epoll-available?))
-          EpollServerSocketChannel
-          NioServerSocketChannel)
+         ^Class channel
+         (if (and epoll? (epoll-available?))
+           EpollServerSocketChannel
+           NioServerSocketChannel)
 
-        pipeline-builder
-        (cond
-          (nil? ssl-context)
-          pipeline-builder
+         ssl-context
+         (when (some? ssl-context)
+           (coerce-ssl-context ssl-context))
 
-          (instance? SslContext ssl-context)
-          (fn [^ChannelPipeline p]
-            (.addLast p "ssl-handler"
-                      ^ChannelHandler
-                      (.newHandler ^SslContext ssl-context
-                                   (-> p .channel .alloc)))
-            (pipeline-builder p))
+         pipeline-builder
+         (cond
+           (and (nil? ssl-context) (nil? sni))
+           pipeline-builder
 
-          (or (map? ssl-context)
-              (sequential? ssl-context))
-          (fn [^ChannelPipeline p]
-            (.addLast p "ssl-handler"
-                      ^ChannelHandler
-                      (SniHandler. (sni-mapping ssl-context)))
-            (pipeline-builder p)))]
+           (some? sni)
+           (fn [^ChannelPipeline p]
+             (.addLast p "ssl-handler"
+                       ^ChannelHandler
+                       (SniHandler. (sni-mapping sni ssl-context)))
+             (pipeline-builder p))
 
-    (try
-      (let [b (doto (ServerBootstrap.)
-                (.option ChannelOption/SO_BACKLOG (int 1024))
-                (.option ChannelOption/SO_REUSEADDR true)
-                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group group)
-                (.channel channel)
-                (.childHandler (pipeline-initializer pipeline-builder))
-                (.childOption ChannelOption/SO_REUSEADDR true)
-                (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                bootstrap-transform)
+           :else
+           (fn [^ChannelPipeline p]
+             (.addLast p "ssl-handler"
+                       ^ChannelHandler
+                       (.newHandler ^SslContext ssl-context
+                                    (-> p .channel .alloc)))
+             (pipeline-builder p)))]
 
-            ^ServerSocketChannel
-            ch (-> b (.bind socket-address) .sync .channel)]
-        (reify
-          java.io.Closeable
-          (close [_]
-            (when (compare-and-set! closed? false true)
-              (-> ch .close .sync)
-              (-> group .shutdownGracefully)
-              (when on-close
-                (d/chain'
-                 (wrap-future (.terminationFuture group))
-                 (fn [_] (on-close))))))
-          AlephServer
-          (port [_]
-            (-> ch .localAddress .getPort))
-          (wait-for-close [_]
-            (-> ch .closeFuture .await)
-            (-> group .terminationFuture .await)
-            nil)))
+     (try
+       (let [b (doto (ServerBootstrap.)
+                 (.option ChannelOption/SO_BACKLOG (int 1024))
+                 (.option ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group group)
+                 (.channel channel)
+                 (.childHandler (pipeline-initializer pipeline-builder))
+                 (.childOption ChannelOption/SO_REUSEADDR true)
+                 (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 bootstrap-transform)
 
-      (catch Exception e
-        @(.shutdownGracefully group)
-        (throw e)))))
+             ^ServerSocketChannel
+             ch (-> b (.bind socket-address) .sync .channel)]
+         (reify
+           java.io.Closeable
+           (close [_]
+             (when (compare-and-set! closed? false true)
+               (-> ch .close .sync)
+               (-> group .shutdownGracefully)
+               (when on-close
+                 (d/chain'
+                  (wrap-future (.terminationFuture group))
+                  (fn [_] (on-close))))))
+           AlephServer
+           (port [_]
+             (-> ch .localAddress .getPort))
+           (wait-for-close [_]
+             (-> ch .closeFuture .await)
+             (-> group .terminationFuture .await)
+             nil)))
+
+       (catch Exception e
+         @(.shutdownGracefully group)
+         (throw e)))))
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?]
+   (start-server {:pipeline-builder pipeline-builder
+                  :ssl-context ssl-context
+                  :bootstrap-transform bootstrap-transform
+                  :on-close on-close
+                  :socket-address socket-address
+                  :epoll? epoll?})))
