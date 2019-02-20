@@ -842,7 +842,7 @@
 
 (set! *warn-on-reflection* true)
 
-(defn- coerce-ssl-context [ssl-context]
+(defn- coerce-ssl-context [options->context ssl-context]
   (cond
     (instance? SslContext ssl-context)
     ssl-context
@@ -855,6 +855,12 @@
 
     (map? ssl-context)
     (ssl-server-context ssl-context)))
+
+(def ^:private  coerce-ssl-server-context
+  (partial coerce-ssl-context ssl-server-context))
+
+(def ^:private  coerce-ssl-client-context
+  (partial coerce-ssl-context ssl-client-context))
 
 ;; todo(kachayev): support async mapping as well
 ;; todo(kachayev): providing default context still might be undesirable
@@ -883,10 +889,14 @@
              (throw
               (IllegalArgumentException.
                "default SslContext should be provided to configure SNI")))
-         mapping (DomainNameMapping. size (coerce-ssl-context default-context))]
+         mapping (DomainNameMapping.
+                  size
+                  (coerce-ssl-server-context default-context))]
      (doseq [[domain context] contexts
              :when (not (identical? :default domain))]
-       (.add mapping ^String domain ^SslContext (coerce-ssl-context context)))
+       (.add mapping
+             ^String domain
+             ^SslContext (coerce-ssl-server-context context)))
      mapping)))
 
 ;;;
@@ -1060,7 +1070,7 @@
 
 (defn create-client
   ([{:keys [pipeline-builder
-            ^SslContext ssl-context
+            ssl-context
             bootstrap-transform
             ^SocketAddress remote-address
             ^SocketAddress local-address
@@ -1072,6 +1082,10 @@
          channel (if (and epoll? (epoll-available?))
                    EpollSocketChannel
                    NioSocketChannel)
+
+         ^SslContext
+         ssl-context (when (some? ssl-context)
+                       (coerce-ssl-client-context ssl-context))
 
          pipeline-builder
          (if ssl-context
@@ -1167,7 +1181,7 @@
 
          ssl-context
          (when (some? ssl-context)
-           (coerce-ssl-context ssl-context))
+           (coerce-ssl-server-context ssl-context))
 
          pipeline-builder
          (cond
