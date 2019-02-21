@@ -9,6 +9,8 @@
     [aleph.http :as http]
     [clojure.tools.logging :as log]))
 
+(netty/leak-detector-level! :paranoid)
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
      (try
