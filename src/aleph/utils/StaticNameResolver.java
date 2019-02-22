@@ -3,35 +3,39 @@ package aleph.utils;
 import io.netty.resolver.InetNameResolver;
 import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.Promise;
+import io.netty.util.DomainNameMapping;
 
 import java.net.InetAddress;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.net.UnknownHostException;
 
 public class StaticNameResolver extends InetNameResolver {
 
-    private final DomainNameMapping<InetAddress> hosts;
+    private final DomainNameMapping<Option<InetAddress>> hosts;
 
-    public StaticNameResolver(EventExecutor executor, DomainNameMapping<InetAddress> hosts) {
+    public StaticNameResolver(EventExecutor executor, DomainNameMapping<Option<InetAddress>> hosts) {
         super(executor);
         this.hosts = hosts;
     }
 
     @Override
     protected void doResolve(String inetHost, Promise<InetAddress> promise) {
-        try {
-            promise.setSuccess(hosts.map(inetHost));
-        } catch (UnrecognizedHostException e) {
-            promise.setFailure(e);
+        Option<InetAddress> maybeResolved = hosts.map(inetHost);
+        if(maybeResolved.isSome()) {
+            promise.setSuccess(maybeResolved.get());
+        } else {
+            promise.setFailure(new UnknownHostException(inetHost));
         }
     }
 
     @Override
     protected void doResolveAll(String inetHost, Promise<List<InetAddress>> promise) {
-        try {
-            promise.setSuccess(Arrays.asList(hosts.map(inetHost)));
-        } catch (UnrecognizedHostException e) {
-            promise.setFailure(e);
+        Option<InetAddress> maybeResolved = hosts.map(inetHost);
+        if(maybeResolved.isSome()) {
+            promise.setSuccess(Collections.singletonList(maybeResolved.get()));
+        } else {
+            promise.setFailure(new UnknownHostException(inetHost));
         }
     }
 

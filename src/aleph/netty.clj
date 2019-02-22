@@ -30,6 +30,8 @@
     [io.netty.util
      Attribute
      AttributeKey
+     DomainNameMapping
+     DomainNameMappingBuilder
      NetUtil]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -82,7 +84,7 @@
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
     [aleph.utils
-     DomainNameMapping
+     Option
      StaticAddressResolverGroup]))
 
 ;;;
@@ -901,7 +903,7 @@
              (throw
               (IllegalArgumentException.
                "default SslContext should be provided to configure SNI")))
-         mapping (DomainNameMapping.
+         mapping (DomainNameMappingBuilder.
                   size
                   (coerce-ssl-server-context default-context))]
      (doseq [[domain context] contexts
@@ -909,7 +911,7 @@
        (.add mapping
              ^String domain
              ^SslContext (coerce-ssl-server-context context)))
-     mapping)))
+     (.build mapping))))
 
 ;;;
 
@@ -1069,7 +1071,7 @@
    ```"
   [hosts]
   (let [size (count hosts)
-        mapping (DomainNameMapping. size)]
+        mapping (DomainNameMappingBuilder. size Option/NONE)]
     (doseq [[host ip] hosts
             :let [inet (NetUtil/createByteArrayFromIpAddressString ip)]]
       (when (nil? inet)
@@ -1077,8 +1079,8 @@
          (IllegalArgumentException.
           (format "can't parse IP address from '%s'" ip))))
 
-      (.add mapping host (InetAddress/getByAddress inet)))
-    (StaticAddressResolverGroup. mapping)))
+      (.add mapping host (Option/some (InetAddress/getByAddress inet))))
+    (StaticAddressResolverGroup. (.build mapping))))
 
 (defn create-client
   ([{:keys [pipeline-builder

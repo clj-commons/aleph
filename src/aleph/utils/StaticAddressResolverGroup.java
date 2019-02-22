@@ -1,6 +1,7 @@
 package aleph.utils;
 
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.DomainNameMapping;
 import io.netty.resolver.AddressResolver;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.resolver.InetSocketAddressResolver;
@@ -10,9 +11,9 @@ import java.net.InetSocketAddress;
 
 public final class StaticAddressResolverGroup extends AddressResolverGroup<InetSocketAddress> {
 
-    private final DomainNameMapping<InetAddress> hosts;
+    private final DomainNameMapping<Option<InetAddress>> hosts;
 
-    public StaticAddressResolverGroup(DomainNameMapping<InetAddress> hosts) {
+    public StaticAddressResolverGroup(DomainNameMapping<Option<InetAddress>> hosts) {
         this.hosts = hosts;
     }
 
