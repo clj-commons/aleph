@@ -7,6 +7,8 @@
     [byte-streams :as bs]
     [aleph.udp :as udp]))
 
+(netty/leak-detector-level! :paranoid)
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
      (try

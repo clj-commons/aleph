@@ -8,6 +8,8 @@
    [aleph.tcp :as tcp]
    [clojure.java.io :as io]))
 
+(netty/leak-detector-level! :paranoid)
+
 (defn echo-handler [s _]
   (s/connect s s))
 
