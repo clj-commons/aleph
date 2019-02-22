@@ -42,7 +42,6 @@
      NioDatagramChannel]
     [io.netty.handler.ssl
      ClientAuth
-     SniHandler
      SslContext
      SslContextBuilder
      SslProvider]
@@ -85,7 +84,8 @@
     [java.security PrivateKey]
     [aleph.utils
      Option
-     StaticAddressResolverGroup]))
+     StaticAddressResolverGroup
+     StrictSniHandler]))
 
 ;;;
 
@@ -877,16 +877,11 @@
   (partial coerce-ssl-context ssl-client-context))
 
 ;; todo(kachayev): support async mapping as well
-;; todo(kachayev): providing default context still might be undesirable
-;;                 but Netty's implementation of SniHandler is very
-;;                 "liberal". to implement a strict version of SNI matching
-;;                 we need either to update Netty or move AbstractSniHandler
-;;                 to our codebase
-(defn ^DomainNameMapping sni-mapping
+(defn- ^DomainNameMapping sni-mapping
   "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
    Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering.
    Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io.
-   Default `SslContext` should be provided either separately or using `*` domain or `:default` keyword instead of domain. The default context would be applied for non-SNI clients or in case when the given hostname does not match any of the provided options."
+   Default `SslContext` might be provided either separately or using `*` domain or `:default` keyword instead of domain. In case no default context was specified, all non-SNI clients and all unrecognized host names would be rejected during the handshake."
   ([contexts]
    (sni-mapping contexts nil))
   ([contexts default-context]
@@ -899,18 +894,16 @@
                                               (identical? :default domain))))
                                 first
                                 second))
-         _ (when (nil? default-context)
-             (throw
-              (IllegalArgumentException.
-               "default SslContext should be provided to configure SNI")))
          mapping (DomainNameMappingBuilder.
                   size
-                  (coerce-ssl-server-context default-context))]
+                  (if (nil? default-context)
+                    Option/NONE
+                    (Option/some (coerce-ssl-server-context default-context))))]
      (doseq [[domain context] contexts
              :when (not (identical? :default domain))]
        (.add mapping
              ^String domain
-             ^SslContext (coerce-ssl-server-context context)))
+             (Option/some (coerce-ssl-server-context context))))
      (.build mapping))))
 
 ;;;
@@ -1206,7 +1199,7 @@
            (fn [^ChannelPipeline p]
              (.addLast p "ssl-handler"
                        ^ChannelHandler
-                       (SniHandler. (sni-mapping sni ssl-context)))
+                       (StrictSniHandler. (sni-mapping sni ssl-context)))
              (pipeline-builder p))
 
            :else
