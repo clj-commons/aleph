@@ -3,6 +3,9 @@ package aleph.utils;
 /**
  * NOTE: For internal usage only.
  *
+ * As soon as minimal Java version is updated to 8, this one
+ * should be thrown away immediately and replaced with Optional.
+ *
  * Defined to be used as a value wrapper when working with
  * io.netty.util.DomainNameMapping to beat its requirement
  * to have a default value in place.
