@@ -137,7 +137,7 @@ public class StrictSniHandler extends AbstractSniHandler<Option<SslContext>>  {
         SslHandler sslHandler = null;
         try {
             sslHandler = INSECURE_CONTEXT_INSTANCE.newHandler(ctx.alloc());
-            SSLParameters params = new SSLParameters();
+            SSLParameters params = sslHandler.engine().getSSLParameters();
             params.setSNIMatchers(Collections.singletonList(REJECT_ALL));
             sslHandler.engine().setSSLParameters(params);
             ctx.pipeline().replace(this, SslHandler.class.getName(), sslHandler);
