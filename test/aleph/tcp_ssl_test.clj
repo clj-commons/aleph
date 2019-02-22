@@ -13,6 +13,8 @@
    [java.security.spec RSAPrivateCrtKeySpec]
    [org.apache.commons.codec.binary Base64]))
 
+(netty/leak-detector-level! :paranoid)
+
 (set! *warn-on-reflection* false)
 
 (defn gen-key
