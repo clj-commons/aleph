@@ -852,7 +852,7 @@
     (.build ^SslContextBuilder ssl-context)
 
     (map? ssl-context)
-    (ssl-server-context ssl-context)))
+    (options->context ssl-context)))
 
 (def ^:private  coerce-ssl-server-context
   (partial coerce-ssl-context ssl-server-context))
