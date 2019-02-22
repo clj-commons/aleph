@@ -671,63 +671,68 @@
 
        :channel-read
        ([_ ctx msg]
-        (try
-          (let [ch (.channel ctx)]
-            (cond
+        (let [ch (.channel ctx)]
+          (cond
 
-              (not (.isHandshakeComplete handshaker))
-              (-> (netty/wrap-future (.processHandshake handshaker ch msg))
-                  (d/chain'
-                   (fn [_]
-                     (let [out (netty/sink ch false
-                                           (http/websocket-message-coerce-fn ch pending-pings)
-                                           (fn [] @desc))]
+            (not (.isHandshakeComplete handshaker))
+            (-> (netty/wrap-future (.processHandshake handshaker ch msg))
+                (d/chain'
+                 (fn [_]
+                   (let [out (netty/sink ch false
+                                         (http/websocket-message-coerce-fn ch pending-pings)
+                                         (fn [] @desc))]
 
-                       (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
+                     (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
 
-                       (d/success! d
-                                   (doto
-                                       (s/splice out @in)
-                                     (reset-meta! {:aleph/channel ch})))
+                     (d/success! d
+                                 (doto
+                                     (s/splice out @in)
+                                   (reset-meta! {:aleph/channel ch})))
 
-                       (s/on-drained @in
-                                     #(when (.isOpen ch)
-                                        (d/chain'
-                                         (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                                         (fn [_] (netty/close ctx))))))))
-                  (d/catch'
-                      (fn [ex]
-                        ;; handle handshake exception
-                        (d/error! d ex)
-                        (s/close! @in)
-                        (netty/close ctx))))
+                     (s/on-drained @in
+                                   #(when (.isOpen ch)
+                                      (d/chain'
+                                       (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
+                                       (fn [_] (netty/close ctx))))))))
+                (d/catch'
+                    (fn [ex]
+                      ;; handle handshake exception
+                      (d/error! d ex)
+                      (s/close! @in)
+                      (netty/close ctx))))
 
               (instance? FullHttpResponse msg)
-              (let [rsp ^FullHttpResponse msg]
+              (let [rsp ^FullHttpResponse msg
+                    content (bs/to-string (.content rsp))]
+                (netty/release msg)
                 (throw
                  (IllegalStateException.
                   (str "unexpected HTTP response, status: "
                        (.status rsp)
                        ", body: '"
-                       (bs/to-string (.content rsp))
+                       content
                        "'"))))
 
               (instance? TextWebSocketFrame msg)
-              (netty/put! ch @in (.text ^TextWebSocketFrame msg))
+              (let [text (.text ^TextWebSocketFrame msg)]
+                (netty/release msg)
+                (netty/put! ch @in text))
 
               (instance? BinaryWebSocketFrame msg)
               (let [frame (.content ^BinaryWebSocketFrame msg)]
                 (netty/put! ch @in
                             (if raw-stream?
-                              (netty/acquire frame)
-                              (netty/buf->array frame))))
+                              frame
+                              (netty/release-buf->array frame))))
 
               (instance? PongWebSocketFrame msg)
-              (http/resolve-pings! pending-pings true)
+              (do
+                (netty/release msg)
+                (http/resolve-pings! pending-pings true))
 
               (instance? PingWebSocketFrame msg)
               (let [frame (.content ^PingWebSocketFrame msg)]
-                (netty/write-and-flush  ch (PongWebSocketFrame. (netty/acquire frame))))
+                (netty/write-and-flush  ch (PongWebSocketFrame. frame)))
 
               (instance? CloseWebSocketFrame msg)
               (let [frame ^CloseWebSocketFrame msg]
@@ -735,12 +740,11 @@
                   (swap! desc assoc
                          :websocket-close-code (.statusCode frame)
                          :websocket-close-msg (.reasonText frame)))
+                (netty/release msg)
                 (netty/close ctx))
 
               :else
-              (.fireChannelRead ctx msg)))
-          (finally
-            (netty/release msg)))))])))
+              (.fireChannelRead ctx msg)))))])))
 
 (defn websocket-connection
   [uri

@@ -11,6 +11,8 @@
     [aleph.http.core :as http-core]
     [clojure.tools.logging :as log]))
 
+(netty/leak-detector-level! :paranoid)
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
      (try
@@ -58,7 +60,8 @@
       (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
         (is @(s/put! c (.getBytes "raw client hello" "UTF-8")))
         (let [msg @(s/try-take! c 5e3)]
-          (is (= "raw client hello" (when msg (bs/to-string (netty/buf->array msg)))))))))
+          (is (= "raw client hello"
+                 (when msg (bs/to-string (netty/release-buf->array msg)))))))))
 
   (testing "websocket server: raw-stream? with binary message"
     (with-handler raw-echo-handler
