@@ -42,6 +42,7 @@
      NioDatagramChannel]
     [io.netty.handler.ssl
      ClientAuth
+     SniHandler
      SslContext
      SslContextBuilder
      SslProvider]
@@ -84,8 +85,7 @@
     [java.security PrivateKey]
     [aleph.utils
      Option
-     StaticAddressResolverGroup
-     StrictSniHandler]))
+     StaticAddressResolverGroup]))
 
 ;;;
 
@@ -879,9 +879,8 @@
 ;; todo(kachayev): support async mapping as well
 (defn- ^DomainNameMapping sni-mapping
   "Builds mapping from domain name to approparite SslContext to enable SNI for server side SSL.
-   Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering.
-   Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io.
-   Default `SslContext` might be provided either separately or using `*` domain or `:default` keyword instead of domain. In case no default context was specified, all non-SNI clients and all unrecognized host names would be rejected during the handshake."
+
+   Accepts a map or sequence of (domain, SslContext) pairs to preserve ordering. Domain resolution supports `*`, e.g. `*.aleph.io` would match both https://aleph.io and https://docs.aleph.io. Default `SslContext` should be provided either separately or using `*` domain or `:default` keyword instead of domain."
   ([contexts]
    (sni-mapping contexts nil))
   ([contexts default-context]
@@ -894,16 +893,18 @@
                                               (identical? :default domain))))
                                 first
                                 second))
+         _ (when (nil? default-context)
+             (throw
+              (IllegalArgumentException.
+               "default SslContext should be provided to configure SNI")))
          mapping (DomainNameMappingBuilder.
                   size
-                  (if (nil? default-context)
-                    Option/NONE
-                    (Option/some (coerce-ssl-server-context default-context))))]
+                  (coerce-ssl-server-context default-context))]
      (doseq [[domain context] contexts
              :when (not (identical? :default domain))]
        (.add mapping
              ^String domain
-             (Option/some (coerce-ssl-server-context context))))
+             ^SslContext (coerce-ssl-server-context context)))
      (.build mapping))))
 
 ;;;
@@ -1199,7 +1200,7 @@
            (fn [^ChannelPipeline p]
              (.addLast p "ssl-handler"
                        ^ChannelHandler
-                       (StrictSniHandler. (sni-mapping sni ssl-context)))
+                       (SniHandler. (sni-mapping sni ssl-context)))
              (pipeline-builder p))
 
            :else
