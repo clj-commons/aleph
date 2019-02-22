@@ -45,7 +45,8 @@
      SslContextBuilder
      SslProvider]
     [io.netty.handler.ssl.util
-     SelfSignedCertificate InsecureTrustManagerFactory]
+     SelfSignedCertificate
+     InsecureTrustManagerFactory]
     [io.netty.resolver
      AddressResolverGroup
      NoopAddressResolverGroup
@@ -672,19 +673,6 @@
     :openssl SslProvider/OPENSSL
     :openssl-refcnt SslProvider/OPENSSL_REFCNT))
 
-(defn self-signed-ssl-context
-  "A self-signed SSL context for servers."
-  []
-  (let [cert (SelfSignedCertificate.)]
-    (.build (SslContextBuilder/forServer
-             (.certificate cert)
-             (.privateKey cert)))))
-
-(defn insecure-ssl-client-context []
-  (-> (SslContextBuilder/forClient)
-      (.trustManager InsecureTrustManagerFactory/INSTANCE)
-      .build))
-
 (set! *warn-on-reflection* false)
 
 (let [cert-array-class (class (into-array X509Certificate []))]
@@ -698,7 +686,7 @@
                     (instance? cert-array-class certificate-chain)))
       (throw
        (IllegalArgumentException.
-        "ssl-client-context arguments invalid"))))
+        "ssl context arguments invalid"))))
 
   (defn ssl-client-context
     "Creates a new client SSL context.
@@ -841,6 +829,16 @@
          (.build b))))))
 
 (set! *warn-on-reflection* true)
+
+(defn self-signed-ssl-context
+  "A self-signed SSL context for servers."
+  []
+  (let [cert (SelfSignedCertificate.)]
+    (ssl-server-context {:private-key (.privateKey cert)
+                         :certificate-chain (.certificate cert)})))
+
+(defn insecure-ssl-client-context []
+  (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
 
 (defn- coerce-ssl-context [options->context ssl-context]
   (cond
