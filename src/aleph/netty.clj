@@ -157,38 +157,40 @@
       (.writeBytes buf (.getBytes ^String x charset))
 
       (instance? ByteBuf x)
-      (do
+      (let [b (.writeBytes buf ^ByteBuf x)]
         (release x)
-        (.writeBytes buf ^ByteBuf x))
+        b)
 
       :else
       (.writeBytes buf (bs/to-byte-buffer x))))
 
   (defn ^ByteBuf to-byte-buf
     ([x]
-      (cond
-        (nil? x)
-        Unpooled/EMPTY_BUFFER
+     (cond
+       (nil? x)
+       Unpooled/EMPTY_BUFFER
 
-        (instance? array-class x)
-        (Unpooled/copiedBuffer ^bytes x)
+       (instance? array-class x)
+       (Unpooled/copiedBuffer ^bytes x)
 
-        (instance? String x)
-        (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
+       (instance? String x)
+       (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
 
-        (instance? ByteBuffer x)
-        (Unpooled/wrappedBuffer ^ByteBuffer x)
+       (instance? ByteBuffer x)
+       (Unpooled/wrappedBuffer ^ByteBuffer x)
 
-        (instance? ByteBuf x)
-        x
+       (instance? ByteBuf x)
+       x
 
-        :else
-        (bs/convert x ByteBuf)))
+       :else
+       (bs/convert x ByteBuf)))
     ([ch x]
-      (if (nil? x)
-        Unpooled/EMPTY_BUFFER
-        (doto (allocate ch)
-          (append-to-buf! x))))))
+     ;; todo(kachayev): do we really need to reallocate in case
+     ;;                 we already have an instance of ByteBuf here?
+     (if (nil? x)
+       Unpooled/EMPTY_BUFFER
+       (doto (allocate ch)
+         (append-to-buf! x))))))
 
 (defn to-byte-buf-stream [x chunk-size]
   (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
