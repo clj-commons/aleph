@@ -68,7 +68,8 @@
     [java.util.concurrent
      ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
-     AtomicInteger]
+     AtomicInteger
+     AtomicBoolean]
     [aleph.utils
      ProxyConnectionTimeoutException]))
 
@@ -633,7 +634,11 @@
          in (atom nil)
          desc (atom {})
          ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
-         handshaker (websocket-handshaker uri sub-protocols extensions? headers max-frame-payload)]
+         handshaker (websocket-handshaker uri
+                                          sub-protocols
+                                          extensions?
+                                          headers max-frame-payload)
+         closing? (AtomicBoolean. false)]
 
      [d
 
@@ -678,9 +683,19 @@
             (-> (netty/wrap-future (.processHandshake handshaker ch msg))
                 (d/chain'
                  (fn [_]
-                   (let [out (netty/sink ch false
-                                         (http/websocket-message-coerce-fn ch pending-pings)
-                                         (fn [] @desc))]
+                   (let [close-fn (fn [^CloseWebSocketFrame frame]
+                                    (if-not (.compareAndSet closing? false true)
+                                      false
+                                      (do
+                                        (-> (.close handshaker ch frame)
+                                            netty/wrap-future
+                                            (d/chain' (fn [_] (netty/close ctx))))
+                                        true)))
+                         coerce-fn (http/websocket-message-coerce-fn
+                                    ch
+                                    pending-pings
+                                    close-fn)
+                         out (netty/sink ch false coerce-fn (fn [] @desc))]
 
                      (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
 
@@ -689,11 +704,7 @@
                                      (s/splice out @in)
                                    (reset-meta! {:aleph/channel ch})))
 
-                     (s/on-drained @in
-                                   #(when (.isOpen ch)
-                                      (d/chain'
-                                       (netty/wrap-future (.close handshaker ch (CloseWebSocketFrame.)))
-                                       (fn [_] (netty/close ctx))))))))
+                     (s/on-drained @in #(close-fn (CloseWebSocketFrame.))))))
                 (d/catch'
                     (fn [ex]
                       ;; handle handshake exception
@@ -734,6 +745,9 @@
               (let [frame (.content ^PingWebSocketFrame msg)]
                 (netty/write-and-flush  ch (PongWebSocketFrame. frame)))
 
+              ;; todo(kachayev): check RFC what should we do in case
+              ;;                 we've got > 1 closing frame from the
+              ;;                 server
               (instance? CloseWebSocketFrame msg)
               (let [frame ^CloseWebSocketFrame msg]
                 (when (realized? d)
