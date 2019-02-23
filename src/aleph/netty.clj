@@ -957,6 +957,11 @@
           EpollServerSocketChannel
           NioServerSocketChannel)
 
+        ;; todo(kachayev): this one should be reimplemented after
+        ;;                 KQueue transport is merged into master
+        transport
+        (if (and epoll? (epoll-available?)) :epoll :nio)
+
         pipeline-builder
         (if ssl-context
           (fn [^ChannelPipeline p]
@@ -990,6 +995,9 @@
                 (d/chain'
                  (wrap-future (.terminationFuture group))
                  (fn [_] (on-close))))))
+          Object
+          (toString [_]
+            (format "AlephServer[channel:%s, transport:%s]" ch transport))
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))
