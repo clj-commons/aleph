@@ -135,6 +135,18 @@
      @closed#
      ~@body))
 
+(deftest test-client-connection-close
+  (with-handler echo-handler
+    (let [closed (d/deferred)
+          conn @(http/websocket-client "ws://localhost:8080")]
+      (s/on-closed conn #(d/success! closed true))
+      @(s/put! conn "message #1")
+      @(s/put! conn "message #2")
+      (let [cp (http/websocket-close! conn 4009 "back to roots")]
+        @closed
+        (is @cp "reported closed")
+        (is (false? @(http/websocket-close! conn)) "subsequent close")))))
+
 (deftest test-server-connection-close
   (testing "normal close"
     (let [handshake-started (d/deferred)
