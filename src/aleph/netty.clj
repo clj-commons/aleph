@@ -1058,7 +1058,7 @@
      (dns-resolver (.next client-group) options)))
   ([^EventExecutor executor options]
    (let [builder (dns-resolver-builder options)]
-     (.executor builder executor)
+     (.eventLoop builder executor)
      (.build builder))))
 
 (defn dns-resolver-group
