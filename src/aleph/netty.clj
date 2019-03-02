@@ -63,7 +63,9 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetAddress InetSocketAddress]
     [io.netty.util.concurrent
-     GenericFutureListener Future]
+     EventExecutor
+     GenericFutureListener
+     Future]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
@@ -977,26 +979,7 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
-(defn dns-resolver-group
-  "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
-
-   DNS options are a map of:
-
-   |:--- |:---
-   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to `4096`
-   | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to `16`
-   | `address-types` | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
-   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to `5000`
-   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to `0`
-   | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
-   | `negative-ttl` | sets the TTL of the cache for the failed DNS queries (in seconds)
-   | `trace-enabled?` | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
-   | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
-   | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
-   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
-   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
-   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
-   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+(defn- ^DnsNameResolverBuilder dns-resolver-builder
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -1021,38 +1004,68 @@
          ndots -1
          decode-idn? true
          recursion-desired? true}}]
-  (let [^EventLoopGroup
-        client-group (if (epoll-available?)
-                       @epoll-client-group
-                       @nio-client-group)
+  (cond-> (doto (DnsNameResolverBuilder.)
+            (.channelType ^Class NioDatagramChannel)
+            (.maxPayloadSize max-payload-size)
+            (.maxQueriesPerResolve max-queries-per-resolve)
+            (.queryTimeoutMillis query-timeout)
+            (.ttl min-ttl max-ttl)
+            (.traceEnabled trace-enabled?)
+            (.optResourceEnabled opt-resources-enabled?)
+            (.ndots ndots)
+            (.decodeIdn decode-idn?)
+            (.recursionDesired recursion-desired?))
 
-        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
-                    (.channelType ^Class NioDatagramChannel)
-                    (.maxPayloadSize max-payload-size)
-                    (.maxQueriesPerResolve max-queries-per-resolve)
-                    (.queryTimeoutMillis query-timeout)
-                    (.ttl min-ttl max-ttl)
-                    (.traceEnabled trace-enabled?)
-                    (.optResourceEnabled opt-resources-enabled?)
-                    (.ndots ndots)
-                    (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?))
+    (some? address-types)
+    (.resolvedAddressTypes (convert-address-types address-types))
 
-            (some? address-types)
-            (.resolvedAddressTypes (convert-address-types address-types))
+    (some? negative-ttl)
+    (.negativeTtl negative-ttl)
 
-            (some? negative-ttl)
-            (.negativeTtl negative-ttl)
+    (and (some? search-domains)
+         (not (empty? search-domains)))
+    (.searchDomains search-domains)
 
-            (and (some? search-domains)
-                 (not (empty? search-domains)))
-            (.searchDomains search-domains)
+    (and (some? name-servers)
+         (not (empty? name-servers)))
+    (.nameServerProvider ^DnsServerAddressStreamProvider
+                         (dns-name-servers-provider name-servers))))
 
-            (and (some? name-servers)
-                 (not (empty? name-servers)))
-            (.nameServerProvider ^DnsServerAddressStreamProvider
-                                 (dns-name-servers-provider name-servers)))]
-    (DnsAddressResolverGroup. b)))
+(defn dns-resolver
+  "Creates an instance of `DnsNameResolver`. By defaults, uses an instance of client group to get an `EventExecutor`.
+
+   DNS options are a map of:
+
+   |:--- |:---
+   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to `4096`
+   | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to `16`
+   | `address-types` | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
+   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to `5000`
+   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to `0`
+   | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
+   | `negative-ttl` | sets the TTL of the cache for the failed DNS queries (in seconds)
+   | `trace-enabled?` | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
+   | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
+   | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
+   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
+   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
+   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+  ([options]
+   (let [^EventLoopGroup client-group (if (epoll-available?)
+                                        @epoll-client-group
+                                        @nio-client-group)]
+     (dns-resolver (.next client-group) options)))
+  ([^EventExecutor executor options]
+   (let [builder (dns-resolver-builder options)]
+     (.executor builder executor)
+     (.build builder))))
+
+(defn dns-resolver-group
+  "Creates an instance of `DnsAddressResolverGroup` that might be set as a resolver to Bootstrap. See `aleph.netty/dns-resolver`. See `aleph.netty/dns-resolver` docs with the list of DNS options."
+  [options]
+  (let [builder (dns-resolver-builder options)]
+    (DnsAddressResolverGroup. builder)))
 
 (defn- ^DomainNameMapping map->domain-mapping [hosts]
   (let [size (count hosts)
@@ -1073,7 +1086,7 @@
    Accepts an instance of Netty's `EventExecutor` to run on and a mapping from hosts to IP addresses either in form of a map or a sequence of pairs to preserve resolution order. Wildcard domains are supported.
 
    Note, that in most cases having a separate name resolver for each event executor in a group leads to a better performance. Consider using `aleph.netty/static-resolver-group` for that."
-  [executor hosts]
+  [^EventExecutor executor hosts]
   (StaticNameResolver. executor (map->domain-mapping hosts)))
 
 (defn static-resolver-group
