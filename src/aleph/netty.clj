@@ -51,6 +51,7 @@
      InsecureTrustManagerFactory]
     [io.netty.resolver
      AddressResolverGroup
+     NameResolver
      NoopAddressResolverGroup
      ResolvedAddressTypes]
     [io.netty.resolver.dns
@@ -948,6 +949,19 @@
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
+(defn resolve-address
+  "Resolves the specified name into an address"
+  [^NameResolver resolver host]
+  (wrap-future (.resolve resolver host)))
+
+(defn resolve-host
+  "Returns the resolved IP address in textual presentation form"
+  [^NameResolver resolver host]
+  (d/chain'
+   (resolve-address resolver host)
+   (fn [^InetAddress address]
+     (.getHostAddress address))))
+
 (defn convert-address-types [address-types]
   (case address-types
     :ipv4-only ResolvedAddressTypes/IPV4_ONLY
@@ -1086,8 +1100,13 @@
    Accepts an instance of Netty's `EventExecutor` to run on and a mapping from hosts to IP addresses either in form of a map or a sequence of pairs to preserve resolution order. Wildcard domains are supported.
 
    Note, that in most cases having a separate name resolver for each event executor in a group leads to a better performance. Consider using `aleph.netty/static-resolver-group` for that."
-  [^EventExecutor executor hosts]
-  (StaticNameResolver. executor (map->domain-mapping hosts)))
+  ([hosts]
+   (let [^EventLoopGroup client-group (if (epoll-available?)
+                                        @epoll-client-group
+                                        @nio-client-group)]
+     (static-resolver (.next client-group) hosts)))
+  ([^EventExecutor executor hosts]
+   (StaticNameResolver. executor (map->domain-mapping hosts))))
 
 (defn static-resolver-group
   "Creates an instance of `StaticAddressResolverGroup` that might be passed as a name-resolver to Bootstrap when creating a client. Resolver group acts as a builder to spin up a separate name resolver per each EventExecutor in a group.

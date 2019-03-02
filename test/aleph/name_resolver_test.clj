@@ -35,6 +35,11 @@
   (-> (http/get (str "http://" host ":" port) {:pool *named-pool*})
       (d/chain' :status)))
 
+(deftest test-static-name-resolver
+  (let [ip "1.1.1.1"
+        resolver (netty/static-resolver {"aleph.io" ip})]
+    (is (= ip @(netty/resolve-host resolver "aleph.io")))))
+
 (deftest test-static-resolver-group
   (with-basic-handler
     (testing "success resolve"
