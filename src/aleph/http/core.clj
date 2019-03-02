@@ -342,6 +342,12 @@
 
 (deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 
+(defmethod print-method HttpFile [file ^java.io.Writer w]
+  (.write w (format "HttpFile[fd:%s offset:%s length:%s]"
+                    (.-fd file)
+                    (.-offset file)
+                    (.-length file))))
+
 (defn new-http-file
   ([path]
    (new-http-file path nil nil default-chunk-size))
