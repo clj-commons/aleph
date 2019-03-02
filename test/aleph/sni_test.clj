@@ -45,7 +45,7 @@
 (deftest test-sni-handler-resolved-host
   (with-sni-pool true (http/connection-pool
                        {:connection-options
-                        {:name-resolver (netty/static-name-resolver
+                        {:name-resolver (netty/static-resolver-group
                                          {"aleph.io.local" "127.0.0.1"
                                           "docs.netty.io.local" "127.0.0.1"})
                          :ssl-context ssl-test/client-ssl-context}})
@@ -65,7 +65,7 @@
   (with-sni-pool true (http/connection-pool
                        {:connection-options
                         {:sni :none
-                         :name-resolver (netty/static-name-resolver
+                         :name-resolver (netty/static-resolver-group
                                          {"aleph.io.local" "127.0.0.1"})
                          :ssl-context ssl-test/client-ssl-context}})
     (is (thrown? SSLHandshakeException @(get-status "aleph.io.local")))))

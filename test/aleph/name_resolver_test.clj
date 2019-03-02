@@ -20,8 +20,9 @@
    :body "OK"})
 
 (defmacro with-basic-handler [& body]
-  `(let [resolver# (netty/static-name-resolver {"aleph.io" "127.0.0.1"
-                                                "*.netty.io" "127.0.0.1"})]
+  `(let [resolver# (netty/static-resolver-group
+                    {"aleph.io" "127.0.0.1"
+                     "*.netty.io" "127.0.0.1"})]
      (binding [*named-pool* (http/connection-pool
                              {:connection-options {:name-resolver resolver#}})]
        (with-server (http/start-server basic-handler {:port port})
@@ -34,7 +35,7 @@
   (-> (http/get (str "http://" host ":" port) {:pool *named-pool*})
       (d/chain' :status)))
 
-(deftest test-static-name-resolver
+(deftest test-static-resolver-group
   (with-basic-handler
     (testing "success resolve"
       (is (= 200 @(get-status "aleph.io"))))

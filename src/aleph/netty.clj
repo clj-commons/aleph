@@ -85,7 +85,8 @@
     [java.security PrivateKey]
     [aleph.utils
      Option
-     StaticAddressResolverGroup]))
+     StaticAddressResolverGroup
+     StaticNameResolver]))
 
 ;;;
 
@@ -1053,17 +1054,7 @@
                                  (dns-name-servers-provider name-servers)))]
     (DnsAddressResolverGroup. b)))
 
-(defn static-name-resolver
-  "Creates an instance of StaticAddressResolverGroup that might be passed as a name resolver to Bootstrap when creating client.
-
-   Accepts a mapping from hosts to IP addresses either in form of a map or a sequence of pairs to preserve resolution order. Wildcard domains are supported. E.g.
-
-   ```
-   (netty/static-name-resolver {\"aleph.io\"   \"127.0.0.1\"
-                                \"netty.io\"   \"127.0.0.2\"
-                                \"*.netty.io\" \"127.0.0.3\"})
-   ```"
-  [hosts]
+(defn- ^DomainNameMapping map->domain-mapping [hosts]
   (let [size (count hosts)
         mapping (DomainNameMappingBuilder. size Option/NONE)]
     (doseq [[host ip] hosts
@@ -1074,7 +1065,29 @@
           (format "can't parse IP address from '%s'" ip))))
 
       (.add mapping host (Option/some (InetAddress/getByAddress inet))))
-    (StaticAddressResolverGroup. (.build mapping))))
+    (.build mapping)))
+
+(defn static-resolver
+  "Creates an instance of `StaticNameResolver`.
+
+   Accepts an instance of Netty's `EventExecutor` to run on and a mapping from hosts to IP addresses either in form of a map or a sequence of pairs to preserve resolution order. Wildcard domains are supported.
+
+   Note, that in most cases having a separate name resolver for each event executor in a group leads to a better performance. Consider using `aleph.netty/static-resolver-group` for that."
+  [executor hosts]
+  (StaticNameResolver. executor (map->domain-mapping hosts)))
+
+(defn static-resolver-group
+  "Creates an instance of `StaticAddressResolverGroup` that might be passed as a name-resolver to Bootstrap when creating a client. Resolver group acts as a builder to spin up a separate name resolver per each EventExecutor in a group.
+
+   Accepts a mapping from hosts to IP addresses either in form of a map or a sequence of pairs to preserve resolution order. Wildcard domains are supported. E.g.
+
+   ```
+   (netty/static-resolver-group {\"aleph.io\"   \"127.0.0.1\"
+                                 \"netty.io\"   \"127.0.0.2\"
+                                 \"*.netty.io\" \"127.0.0.3\"})
+   ```"
+  [hosts]
+  (StaticAddressResolverGroup. (map->domain-mapping hosts)))
 
 (defn create-client
   ([{:keys [pipeline-builder
