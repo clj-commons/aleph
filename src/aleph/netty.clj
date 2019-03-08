@@ -26,7 +26,9 @@
      ChannelInitializer]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
+     EpollServerDomainSocketChannel
      EpollSocketChannel]
+    [io.netty.channel.unix DomainSocketAddress]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -954,7 +956,9 @@
 
         ^Class channel
         (if (and epoll? (epoll-available?))
-          EpollServerSocketChannel
+          (if (and socket-address (instance? DomainSocketAddress socket-address))
+            EpollServerDomainSocketChannel
+            EpollServerSocketChannel)
           NioServerSocketChannel)
 
         pipeline-builder
