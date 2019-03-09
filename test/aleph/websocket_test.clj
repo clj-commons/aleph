@@ -55,6 +55,17 @@
       (is @(s/put! c "hello with compression enabled"))
       (is (= "hello with compression enabled" @(s/try-take! c 5e3)))))
 
+  (with-compressing-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080")]
+      (is @(s/put! c "hello"))
+      (is (= "hello" @(s/try-take! c 5e3)))))
+
+  (with-compressing-handler echo-handler
+    (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
+      (is @(s/put! c "hello compressed"))
+      (is (= "hello compressed" @(s/try-take! c 5e3))))))
+
+(deftest test-raw-echo-handler
   (testing "websocket client: raw-stream?"
     (with-handler echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
@@ -74,17 +85,7 @@
     (with-handler raw-echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080")]
         (is @(s/put! c "raw conn string hello"))
-        (is (= "raw conn string hello" @(s/try-take! c 5e3))))))
-
-  (with-compressing-handler echo-handler
-    (let [c @(http/websocket-client "ws://localhost:8080")]
-      (is @(s/put! c "hello"))
-      (is (= "hello" @(s/try-take! c 5e3)))))
-
-  (with-compressing-handler echo-handler
-    (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
-      (is @(s/put! c "hello compressed"))
-      (is (= "hello compressed" @(s/try-take! c 5e3))))))
+        (is (= "raw conn string hello" @(s/try-take! c 5e3)))))))
 
 (deftest test-ping-pong-protocol
   (testing "empty ping from the client"
