@@ -712,53 +712,53 @@
                       (s/close! @in)
                       (netty/close ctx))))
 
-              (instance? FullHttpResponse msg)
-              (let [rsp ^FullHttpResponse msg
-                    content (bs/to-string (.content rsp))]
-                (netty/release msg)
-                (throw
-                 (IllegalStateException.
-                  (str "unexpected HTTP response, status: "
-                       (.status rsp)
-                       ", body: '"
-                       content
-                       "'"))))
+            (instance? FullHttpResponse msg)
+            (let [rsp ^FullHttpResponse msg
+                  content (bs/to-string (.content rsp))]
+              (netty/release msg)
+              (throw
+               (IllegalStateException.
+                (str "unexpected HTTP response, status: "
+                     (.status rsp)
+                     ", body: '"
+                     content
+                     "'"))))
 
-              (instance? TextWebSocketFrame msg)
-              (let [text (.text ^TextWebSocketFrame msg)]
-                (netty/release msg)
-                (netty/put! ch @in text))
+            (instance? TextWebSocketFrame msg)
+            (let [text (.text ^TextWebSocketFrame msg)]
+              (netty/release msg)
+              (netty/put! ch @in text))
 
-              (instance? BinaryWebSocketFrame msg)
-              (let [frame (.content ^BinaryWebSocketFrame msg)]
-                (netty/put! ch @in
-                            (if raw-stream?
-                              frame
-                              (netty/release-buf->array frame))))
+            (instance? BinaryWebSocketFrame msg)
+            (let [frame (.content ^BinaryWebSocketFrame msg)]
+              (netty/put! ch @in
+                          (if raw-stream?
+                            frame
+                            (netty/release-buf->array frame))))
 
-              (instance? PongWebSocketFrame msg)
-              (do
-                (netty/release msg)
-                (http/resolve-pings! pending-pings true))
+            (instance? PongWebSocketFrame msg)
+            (do
+              (netty/release msg)
+              (http/resolve-pings! pending-pings true))
 
-              (instance? PingWebSocketFrame msg)
-              (let [frame (.content ^PingWebSocketFrame msg)]
-                (netty/write-and-flush  ch (PongWebSocketFrame. frame)))
+            (instance? PingWebSocketFrame msg)
+            (let [frame (.content ^PingWebSocketFrame msg)]
+              (netty/write-and-flush  ch (PongWebSocketFrame. frame)))
 
-              ;; todo(kachayev): check RFC what should we do in case
-              ;;                 we've got > 1 closing frame from the
-              ;;                 server
-              (instance? CloseWebSocketFrame msg)
-              (let [frame ^CloseWebSocketFrame msg]
-                (when (realized? d)
-                  (swap! desc assoc
-                         :websocket-close-code (.statusCode frame)
-                         :websocket-close-msg (.reasonText frame)))
-                (netty/release msg)
-                (netty/close ctx))
+            ;; todo(kachayev): check RFC what should we do in case
+            ;;                 we've got > 1 closing frame from the
+            ;;                 server
+            (instance? CloseWebSocketFrame msg)
+            (let [frame ^CloseWebSocketFrame msg]
+              (when (realized? d)
+                (swap! desc assoc
+                       :websocket-close-code (.statusCode frame)
+                       :websocket-close-msg (.reasonText frame)))
+              (netty/release msg)
+              (netty/close ctx))
 
-              :else
-              (.fireChannelRead ctx msg)))))])))
+            :else
+            (.fireChannelRead ctx msg)))))])))
 
 (defn websocket-connection
   [uri
