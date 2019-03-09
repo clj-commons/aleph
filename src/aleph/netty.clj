@@ -664,6 +664,11 @@
     (initChannel [^Channel ch]
       (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
 
+(defn remove-if-present [^ChannelPipeline pipeline ^Class handler]
+  (when (some? (.get pipeline handler))
+    (.remove pipeline handler))
+  pipeline)
+
 (defn instrument!
   [stream]
   (if-let [^Channel ch (->> stream meta :aleph/channel)]

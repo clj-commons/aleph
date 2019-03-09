@@ -657,6 +657,8 @@
           (doto (.pipeline ch)
             (.remove "request-handler")
             (.remove "continue-handler")
+            (netty/remove-if-present HttpContentCompressor)
+            (netty/remove-if-present ChunkedWriteHandler)
             (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
             (#(when compression?
                 (.addLast ^ChannelPipeline %
