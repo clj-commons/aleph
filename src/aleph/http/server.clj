@@ -583,7 +583,9 @@
                (netty/write-and-flush ch (PongWebSocketFrame. body)))
 
              (instance? PongWebSocketFrame msg)
-             (http/resolve-pings! pending-pings true)
+             (do
+               (netty/release msg)
+               (http/resolve-pings! pending-pings true))
 
              (instance? CloseWebSocketFrame msg)
              (if-not (.compareAndSet closing? false true)
