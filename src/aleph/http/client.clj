@@ -686,7 +686,9 @@
                  (fn [_]
                    (let [close-fn (fn [^CloseWebSocketFrame frame]
                                     (if-not (.compareAndSet closing? false true)
-                                      false
+                                      (do
+                                        (netty/release frame)
+                                        false)
                                       (do
                                         (-> (.close handshaker ch frame)
                                             netty/wrap-future
