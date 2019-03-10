@@ -637,7 +637,8 @@
          handshaker (websocket-handshaker uri
                                           sub-protocols
                                           extensions?
-                                          headers max-frame-payload)
+                                          headers
+                                          max-frame-payload)
          closing? (AtomicBoolean. false)]
 
      [d
