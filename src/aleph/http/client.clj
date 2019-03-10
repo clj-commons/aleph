@@ -713,7 +713,10 @@
                       ;; handle handshake exception
                       (d/error! d ex)
                       (s/close! @in)
-                      (netty/close ctx))))
+                      (netty/close ctx)))
+                (d/finally'
+                  (fn []
+                    (netty/release msg))))
 
             (instance? FullHttpResponse msg)
             (let [rsp ^FullHttpResponse msg
