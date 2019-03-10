@@ -647,42 +647,48 @@
               (:uri req))
         req (http/ring-request->full-netty-request req)
         factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
-    (if-let [handshaker (.newHandshaker factory req)]
-      (try
-        (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
-                                                                    ch
-                                                                    handshaker
-                                                                    heartbeats)
-              p (.newPromise ch)
-              h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
-          ;; actually, we're not going to except anything but websocket, so...
-          (doto (.pipeline ch)
-            (.remove "request-handler")
-            (.remove "continue-handler")
-            (netty/remove-if-present HttpContentCompressor)
-            (netty/remove-if-present ChunkedWriteHandler)
-            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-            (#(when compression?
-                (.addLast ^ChannelPipeline %
-                          "websocket-deflater"
-                          (WebSocketServerCompressionHandler.))))
-            (http/attach-heartbeats-handler heartbeats)
-            (.addLast "websocket-handler" handler))
-          (-> (try
-                (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
-                (catch Throwable e
-                  (d/error-deferred e)))
-              (d/chain'
-                (fn [_]
-                  (when (some? pipeline-transform)
-                    (pipeline-transform (.pipeline ch)))
-                  s))
-              (d/catch'
-                (fn [e]
-                  (send-websocket-request-expected! ch ssl?)
-                  (d/error-deferred e)))))
-        (catch Throwable e
-          (d/error-deferred e)))
-      (do
-        (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
-        (d/error-deferred (IllegalStateException. "unsupported version"))))))
+    (try
+      (if-let [handshaker (.newHandshaker factory req)]
+        (try
+          (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
+                                                                      ch
+                                                                      handshaker
+                                                                      heartbeats)
+                p (.newPromise ch)
+                h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
+            ;; actually, we're not going to except anything but websocket, so...
+            (doto (.pipeline ch)
+              (.remove "request-handler")
+              (.remove "continue-handler")
+              (netty/remove-if-present HttpContentCompressor)
+              (netty/remove-if-present ChunkedWriteHandler)
+              (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+              (#(when compression?
+                  (.addLast ^ChannelPipeline %
+                            "websocket-deflater"
+                            (WebSocketServerCompressionHandler.))))
+              (http/attach-heartbeats-handler heartbeats)
+              (.addLast "websocket-handler" handler))
+            (-> (try
+                  (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
+                  (catch Throwable e
+                    (d/error-deferred e)))
+                (d/chain'
+                 (fn [_]
+                   (when (some? pipeline-transform)
+                     (pipeline-transform (.pipeline ch)))
+                   s))
+                (d/catch'
+                    (fn [e]
+                      (send-websocket-request-expected! ch ssl?)
+                      (d/error-deferred e)))))
+          (catch Throwable e
+            (d/error-deferred e)))
+        (do
+          (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
+          (d/error-deferred (IllegalStateException. "unsupported version"))))
+      (finally
+        ;; I find this approach to handle request release somewhat
+        ;; fragile... We have to release the object both in case of
+        ;; handshake initialization and "unsupported version" response
+        (netty/release req)))))
