@@ -500,29 +500,41 @@
     heartbeats]
    (let [d (d/deferred)
          ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
-         out (netty/sink ch false (http/websocket-message-coerce-fn ch pending-pings))
+         closing? (AtomicBoolean. false)
+         coerce-fn (http/websocket-message-coerce-fn
+                    ch
+                    pending-pings
+                    (fn [^CloseWebSocketFrame frame]
+                      (if-not (.compareAndSet closing? false true)
+                        false
+                        (do
+                          (.close handshaker ch frame)
+                          true))))
+         out (netty/sink ch false coerce-fn)
          in (netty/buffered-source ch (constantly 1) 16)]
 
-     (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
+     (s/on-closed
+      out
+      (fn [] (http/resolve-pings! pending-pings false)))
 
-     (s/on-drained in
-                   ;; there's a change that the connection was closed by the server,
-                   ;; in that case *out* would be closed earlier and the underlying
-                   ;; netty channel is already terminated
-                   #(when (.isOpen ch)
-                      (.close handshaker ch (CloseWebSocketFrame.))))
+     (s/on-drained
+      in
+      ;; there's a chance that the connection was closed by the client,
+      ;; in that case *out* would be closed earlier and the underlying
+      ;; netty channel is already terminated
+      #(when (and (.isOpen ch)
+                  (.compareAndSet closing? false true))
+         (.close handshaker ch (CloseWebSocketFrame.))))
 
      (let [s (doto
                  (s/splice out in)
                (reset-meta! {:aleph/channel ch}))]
-
        [s
 
         (netty/channel-inbound-handler
 
          :exception-caught
          ([_ ctx ex]
-
           (when-not (instance? IOException ex)
             (log/warn ex "error in websocket handler"))
           (s/close! out)
@@ -571,12 +583,17 @@
                (netty/write-and-flush ch (PongWebSocketFrame. body)))
 
              (instance? PongWebSocketFrame msg)
-             (http/resolve-pings! pending-pings true)
+             (do
+               (netty/release msg)
+               (http/resolve-pings! pending-pings true))
 
              (instance? CloseWebSocketFrame msg)
-             ;; reusing the same buffer
-             ;; will be deallocated by Netty
-             (.close handshaker ch msg)
+             (if-not (.compareAndSet closing? false true)
+               ;; closing already, nothing else could be done
+               (netty/release msg)
+               ;; reusing the same buffer
+               ;; will be deallocated by Netty
+               (.close handshaker ch msg))
 
              :else
              ;; no need to release buffer when passing to a next handler
@@ -630,40 +647,48 @@
               (:uri req))
         req (http/ring-request->full-netty-request req)
         factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
-    (if-let [handshaker (.newHandshaker factory req)]
-      (try
-        (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
-                                                                    ch
-                                                                    handshaker
-                                                                    heartbeats)
-              p (.newPromise ch)
-              h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
-          ;; actually, we're not going to except anything but websocket, so...
-          (doto (.pipeline ch)
-            (.remove "request-handler")
-            (.remove "continue-handler")
-            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-            (#(when compression?
-                (.addLast ^ChannelPipeline %
-                          "websocket-deflater"
-                          (WebSocketServerCompressionHandler.))))
-            (http/attach-heartbeats-handler heartbeats)
-            (.addLast "websocket-handler" handler))
-          (-> (try
-                (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
-                (catch Throwable e
-                  (d/error-deferred e)))
-              (d/chain'
-                (fn [_]
-                  (when (some? pipeline-transform)
-                    (pipeline-transform (.pipeline ch)))
-                  s))
-              (d/catch'
-                (fn [e]
-                  (send-websocket-request-expected! ch ssl?)
-                  (d/error-deferred e)))))
-        (catch Throwable e
-          (d/error-deferred e)))
-      (do
-        (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
-        (d/error-deferred (IllegalStateException. "unsupported version"))))))
+    (try
+      (if-let [handshaker (.newHandshaker factory req)]
+        (try
+          (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
+                                                                      ch
+                                                                      handshaker
+                                                                      heartbeats)
+                p (.newPromise ch)
+                h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
+            ;; actually, we're not going to except anything but websocket, so...
+            (doto (.pipeline ch)
+              (.remove "request-handler")
+              (.remove "continue-handler")
+              (netty/remove-if-present HttpContentCompressor)
+              (netty/remove-if-present ChunkedWriteHandler)
+              (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+              (#(when compression?
+                  (.addLast ^ChannelPipeline %
+                            "websocket-deflater"
+                            (WebSocketServerCompressionHandler.))))
+              (http/attach-heartbeats-handler heartbeats)
+              (.addLast "websocket-handler" handler))
+            (-> (try
+                  (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
+                  (catch Throwable e
+                    (d/error-deferred e)))
+                (d/chain'
+                 (fn [_]
+                   (when (some? pipeline-transform)
+                     (pipeline-transform (.pipeline ch)))
+                   s))
+                (d/catch'
+                    (fn [e]
+                      (send-websocket-request-expected! ch ssl?)
+                      (d/error-deferred e)))))
+          (catch Throwable e
+            (d/error-deferred e)))
+        (do
+          (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
+          (d/error-deferred (IllegalStateException. "unsupported version"))))
+      (finally
+        ;; I find this approach to handle request release somewhat
+        ;; fragile... We have to release the object both in case of
+        ;; handshake initialization and "unsupported version" response
+        (netty/release req)))))

@@ -343,6 +343,8 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
+(def sink-close-marker ::sink-close)
+
 (manifold/def-sink ChannelSink
   [coerce-fn
    downstream?
@@ -377,8 +379,16 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            d (if (nil? msg)
+            d (cond
+                (nil? msg)
                 (d/success-deferred true)
+
+                (identical? sink-close-marker msg)
+                (do
+                  (.markClosed this)
+                  (d/success-deferred false))
+
+                :else
                 (let [^ChannelFuture f (write-and-flush ch msg)]
                   (-> f
                     wrap-future
@@ -653,6 +663,11 @@
   (proxy [ChannelInitializer] []
     (initChannel [^Channel ch]
       (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
+
+(defn remove-if-present [^ChannelPipeline pipeline ^Class handler]
+  (when (some? (.get pipeline handler))
+    (.remove pipeline handler))
+  pipeline)
 
 (defn instrument!
   [stream]
