@@ -7,6 +7,8 @@
     [byte-streams :as bs]
     [aleph.tcp :as tcp]))
 
+(netty/leak-detector-level! :paranoid)
+
 (defn echo-handler [s _]
   (s/connect s s))
 

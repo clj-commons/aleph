@@ -14,6 +14,8 @@
    [io.netty.handler.ssl SslContextBuilder ClientAuth]
    [org.apache.commons.codec.binary Base64]))
 
+(netty/leak-detector-level! :paranoid)
+
 (set! *warn-on-reflection* false)
 
 (defn gen-key

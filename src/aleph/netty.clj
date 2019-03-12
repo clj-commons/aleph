@@ -157,38 +157,40 @@
       (.writeBytes buf (.getBytes ^String x charset))
 
       (instance? ByteBuf x)
-      (do
+      (let [b (.writeBytes buf ^ByteBuf x)]
         (release x)
-        (.writeBytes buf ^ByteBuf x))
+        b)
 
       :else
       (.writeBytes buf (bs/to-byte-buffer x))))
 
   (defn ^ByteBuf to-byte-buf
     ([x]
-      (cond
-        (nil? x)
-        Unpooled/EMPTY_BUFFER
+     (cond
+       (nil? x)
+       Unpooled/EMPTY_BUFFER
 
-        (instance? array-class x)
-        (Unpooled/copiedBuffer ^bytes x)
+       (instance? array-class x)
+       (Unpooled/copiedBuffer ^bytes x)
 
-        (instance? String x)
-        (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
+       (instance? String x)
+       (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
 
-        (instance? ByteBuffer x)
-        (Unpooled/wrappedBuffer ^ByteBuffer x)
+       (instance? ByteBuffer x)
+       (Unpooled/wrappedBuffer ^ByteBuffer x)
 
-        (instance? ByteBuf x)
-        x
+       (instance? ByteBuf x)
+       x
 
-        :else
-        (bs/convert x ByteBuf)))
+       :else
+       (bs/convert x ByteBuf)))
     ([ch x]
-      (if (nil? x)
-        Unpooled/EMPTY_BUFFER
-        (doto (allocate ch)
-          (append-to-buf! x))))))
+     ;; todo(kachayev): do we really need to reallocate in case
+     ;;                 we already have an instance of ByteBuf here?
+     (if (nil? x)
+       Unpooled/EMPTY_BUFFER
+       (doto (allocate ch)
+         (append-to-buf! x))))))
 
 (defn to-byte-buf-stream [x chunk-size]
   (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
@@ -199,24 +201,36 @@
   (when f
     (if (.isSuccess f)
       (d/success-deferred (.getNow f) nil)
-      (let [d (d/deferred nil)]
+      (let [d (d/deferred nil)
+            ;; workaround for the issue with executing RT.readString
+            ;; on a Netty thread that doesn't have appropriate class loader
+            ;; more information here:
+            ;; https://github.com/ztellman/aleph/issues/365
+            class-loader (or (clojure.lang.RT/baseLoader)
+                             (clojure.lang.RT/makeClassLoader))]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
-              (cond
-                (.isSuccess f)
-                (d/success! d (.getNow f))
+              (try
+                (. clojure.lang.Var
+                   (pushThreadBindings {clojure.lang.Compiler/LOADER
+                                        class-loader}))
+                (cond
+                  (.isSuccess f)
+                  (d/success! d (.getNow f))
 
-                (.isCancelled f)
-                (d/error! d (CancellationException. "future is cancelled."))
+                  (.isCancelled f)
+                  (d/error! d (CancellationException. "future is cancelled."))
 
-                (some? (.cause f))
-                (if (instance? java.nio.channels.ClosedChannelException (.cause f))
-                  (d/success! d false)
-                  (d/error! d (.cause f)))
+                  (some? (.cause f))
+                  (if (instance? java.nio.channels.ClosedChannelException (.cause f))
+                    (d/success! d false)
+                    (d/error! d (.cause f)))
 
-                :else
-                (d/error! d (IllegalStateException. "future in unknown state"))))))
+                  :else
+                  (d/error! d (IllegalStateException. "future in unknown state")))
+                (finally
+                  (. clojure.lang.Var (popThreadBindings)))))))
         d))))
 
 (defn allocate [x]
@@ -329,6 +343,8 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
+(def sink-close-marker ::sink-close)
+
 (manifold/def-sink ChannelSink
   [coerce-fn
    downstream?
@@ -363,8 +379,16 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            d (if (nil? msg)
+            d (cond
+                (nil? msg)
                 (d/success-deferred true)
+
+                (identical? sink-close-marker msg)
+                (do
+                  (.markClosed this)
+                  (d/success-deferred false))
+
+                :else
                 (let [^ChannelFuture f (write-and-flush ch msg)]
                   (-> f
                     wrap-future
@@ -639,6 +663,11 @@
   (proxy [ChannelInitializer] []
     (initChannel [^Channel ch]
       (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
+
+(defn remove-if-present [^ChannelPipeline pipeline ^Class handler]
+  (when (some? (.get pipeline handler))
+    (.remove pipeline handler))
+  pipeline)
 
 (defn instrument!
   [stream]
