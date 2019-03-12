@@ -154,9 +154,13 @@
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
-  (let [conn-options' (cond-> connection-options
+  (let [log-activity (:log-activity connection-options)
+        conn-options' (cond-> connection-options
                         (some? dns-options)
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options)))
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options))
+
+                        (some? log-activity)
+                        (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
         p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
