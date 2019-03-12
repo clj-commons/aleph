@@ -712,10 +712,6 @@
             (-> (netty/wrap-future (.processHandshake handshaker ch msg))
                 (d/chain'
                  (fn [_]
-                   ;; cancel timeout if it was scheduled
-                   (when-let [^ScheduledFuture timeout-future @timeout-task]
-                     (.cancel timeout-future false)
-                     (reset! timeout-task nil))
                    (let [close-fn (fn [^CloseWebSocketFrame frame]
                                     (if-not (.compareAndSet closing? false true)
                                       (do
@@ -748,6 +744,10 @@
                       (netty/close ctx)))
                 (d/finally'
                   (fn []
+                    ;; cancel timeout if it was scheduled
+                    (when-let [^ScheduledFuture timeout-future @timeout-task]
+                      (.cancel timeout-future false)
+                      (reset! timeout-task nil))
                     (netty/release msg))))
 
             (instance? FullHttpResponse msg)
