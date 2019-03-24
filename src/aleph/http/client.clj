@@ -698,6 +698,11 @@
                                     ch
                                     pending-pings
                                     close-fn)
+                         headers (http/headers->map (.headers ^HttpResponse msg))
+                         subprotocol (.actualSubprotocol handshaker)
+                         _ (swap! desc assoc
+                                  :websocket-handshake-headers headers
+                                  :websocket-selected-subprotocol subprotocol)
                          out (netty/sink ch false coerce-fn (fn [] @desc))]
 
                      (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
