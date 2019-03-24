@@ -67,6 +67,18 @@
       (is @(s/put! c "hello compressed"))
       (is (= "hello compressed" @(s/try-take! c 5e3))))))
 
+(deftest test-server-handshake-description
+  (with-handler (fn [req]
+                  (-> (http/websocket-connection req)
+                      (d/chain'
+                       (fn [s]
+                         (let [desc (:sink (s/description s))
+                               c (contains? desc :websocket-selected-subprotocol)]
+                           (s/put! s (if c "YES" "NO"))
+                           (s/close! s))))))
+    (let [c @(http/websocket-client "ws://localhost:8080")]
+      (is (= "YES" @(s/try-take! c 5e3))))))
+
 (deftest test-raw-echo-handler
   (testing "websocket client: raw-stream?"
     (with-handler echo-handler
