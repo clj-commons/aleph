@@ -682,6 +682,9 @@
 
             (not (.isHandshakeComplete handshaker))
             (try
+              ;; Here we rely on the HttpObjectAggregator being added
+              ;; to the pipeline in advance, so there's no chance we
+              ;; could read only a partial request
               (.finishHandshake handshaker ch msg)
               (let [close-fn (fn [^CloseWebSocketFrame frame]
                                (if-not (.compareAndSet closing? false true)
