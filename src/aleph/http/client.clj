@@ -705,7 +705,7 @@
                                   :websocket-selected-subprotocol subprotocol)
                          out (netty/sink ch false coerce-fn (fn [] @desc))]
 
-                     (s/on-closed out (fn [] (http/resolve-pings! pending-pings false)))
+                     (s/on-closed out #(http/resolve-pings! pending-pings false))
 
                      (d/success! d
                                  (doto
