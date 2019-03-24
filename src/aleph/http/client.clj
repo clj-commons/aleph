@@ -681,47 +681,44 @@
           (cond
 
             (not (.isHandshakeComplete handshaker))
-            (-> (netty/wrap-future (.processHandshake handshaker ch msg))
-                (d/chain'
-                 (fn [_]
-                   (let [close-fn (fn [^CloseWebSocketFrame frame]
-                                    (if-not (.compareAndSet closing? false true)
-                                      (do
-                                        (netty/release frame)
-                                        false)
-                                      (do
-                                        (-> (.close handshaker ch frame)
-                                            netty/wrap-future
-                                            (d/chain' (fn [_] (netty/close ctx))))
-                                        true)))
-                         coerce-fn (http/websocket-message-coerce-fn
-                                    ch
-                                    pending-pings
-                                    close-fn)
-                         headers (http/headers->map (.headers ^HttpResponse msg))
-                         subprotocol (.actualSubprotocol handshaker)
-                         _ (swap! desc assoc
-                                  :websocket-handshake-headers headers
-                                  :websocket-selected-subprotocol subprotocol)
-                         out (netty/sink ch false coerce-fn (fn [] @desc))]
+            (try
+              (.finishHandshake handshaker ch msg)
+              (let [close-fn (fn [^CloseWebSocketFrame frame]
+                               (if-not (.compareAndSet closing? false true)
+                                 (do
+                                   (netty/release frame)
+                                   false)
+                                 (do
+                                   (-> (.close handshaker ch frame)
+                                       netty/wrap-future
+                                       (d/chain' (fn [_] (netty/close ctx))))
+                                   true)))
+                    coerce-fn (http/websocket-message-coerce-fn
+                               ch
+                               pending-pings
+                               close-fn)
+                    headers (http/headers->map (.headers ^HttpResponse msg))
+                    subprotocol (.actualSubprotocol handshaker)
+                    _ (swap! desc assoc
+                             :websocket-handshake-headers headers
+                             :websocket-selected-subprotocol subprotocol)
+                    out (netty/sink ch false coerce-fn (fn [] @desc))]
 
-                     (s/on-closed out #(http/resolve-pings! pending-pings false))
+                (s/on-closed out #(http/resolve-pings! pending-pings false))
 
-                     (d/success! d
-                                 (doto
-                                     (s/splice out @in)
-                                   (reset-meta! {:aleph/channel ch})))
+                (d/success! d
+                            (doto
+                                (s/splice out @in)
+                              (reset-meta! {:aleph/channel ch})))
 
-                     (s/on-drained @in #(close-fn (CloseWebSocketFrame.))))))
-                (d/catch'
-                    (fn [ex]
-                      ;; handle handshake exception
-                      (d/error! d ex)
-                      (s/close! @in)
-                      (netty/close ctx)))
-                (d/finally'
-                  (fn []
-                    (netty/release msg))))
+                (s/on-drained @in #(close-fn (CloseWebSocketFrame.))))
+              (catch Throwable ex
+                ;; handle handshake exception
+                (d/error! d ex)
+                (s/close! @in)
+                (netty/close ctx))
+              (finally
+                (netty/release msg)))
 
             (instance? FullHttpResponse msg)
             (let [rsp ^FullHttpResponse msg
