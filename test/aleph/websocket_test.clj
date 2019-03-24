@@ -47,7 +47,8 @@
   (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (is @(s/put! c "hello"))
-      (is (= "hello" @(s/try-take! c 5e3))))
+      (is (= "hello" @(s/try-take! c 5e3)))
+      (is (= "upgrade" (get-in (s/description c) [:sink :websocket-handshake-headers "connection"]))))
     (is (= 400 (:status @(http/get "http://localhost:8080"
                                    {:throw-exceptions false})))))
 
