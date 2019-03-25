@@ -35,19 +35,28 @@
 
 (defn echo-handler [req]
   (-> (http/websocket-connection req)
-    (d/chain #(s/connect % %))
-    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
+    (d/chain' #(s/connect % %))
+    (d/catch'
+        (fn [^Throwable e]
+          (log/error "upgrade to websocket conn failed"
+                     (.getMessage e))
+          {}))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
-    (d/chain #(s/connect % %))
-    (d/catch (fn [e] (log/error "upgrade to websocket conn failed" e) {}))))
+    (d/chain' #(s/connect % %))
+    (d/catch'
+        (fn [^Throwable e]
+          (log/error "upgrade to websocket conn failed"
+                     (.getMessage e))
+          {}))))
 
 (deftest test-echo-handler
   (with-handler echo-handler
     (let [c @(http/websocket-client "ws://localhost:8080")]
       (is @(s/put! c "hello"))
-      (is (= "hello" @(s/try-take! c 5e3))))
+      (is (= "hello" @(s/try-take! c 5e3)))
+      (is (= "upgrade" (get-in (s/description c) [:sink :websocket-handshake-headers "connection"]))))
     (is (= 400 (:status @(http/get "http://localhost:8080"
                                    {:throw-exceptions false})))))
 
@@ -65,6 +74,18 @@
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (is @(s/put! c "hello compressed"))
       (is (= "hello compressed" @(s/try-take! c 5e3))))))
+
+(deftest test-server-handshake-description
+  (with-handler (fn [req]
+                  (-> (http/websocket-connection req)
+                      (d/chain'
+                       (fn [s]
+                         (let [desc (:sink (s/description s))
+                               c (contains? desc :websocket-selected-subprotocol)]
+                           (s/put! s (if c "YES" "NO"))
+                           (s/close! s))))))
+    (let [c @(http/websocket-client "ws://localhost:8080")]
+      (is (= "YES" @(s/try-take! c 5e3))))))
 
 (deftest test-raw-echo-handler
   (testing "websocket client: raw-stream?"
