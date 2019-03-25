@@ -26,7 +26,8 @@
      ChannelInitializer]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
-     EpollSocketChannel]
+     EpollSocketChannel
+     EpollDatagramChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -830,7 +831,8 @@
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
-   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -844,7 +846,8 @@
            ndots
            decode-idn?
            recursion-desired?
-           name-servers]
+           name-servers
+           epoll?]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -854,14 +857,15 @@
          opt-resources-enabled? true
          ndots -1
          decode-idn? true
-         recursion-desired? true}}]
-  (let [^EventLoopGroup
-        client-group (if (epoll-available?)
-                       @epoll-client-group
-                       @nio-client-group)
+         recursion-desired? true
+         epoll? false}}]
+  (let [^Class
+        channel-type (if (and epoll? (epoll-available?))
+                       EpollDatagramChannel
+                       NioDatagramChannel)
 
-        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
-                    (.channelType ^Class NioDatagramChannel)
+        b (cond-> (doto (DnsNameResolverBuilder.)
+                    (.channelType channel-type)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
                     (.queryTimeoutMillis query-timeout)
