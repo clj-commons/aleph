@@ -88,6 +88,9 @@
 (def default-response-executor
   (flow/utilization-executor 0.9 256 {:onto? false}))
 
+(def default-timer
+  (delay (netty/create-timer)))
+
 (defn connection-pool
   "Returns a connection pool which can be used as an argument in `request`.
 
@@ -99,7 +102,7 @@
    | `max-queue-size` | the maximum number of pending acquires from the pool that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`, defaults to `65536`
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
    | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instance
-   | `middleware` | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`
+   | `middleware` | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`.
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -258,21 +261,24 @@
    (let [d' (or deferred (d/deferred))]
      (http-core/websocket-close! conn status-code reason-text d'))))
 
-(let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
+(let [maybe-timeout! (fn [d timer timeout]
+                       (when d (netty/timeout! timer d timeout)))]
   (defn request
     "Takes an HTTP request, as defined by the Ring protocol, with the extensions defined
      by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
      the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined.
 
      |:---|:---
-     | `pool` | a custom connection pool
-     | `middleware` | custom client middleware for the request
-     | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
-     | `connection-timeout` | timeout in milliseconds for the connection to become established
-     | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection
+     | `pool` | a custom connection pool.
+     | `timer` | an optional instance of `netty/create-timer`, defaults to shared `http/default-timer` when not provided.
+     | `middleware` | custom client middleware for the request.
+     | `pool-timeout` | timeout in milliseconds for the pool to generate a connection.
+     | `connection-timeout` | timeout in milliseconds for the connection to become established.
+     | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection.
      | `read-timeout` | timeout in milliseconds for the response to be completed
-     | `follow-redirects?` | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`"
+     | `follow-redirects?` | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`."
     [{:keys [pool
+             timer
              middleware
              pool-timeout
              response-executor
@@ -289,12 +295,13 @@
     (executor/with-executor response-executor
       ((middleware
          (fn [req]
-           (let [k (client/req->domain req)
+           (let [timer (or timer @default-timer)
+                 k (client/req->domain req)
                  start (System/currentTimeMillis)]
 
              ;; acquire a connection
              (-> (flow/acquire pool k)
-               (maybe-timeout! pool-timeout)
+               (maybe-timeout! timer pool-timeout)
 
                ;; pool timeout triggered
                (d/catch' TimeoutException
@@ -307,7 +314,7 @@
                    ;; get the wrapper for the connection, which may or may not be realized yet
                    (-> (first conn)
 
-                     (maybe-timeout! connection-timeout)
+                     (maybe-timeout! timer connection-timeout)
 
                      ;; connection timeout triggered, dispose of the connetion
                      (d/catch' TimeoutException
@@ -329,7 +336,7 @@
                          (when-not (nil? conn')
                            (let [end (System/currentTimeMillis)]
                              (-> (conn' req)
-                               (maybe-timeout! request-timeout)
+                               (maybe-timeout! timer request-timeout)
 
                                ;; request timeout triggered, dispose of the connection
                                (d/catch' TimeoutException
@@ -349,7 +356,7 @@
 
                                    ;; only release the connection back once the response is complete
                                    (-> (:aleph/complete rsp)
-                                     (maybe-timeout! read-timeout)
+                                     (maybe-timeout! timer read-timeout)
 
                                      (d/catch' TimeoutException
                                        (fn [^Throwable e]

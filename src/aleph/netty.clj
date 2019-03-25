@@ -27,7 +27,12 @@
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel]
-    [io.netty.util Attribute AttributeKey]
+    [io.netty.util
+     Attribute
+     AttributeKey
+     HashedWheelTimer
+     TimerTask
+     Timeout]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
@@ -60,6 +65,7 @@
      ConcurrentHashMap
      CancellationException
      ScheduledFuture
+     TimeoutException
      TimeUnit
      ThreadFactory]
     [java.util.concurrent.atomic
@@ -779,6 +785,21 @@
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
+
+;; todo(kachayev): expose more params
+(defn create-timer []
+  (HashedWheelTimer. (enumerating-thread-factory "aleph-timer-" false)))
+
+(defn timeout! [^HashedWheelTimer timer d delay]
+  (when (and (some? delay)
+             (< 0 delay))
+    (let [task (reify TimerTask
+                 (run [_ _]
+                   (when-not (realized? d)
+                     (d/error! d (TimeoutException.)))))
+          ^Timeout timeout (.newTimeout timer task (long delay) TimeUnit/MILLISECONDS)]
+      (d/finally d #(.cancel timeout))))
+  d)
 
 (defn convert-address-types [address-types]
   (case address-types
