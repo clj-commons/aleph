@@ -349,11 +349,11 @@
                     (.-offset file)
                     (.-length file))))
 
-(defn new-http-file
+(defn http-file
   ([path]
-   (new-http-file path nil nil default-chunk-size))
+   (http-file path nil nil default-chunk-size))
   ([path offset length]
-   (new-http-file path offset length default-chunk-size))
+   (http-file path offset length default-chunk-size))
   ([path offset length chunk-size]
    (let [^File
          fd (cond
@@ -517,10 +517,10 @@
               (send-chunked-body ch msg body)
 
               (instance? File body)
-              (send-file-body ch ssl? msg (new-http-file body))
+              (send-file-body ch ssl? msg (http-file body))
 
               (instance? Path body)
-              (send-file-body ch ssl? msg (new-http-file body))
+              (send-file-body ch ssl? msg (http-file body))
 
               (instance? HttpFile body)
               (send-file-body ch ssl? msg body)

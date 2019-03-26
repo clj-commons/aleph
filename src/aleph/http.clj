@@ -440,11 +440,11 @@
 
 (defn file
   "Specifies a file or a region of the file to be sent over the network.
-   Accepts string path to the file, instance of java.io.File or instance of
-   java.nio.file.Path."
+   Accepts string path to the file, instance of `java.io.File` or instance of
+   `java.nio.file.Path`."
   ([path]
-   (http-core/new-http-file path nil nil nil))
+   (http-core/http-file path nil nil nil))
   ([path offset length]
-   (http-core/new-http-file path offset length nil))
+   (http-core/http-file path offset length nil))
   ([path offset length chunk-size]
-   (http-core/new-http-file path offset length chunk-size)))
+   (http-core/http-file path offset length chunk-size)))
