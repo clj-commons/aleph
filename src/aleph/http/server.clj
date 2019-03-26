@@ -510,12 +510,11 @@
                         (do
                           (.close handshaker ch frame)
                           true))))
-         out (netty/sink ch false coerce-fn)
+         description (fn [] {:websocket-selected-subprotocol (.selectedSubprotocol handshaker)})
+         out (netty/sink ch false coerce-fn description)
          in (netty/buffered-source ch (constantly 1) 16)]
 
-     (s/on-closed
-      out
-      (fn [] (http/resolve-pings! pending-pings false)))
+     (s/on-closed out #(http/resolve-pings! pending-pings false))
 
      (s/on-drained
       in
