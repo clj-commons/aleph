@@ -343,7 +343,7 @@
 
 (deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 
-(defmethod print-method HttpFile [file ^java.io.Writer w]
+(defmethod print-method HttpFile [^HttpFile file ^java.io.Writer w]
   (.write w (format "HttpFile[fd:%s offset:%s length:%s]"
                     (.-fd file)
                     (.-offset file)
