@@ -45,7 +45,8 @@
      WebSocketFrame
      PingWebSocketFrame
      TextWebSocketFrame
-     BinaryWebSocketFrame]
+     BinaryWebSocketFrame
+     CloseWebSocketFrame]
     [java.io
      File
      RandomAccessFile
@@ -244,11 +245,11 @@
 ;;;
 
 (defn has-content-length? [^HttpMessage msg]
-  (-> msg .headers (.contains "Content-Length")))
+  (HttpUtil/isContentLengthSet msg))
 
 (defn try-set-content-length! [^HttpMessage msg ^long length]
   (when-not (has-content-length? msg)
-    (HttpHeaders/setContentLength msg length)))
+    (HttpUtil/setContentLength msg length)))
 
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
@@ -538,6 +539,10 @@
 
 (deftype WebsocketPing [deferred payload])
 
+(deftype WebsocketClose [deferred status-code reason-text])
+
+(def close-empty-status-code -1)
+
 (defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
   (loop []
     (when-let [^WebsocketPing ping (.poll pending-pings)]
@@ -549,29 +554,52 @@
               (log/error e "error in ping callback")))))
       (recur))))
 
-(defn websocket-message-coerce-fn [^Channel ch ^ConcurrentLinkedQueue pending-pings]
-  (fn [msg]
-    (condp instance? msg
-      WebSocketFrame
-      msg
+(defn websocket-message-coerce-fn
+  ([ch pending-pings]
+   (websocket-message-coerce-fn ch pending-pings nil))
+  ([^Channel ch ^ConcurrentLinkedQueue pending-pings close-handshake-fn]
+   (fn [msg]
+     (condp instance? msg
+       WebSocketFrame
+       msg
 
-      WebsocketPing
-      (let [^WebsocketPing msg msg
-            ;; this check should be safe as we rely on the strictly sequential
-            ;; processing of all messages put onto the same stream
-            send-ping? (.isEmpty pending-pings)]
-        (.offer pending-pings msg)
-        (when send-ping?
-          (if-some [payload (.-payload msg)]
-            (->> payload
-                 (netty/to-byte-buf ch)
-                 (PingWebSocketFrame.))
-            (PingWebSocketFrame.))))
+       WebsocketPing
+       (let [^WebsocketPing msg msg
+             ;; this check should be safe as we rely on the strictly sequential
+             ;; processing of all messages put onto the same stream
+             send-ping? (.isEmpty pending-pings)]
+         (.offer pending-pings msg)
+         (when send-ping?
+           (if-some [payload (.-payload msg)]
+             (->> payload
+                  (netty/to-byte-buf ch)
+                  (PingWebSocketFrame.))
+             (PingWebSocketFrame.))))
 
-      CharSequence
-      (TextWebSocketFrame. (bs/to-string msg))
+       WebsocketClose
+       (when (some? close-handshake-fn)
+         (let [^WebsocketClose msg msg
+               code (.-status-code msg)
+               frame (if (identical? close-empty-status-code code)
+                       (CloseWebSocketFrame.)
+                       (CloseWebSocketFrame. ^int code
+                                             ^String (.-reason-text msg)))
+               succeed? (close-handshake-fn frame)]
+           ;; it still feels somewhat clumsy to make concurrent
+           ;; updates and realized deferred from internals of the
+           ;; function that meant to be a stateless coercer
+           (when-not (d/realized? (.-deferred msg))
+             (d/success! (.-deferred msg) succeed?))
 
-      (BinaryWebSocketFrame. (netty/to-byte-buf ch (netty/acquire msg))))))
+           ;; we want to close the sink here to stop accepting
+           ;; new messages from the user
+           (when succeed?
+             netty/sink-close-marker)))
+
+       CharSequence
+       (TextWebSocketFrame. (bs/to-string msg))
+
+       (BinaryWebSocketFrame. (netty/to-byte-buf ch msg))))))
 
 (defn close-on-idle-handler []
   (netty/channel-handler
@@ -596,6 +624,22 @@
       ;; meaning connection is already closed
       (d/success! d' false)))
   d')
+
+(defn websocket-close! [conn status-code reason-text d']
+  (when-not (or (identical? close-empty-status-code status-code)
+                (<= 1000 status-code 4999))
+    (throw (IllegalArgumentException.
+            "websocket status code should be in range 1000-4999")))
+
+  (let [payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
+    (d/chain'
+     (s/put! conn payload)
+     (fn [put?]
+       (when (and (false? put?) (not (d/realized? d')))
+         ;; if the stream does not accept new messages,
+         ;; connection is already closed
+         (d/success! d' false))))
+    d'))
 
 (defn attach-heartbeats-handler [^ChannelPipeline pipeline heartbeats]
   (when (and (some? heartbeats)

@@ -155,9 +155,14 @@
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
-  (let [conn-options' (cond-> connection-options
-                        (some? dns-options)
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options)))
+  (let [dns-options' (if-not (and (some? dns-options)
+                                  (not (contains? dns-options :epoll?)))
+                       dns-options
+                       (let [epoll? (:epoll? connection-options false)]
+                         (assoc dns-options :epoll? epoll?)))
+        conn-options' (cond-> connection-options
+                        (some? dns-options')
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options')))
         p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
@@ -241,6 +246,23 @@
    (http-core/websocket-ping conn d' nil))
   ([conn d' data]
    (http-core/websocket-ping conn d' data)))
+
+(defn websocket-close!
+  "Closes given websocket endpoint (either client or server) sending Close frame with provided
+   status code and reason text. Returns a deferred that will yield `true` whenever the closing
+   handshake was initiated with given params or `false` if the connection was already closed.
+   Note, that for the server closes the connection right after Close frame was flushed but the
+   client waits for the connection to be closed by the server (no longer than close handshake
+   timeout, see websocket connection configuration for more details)."
+  ([conn]
+   (websocket-close! conn http-core/close-empty-status-code "" nil))
+  ([conn status-code]
+   (websocket-close! conn status-code "" nil))
+  ([conn status-code reason-text]
+   (websocket-close! conn status-code reason-text nil))
+  ([conn status-code reason-text deferred]
+   (let [d' (or deferred (d/deferred))]
+     (http-core/websocket-close! conn status-code reason-text d'))))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
