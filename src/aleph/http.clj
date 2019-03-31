@@ -157,9 +157,14 @@
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
-  (let [conn-options' (cond-> connection-options
-                        (some? dns-options)
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options)))
+  (let [dns-options' (if-not (and (some? dns-options)
+                                  (not (contains? dns-options :epoll?)))
+                       dns-options
+                       (let [epoll? (:epoll? connection-options false)]
+                         (assoc dns-options :epoll? epoll?)))
+        conn-options' (cond-> connection-options
+                        (some? dns-options')
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options')))
         p (promise)
         pool (flow/instrumented-pool
                {:generate (fn [host]
