@@ -88,7 +88,7 @@
 (def default-response-executor
   (flow/utilization-executor 0.9 256 {:onto? false}))
 
-(def default-timer
+(defonce default-timer
   (delay (netty/create-timer)))
 
 (defn connection-pool
