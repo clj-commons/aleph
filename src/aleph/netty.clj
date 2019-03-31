@@ -786,18 +786,46 @@
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
-;; todo(kachayev): expose more params
-(defn create-timer []
-  (HashedWheelTimer. (enumerating-thread-factory "aleph-timer-" false)))
+(defn create-timer
+  "Creates a timer optimized for approximated I/O timeout scheduling.
 
-(defn timeout! [^HashedWheelTimer timer d delay]
-  (when (and (some? delay)
-             (< 0 delay))
+   |:---|:---
+   | `thread-factory` | a `ThreadFactory` that creates a background thread, defaults to `netty/enumerating-thread-factory` instance.
+   | `tick-duration-ms` | the duration between ticks in ms, defaults to 10 ms.
+   | `ticks-per-wheel` | the size of the wheel, defaults to 512.
+   | `leak-detection?` | if leak detection should be enabled, defaults to `false`.
+   | `max-pending-timeouts` | the maximum number of pending timeouts after which call to `netty/timeout!` will result in `java.util.concurrent.RejectedExecutionException` being thrown, unlimited by default."
+  ([] (create-timer {}))
+  ([{:keys [tick-duration-ms
+            ticks-per-wheel
+            thread-factory
+            leak-detection?
+            max-pending-timeouts]
+     :or {tick-duration-ms 10
+          ticks-per-wheel 512
+          leak-detection? true
+          max-pending-timeouts -1}}]
+   (let [factory (or thread-factory
+                     (enumerating-thread-factory "aleph-timer-" false))]
+     (HashedWheelTimer.
+      factory
+      (long tick-duration-ms)
+      TimeUnit/MILLISECONDS
+      ticks-per-wheel
+      leak-detection?
+      (long max-pending-timeouts)))))
+
+(defn timeout! [^HashedWheelTimer timer d delay-ms]
+  (when (and (some? delay-ms)
+             (< 0 delay-ms))
     (let [task (reify TimerTask
                  (run [_ _]
                    (when-not (realized? d)
                      (d/error! d (TimeoutException.)))))
-          ^Timeout timeout (.newTimeout timer task (long delay) TimeUnit/MILLISECONDS)]
+          ^Timeout timeout (.newTimeout timer
+                                        task
+                                        (long delay-ms)
+                                        TimeUnit/MILLISECONDS)]
       (d/finally d #(.cancel timeout))))
   d)
 
