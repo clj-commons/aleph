@@ -32,7 +32,7 @@
    :body "hello world!"})
 
 (defn delayed-hello-world-handler
-  "A non-standard response handler which returns a deferred which yields a Ring response
+  "A non-standard response handler that returns a deferred which yields a Ring response
    after one second.  In a typical Ring-compliant server, this would require holding onto a
    thread via `Thread.sleep()` or a similar mechanism, but the use of a deferred allows for
    the thread to be immediately released without an immediate response.

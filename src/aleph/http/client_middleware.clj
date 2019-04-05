@@ -1,7 +1,6 @@
 (ns aleph.http.client-middleware
   "This middleware is adapted from clj-http, whose license is amenable to this sort of
    copy/pastery"
-  (:refer-clojure :exclude [update])
   (:require
     [potemkin :as p]
     [clojure.string :as str]
@@ -110,30 +109,13 @@
 
 ;;;
 
-(defn update [m k f & args]
-  (assoc m k (apply f (m k) args)))
-
 (defn when-pos [v]
   (when (and v (pos? v)) v))
 
-(defn dissoc-in
-  "Dissociates an entry from a nested associative structure returning a new
-  nested structure. keys is a sequence of keys. Any empty maps that result
-  will not be present in the new structure."
-  [m [k & ks :as keys]]
-  (if ks
-    (if-let [nextmap (clojure.core/get m k)]
-      (let [newmap (dissoc-in nextmap ks)]
-        (if (seq newmap)
-          (assoc m k newmap)
-          (dissoc m k)))
-      m)
-    (dissoc m k)))
-
 (defn url-encode
-  ([s]
+  ([^String s]
     (url-encode s "UTF-8"))
-  ([s encoding]
+  ([^String s ^String encoding]
     (URLEncoder/encode s encoding)))
 
 (let [param-? (memoize #(keyword (str (name %) "?")))]
@@ -252,9 +234,9 @@
     type))
 
 (defn wrap-exceptions
-  "Middleware that throws a slingshot exception if the response is not a
-  regular response. If :throw-entire-message? is set to true, the entire
-  response is used as the message, instead of just the status number."
+  "Middleware that throws response as an ExceptionInfo if the response has
+  unsuccessful status code. :throw-exceptions set to false in the request
+  disables this middleware."
   [client]
   (fn [req]
     (d/let-flow' [{:keys [status body] :as rsp} (client req)]
@@ -967,7 +949,7 @@
               ;; coerce the response body
               (fn [{:keys [body] :as rsp}]
                 (let [rsp' (handle-response-debug req' rsp)]
-                  (if (nil? body)
-                    rsp'
+                  (if (and (some? body) (some? (:as req')))
                     (d/future-with (or executor (ex/wait-pool))
-                      (coerce-response-body req' rsp'))))))))))))
+                      (coerce-response-body req' rsp'))
+                    rsp'))))))))))
