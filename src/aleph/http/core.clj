@@ -42,7 +42,8 @@
      PingWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
-     CloseWebSocketFrame]
+     CloseWebSocketFrame
+     WebSocketChunkedInput]
     [java.io
      File
      RandomAccessFile
@@ -453,6 +454,9 @@
    (fn [msg]
      (condp instance? msg
        WebSocketFrame
+       msg
+
+       WebSocketChunkedInput
        msg
 
        WebsocketPing
