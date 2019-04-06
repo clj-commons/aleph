@@ -88,12 +88,20 @@
       (is (= "YES" @(s/try-take! c 5e3))))))
 
 (deftest test-raw-echo-handler
-  (testing "websocket client: raw-stream?"
+  (testing "websocket client: raw-stream? with binary message"
     (with-handler echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
         (is @(s/put! c (.getBytes "raw client hello" "UTF-8")))
         (let [msg @(s/try-take! c 5e3)]
           (is (= "raw client hello"
+                 (when msg (bs/to-string (netty/release-buf->array msg)))))))))
+
+  (testing "websocket client: raw-stream? with text message"
+    (with-handler echo-handler
+      (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
+        (is @(s/put! c "text client hello"))
+        (let [msg @(s/try-take! c 5e3)]
+          (is (= "text client hello"
                  (when msg (bs/to-string (netty/release-buf->array msg)))))))))
 
   (testing "websocket server: raw-stream? with binary message"
@@ -107,7 +115,8 @@
     (with-handler raw-echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080")]
         (is @(s/put! c "raw conn string hello"))
-        (is (= "raw conn string hello" @(s/try-take! c 5e3)))))))
+        (let [msg @(s/try-take! c 5e3)]
+          (is (= "raw conn string hello" (when msg (bs/to-string msg)))))))))
 
 (deftest test-ping-pong-protocol
   (testing "empty ping from the client"
