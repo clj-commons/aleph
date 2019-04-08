@@ -456,7 +456,7 @@
        WebSocketFrame
        msg
 
-       WebSocketChunkedInput
+       ChunkedInput
        msg
 
        WebsocketPing
