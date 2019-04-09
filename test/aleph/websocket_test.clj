@@ -102,7 +102,7 @@
         (is @(s/put! c "text client hello"))
         (let [msg @(s/try-take! c 5e3)]
           (is (= "text client hello"
-                 (when msg (bs/to-string (netty/release-buf->array msg)))))))))
+                 (when msg (bs/to-string msg))))))))
 
   (testing "websocket server: raw-stream? with binary message"
     (with-handler raw-echo-handler
