@@ -1,29 +1,30 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
-    [clojure.string :as str]
-    [manifold.deferred :as d]
-    [manifold.executor :as executor]
-    [manifold.stream :as s]
-    [aleph.flow :as flow]
-    [aleph.http
-     [server :as server]
-     [client :as client]
-     [client-middleware :as middleware]
-     [core :as http-core]]
-    [aleph.netty :as netty])
+   [clojure.string :as str]
+   [manifold.deferred :as d]
+   [manifold.executor :as executor]
+   [manifold.stream :as s]
+   [aleph.flow :as flow]
+   [aleph.http
+    [server :as server]
+    [client :as client]
+    [client-middleware :as middleware]
+    [core :as http-core]]
+   [aleph.netty :as netty]
+   [clojure.java.io :as io])
   (:import
-    [io.aleph.dirigiste Pools]
-    [aleph.utils
-     PoolTimeoutException
-     ConnectionTimeoutException
-     RequestTimeoutException
-     ReadTimeoutException]
-    [java.net
-     URI
-     InetSocketAddress]
-    [java.util.concurrent
-     TimeoutException]))
+   [io.aleph.dirigiste Pools]
+   [aleph.utils
+    PoolTimeoutException
+    ConnectionTimeoutException
+    RequestTimeoutException
+    ReadTimeoutException]
+   [java.net
+    URI
+    InetSocketAddress]
+   [java.util.concurrent
+    TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -436,3 +437,14 @@
     (let [response (d/deferred)]
       (handler request #(d/success! response %) #(d/error! response %))
       response)))
+
+(defn file
+  "Specifies a file or a region of the file to be sent over the network.
+   Accepts string path to the file, instance of `java.io.File` or instance of
+   `java.nio.file.Path`."
+  ([path]
+   (http-core/http-file path nil nil nil))
+  ([path offset length]
+   (http-core/http-file path offset length nil))
+  ([path offset length chunk-size]
+   (http-core/http-file path offset length chunk-size)))
