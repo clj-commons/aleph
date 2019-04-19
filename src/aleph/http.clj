@@ -155,36 +155,40 @@
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
-  (let [dns-options' (if-not (and (some? dns-options)
+  (let [log-activity (:log-activity connection-options)
+        dns-options' (if-not (and (some? dns-options)
                                   (not (contains? dns-options :epoll?)))
                        dns-options
                        (let [epoll? (:epoll? connection-options false)]
                          (assoc dns-options :epoll? epoll?)))
         conn-options' (cond-> connection-options
                         (some? dns-options')
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options')))
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options'))
+
+                        (some? log-activity)
+                        (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
         p (promise)
         pool (flow/instrumented-pool
-               {:generate (fn [host]
-                            (let [c (promise)
-                                  conn (create-connection
-                                         host
-                                         conn-options'
-                                         middleware
-                                         #(flow/dispose @p host [@c]))]
-                              (deliver c conn)
-                              [conn]))
-                :destroy (fn [_ c]
-                           (d/chain' c
-                             first
-                             client/close-connection))
-                :control-period control-period
-                :max-queue-size max-queue-size
-                :controller (Pools/utilizationController
-                              target-utilization
-                              connections-per-host
-                              total-connections)
-                :stats-callback stats-callback})]
+              {:generate (fn [host]
+                           (let [c (promise)
+                                 conn (create-connection
+                                       host
+                                       conn-options'
+                                       middleware
+                                       #(flow/dispose @p host [@c]))]
+                             (deliver c conn)
+                             [conn]))
+               :destroy (fn [_ c]
+                          (d/chain' c
+                                    first
+                                    client/close-connection))
+               :control-period control-period
+               :max-queue-size max-queue-size
+               :controller (Pools/utilizationController
+                            target-utilization
+                            connections-per-host
+                            total-connections)
+               :stats-callback stats-callback})]
     @(deliver p pool)))
 
 (def default-connection-pool

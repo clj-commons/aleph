@@ -63,8 +63,7 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [io.netty.handler.logging
-     LoggingHandler
-     LogLevel]
+     LoggingHandler]
     [java.util.concurrent
      ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
@@ -378,21 +377,6 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
-(defn coerce-log-level [level]
-  (if (instance? LogLevel level)
-    level
-    (let [netty-level (case level
-                        :trace LogLevel/TRACE
-                        :debug LogLevel/DEBUG
-                        :info LogLevel/INFO
-                        :warn LogLevel/WARN
-                        :error LogLevel/ERROR
-                        nil)]
-      (when (nil? netty-level)
-        (throw (IllegalArgumentException.
-                (str "unknown log level given: " level))))
-      netty-level)))
-
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -417,10 +401,15 @@
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
                     (client-handler response-stream response-buffer-size))
-          logger (when (some? log-activity)
-                   (LoggingHandler.
-                    "aleph-client"
-                    ^LogLevel (coerce-log-level log-activity)))]
+          logger (cond
+                   (instance? LoggingHandler log-activity)
+                   log-activity
+
+                   (some? log-activity)
+                   (netty/activity-logger "aleph-client" log-activity)
+
+                   :else
+                   nil)]
       (doto pipeline
         (.addLast "http-client"
           (HttpClientCodec.
@@ -445,7 +434,7 @@
               ^ChannelHandler
               (pending-proxy-connection-handler response-stream)))))
       (when (some? logger)
-        (.addFirst pipeline "activity-logger" logger))
+        (.addFirst pipeline "activity-logger" ^ChannelHandler logger))
       (pipeline-transform pipeline))))
 
 (defn close-connection [f]

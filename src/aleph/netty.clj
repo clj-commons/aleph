@@ -71,6 +71,9 @@
      Slf4JLoggerFactory
      JdkLoggerFactory
      Log4J2LoggerFactory]
+    [io.netty.handler.logging
+     LoggingHandler
+     LogLevel]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]))
 
@@ -682,6 +685,27 @@
             (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
+
+(defn coerce-log-level [level]
+  (if (instance? LogLevel level)
+    level
+    (let [netty-level (case level
+                        :trace LogLevel/TRACE
+                        :debug LogLevel/DEBUG
+                        :info LogLevel/INFO
+                        :warn LogLevel/WARN
+                        :error LogLevel/ERROR
+                        nil)]
+      (when (nil? netty-level)
+        (throw (IllegalArgumentException.
+                (str "unknown log level given: " level))))
+      netty-level)))
+
+(defn activity-logger
+  ([level]
+   (LoggingHandler. ^LogLevel (coerce-log-level level)))
+  ([^String name level]
+   (LoggingHandler. name ^LogLevel (coerce-log-level level))))
 
 ;;;
 
