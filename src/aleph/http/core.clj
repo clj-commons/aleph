@@ -47,6 +47,8 @@
      TextWebSocketFrame
      BinaryWebSocketFrame
      CloseWebSocketFrame]
+    [io.netty.handler.ssl
+     SslHandler]
     [java.io
      File
      RandomAccessFile
@@ -241,6 +243,10 @@
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
+
+(defn extract-ssl-session [^NettyRequest req]
+  (let [pipeline ^ChannelPipeline (.pipeline (.ch req))]
+    (some-> pipeline (.get SslHandler) .engine .getSession)))
 
 ;;;
 
