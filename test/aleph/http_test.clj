@@ -53,9 +53,13 @@
 
 (def port 8082)
 
+(def filepath (str (System/getProperty "user.dir") "/test/file.txt"))
+
 (def string-response "String!")
 (def seq-response (map identity ["sequence: " 1 " two " 3.0]))
-(def file-response (File. (str (System/getProperty "user.dir") "/test/file.txt")))
+(def file-response (File. filepath))
+(def http-file-response (http/file filepath))
+(def http-file-region-response (http/file filepath 5 4))
 (def stream-response "Stream!")
 
 (defn string-handler [request]
@@ -69,6 +73,14 @@
 (defn file-handler [request]
   {:status 200
    :body file-response})
+
+(defn http-file-handler [request]
+  {:status 200
+   :body http-file-response})
+
+(defn http-file-region-handler [request]
+  {:status 200
+   :body http-file-region-response})
 
 (defn stream-handler [request]
   {:status 200
@@ -122,6 +134,8 @@
    "/stream" stream-handler
    "/slow" slow-handler
    "/file" file-handler
+   "/httpfile" http-file-handler
+   "/httpfileregion" http-file-region-handler
    "/manifold" manifold-handler
    "/seq" seq-handler
    "/string" string-handler
@@ -146,6 +160,8 @@
      "stream" stream-response
      "manifold" stream-response
      "file" "this is a file"
+     "httpfile" "this is a file"
+     "httpfileregion" "is a"
      "seq" (apply str seq-response)]
     (repeat 10)
     (apply concat)
@@ -212,10 +228,11 @@
   (with-ssl-handler basic-handler
     (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
-        (= result
+       (= result
           (bs/to-string
-            (:body
-              @(http-get (str "https://localhost:" port "/" path)))))))))
+           (:body
+            @(http-get (str "https://localhost:" port "/" path)))))
+       (str path "path failed")))))
 
 (def words (slurp "/usr/share/dict/words"))
 

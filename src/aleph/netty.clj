@@ -26,7 +26,8 @@
      ChannelInitializer]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
-     EpollSocketChannel]
+     EpollSocketChannel
+     EpollDatagramChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -70,6 +71,9 @@
      Slf4JLoggerFactory
      JdkLoggerFactory
      Log4J2LoggerFactory]
+    [io.netty.handler.logging
+     LoggingHandler
+     LogLevel]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]))
 
@@ -119,9 +123,10 @@
     (.array dst)))
 
 (defn release-buf->array [^ByteBuf buf]
-  (let [ary (buf->array buf)]
-    (release buf)
-    ary))
+  (try
+    (buf->array buf)
+    (finally
+      (release buf))))
 
 (defn bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
@@ -156,38 +161,40 @@
       (.writeBytes buf (.getBytes ^String x charset))
 
       (instance? ByteBuf x)
-      (do
+      (let [b (.writeBytes buf ^ByteBuf x)]
         (release x)
-        (.writeBytes buf ^ByteBuf x))
+        b)
 
       :else
       (.writeBytes buf (bs/to-byte-buffer x))))
 
   (defn ^ByteBuf to-byte-buf
     ([x]
-      (cond
-        (nil? x)
-        Unpooled/EMPTY_BUFFER
+     (cond
+       (nil? x)
+       Unpooled/EMPTY_BUFFER
 
-        (instance? array-class x)
-        (Unpooled/copiedBuffer ^bytes x)
+       (instance? array-class x)
+       (Unpooled/copiedBuffer ^bytes x)
 
-        (instance? String x)
-        (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
+       (instance? String x)
+       (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
 
-        (instance? ByteBuffer x)
-        (Unpooled/wrappedBuffer ^ByteBuffer x)
+       (instance? ByteBuffer x)
+       (Unpooled/wrappedBuffer ^ByteBuffer x)
 
-        (instance? ByteBuf x)
-        x
+       (instance? ByteBuf x)
+       x
 
-        :else
-        (bs/convert x ByteBuf)))
+       :else
+       (bs/convert x ByteBuf)))
     ([ch x]
-      (if (nil? x)
-        Unpooled/EMPTY_BUFFER
-        (doto (allocate ch)
-          (append-to-buf! x))))))
+     ;; todo(kachayev): do we really need to reallocate in case
+     ;;                 we already have an instance of ByteBuf here?
+     (if (nil? x)
+       Unpooled/EMPTY_BUFFER
+       (doto (allocate ch)
+         (append-to-buf! x))))))
 
 (defn to-byte-buf-stream [x chunk-size]
   (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
@@ -198,24 +205,36 @@
   (when f
     (if (.isSuccess f)
       (d/success-deferred (.getNow f) nil)
-      (let [d (d/deferred nil)]
+      (let [d (d/deferred nil)
+            ;; workaround for the issue with executing RT.readString
+            ;; on a Netty thread that doesn't have appropriate class loader
+            ;; more information here:
+            ;; https://github.com/ztellman/aleph/issues/365
+            class-loader (or (clojure.lang.RT/baseLoader)
+                             (clojure.lang.RT/makeClassLoader))]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
-              (cond
-                (.isSuccess f)
-                (d/success! d (.getNow f))
+              (try
+                (. clojure.lang.Var
+                   (pushThreadBindings {clojure.lang.Compiler/LOADER
+                                        class-loader}))
+                (cond
+                  (.isSuccess f)
+                  (d/success! d (.getNow f))
 
-                (.isCancelled f)
-                (d/error! d (CancellationException. "future is cancelled."))
+                  (.isCancelled f)
+                  (d/error! d (CancellationException. "future is cancelled."))
 
-                (some? (.cause f))
-                (if (instance? java.nio.channels.ClosedChannelException (.cause f))
-                  (d/success! d false)
-                  (d/error! d (.cause f)))
+                  (some? (.cause f))
+                  (if (instance? java.nio.channels.ClosedChannelException (.cause f))
+                    (d/success! d false)
+                    (d/error! d (.cause f)))
 
-                :else
-                (d/error! d (IllegalStateException. "future in unknown state"))))))
+                  :else
+                  (d/error! d (IllegalStateException. "future in unknown state")))
+                (finally
+                  (. clojure.lang.Var (popThreadBindings)))))))
         d))))
 
 (defn allocate [x]
@@ -328,6 +347,8 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
+(def sink-close-marker ::sink-close)
+
 (manifold/def-sink ChannelSink
   [coerce-fn
    downstream?
@@ -362,11 +383,21 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            ^ChannelFuture f (write-and-flush ch msg)
-            d (-> f
-                wrap-future
-                (d/chain' (fn [_] true))
-                (d/catch' IOException (fn [_] false)))]
+            d (cond
+                (nil? msg)
+                (d/success-deferred true)
+
+                (identical? sink-close-marker msg)
+                (do
+                  (.markClosed this)
+                  (d/success-deferred false))
+
+                :else
+                (let [^ChannelFuture f (write-and-flush ch msg)]
+                  (-> f
+                    wrap-future
+                    (d/chain' (fn [_] true))
+                    (d/catch' IOException (fn [_] false)))))]
         (if blocking?
           @d
           d))))
@@ -637,6 +668,11 @@
     (initChannel [^Channel ch]
       (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
 
+(defn remove-if-present [^ChannelPipeline pipeline ^Class handler]
+  (when (some? (.get pipeline handler))
+    (.remove pipeline handler))
+  pipeline)
+
 (defn instrument!
   [stream]
   (if-let [^Channel ch (->> stream meta :aleph/channel)]
@@ -649,6 +685,27 @@
             (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
+
+(defn coerce-log-level [level]
+  (if (instance? LogLevel level)
+    level
+    (let [netty-level (case level
+                        :trace LogLevel/TRACE
+                        :debug LogLevel/DEBUG
+                        :info LogLevel/INFO
+                        :warn LogLevel/WARN
+                        :error LogLevel/ERROR
+                        nil)]
+      (when (nil? netty-level)
+        (throw (IllegalArgumentException.
+                (str "unknown log level given: " level))))
+      netty-level)))
+
+(defn activity-logger
+  ([level]
+   (LoggingHandler. ^LogLevel (coerce-log-level level)))
+  ([^String name level]
+   (LoggingHandler. name ^LogLevel (coerce-log-level level))))
 
 ;;;
 
@@ -798,7 +855,8 @@
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
-   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -812,7 +870,8 @@
            ndots
            decode-idn?
            recursion-desired?
-           name-servers]
+           name-servers
+           epoll?]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -822,14 +881,15 @@
          opt-resources-enabled? true
          ndots -1
          decode-idn? true
-         recursion-desired? true}}]
-  (let [^EventLoopGroup
-        client-group (if (epoll-available?)
-                       @epoll-client-group
-                       @nio-client-group)
+         recursion-desired? true
+         epoll? false}}]
+  (let [^Class
+        channel-type (if (and epoll? (epoll-available?))
+                       EpollDatagramChannel
+                       NioDatagramChannel)
 
-        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
-                    (.channelType ^Class NioDatagramChannel)
+        b (cond-> (doto (DnsNameResolverBuilder.)
+                    (.channelType channel-type)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
                     (.queryTimeoutMillis query-timeout)
@@ -838,9 +898,10 @@
                     (.optResourceEnabled opt-resources-enabled?)
                     (.ndots ndots)
                     (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?)
-                    (.resolvedAddressTypes (when (some? address-types)
-                                             (convert-address-types address-types))))
+                    (.recursionDesired recursion-desired?))
+
+            (some? address-types)
+            (.resolvedAddressTypes (convert-address-types address-types))
 
             (some? negative-ttl)
             (.negativeTtl negative-ttl)
@@ -939,6 +1000,11 @@
           EpollServerSocketChannel
           NioServerSocketChannel)
 
+        ;; todo(kachayev): this one should be reimplemented after
+        ;;                 KQueue transport is merged into master
+        transport
+        (if (and epoll? (epoll-available?)) :epoll :nio)
+
         pipeline-builder
         (if ssl-context
           (fn [^ChannelPipeline p]
@@ -972,6 +1038,9 @@
                 (d/chain'
                  (wrap-future (.terminationFuture group))
                  (fn [_] (on-close))))))
+          Object
+          (toString [_]
+            (format "AlephServer[channel:%s, transport:%s]" ch transport))
           AlephServer
           (port [_]
             (-> ch .localAddress .getPort))
