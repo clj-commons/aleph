@@ -50,10 +50,6 @@
     [java.io
      File
      RandomAccessFile
-     Closeable
-     FileNotFoundException
-     StringWriter
-     PrintWriter
      Closeable]
     [java.nio.file Path]
     [java.nio.channels
