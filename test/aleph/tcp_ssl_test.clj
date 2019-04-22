@@ -68,7 +68,7 @@
 
 (defn ssl-echo-handler
   [s c]
-  (assert (some? (:ssl-session c)) "SSL session should be defined")
+  (is (some? (:ssl-session c)) "SSL session should be defined")
   (s/connect
     ; note we need to inspect the SSL session *after* we start reading
     ; data. Otherwise, the session might not be set up yet.
