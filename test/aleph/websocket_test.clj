@@ -33,14 +33,16 @@
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
 
-(defn echo-handler [req]
-  (-> (http/websocket-connection req)
-    (d/chain' #(s/connect % %))
-    (d/catch'
-        (fn [^Throwable e]
-          (log/error "upgrade to websocket conn failed"
-                     (.getMessage e))
-          {}))))
+(defn echo-handler
+  ([req] (echo-handler {} req))
+  ([options req]
+   (-> (http/websocket-connection req options)
+       (d/chain' #(s/connect % %))
+       (d/catch'
+           (fn [^Throwable e]
+             (log/error "upgrade to websocket conn failed"
+                        (.getMessage e))
+             {})))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
@@ -74,6 +76,16 @@
     (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
       (is @(s/put! c "hello compressed"))
       (is (= "hello compressed" @(s/try-take! c 5e3))))))
+
+(deftest test-per-message-compression-handler
+  (with-handler (partial echo-handler {:compression? true})
+    (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
+      (is (= "permessage-deflate" (get-in (s/description c)
+                                          [:sink
+                                           :websocket-handshake-headers
+                                           "sec-websocket-extensions"])))
+      (is @(s/put! c "hello with per-message deflate enabled"))
+      (is (= "hello with per-message deflate enabled" @(s/try-take! c 5e3))))))
 
 (deftest test-server-handshake-description
   (with-handler (fn [req]
