@@ -558,8 +558,10 @@
                 (send-streaming-body ch msg body))
               (catch Throwable e
                 (let [class-name (.getName (class body))]
-                  (log/error e "error sending body of type " class-name))
-                (send-internal-error ch msg body)))]
+                  (log/errorf "error sending body of type %s: %s"
+                              class-name
+                              (.getMessage ^Throwable e)))
+                (send-internal-error ch msg)))]
 
       (when-not keep-alive?
         (handle-cleanup ch f))
