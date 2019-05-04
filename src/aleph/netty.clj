@@ -979,76 +979,94 @@
                 ch))))))))
 
 (defn start-server
-  [pipeline-builder
-   ^SslContext ssl-context
-   bootstrap-transform
-   on-close
-   ^SocketAddress socket-address
-   epoll?]
-  (let [num-cores      (.availableProcessors (Runtime/getRuntime))
-        num-threads    (* 2 num-cores)
-        thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
-        closed?        (atom false)
+  ([pipeline-builder
+    ^SslContext ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?]
+   (start-server pipeline-builder
+                 ssl-context
+                 bootstrap-transform
+                 on-close
+                 socket-address
+                 epoll?
+                 nil))
+  ([pipeline-builder
+    ^SslContext ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?
+    logger]
+   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
+         num-threads    (* 2 num-cores)
+         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
+         closed?        (atom false)
 
-        ^EventLoopGroup group
-        (if (and epoll? (epoll-available?))
-          (EpollEventLoopGroup. num-threads thread-factory)
-          (NioEventLoopGroup. num-threads thread-factory))
+         ^EventLoopGroup group
+         (if (and epoll? (epoll-available?))
+           (EpollEventLoopGroup. num-threads thread-factory)
+           (NioEventLoopGroup. num-threads thread-factory))
 
-        ^Class channel
-        (if (and epoll? (epoll-available?))
-          EpollServerSocketChannel
-          NioServerSocketChannel)
+         ^Class channel
+         (if (and epoll? (epoll-available?))
+           EpollServerSocketChannel
+           NioServerSocketChannel)
 
-        ;; todo(kachayev): this one should be reimplemented after
-        ;;                 KQueue transport is merged into master
-        transport
-        (if (and epoll? (epoll-available?)) :epoll :nio)
+         ;; todo(kachayev): this one should be reimplemented after
+         ;;                 KQueue transport is merged into master
+         transport
+         (if (and epoll? (epoll-available?)) :epoll :nio)
 
-        pipeline-builder
-        (if ssl-context
-          (fn [^ChannelPipeline p]
-            (.addLast p "ssl-handler"
-              (.newHandler ssl-context
-                (-> p .channel .alloc)))
-            (pipeline-builder p))
-          pipeline-builder)]
+         pipeline-builder
+         (if ssl-context
+           (fn [^ChannelPipeline p]
+             (.addLast p "ssl-handler"
+                       (.newHandler ssl-context
+                                    (-> p .channel .alloc)))
+             (pipeline-builder p))
+           pipeline-builder)]
 
-    (try
-      (let [b (doto (ServerBootstrap.)
-                (.option ChannelOption/SO_BACKLOG (int 1024))
-                (.option ChannelOption/SO_REUSEADDR true)
-                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group group)
-                (.channel channel)
-                (.childHandler (pipeline-initializer pipeline-builder))
-                (.childOption ChannelOption/SO_REUSEADDR true)
-                (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                bootstrap-transform)
+     (try
+       (let [b (doto (ServerBootstrap.)
+                 (.option ChannelOption/SO_BACKLOG (int 1024))
+                 (.option ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group group)
+                 (.channel channel)
+                 (.childHandler (pipeline-initializer pipeline-builder))
+                 (.childOption ChannelOption/SO_REUSEADDR true)
+                 (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 bootstrap-transform)
 
-            ^ServerSocketChannel
-            ch (-> b (.bind socket-address) .sync .channel)]
-        (reify
-          java.io.Closeable
-          (close [_]
-            (when (compare-and-set! closed? false true)
-              (-> ch .close .sync)
-              (-> group .shutdownGracefully)
-              (when on-close
-                (d/chain'
-                 (wrap-future (.terminationFuture group))
-                 (fn [_] (on-close))))))
-          Object
-          (toString [_]
-            (format "AlephServer[channel:%s, transport:%s]" ch transport))
-          AlephServer
-          (port [_]
-            (-> ch .localAddress .getPort))
-          (wait-for-close [_]
-            (-> ch .closeFuture .await)
-            (-> group .terminationFuture .await)
-            nil)))
+             ;; setup logger as a handler if necessary
+             _ (when (some? logger)
+                 (.handler b logger))
 
-      (catch Exception e
-        @(.shutdownGracefully group)
-        (throw e)))))
+             ^ServerSocketChannel
+             ch (-> b (.bind socket-address) .sync .channel)]
+         (reify
+           java.io.Closeable
+           (close [_]
+             (when (compare-and-set! closed? false true)
+               (-> ch .close .sync)
+               (-> group .shutdownGracefully)
+               (when on-close
+                 (d/chain'
+                  (wrap-future (.terminationFuture group))
+                  (fn [_] (on-close))))))
+           Object
+           (toString [_]
+             (format "AlephServer[channel:%s, transport:%s]" ch transport))
+           AlephServer
+           (port [_]
+             (-> ch .localAddress .getPort))
+           (wait-for-close [_]
+             (-> ch .closeFuture .await)
+             (-> group .terminationFuture .await)
+             nil)))
+
+       (catch Exception e
+         @(.shutdownGracefully group)
+         (throw e))))))

@@ -52,6 +52,7 @@
      WebSocketFrameAggregator]
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
+    [io.netty.handler.logging LoggingHandler]
     [java.io
      IOException]
     [java.net
@@ -453,14 +454,24 @@
            manual-ssl?
            shutdown-executor?
            epoll?
-           compression?]
+           compression?
+           log-activity]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
          epoll? false
          compression? false}
     :as options}]
-  (let [executor (cond
+  (let [logger (cond
+                 (instance? LoggingHandler log-activity)
+                 log-activity
+
+                 (some? log-activity)
+                 (netty/activity-logger "aleph-server" log-activity)
+
+                 :else
+                 nil)
+        executor (cond
                    (instance? Executor executor)
                    executor
 
@@ -487,7 +498,8 @@
       (when (and shutdown-executor? (instance? ExecutorService executor))
         #(.shutdown ^ExecutorService executor))
       (if socket-address socket-address (InetSocketAddress. port))
-      epoll?)))
+      epoll?
+      logger)))
 
 ;;;
 

@@ -49,7 +49,8 @@
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
    | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
-   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds"
+   | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
+   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)."
   [handler options]
   (server/start-server handler options))
 
