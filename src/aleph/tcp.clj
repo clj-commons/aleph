@@ -15,7 +15,8 @@
      ChannelHandler
      ChannelPipeline]
     [io.netty.handler.ssl
-     SslHandler]))
+     SslHandler]
+    [io.netty.handler.logging LoggingHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -72,7 +73,7 @@
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [handler
-   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?]
+   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll? log-activity]
     :or {bootstrap-transform identity
          pipeline-transform identity
          epoll? false}
@@ -87,7 +88,16 @@
     (if socket-address
       socket-address
       (InetSocketAddress. port))
-    epoll?))
+    epoll?
+    (cond
+      (instance? LoggingHandler log-activity)
+      log-activity
+
+      (some? log-activity)
+      (netty/activity-logger "aleph-server" log-activity)
+
+      :else
+      nil)))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
