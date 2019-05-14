@@ -243,6 +243,9 @@
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
 
+(defn ring-request-ssl-session [^NettyRequest req]
+  (netty/channel-ssl-session (.ch req)))
+
 ;;;
 
 (defn has-content-length? [^HttpMessage msg]

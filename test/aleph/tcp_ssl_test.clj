@@ -68,6 +68,7 @@
 
 (defn ssl-echo-handler
   [s c]
+  (is (some? (:ssl-session c)) "SSL session should be defined")
   (s/connect
     ; note we need to inspect the SSL session *after* we start reading
     ; data. Otherwise, the session might not be set up yet.
@@ -79,7 +80,11 @@
     s))
 
 (deftest test-ssl-echo
-  (with-server (tcp/start-server ssl-echo-handler {:port 10001 :ssl-context server-ssl-context})
-    (let [c @(tcp/client {:host "localhost" :port 10001 :ssl-context client-ssl-context})]
+  (with-server (tcp/start-server ssl-echo-handler
+                                 {:port 10001
+                                  :ssl-context server-ssl-context})
+    (let [c @(tcp/client {:host "localhost"
+                          :port 10001
+                          :ssl-context client-ssl-context})]
       (s/put! c "foo")
       (is (= "foo" (bs/to-string @(s/take! c)))))))
