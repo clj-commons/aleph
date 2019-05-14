@@ -642,15 +642,20 @@
          (let [ch (.channel ctx)]
            (cond
              (instance? TextWebSocketFrame msg)
-             (let [text (.text ^TextWebSocketFrame msg)]
-               ;; working with text now, so we do not need
-               ;; ByteBuf inside TextWebSocketFrame
-               ;; note, that all *WebSocketFrame classes are
-               ;; subclasses of DefaultByteBufHolder, meaning
-               ;; there's no difference between releasing
-               ;; frame & frame's content
-               (netty/release msg)
-               (netty/put! ch in text))
+             (if raw-stream?
+               (let [body (.content ^TextWebSocketFrame msg)]
+                ;; pass ByteBuf body directly to next level (it's
+                ;; their reponsibility to release)
+                 (netty/put! ch in body))
+               (let [text (.text ^TextWebSocketFrame msg)]
+                ;; working with text now, so we do not need
+                ;; ByteBuf inside TextWebSocketFrame
+                ;; note, that all *WebSocketFrame classes are
+                ;; subclasses of DefaultByteBufHolder, meaning
+                ;; there's no difference between releasing
+                ;; frame & frame's content
+                (netty/release msg)
+                (netty/put! ch in text)))
 
              (instance? BinaryWebSocketFrame msg)
              (let [body (.content ^BinaryWebSocketFrame msg)]
