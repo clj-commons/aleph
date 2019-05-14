@@ -30,6 +30,7 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
+    [io.netty.channel.embedded EmbeddedChannel]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
      IdleState
@@ -724,7 +725,13 @@
          max-frame-payload 65536
          max-frame-size 1048576
          allow-extensions? false
-         compression? false}}]
+         compression? false}
+    :as options}]
+
+  (when (and (true? (:compression? options))
+             (false? (:allow-extensions? options)))
+    (throw (IllegalArgumentException.
+            "Per-message deflate requires extensions to be allowed")))
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 
@@ -735,7 +742,11 @@
               (get-in req [:headers "host"])
               (:uri req))
         req (http/ring-request->full-netty-request req)
-        factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
+        factory (WebSocketServerHandshakerFactory.
+                 url
+                 nil
+                 (or allow-extensions? compression?)
+                 max-frame-payload)]
     (try
       (if-let [handshaker (.newHandshaker factory req)]
         (try
@@ -744,20 +755,31 @@
                                                                       handshaker
                                                                       heartbeats)
                 p (.newPromise ch)
-                h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
+                h (doto (DefaultHttpHeaders.) (http/map->headers! headers))
+                ^ChannelPipeline pipeline (.pipeline ch)]
             ;; actually, we're not going to except anything but websocket, so...
-            (doto (.pipeline ch)
+            (doto pipeline
               (.remove "request-handler")
               (.remove "continue-handler")
               (netty/remove-if-present HttpContentCompressor)
               (netty/remove-if-present ChunkedWriteHandler)
               (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-              (#(when compression?
-                  (.addLast ^ChannelPipeline %
-                            "websocket-deflater"
-                            (WebSocketServerCompressionHandler.))))
               (http/attach-heartbeats-handler heartbeats)
               (.addLast "websocket-handler" handler))
+            (when compression?
+              ;; Hack:
+              ;; WebSocketServerCompressionHandler is stateful and requires
+              ;; HTTP request to be send through the pipeline
+              ;; See more:
+              ;; * https://github.com/ztellman/aleph/issues/494
+              ;; * https://github.com/netty/netty/pull/8973
+              (let [compression-handler (WebSocketServerCompressionHandler.)
+                    ctx (.context pipeline "websocket-frame-aggregator")]
+                (.addAfter pipeline
+                           "websocket-frame-aggregator"
+                           "websocket-deflater"
+                           compression-handler)
+                (.fireChannelRead ctx req)))
             (-> (try
                   (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
                   (catch Throwable e

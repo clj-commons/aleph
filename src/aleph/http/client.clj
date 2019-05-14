@@ -801,7 +801,14 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
-         compression? false}}]
+         compression? false}
+    :as options}]
+
+  (when (and (true? (:compression? options))
+             (false? (:extensions? options)))
+    (throw (IllegalArgumentException.
+            "Per-message deflate requires extensions to be allowed")))
+
   (let [uri (URI. uri)
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
@@ -816,7 +823,7 @@
                       raw-stream?
                       uri
                       sub-protocols
-                      extensions?
+                      (or extensions? compression?)
                       headers
                       max-frame-payload
                       heartbeats)]
