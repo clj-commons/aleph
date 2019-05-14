@@ -1,29 +1,30 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
-    [clojure.string :as str]
-    [manifold.deferred :as d]
-    [manifold.executor :as executor]
-    [manifold.stream :as s]
-    [aleph.flow :as flow]
-    [aleph.http
-     [server :as server]
-     [client :as client]
-     [client-middleware :as middleware]
-     [core :as http-core]]
-    [aleph.netty :as netty])
+   [clojure.string :as str]
+   [manifold.deferred :as d]
+   [manifold.executor :as executor]
+   [manifold.stream :as s]
+   [aleph.flow :as flow]
+   [aleph.http
+    [server :as server]
+    [client :as client]
+    [client-middleware :as middleware]
+    [core :as http-core]]
+   [aleph.netty :as netty]
+   [clojure.java.io :as io])
   (:import
-    [io.aleph.dirigiste Pools]
-    [aleph.utils
-     PoolTimeoutException
-     ConnectionTimeoutException
-     RequestTimeoutException
-     ReadTimeoutException]
-    [java.net
-     URI
-     InetSocketAddress]
-    [java.util.concurrent
-     TimeoutException]))
+   [io.aleph.dirigiste Pools]
+   [aleph.utils
+    PoolTimeoutException
+    ConnectionTimeoutException
+    RequestTimeoutException
+    ReadTimeoutException]
+   [java.net
+    URI
+    InetSocketAddress]
+   [java.util.concurrent
+    TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -154,36 +155,40 @@
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
-  (let [dns-options' (if-not (and (some? dns-options)
+  (let [log-activity (:log-activity connection-options)
+        dns-options' (if-not (and (some? dns-options)
                                   (not (contains? dns-options :epoll?)))
                        dns-options
                        (let [epoll? (:epoll? connection-options false)]
                          (assoc dns-options :epoll? epoll?)))
         conn-options' (cond-> connection-options
                         (some? dns-options')
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options')))
+                        (assoc :name-resolver (netty/dns-resolver-group dns-options'))
+
+                        (some? log-activity)
+                        (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
         p (promise)
         pool (flow/instrumented-pool
-               {:generate (fn [host]
-                            (let [c (promise)
-                                  conn (create-connection
-                                         host
-                                         conn-options'
-                                         middleware
-                                         #(flow/dispose @p host [@c]))]
-                              (deliver c conn)
-                              [conn]))
-                :destroy (fn [_ c]
-                           (d/chain' c
-                             first
-                             client/close-connection))
-                :control-period control-period
-                :max-queue-size max-queue-size
-                :controller (Pools/utilizationController
-                              target-utilization
-                              connections-per-host
-                              total-connections)
-                :stats-callback stats-callback})]
+              {:generate (fn [host]
+                           (let [c (promise)
+                                 conn (create-connection
+                                       host
+                                       conn-options'
+                                       middleware
+                                       #(flow/dispose @p host [@c]))]
+                             (deliver c conn)
+                             [conn]))
+               :destroy (fn [_ c]
+                          (d/chain' c
+                                    first
+                                    client/close-connection))
+               :control-period control-period
+               :max-queue-size max-queue-size
+               :controller (Pools/utilizationController
+                            target-utilization
+                            connections-per-host
+                            total-connections)
+               :stats-callback stats-callback})]
     @(deliver p pool)))
 
 (def default-connection-pool
@@ -437,3 +442,14 @@
     (let [response (d/deferred)]
       (handler request #(d/success! response %) #(d/error! response %))
       response)))
+
+(defn file
+  "Specifies a file or a region of the file to be sent over the network.
+   Accepts string path to the file, instance of `java.io.File` or instance of
+   `java.nio.file.Path`."
+  ([path]
+   (http-core/http-file path nil nil nil))
+  ([path offset length]
+   (http-core/http-file path offset length nil))
+  ([path offset length chunk-size]
+   (http-core/http-file path offset length chunk-size)))
