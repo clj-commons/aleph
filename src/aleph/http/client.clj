@@ -60,6 +60,7 @@
      ProxyConnectException
      ProxyHandler
      HttpProxyHandler
+     HttpProxyHandler$HttpProxyConnectException
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [io.netty.handler.logging
@@ -366,8 +367,19 @@
     ([_ ctx cause]
       (if-not (instance? ProxyConnectException cause)
         (.fireExceptionCaught ^ChannelHandlerContext ctx cause)
-        (do
-          (s/put! response-stream (ProxyConnectionTimeoutException. cause))
+        (let [message (.getMessage ^Throwable cause)
+              headers (when (instance? HttpProxyHandler$HttpProxyConnectException cause)
+                        (.headers ^HttpProxyHandler$HttpProxyConnectException cause))
+              response (cond
+                         (= "timeout" message)
+                         (ProxyConnectionTimeoutException. cause)
+
+                         (some? headers)
+                         (ex-info message {:headers (http/headers->map headers)})
+
+                         :else
+                         cause)]
+          (s/put! response-stream response)
           ;; client handler should take care of the rest
           (netty/close ctx))))
 
@@ -725,9 +737,14 @@
                      "'"))))
 
             (instance? TextWebSocketFrame msg)
-            (let [text (.text ^TextWebSocketFrame msg)]
-              (netty/release msg)
-              (netty/put! ch @in text))
+            (if raw-stream?
+              (let [body (.content ^TextWebSocketFrame msg)]
+                ;; pass ByteBuf body directly to lower next
+                ;; level. it's their reponsibility to release
+                (netty/put! ch @in body))
+              (let [text (.text ^TextWebSocketFrame msg)]
+                (netty/release msg)
+                (netty/put! ch @in text)))
 
             (instance? BinaryWebSocketFrame msg)
             (let [frame (.content ^BinaryWebSocketFrame msg)]
@@ -784,7 +801,14 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
-         compression? false}}]
+         compression? false}
+    :as options}]
+
+  (when (and (true? (:compression? options))
+             (false? (:extensions? options)))
+    (throw (IllegalArgumentException.
+            "Per-message deflate requires extensions to be allowed")))
+
   (let [uri (URI. uri)
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
@@ -799,7 +823,7 @@
                       raw-stream?
                       uri
                       sub-protocols
-                      extensions?
+                      (or extensions? compression?)
                       headers
                       max-frame-payload
                       heartbeats)]

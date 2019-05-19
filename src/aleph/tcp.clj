@@ -22,7 +22,7 @@
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
   :remote-addr (netty/channel-remote-address ch)
-  :ssl-session (some-> ch ^ChannelPipeline (.pipeline) ^SslHandler (.get "ssl-handler") .engine .getSession))
+  :ssl-session (netty/channel-ssl-session ch))
 
 (alter-meta! #'->TcpConnection assoc :private true)
 
