@@ -404,22 +404,6 @@
       (copy-encoding-header! msg))
     (.fireChannelRead ctx msg))))
 
-(defn coerce-log-level [level]
-  (if (instance? LogLevel level)
-    level
-    (let [netty-level (case level
-                        :trace LogLevel/TRACE
-                        :debug LogLevel/DEBUG
-                        :info LogLevel/INFO
-                        :warn LogLevel/WARN
-                        :error LogLevel/ERROR
-                        nil)]
-      (when (nil? netty-level)
-        (throw (IllegalArgumentException.
-                (str "unknown log level given: " level))))
-      netty-level)))
-
-
 (defn pipeline-builder
   [response-stream
    {:keys
