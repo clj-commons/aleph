@@ -36,7 +36,10 @@
      NioServerSocketChannel
      NioSocketChannel
      NioDatagramChannel]
-    [io.netty.handler.ssl SslContext SslContextBuilder]
+    [io.netty.handler.ssl
+     SslContext
+     SslContextBuilder
+     SslHandler]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
     [io.netty.resolver
@@ -767,6 +770,12 @@
 
 (set! *warn-on-reflection* true)
 
+(defn channel-ssl-session [^Channel ch]
+  (some-> ch
+          ^ChannelPipeline (.pipeline)
+          ^SslHandler (.get SslHandler)
+          .engine
+          .getSession))
 ;;;
 
 (defprotocol AlephServer

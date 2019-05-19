@@ -46,7 +46,8 @@
      PingWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
-     CloseWebSocketFrame]
+     CloseWebSocketFrame
+     WebSocketChunkedInput]
     [java.io
      File
      RandomAccessFile
@@ -241,6 +242,9 @@
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
+
+(defn ring-request-ssl-session [^NettyRequest req]
+  (netty/channel-ssl-session (.ch req)))
 
 ;;;
 
@@ -561,6 +565,9 @@
    (fn [msg]
      (condp instance? msg
        WebSocketFrame
+       msg
+
+       ChunkedInput
        msg
 
        WebsocketPing

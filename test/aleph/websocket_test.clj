@@ -35,14 +35,16 @@
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
 
-(defn echo-handler [req]
-  (-> (http/websocket-connection req)
-    (d/chain' #(s/connect % %))
-    (d/catch'
-        (fn [^Throwable e]
-          (log/error "upgrade to websocket conn failed"
-                     (.getMessage e))
-          {}))))
+(defn echo-handler
+  ([req] (echo-handler {} req))
+  ([options req]
+   (-> (http/websocket-connection req options)
+       (d/chain' #(s/connect % %))
+       (d/catch'
+           (fn [^Throwable e]
+             (log/error "upgrade to websocket conn failed"
+                        (.getMessage e))
+             {})))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
@@ -77,6 +79,16 @@
       (is @(s/put! c "hello compressed"))
       (is (= "hello compressed" @(s/try-take! c 5e3))))))
 
+(deftest test-per-message-compression-handler
+  (with-handler (partial echo-handler {:compression? true})
+    (let [c @(http/websocket-client "ws://localhost:8080" {:compression? true})]
+      (is (= "permessage-deflate" (get-in (s/description c)
+                                          [:sink
+                                           :websocket-handshake-headers
+                                           "sec-websocket-extensions"])))
+      (is @(s/put! c "hello with per-message deflate enabled"))
+      (is (= "hello with per-message deflate enabled" @(s/try-take! c 5e3))))))
+
 (deftest test-server-handshake-description
   (with-handler (fn [req]
                   (-> (http/websocket-connection req)
@@ -90,13 +102,21 @@
       (is (= "YES" @(s/try-take! c 5e3))))))
 
 (deftest test-raw-echo-handler
-  (testing "websocket client: raw-stream?"
+  (testing "websocket client: raw-stream? with binary message"
     (with-handler echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
         (is @(s/put! c (.getBytes "raw client hello" "UTF-8")))
         (let [msg @(s/try-take! c 5e3)]
           (is (= "raw client hello"
                  (when msg (bs/to-string (netty/release-buf->array msg)))))))))
+
+  (testing "websocket client: raw-stream? with text message"
+    (with-handler echo-handler
+      (let [c @(http/websocket-client "ws://localhost:8080" {:raw-stream? true})]
+        (is @(s/put! c "text client hello"))
+        (let [msg @(s/try-take! c 5e3)]
+          (is (= "text client hello"
+                 (when msg (bs/to-string msg))))))))
 
   (testing "websocket server: raw-stream? with binary message"
     (with-handler raw-echo-handler
@@ -109,7 +129,8 @@
     (with-handler raw-echo-handler
       (let [c @(http/websocket-client "ws://localhost:8080")]
         (is @(s/put! c "raw conn string hello"))
-        (is (= "raw conn string hello" @(s/try-take! c 5e3)))))))
+        (let [msg @(s/try-take! c 5e3)]
+          (is (= "raw conn string hello" (when msg (bs/to-string msg)))))))))
 
 (deftest test-ping-pong-protocol
   (testing "empty ping from the client"
