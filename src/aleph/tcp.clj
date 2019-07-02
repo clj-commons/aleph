@@ -24,14 +24,16 @@
 (alter-meta! #'->TcpConnection assoc :private true)
 
 (defn- ^ChannelHandler server-channel-handler
-  [handler {:keys [raw-stream?] :as options}]
+  [handler {:keys [raw-stream? exception-handler] :as options}]
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in TCP server")))
+       (if (some? exception-handler)
+         (exception-handler @in ex)
+         (when-not (instance? IOException ex)
+           (log/warn ex "error in TCP server"))))
 
       :channel-inactive
       ([_ ctx]
@@ -68,6 +70,7 @@
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `exception-handler` | a function of stream and exception called when the server handler raises. useful if some handlers in the pipeline use exceptions for control flow.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?]
@@ -88,7 +91,7 @@
     epoll?))
 
 (defn- ^ChannelHandler client-channel-handler
-  [{:keys [raw-stream?]}]
+  [{:keys [raw-stream? exception-handler]}]
   (let [d (d/deferred)
         in (atom nil)]
     [d
@@ -97,8 +100,10 @@
 
        :exception-caught
        ([_ ctx ex]
-         (when-not (d/error! d ex)
-           (log/warn ex "error in TCP client")))
+        (if (some? exception-handler)
+          (exception-handler @in ex)
+          (when-not (d/error! d ex)
+            (log/warn ex "error in TCP client"))))
 
        :channel-inactive
        ([_ ctx]
@@ -142,6 +147,7 @@
    | `insecure?` | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `exception-handler` | a function of stream and exception called when the server handler raises. useful if some handlers in the pipeline use exceptions for control flow.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll?]
     :or {bootstrap-transform identity
