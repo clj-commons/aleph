@@ -103,7 +103,11 @@
   {:status 200
    :body "hello"})
 
-(defn big-handler [_request]
+(defn invalid-handler [_]
+  {:status -100
+   :body "hello"})
+
+(defn big-handler [_]
   {:status 200
    :body (->> (s/periodically 0.1 #(byte-array 1024))
               (s/transform (take (long 1e3))))})
@@ -138,6 +142,7 @@
    "/string" string-handler
    "/echo" echo-handler
    "/line_echo" line-echo-handler
+   "/invalid" invalid-handler
    "/stop" (fn [_]
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
@@ -459,6 +464,23 @@
     (is (= "" (-> @(http/trace (str "http://localhost:" port) {:body "REQUEST"})
                   :body
                   bs/to-string)))))
+
+(deftest test-invalid-response
+  (with-handler invalid-handler
+    (let [{:keys [body status]} @(http-get (apply str "http://localhost:" port  "/invalid"))]
+      (is (= 500 status))
+      (is (re-find #"java\.lang\.IllegalArgumentException: code: -100 \(expected: >= 0\)"
+                   (bs/to-string body)))))
+  (testing "custom error handler"
+    (with-server (http/start-server invalid-handler
+                                    {:port port
+                                     :error-handler (fn [_]
+                                                      {:status 500
+                                                       :body "Internal error"})})
+      (let [{:keys [body status]} @(http-get (apply str "http://localhost:" port  "/invalid"))]
+        (is (= 500 status))
+        (is (= "Internal error"
+               (bs/to-string body)))))))
 
 ;;;
 
