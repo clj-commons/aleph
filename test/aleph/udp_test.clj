@@ -16,7 +16,7 @@
        (finally
          (.close ^java.io.Closeable server#)))))
 
-(def words (slurp "/usr/share/dict/words"))
+(def words (slurp "test/words"))
 
 (deftest test-echo
   (let [s @(udp/socket {:port 10001, :epoll? true})]

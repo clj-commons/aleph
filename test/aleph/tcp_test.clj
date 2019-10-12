@@ -19,7 +19,7 @@
        (finally
          (.close ^java.io.Closeable server#)))))
 
-(def words (slurp "/usr/share/dict/words"))
+(def words (slurp "test/words"))
 
 (deftest test-echo
   (with-server (tcp/start-server echo-handler {:port 10001})
