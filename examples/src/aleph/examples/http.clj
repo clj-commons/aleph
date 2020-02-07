@@ -174,10 +174,12 @@
 ;; that our consumption of the body needs to be synchronous, as shown above by coercing it
 ;; to a Clojure seq.  If we want to have the body be asynchronous, we need to specify
 ;; `:raw-stream?` to be `true` for request connection pool.
+(def connection-pool (http/connection-pool {:connection-options {:raw-stream? true}})
+
 @(d/chain
    (http/get "http://localhost:10000/numbers"
      {:query-params {:count 10}
-      :pool (http/connection-pool {:connection-options {:raw-stream? true}})})
+      :pool connection-pool})
    :body
    #(s/map bs/to-byte-array %)
    #(s/reduce conj [] %)
