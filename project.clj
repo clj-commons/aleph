@@ -1,4 +1,4 @@
-(def netty-version "4.1.36.Final")
+(def netty-version "4.1.48.Final")
 
 (def netty-modules
   '[transport
@@ -11,7 +11,7 @@
     resolver-dns])
 
 (def other-dependencies
-  '[[org.clojure/tools.logging "0.4.1" :exclusions [org.clojure/clojure]]
+  '[[org.clojure/tools.logging "1.0.0" :exclusions [org.clojure/clojure]]
     [manifold "0.1.9-alpha3"]
     [byte-streams "0.2.5-alpha2"]
     [potemkin "0.4.5"]])
@@ -26,11 +26,11 @@
                    (map
                      #(vector (symbol "io.netty" (str "netty-" %)) netty-version)
                      netty-modules))
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]
-                                  [criterium "0.4.4"]
-                                  [cheshire "5.8.1"]
-                                  [org.slf4j/slf4j-simple "1.7.25"]
-                                  [com.cognitect/transit-clj "0.8.309"]]}}
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.10.1"]
+                                  [criterium "0.4.5"]
+                                  [cheshire "5.10.0"]
+                                  [org.slf4j/slf4j-simple "1.7.30"]
+                                  [com.cognitect/transit-clj "1.0.324"]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
@@ -44,7 +44,7 @@
             [lein-marginalia "0.9.0"]
             [ztellman/lein-cljfmt "0.1.10"]]
   :java-source-paths ["src/aleph/utils"]
-  :javac-options ["-target" "1.7", "-source" "1.7"]
+  :javac-options ["-target" "1.8", "-source" "1.8"]
   :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default #(not
                                (some #{:benchmark :stress}

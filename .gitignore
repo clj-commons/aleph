@@ -12,3 +12,5 @@ target/**
 .nrepl*
 /doc
 .java-version
+.idea
+*.iml

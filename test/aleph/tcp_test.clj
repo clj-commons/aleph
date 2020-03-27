@@ -19,8 +19,6 @@
        (finally
          (.close ^java.io.Closeable server#)))))
 
-(def words (slurp "/usr/share/dict/words"))
-
 (deftest test-echo
   (with-server (tcp/start-server echo-handler {:port 10001})
     (let [c @(tcp/client {:host "localhost", :port 10001})]

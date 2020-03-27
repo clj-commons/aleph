@@ -234,8 +234,6 @@
             @(http-get (str "https://localhost:" port "/" path)))))
        (str path "path failed")))))
 
-(def words (slurp "/usr/share/dict/words"))
-
 (deftest test-bulk-requests
   (with-handler basic-handler
     (->> (range 1e2)
