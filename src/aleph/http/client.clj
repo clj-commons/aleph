@@ -858,7 +858,7 @@
                       heartbeats)]
     (d/chain'
       (netty/create-client
-       (fn [^ChannelPipeline pipeline]
+        (fn [^ChannelPipeline pipeline]
           (doto pipeline
             (.addLast "http-client" (HttpClientCodec.))
             (.addLast "aggregator" (HttpObjectAggregator. 16384))
