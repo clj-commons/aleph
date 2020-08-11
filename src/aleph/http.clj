@@ -12,7 +12,8 @@
     [client-middleware :as middleware]
     [core :as http-core]]
    [aleph.netty :as netty]
-   [clojure.java.io :as io])
+   [clojure.java.io :as io]
+   [clojure.tools.logging :as log])
   (:import
    [io.aleph.dirigiste Pools]
    [aleph.utils
@@ -45,14 +46,16 @@
    | `rejected-handler` | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
    | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `8192`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
    | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
+   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly).
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds
    | `continue-handler` | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
    | `continue-executor` | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread."
   [handler options]
+  (when (contains? options :max-chunk-size)
+    (log/warn "Ignoring :max-chunk-size option as it was deprecated"))
   (server/start-server handler options))
 
 (defn- create-connection
@@ -119,7 +122,6 @@
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `65536`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `65536`
    | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks
@@ -164,6 +166,9 @@
     (throw
      (IllegalArgumentException.
       "Using :save-content-encoding? option with disabled auto decompression is disabled")))
+
+  (when (contains? connection-options :max-chunk-size)
+    (log/warn "Ignoring :max-chunk-size option as it was deprecated"))
 
   (let [log-activity (:log-activity connection-options)
         dns-options' (if-not (and (some? dns-options)

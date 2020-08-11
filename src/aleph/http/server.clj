@@ -56,6 +56,7 @@
      WebSocketFrameAggregator]
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
+    [io.netty.handler.logging LoggingHandler]
     [java.io
      IOException]
     [java.net
@@ -462,7 +463,6 @@
      request-buffer-size
      max-initial-line-length
      max-header-size
-     max-chunk-size
      raw-stream?
      ssl?
      compression?
@@ -474,7 +474,6 @@
     {request-buffer-size 16384
      max-initial-line-length 8192
      max-header-size 8192
-     max-chunk-size 16384
      compression? false
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
@@ -493,7 +492,7 @@
           (HttpServerCodec.
             max-initial-line-length
             max-header-size
-            max-chunk-size
+            Integer/MAX_VALUE
             false))
         (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
@@ -518,6 +517,7 @@
            shutdown-executor?
            epoll?
            compression?
+           log-activity
            continue-handler
            continue-executor]
     :or {bootstrap-transform identity
@@ -526,7 +526,16 @@
          epoll? false
          compression? false}
     :as options}]
-  (let [executor (cond
+  (let [logger (cond
+                 (instance? LoggingHandler log-activity)
+                 log-activity
+
+                 (some? log-activity)
+                 (netty/activity-logger "aleph-server" log-activity)
+
+                 :else
+                 nil)
+        executor (cond
                    (instance? Executor executor)
                    executor
 
@@ -573,7 +582,8 @@
            (when (instance? ExecutorService continue-executor)
              (.shutdown ^ExecutorService continue-executor))))
       (if socket-address socket-address (InetSocketAddress. port))
-      epoll?)))
+      epoll?
+      logger)))
 
 ;;;
 
