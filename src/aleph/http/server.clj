@@ -22,13 +22,19 @@
     [aleph.http.core
      NettyRequest]
     [io.netty.buffer
-     ByteBuf]
+     ByteBuf
+     ByteBufHolder
+     Unpooled]
     [io.netty.channel
      Channel
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
+    [io.netty.channel.embedded EmbeddedChannel]
     [io.netty.handler.stream ChunkedWriteHandler]
+    [io.netty.handler.timeout
+     IdleState
+     IdleStateEvent]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
      HttpContent HttpHeaders HttpUtil
@@ -36,7 +42,8 @@
      HttpRequest HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent HttpServerExpectContinueHandler]
+     LastHttpContent HttpServerExpectContinueHandler
+     HttpHeaderNames]
     [io.netty.handler.codec.http.websocketx
      WebSocketServerHandshakerFactory
      WebSocketServerHandshaker
@@ -59,7 +66,8 @@
      TimeUnit
      Executor
      ExecutorService
-     RejectedExecutionException]
+     RejectedExecutionException
+     ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicReference
      AtomicInteger
@@ -69,8 +77,8 @@
 
 ;;;
 
-(def ^FastThreadLocal date-format (FastThreadLocal.))
-(def ^FastThreadLocal date-value (FastThreadLocal.))
+(defonce ^FastThreadLocal date-format (FastThreadLocal.))
+(defonce ^FastThreadLocal date-value (FastThreadLocal.))
 
 (defn rfc-1123-date-string []
   (let [^DateFormat format
@@ -181,7 +189,6 @@
         netty/wrap-future
         (fn [_]
           (netty/release req)
-          (netty/release body)
           (-> rsp
             (d/catch' error-response)
             (d/chain'
@@ -394,6 +401,58 @@
           :else
           (.fireChannelRead ctx msg))))))
 
+(def ^HttpResponse default-accept-response
+  (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
+                            HttpResponseStatus/CONTINUE
+                            Unpooled/EMPTY_BUFFER))
+
+(HttpHeaders/setContentLength default-accept-response 0)
+
+(def ^HttpResponse default-expectation-failed-response
+  (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
+                            HttpResponseStatus/EXPECTATION_FAILED
+                            Unpooled/EMPTY_BUFFER))
+
+(HttpHeaders/setContentLength default-expectation-failed-response 0)
+
+(defn new-continue-handler [continue-handler continue-executor ssl?]
+  (netty/channel-inbound-handler
+
+   :channel-read
+   ([_ ctx msg]
+    (if-not (and (instance? HttpRequest msg)
+                 (HttpUtil/is100ContinueExpected ^HttpRequest msg))
+      (.fireChannelRead ctx msg)
+      (let [^HttpRequest req msg
+            ch (.channel ctx)
+            ring-req (http/netty-request->ring-request req ssl? ch nil)
+            resume (fn [accept?]
+                     (if (true? accept?)
+                       ;; accepted
+                       (let [rsp (.retainedDuplicate
+                                       ^ByteBufHolder
+                                       default-accept-response)]
+                         (netty/write-and-flush ctx rsp)
+                         (.remove (.headers req) HttpHeaderNames/EXPECT)
+                         (.fireChannelRead ctx req))
+                       ;; rejected, use the default reject response if
+                       ;; alternative is not provided
+                       (do
+                         (netty/release msg)
+                         (if (false? accept?)
+                           (let [rsp (.retainedDuplicate
+                                      ^ByteBufHolder
+                                      default-expectation-failed-response)]
+                             (netty/write-and-flush ctx rsp))
+                           (let [keep-alive? (HttpUtil/isKeepAlive req)
+                                 rsp (http/ring-response->netty-response accept?)]
+                             (http/send-message ctx keep-alive? ssl? rsp nil))))))]
+        (if (nil? continue-executor)
+          (resume (continue-handler ring-req))
+          (d/chain'
+           (d/future-with continue-executor (continue-handler ring-req))
+           resume)))))))
+
 (defn pipeline-builder
   [handler
    pipeline-transform
@@ -407,7 +466,9 @@
      ssl?
      compression?
      compression-level
-     idle-timeout]
+     idle-timeout
+     continue-handler
+     continue-executor]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -417,7 +478,13 @@
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))]
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+          ^ChannelHandler
+          continue-handler (if (nil? continue-handler)
+                             (HttpServerExpectContinueHandler.)
+                             (new-continue-handler continue-handler
+                                                   continue-executor
+                                                   ssl?))]
 
       (doto pipeline
         (.addLast "http-server"
@@ -426,7 +493,7 @@
             max-header-size
             Integer/MAX_VALUE
             false))
-        (.addLast "continue-handler" (HttpServerExpectContinueHandler.))
+        (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
             (let [compressor (HttpContentCompressor. (or compression-level 6))]
@@ -448,7 +515,9 @@
            manual-ssl?
            shutdown-executor?
            epoll?
-           compression?]
+           compression?
+           continue-handler
+           continue-executor]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
@@ -470,95 +539,154 @@
 
                    :else
                    (throw
-                     (IllegalArgumentException.
-                       (str "invalid executor specification: " (pr-str executor)))))]
+                    (IllegalArgumentException.
+                     (str "invalid executor specification: " (pr-str executor)))))
+        continue-executor' (cond
+                             (nil? continue-executor)
+                             executor
+
+                             (identical? :none continue-executor)
+                             nil
+
+                             (instance? Executor continue-executor)
+                             continue-executor
+
+                             :else
+                             (throw
+                              (IllegalArgumentException.
+                               (str "invalid continue-executor specification: "
+                                    (pr-str continue-executor)))))]
     (netty/start-server
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context))))
+        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor'))
       ssl-context
       bootstrap-transform
-      (when (and shutdown-executor? (instance? ExecutorService executor))
-        #(.shutdown ^ExecutorService executor))
+      (when (and shutdown-executor? (or (instance? ExecutorService executor)
+                                        (instance? ExecutorService continue-executor)))
+        #(do
+           (when (instance? ExecutorService executor)
+             (.shutdown ^ExecutorService executor))
+           (when (instance? ExecutorService continue-executor)
+             (.shutdown ^ExecutorService continue-executor))))
       (if socket-address socket-address (InetSocketAddress. port))
       epoll?)))
 
 ;;;
 
 (defn websocket-server-handler
-  [raw-stream?
-   ^Channel ch
-   ^WebSocketServerHandshaker handshaker]
-  (let [out (netty/sink ch false
-              (fn [c]
-                (cond
-                  (instance? CharSequence c)
-                  (TextWebSocketFrame. (bs/to-string c))
+  ([raw-stream? ch handshaker]
+   (websocket-server-handler raw-stream? ch handshaker nil))
+  ([raw-stream?
+    ^Channel ch
+    ^WebSocketServerHandshaker handshaker
+    heartbeats]
+   (let [d (d/deferred)
+         ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
+         closing? (AtomicBoolean. false)
+         coerce-fn (http/websocket-message-coerce-fn
+                    ch
+                    pending-pings
+                    (fn [^CloseWebSocketFrame frame]
+                      (if-not (.compareAndSet closing? false true)
+                        false
+                        (do
+                          (.close handshaker ch frame)
+                          true))))
+         description (fn [] {:websocket-selected-subprotocol (.selectedSubprotocol handshaker)})
+         out (netty/sink ch false coerce-fn description)
+         in (netty/buffered-source ch (constantly 1) 16)]
 
-                  (instance? ByteBuf c)
-                  (BinaryWebSocketFrame. (netty/acquire c))
+     (s/on-closed out #(http/resolve-pings! pending-pings false))
 
-                  :else
-                  (BinaryWebSocketFrame. (netty/to-byte-buf ch c)))))
-        in (netty/buffered-source ch (constantly 1) 16)]
-
-    (s/on-drained in
-      ;; there's a change that the connection was closed by the server,
+     (s/on-drained
+      in
+      ;; there's a chance that the connection was closed by the client,
       ;; in that case *out* would be closed earlier and the underlying
       ;; netty channel is already terminated
-      #(when (.isOpen ch)
+      #(when (and (.isOpen ch)
+                  (.compareAndSet closing? false true))
          (.close handshaker ch (CloseWebSocketFrame.))))
 
-    [(doto
-       (s/splice out in)
-       (reset-meta! {:aleph/channel ch}))
+     (let [s (doto
+                 (s/splice out in)
+               (reset-meta! {:aleph/channel ch}))]
+       [s
 
-     (netty/channel-inbound-handler
+        (netty/channel-inbound-handler
 
-       :exception-caught
-       ([_ ctx ex]
+         :exception-caught
+         ([_ ctx ex]
+          (when-not (instance? IOException ex)
+            (log/warn ex "error in websocket handler"))
+          (s/close! out)
+          (netty/close ctx))
 
-         (when-not (instance? IOException ex)
-           (log/warn ex "error in websocket handler"))
-         (s/close! out)
-         (.close ctx))
+         :channel-inactive
+         ([_ ctx]
+          (s/close! out)
+          (s/close! in)
+          (.fireChannelInactive ctx))
 
-       :channel-inactive
-       ([_ ctx]
-         (s/close! out)
-         (s/close! in)
-         (.fireChannelInactive ctx))
+         :user-event-triggered
+         ([_ ctx evt]
+          (if (and (instance? IdleStateEvent evt)
+                   (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
+            (http/handle-heartbeat ctx s heartbeats)
+            (.fireUserEventTriggered ctx evt)))
 
-       :channel-read
-       ([_ ctx msg]
-         (try
-           (let [ch (.channel ctx)]
-             (if-not (instance? WebSocketFrame msg)
-               (.fireChannelRead ctx msg)
-               (let [^WebSocketFrame msg msg]
-                 (cond
+         :channel-read
+         ([_ ctx msg]
+         (let [ch (.channel ctx)]
+           (cond
+             (instance? TextWebSocketFrame msg)
+             (if raw-stream?
+               (let [body (.content ^TextWebSocketFrame msg)]
+                ;; pass ByteBuf body directly to next level (it's
+                ;; their reponsibility to release)
+                 (netty/put! ch in body))
+               (let [text (.text ^TextWebSocketFrame msg)]
+                ;; working with text now, so we do not need
+                ;; ByteBuf inside TextWebSocketFrame
+                ;; note, that all *WebSocketFrame classes are
+                ;; subclasses of DefaultByteBufHolder, meaning
+                ;; there's no difference between releasing
+                ;; frame & frame's content
+                (netty/release msg)
+                (netty/put! ch in text)))
 
-                   (instance? TextWebSocketFrame msg)
-                   (netty/put! ch in (.text ^TextWebSocketFrame msg))
+             (instance? BinaryWebSocketFrame msg)
+             (let [body (.content ^BinaryWebSocketFrame msg)]
+               (netty/put! ch in
+                 (if raw-stream?
+                   body
+                   ;; copied data into byte array, deallocating ByteBuf
+                   (netty/release-buf->array body))))
 
-                   (instance? BinaryWebSocketFrame msg)
-                   (let [body (.content ^BinaryWebSocketFrame msg)]
-                     (netty/put! ch in
-                       (if raw-stream?
-                         (netty/acquire body)
-                         (netty/buf->array body))))
+             (instance? PingWebSocketFrame msg)
+             (let [body (.content ^PingWebSocketFrame msg)]
+               ;; reusing the same buffer
+               ;; will be deallocated by Netty
+               (netty/write-and-flush ch (PongWebSocketFrame. body)))
 
-                   (instance? PingWebSocketFrame msg)
-                   (netty/write-and-flush ch (PongWebSocketFrame. (netty/acquire (.content msg))))
+             (instance? PongWebSocketFrame msg)
+             (do
+               (netty/release msg)
+               (http/resolve-pings! pending-pings true))
 
-                   (instance? CloseWebSocketFrame msg)
-                   (.close handshaker ch (netty/acquire msg))
+             (instance? CloseWebSocketFrame msg)
+             (if-not (.compareAndSet closing? false true)
+               ;; closing already, nothing else could be done
+               (netty/release msg)
+               ;; reusing the same buffer
+               ;; will be deallocated by Netty
+               (.close handshaker ch msg))
 
-                   :else
-                   (.fireChannelRead ctx msg)))))
-           (finally
-             (netty/release msg)))))]))
+             :else
+             ;; no need to release buffer when passing to a next handler
+             (.fireChannelRead ctx msg)))))]))))
+
 
 ;; note, as we set `keep-alive?` to `false`, `send-message` will close the connection
 ;; after writes are done, which is exactly what we expect to happen
@@ -589,12 +717,19 @@
            max-frame-size
            allow-extensions?
            compression?
-           pipeline-transform]
+           pipeline-transform
+           heartbeats]
     :or {raw-stream? false
          max-frame-payload 65536
          max-frame-size 1048576
          allow-extensions? false
-         compression? false}}]
+         compression? false}
+    :as options}]
+
+  (when (and (true? (:compression? options))
+             (false? (:allow-extensions? options)))
+    (throw (IllegalArgumentException.
+            "Per-message deflate requires extensions to be allowed")))
 
   (-> req ^AtomicBoolean (.websocket?) (.set true))
 
@@ -605,37 +740,64 @@
               (get-in req [:headers "host"])
               (:uri req))
         req (http/ring-request->full-netty-request req)
-        factory (WebSocketServerHandshakerFactory. url nil allow-extensions? max-frame-payload)]
-    (if-let [handshaker (.newHandshaker factory req)]
-      (try
-        (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream? ch handshaker)
-              p (.newPromise ch)
-              h (doto (DefaultHttpHeaders.) (http/map->headers! headers))]
-          ;; actually, we're not going to except anything but websocket, so...
-          (doto (.pipeline ch)
-            (.remove "request-handler")
-            (.remove "continue-handler")
-            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-            (#(when compression?
-                (.addLast ^ChannelPipeline %
-                          "websocket-deflater"
-                          (WebSocketServerCompressionHandler.))))
-            (.addLast "websocket-handler" handler))
-          (-> (try
-                (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
-                (catch Throwable e
-                  (d/error-deferred e)))
-              (d/chain'
-                (fn [_]
-                  (when (some? pipeline-transform)
-                    (pipeline-transform (.pipeline ch)))
-                  s))
-              (d/catch'
-                (fn [e]
-                  (send-websocket-request-expected! ch ssl?)
-                  (d/error-deferred e)))))
-        (catch Throwable e
-          (d/error-deferred e)))
-      (do
-        (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
-        (d/error-deferred (IllegalStateException. "unsupported version"))))))
+        factory (WebSocketServerHandshakerFactory.
+                 url
+                 nil
+                 (or allow-extensions? compression?)
+                 max-frame-payload)]
+    (try
+      (if-let [handshaker (.newHandshaker factory req)]
+        (try
+          (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
+                                                                      ch
+                                                                      handshaker
+                                                                      heartbeats)
+                p (.newPromise ch)
+                h (doto (DefaultHttpHeaders.) (http/map->headers! headers))
+                ^ChannelPipeline pipeline (.pipeline ch)]
+            ;; actually, we're not going to except anything but websocket, so...
+            (doto pipeline
+              (.remove "request-handler")
+              (.remove "continue-handler")
+              (netty/remove-if-present HttpContentCompressor)
+              (netty/remove-if-present ChunkedWriteHandler)
+              (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+              (http/attach-heartbeats-handler heartbeats)
+              (.addLast "websocket-handler" handler))
+            (when compression?
+              ;; Hack:
+              ;; WebSocketServerCompressionHandler is stateful and requires
+              ;; HTTP request to be send through the pipeline
+              ;; See more:
+              ;; * https://github.com/ztellman/aleph/issues/494
+              ;; * https://github.com/netty/netty/pull/8973
+              (let [compression-handler (WebSocketServerCompressionHandler.)
+                    ctx (.context pipeline "websocket-frame-aggregator")]
+                (.addAfter pipeline
+                           "websocket-frame-aggregator"
+                           "websocket-deflater"
+                           compression-handler)
+                (.fireChannelRead ctx req)))
+            (-> (try
+                  (netty/wrap-future (.handshake handshaker ch ^HttpRequest req h p))
+                  (catch Throwable e
+                    (d/error-deferred e)))
+                (d/chain'
+                 (fn [_]
+                   (when (some? pipeline-transform)
+                     (pipeline-transform (.pipeline ch)))
+                   s))
+                (d/catch'
+                    (fn [e]
+                      (send-websocket-request-expected! ch ssl?)
+                      (d/error-deferred e)))))
+          (catch Throwable e
+            (d/error-deferred e)))
+        (do
+          (WebSocketServerHandshakerFactory/sendUnsupportedVersionResponse ch)
+          (d/error-deferred (IllegalStateException. "unsupported version"))))
+      (finally
+        ;; I find this approach to handle request release somewhat
+        ;; fragile... We have to release the object both in case of
+        ;; handshake initialization and "unsupported version" response
+        (netty/release req)))))
