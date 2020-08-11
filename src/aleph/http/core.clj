@@ -78,6 +78,9 @@
       (map str/lower-case ks)
       (map #(HttpHeaders/newEntity %) ks))))
 
+(def ^CharSequence origin-content-encoding-name (HttpHeaders/newEntity "x-origin-content-encoding"))
+(def ^CharSequence content-encoding-name (HttpHeaders/newEntity "content-encoding"))
+
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 
 (defn normalize-header-key

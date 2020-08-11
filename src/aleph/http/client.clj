@@ -27,8 +27,10 @@
      HttpUtil
      HttpHeaderNames
      LastHttpContent
+     FullHttpRequest
      FullHttpResponse
-     HttpObjectAggregator]
+     HttpObjectAggregator
+     HttpContentDecompressor]
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
@@ -389,6 +391,19 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
+(defn copy-encoding-header! [^HttpResponse msg]
+  (let [headers (.headers msg)]
+    (when-let [encoding (.get headers http/content-encoding-name)]
+      (.set headers http/origin-content-encoding-name encoding))))
+
+(defn copy-original-encoding-handler []
+  (netty/channel-inbound-handler
+   :channel-read
+   ([_ ctx msg]
+    (when (instance? HttpResponse msg)
+      (copy-encoding-header! msg))
+    (.fireChannelRead ctx msg))))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -400,13 +415,17 @@
      proxy-options
      ssl?
      idle-timeout
-     log-activity]
+     log-activity
+     decompress-body?
+     save-content-encoding?]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
-     idle-timeout 0}}]
+     idle-timeout 0
+     decompress-body? false
+     save-content-encoding? false}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -429,6 +448,14 @@
             false
             false))
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
+        (#(when decompress-body?
+            (when save-content-encoding?
+              (.addLast ^ChannelPipeline %1
+                        "orginal-encoding"
+                        ^ChannelHandler (copy-original-encoding-handler)))
+            (.addLast ^ChannelPipeline %1
+                      "deflater"
+                      ^ChannelHandler (HttpContentDecompressor.))))
         (.addLast "handler" ^ChannelHandler handler)
         (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
@@ -467,7 +494,8 @@
            on-closed
            response-executor
            epoll?
-           proxy-options]
+           proxy-options
+           decompress-body?]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
@@ -512,6 +540,9 @@
                         (get proxy-options :keep-alive? true)
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
+                (when (and decompress-body?
+                           (not (.get (.headers req') "Accept-Encoding")))
+                  (.set (.headers req') "Accept-Encoding" "gzip, deflate"))
 
                 (let [body (:body req)
                       parts (:multipart req)
