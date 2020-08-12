@@ -516,6 +516,7 @@
            manual-ssl?
            shutdown-executor?
            epoll?
+           kqueue?
            compression?
            log-activity
            continue-handler
@@ -581,8 +582,9 @@
              (.shutdown ^ExecutorService executor))
            (when (instance? ExecutorService continue-executor)
              (.shutdown ^ExecutorService continue-executor))))
-      (if socket-address socket-address (InetSocketAddress. port))
+      (netty/coerce-socket-address {:socket-address socket-address :port port})
       epoll?
+      kqueue?
       logger)))
 
 ;;;

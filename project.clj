@@ -2,13 +2,21 @@
 
 (def netty-modules
   '[transport
-    transport-native-epoll
+    [transport-native-epoll "linux-x86_64"]
+    [transport-native-kqueue "osx-x86_64"]
     codec
     codec-http
     handler
     handler-proxy
     resolver
     resolver-dns])
+
+(defn netty-module [version name]
+  (let [[name classifier] (if (vector? name) name [name nil])
+        s (symbol "io.netty" (str "netty-" name))]
+    (if (nil? classifier)
+      (vector s version)
+      (vector s version :classifier classifier))))
 
 (def other-dependencies
   '[[org.clojure/tools.logging "0.4.1" :exclusions [org.clojure/clojure]]
@@ -23,9 +31,7 @@
   :license {:name "MIT License"}
   :dependencies ~(concat
                    other-dependencies
-                   (map
-                     #(vector (symbol "io.netty" (str "netty-" %)) netty-version)
-                     netty-modules))
+                   (map (partial netty-module netty-version) netty-modules))
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.9.0"]
                                   [criterium "0.4.4"]
                                   [cheshire "5.8.1"]
