@@ -28,6 +28,7 @@
      Epoll
      EpollEventLoopGroup
      EpollSocketChannel
+     EpollDatagramChannel
      EpollDomainSocketChannel
      EpollServerSocketChannel
      EpollServerDomainSocketChannel]
@@ -47,7 +48,7 @@
      NioSocketChannel
      NioDatagramChannel]
     [io.netty.channel.unix DomainSocketAddress]
-    [io.netty.handler.ssl SslContext SslContextBuilder]
+    [io.netty.handler.ssl SslContext SslContextBuilder SslHandler]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
     [io.netty.resolver
@@ -82,6 +83,9 @@
      Slf4JLoggerFactory
      JdkLoggerFactory
      Log4J2LoggerFactory]
+    [io.netty.handler.logging
+     LoggingHandler
+     LogLevel]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]))
 
@@ -355,6 +359,8 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
+(def sink-close-marker ::sink-close)
+
 (manifold/def-sink ChannelSink
   [coerce-fn
    downstream?
@@ -389,8 +395,16 @@
                         (.getName (class msg))
                         " into binary representation"))
                     (close ch)))
-            d (if (nil? msg)
+            d (cond
+                (nil? msg)
                 (d/success-deferred true)
+
+                (identical? sink-close-marker msg)
+                (do
+                  (.markClosed this)
+                  (d/success-deferred false))
+
+                :else
                 (let [^ChannelFuture f (write-and-flush ch msg)]
                   (-> f
                     wrap-future
@@ -666,6 +680,11 @@
     (initChannel [^Channel ch]
       (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
 
+(defn remove-if-present [^ChannelPipeline pipeline ^Class handler]
+  (when (some? (.get pipeline handler))
+    (.remove pipeline handler))
+  pipeline)
+
 (defn instrument!
   [stream]
   (if-let [^Channel ch (->> stream meta :aleph/channel)]
@@ -678,6 +697,27 @@
             (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
+
+(defn coerce-log-level [level]
+  (if (instance? LogLevel level)
+    level
+    (let [netty-level (case level
+                        :trace LogLevel/TRACE
+                        :debug LogLevel/DEBUG
+                        :info LogLevel/INFO
+                        :warn LogLevel/WARN
+                        :error LogLevel/ERROR
+                        nil)]
+      (when (nil? netty-level)
+        (throw (IllegalArgumentException.
+                (str "unknown log level given: " level))))
+      netty-level)))
+
+(defn activity-logger
+  ([level]
+   (LoggingHandler. ^LogLevel (coerce-log-level level)))
+  ([^String name level]
+   (LoggingHandler. name ^LogLevel (coerce-log-level level))))
 
 ;;;
 
@@ -739,6 +779,12 @@
 
 (set! *warn-on-reflection* true)
 
+(defn channel-ssl-session [^Channel ch]
+  (some-> ch
+          ^ChannelPipeline (.pipeline)
+          ^SslHandler (.get SslHandler)
+          .engine
+          .getSession))
 ;;;
 
 (defprotocol AlephServer
@@ -839,7 +885,8 @@
    | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
-   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)"
+   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
+   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -853,7 +900,8 @@
            ndots
            decode-idn?
            recursion-desired?
-           name-servers]
+           name-servers
+           epoll?]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -863,14 +911,15 @@
          opt-resources-enabled? true
          ndots -1
          decode-idn? true
-         recursion-desired? true}}]
-  (let [^EventLoopGroup
-        client-group (if (epoll-available?)
-                       @epoll-client-group
-                       @nio-client-group)
+         recursion-desired? true
+         epoll? false}}]
+  (let [^Class
+        channel-type (if (and epoll? (epoll-available?))
+                       EpollDatagramChannel
+                       NioDatagramChannel)
 
-        b (cond-> (doto (DnsNameResolverBuilder. (.next client-group))
-                    (.channelType ^Class NioDatagramChannel)
+        b (cond-> (doto (DnsNameResolverBuilder.)
+                    (.channelType channel-type)
                     (.maxPayloadSize max-payload-size)
                     (.maxQueriesPerResolve max-queries-per-resolve)
                     (.queryTimeoutMillis query-timeout)
@@ -1066,14 +1115,16 @@
                  on-close
                  socket-address
                  epoll?
-                 false))
+                 false
+                 nil))
   ([pipeline-builder
     ^SslContext ssl-context
     bootstrap-transform
     on-close
     ^SocketAddress socket-address
     epoll?
-    kqueue?]
+    kqueue?
+    logger]
    (let [num-cores      (.availableProcessors (Runtime/getRuntime))
          num-threads    (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
@@ -1134,6 +1185,10 @@
                  (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                  bootstrap-transform)
 
+             ;; setup logger as a handler if necessary
+             _ (when (some? logger)
+                 (.handler b logger))
+
              ^ServerSocketChannel
              ch (-> b (.bind socket-address) .sync .channel)]
          (reify
@@ -1146,6 +1201,11 @@
                  (d/chain'
                   (wrap-future (.terminationFuture group))
                   (fn [_] (on-close))))))
+           
+           Object
+           (toString [_]
+             (format "AlephServer[channel:%s, transport:%s]" ch transport))
+           
            AlephServer
            (port [_]
              (-> ch .localAddress .getPort))

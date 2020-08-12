@@ -17,13 +17,14 @@
     [io.netty.handler.ssl
      SslHandler]
     [io.netty.channel.unix
-     DomainSocketAddress]))
+     DomainSocketAddress]
+    [io.netty.handler.logging LoggingHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
   :remote-addr (netty/channel-remote-address ch)
-  :ssl-session (some-> ch ^ChannelPipeline (.pipeline) ^SslHandler (.get "ssl-handler") .engine .getSession))
+  :ssl-session (netty/channel-ssl-session ch))
 
 (alter-meta! #'->TcpConnection assoc :private true)
 
@@ -84,24 +85,34 @@
            bootstrap-transform
            pipeline-transform
            epoll?
-           kqueue?]
+           kqueue?
+           log-activity]
     :or {bootstrap-transform identity
          pipeline-transform identity
          epoll? false
          kqueue? false}
     :as options}]
   (netty/start-server
-   (fn [^ChannelPipeline pipeline]
-     (.addLast pipeline "handler" (server-channel-handler handler options))
-     (pipeline-transform pipeline))
-   ssl-context
-   bootstrap-transform
-   nil
-   (netty/coerce-socket-address {:socket-address socket-address
-                                 :unix-socket unix-socket
-                                 :port port})
-   epoll?
-   kqueue?))
+    (fn [^ChannelPipeline pipeline]
+      (.addLast pipeline "handler" (server-channel-handler handler options))
+      (pipeline-transform pipeline))
+    ssl-context
+    bootstrap-transform
+    nil
+    (netty/coerce-socket-address {:socket-address socket-address
+                                  :unix-socket unix-socket
+                                  :port port})
+    epoll?
+    kqueue?
+    (cond
+      (instance? LoggingHandler log-activity)
+      log-activity
+
+      (some? log-activity)
+      (netty/activity-logger "aleph-server" log-activity)
+
+      :else
+      nil)))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
