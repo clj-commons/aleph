@@ -12,7 +12,6 @@
      IOException]
     [java.net
      URI
-     SocketAddress
      InetSocketAddress
      IDN
      URL]
@@ -36,7 +35,6 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
-    [io.netty.channel.unix DomainSocketAddress]
     [io.netty.handler.codec
      TooLongFrameException]
     [io.netty.handler.timeout
@@ -70,7 +68,6 @@
     [io.netty.handler.logging
      LoggingHandler
      LogLevel]
-    [io.netty.channel.unix DomainSocketAddress]
     [java.util.concurrent
      ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
@@ -488,7 +485,6 @@
   [^InetSocketAddress remote-address
    ssl?
    {:keys [local-address
-           unix-socket
            raw-stream?
            bootstrap-transform
            name-resolver
@@ -511,8 +507,6 @@
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
-        unix-socket' (when (some? unix-socket)
-                       (netty/coerce-unix-socket unix-socket))
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
@@ -529,8 +523,7 @@
             :local-address local-address
             :epoll? epoll?
             :kqueue? kqueue?
-            :name-resolver name-resolver
-            :unix-socket unix-socket'})]
+            :name-resolver name-resolver})]
     (d/chain' c
       (fn [^Channel ch]
 

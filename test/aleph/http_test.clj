@@ -213,19 +213,6 @@
                                                :kqueue? true})
        ~@body)))
 
-(defmacro with-unix-domain-socket [handler & body]
-  `(let [path# "/tmp/aleph-http.sock"]
-     (testing "path to socket"
-       (binding [*connection-options* {:unix-socket path#}]
-         (with-server (http/start-server ~handler {:unix-socket path#})
-           ~@body)))
-
-     (testing "file descriptor"
-       (let [fd# (io/file path#)]
-         (binding [*connection-options* {:unix-socket fd#}]
-           (with-server (http/start-server ~handler {:unix-socket fd#})
-             ~@body))))))
-
 ;;;
 
 (deftest test-response-formats
@@ -246,16 +233,6 @@
             (bs/to-string
              (:body
               @(http-get (str "http://localhost:" port "/" path))))))))))
-
-(when (netty/native-transport-available?)
-  (deftest test-response-formats-with-unix-domain-socket
-    (with-unix-domain-socket basic-handler
-      (doseq [[index [path result]] (map-indexed vector expected-results)]
-        (is
-         (= result
-            (bs/to-string
-             (:body
-              @(http-get (str "http://localhost/" path))))))))))
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler

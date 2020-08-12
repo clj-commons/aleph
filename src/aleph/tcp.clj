@@ -16,8 +16,6 @@
      ChannelPipeline]
     [io.netty.handler.ssl
      SslHandler]
-    [io.netty.channel.unix
-     DomainSocketAddress]
     [io.netty.handler.logging LoggingHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
@@ -70,7 +68,6 @@
    |:---|:-----
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
    | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
@@ -80,7 +77,6 @@
   [handler
    {:keys [port
            socket-address
-           unix-socket
            ssl-context
            bootstrap-transform
            pipeline-transform
@@ -100,7 +96,6 @@
     bootstrap-transform
     nil
     (netty/coerce-socket-address {:socket-address socket-address
-                                  :unix-socket unix-socket
                                   :port port})
     epoll?
     kqueue?
@@ -164,7 +159,6 @@
    | `port` | the port of the server.
    | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
-   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
    | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
@@ -177,7 +171,6 @@
            port
            remote-address
            local-address
-           unix-socket
            ssl-context
            ssl?
            insecure?
@@ -207,15 +200,10 @@
           :bootstrap-transform bootstrap-transform
           :remote-address (netty/coerce-socket-address
                            {:scoket-address remote-address
-                            :unix-socket unix-socket
                             :host host
                             :port port})
           :local-address local-address
           :epoll? epoll?
-          :kqueue? kqueue?
-          ;; hack so we can define both host/port and unix domain socket
-          ;; to setup SSL handler properly
-          :unix-socket (when (some? unix-socket)
-                         (netty/coerce-unix-socket unix-socket))})
+          :kqueue? kqueue?})
         (d/catch' #(d/error! s %)))
     s))

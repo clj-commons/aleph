@@ -29,16 +29,12 @@
      EpollEventLoopGroup
      EpollSocketChannel
      EpollDatagramChannel
-     EpollDomainSocketChannel
-     EpollServerSocketChannel
-     EpollServerDomainSocketChannel]
+     EpollServerSocketChannel]
     [io.netty.channel.kqueue
      KQueue
      KQueueEventLoopGroup
      KQueueSocketChannel
-     KQueueDomainSocketChannel
-     KQueueServerSocketChannel
-     KQueueServerDomainSocketChannel]
+     KQueueServerSocketChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -47,7 +43,6 @@
      NioServerSocketChannel
      NioSocketChannel
      NioDatagramChannel]
-    [io.netty.channel.unix DomainSocketAddress]
     [io.netty.handler.ssl SslContext SslContextBuilder SslHandler]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
@@ -954,26 +949,12 @@
             ^InetSocketAddress local-address
             epoll?
             kqueue?
-            name-resolver
-            unix-socket]
+            name-resolver]
      :or {epoll? false
           kqueue? false
-          name-resolver nil
-          unix-socket nil}}]
-   (let [unix-socket? (some? unix-socket)
-         [^Class channel client-group]
+          name-resolver nil}}]
+   (let [[^Class channel client-group]
          (cond
-           (and unix-socket? (epoll-available?))
-           [EpollDomainSocketChannel @epoll-client-group]
-
-           (and unix-socket? (kqueue-available?))
-           [KQueueDomainSocketChannel @kqueue-client-group]
-
-           unix-socket?
-           (throw
-            (IllegalArgumentException.
-             "unix socket supports only native transports: epoll or kqueue"))
-
            (and epoll? (epoll-available?))
            [EpollSocketChannel @epoll-client-group]
 
@@ -982,7 +963,7 @@
 
            :else
            [NioSocketChannel @nio-client-group])
-
+         
          pipeline-builder
          (if (nil? ssl-context)
            pipeline-builder
@@ -1010,8 +991,7 @@
                        name-resolver))
 
          b (doto (Bootstrap.)
-             (#(when-not unix-socket?
-                 (.option ^Bootstrap % ChannelOption/SO_REUSEADDR true)))
+             (.option ^Bootstrap ChannelOption/SO_REUSEADDR true)
              (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
              (.group client-group)
              (.channel channel)
@@ -1019,17 +999,13 @@
              (.resolver resolver')
              bootstrap-transform)
 
-         ^SocketAddress
-         connect-to (if unix-socket? unix-socket remote-address)
-
          f (if (some? local-address)
-             (.connect b connect-to local-address)
-             (.connect b connect-to))]
+             (.connect b ^SocketAddress remote-address local-address)
+             (.connect b ^SocketAddress remote-address))]
 
      (-> (wrap-future f)
          (d/chain'
           (fn [_] (.channel ^ChannelFuture f))))))
-
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -1057,25 +1033,7 @@
                    :epoll? epoll?
                    :name-resolver name-resolver})))
 
-(defn ^DomainSocketAddress coerce-unix-socket [unix-socket]
-  (cond
-    (instance? DomainSocketAddress unix-socket)
-    unix-socket
-
-    (string? unix-socket)
-    (DomainSocketAddress. ^String unix-socket)
-
-    (instance? File unix-socket)
-    (DomainSocketAddress. ^File unix-socket)
-
-    :else
-    (throw
-     (IllegalArgumentException.
-      (str "failed to create SocketAddress from " (class unix-socket)
-           ", should be either DomainSocketAddress, string or File")))))
-
 (defn ^SocketAddress coerce-socket-address [{:keys [socket-address
-                                                    unix-socket
                                                     host
                                                     port]
                                              :as options}]
@@ -1092,15 +1050,12 @@
     (some? port)
     (InetSocketAddress. port)
 
-    (some? unix-socket)
-    (coerce-unix-socket unix-socket)
-
     :else
     (throw
      (IllegalArgumentException.
       (str "either "
            (if (contains? options :host) "host, " "")
-           "port, socket-address or unix-socket should be specified")))))
+           "port, or socket-address should be specified")))))
 
 (defn start-server
   ([pipeline-builder
@@ -1129,23 +1084,9 @@
          num-threads    (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
          closed?        (atom false)
-         unix-socket?   (instance? DomainSocketAddress socket-address)
 
          [^Class channel ^EventLoopGroup group]
          (cond
-           (and unix-socket? (epoll-available?))
-           [EpollServerDomainSocketChannel
-            (EpollEventLoopGroup. num-threads thread-factory)]
-
-           (and unix-socket? (kqueue-available?))
-           [KQueueServerDomainSocketChannel
-            (KQueueEventLoopGroup. num-threads thread-factory)]
-
-           unix-socket?
-           (throw
-            (IllegalArgumentException.
-             "unix socket supports only native transports: epoll or KQueue"))
-
            (and epoll? (epoll-available?))
            [EpollServerSocketChannel
             (EpollEventLoopGroup. num-threads thread-factory)]
@@ -1170,18 +1111,12 @@
      (try
        (let [b (doto (ServerBootstrap.)
                  (.option ChannelOption/SO_BACKLOG (int 1024))
-                 (#(when-not unix-socket?
-                     (.option ^ServerBootstrap %
-                              ChannelOption/SO_REUSEADDR
-                              true)))
+                 (.option ^ServerBootstrap ChannelOption/SO_REUSEADDR true)
                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                  (.group group)
                  (.channel channel)
                  (.childHandler (pipeline-initializer pipeline-builder))
-                 (#(when-not unix-socket?
-                     (.childOption ^ServerBootstrap %
-                                   ChannelOption/SO_REUSEADDR
-                                   true)))
+                 (.childOption ^ServerBootstrap ChannelOption/SO_REUSEADDR true)
                  (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                  bootstrap-transform)
 

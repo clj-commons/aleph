@@ -39,19 +39,3 @@
                             :kqueue? true})]
         (s/put! c "foo")
         (is (= "foo" (bs/to-string @(s/take! c))))))))
-
-(when (netty/native-transport-available?)
-  (deftest test-echo-with-unix-socket
-    (let [path "/tmp/aleph.sock"]
-      (testing "path to socket file"
-        (with-server (tcp/start-server echo-handler {:unix-socket path})
-          (let [c @(tcp/client {:unix-socket path})]
-            (s/put! c "foo")
-            (is (= "foo" (bs/to-string @(s/take! c)))))))
-
-      (testing "file descriptor"
-        (let [fd (io/file path)]
-          (with-server (tcp/start-server echo-handler {:unix-socket fd})
-            (let [c @(tcp/client {:unix-socket fd})]
-              (s/put! c "foo")
-              (is (= "foo" (bs/to-string @(s/take! c)))))))))))

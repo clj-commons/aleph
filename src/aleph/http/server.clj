@@ -30,7 +30,6 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
-    [io.netty.channel.unix DomainSocketAddress]
     [io.netty.channel.embedded EmbeddedChannel]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
@@ -510,7 +509,6 @@
   [handler
    {:keys [port
            socket-address
-           unix-socket
            executor
            bootstrap-transform
            pipeline-transform
@@ -584,9 +582,7 @@
              (.shutdown ^ExecutorService executor))
            (when (instance? ExecutorService continue-executor)
              (.shutdown ^ExecutorService continue-executor))))
-      (netty/coerce-socket-address {:socket-address socket-address
-                                    :unix-socket unix-socket
-                                    :port port})
+      (netty/coerce-socket-address {:socket-address socket-address :port port})
       epoll?
       kqueue?
       logger)))

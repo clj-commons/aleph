@@ -35,7 +35,6 @@
    |:---------|:-------------
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to bind to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object if an SSL connection is desired |
    | `manual-ssl?` | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
@@ -115,7 +114,6 @@
    |:---|:---
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
-   | `unix-socket` | an optional path to unix domain socket endpoint, instance of `java.io.File` or intance of `io.netty.channel.unix.DomainSocketAddress` to connect to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `insecure?` | if `true`, ignores the certificate for any `https://` domains
@@ -175,19 +173,6 @@
   (when (contains? connection-options :max-chunk-size)
     (log/warn "Ignoring :max-chunk-size option as it was deprecated"))
 
-  (when (and (some? (:unix-socket connection-options))
-             (or (some? dns-options)
-                 (some? (:name-resolver connection-options))))
-    (throw
-     (IllegalArgumentException.
-      "unix socket connection does not support custom name resolvers")))
-
-  (when (and (some? (:unix-socket connection-options))
-             (some? (:proxy-options connection-options)))
-    (throw
-     (IllegalArgumentException.
-      "unix socket connection does not support proxies")))
-
   (let [log-activity (:log-activity connection-options)
         dns-options' (if-not (and (some? dns-options)
                                   (not (contains? dns-options :epoll?)))
@@ -195,9 +180,6 @@
                        (let [epoll? (:epoll? connection-options false)]
                          (assoc dns-options :epoll? epoll?)))
         conn-options' (cond-> connection-options
-                        (some? (:unix-socket connection-options))
-                        (assoc :name-resolver :noop)
-
                         (some? dns-options')
                         (assoc :name-resolver (netty/dns-resolver-group dns-options'))
 
@@ -336,23 +318,6 @@
     (executor/with-executor response-executor
       ((middleware
          (fn [req]
-           ;; xxx: if I'm working with unix-socket here,
-           ;; I probably want to reshape the request slightly
-           ;; to prevent troubles caused by java.net.URL parser
-           ;; let's say I want to run something like
-           ;;
-           ;; (http/get "/images/json" {:unix-socket "/var/run/docker.sock"})
-           ;;
-           ;; "/images/json" is not a valid URL, no protocol, no host
-           ;; Which is a bad thing when I need to setup a connection to
-           ;; a remote address, but it's perfectly valid for unix socket
-           ;; What I can do here: take URL requested, try to parse it
-           ;; and if it fails just to put some dummy values to a host & port
-           ;; SSL will not work, but if don't pass any server name I should
-           ;; not expect it work at the first place. The only thing...
-           ;; I don't know the connection pool configuration here, meaning
-           ;; I have no idea if it's allowed to pass URI with no additional
-           ;; information
            (let [k (client/req->domain req)
                  start (System/currentTimeMillis)]
 
