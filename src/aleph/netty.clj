@@ -1204,7 +1204,7 @@
            
            Object
            (toString [_]
-             (format "AlephServer[channel:%s, transport:%s]" ch transport))
+             (format "AlephServer[channel:%s, transport:%s]" ch channel))
            
            AlephServer
            (port [_]
