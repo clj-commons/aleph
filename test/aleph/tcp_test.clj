@@ -1,11 +1,14 @@
 (ns aleph.tcp-test
   (:use
-    [clojure test])
+   [clojure test])
   (:require
-    [manifold.stream :as s]
-    [aleph.netty :as netty]
-    [byte-streams :as bs]
-    [aleph.tcp :as tcp]))
+   [manifold.stream :as s]
+   [aleph.netty :as netty]
+   [byte-streams :as bs]
+   [aleph.tcp :as tcp]
+   [clojure.java.io :as io]))
+
+(netty/leak-detector-level! :paranoid)
 
 (defn echo-handler [s _]
   (s/connect s s))
@@ -24,3 +27,15 @@
     (let [c @(tcp/client {:host "localhost", :port 10001})]
       (s/put! c "foo")
       (is (= "foo" (bs/to-string @(s/take! c)))))))
+
+(when (netty/native-transport-available?)
+  (deftest test-echo-with-native-transport
+    (with-server (tcp/start-server echo-handler {:port 10001
+                                                 :epoll? true
+                                                 :kqueue? true})
+      (let [c @(tcp/client {:host "localhost"
+                            :port 10001
+                            :epoll? true
+                            :kqueue? true})]
+        (s/put! c "foo")
+        (is (= "foo" (bs/to-string @(s/take! c))))))))

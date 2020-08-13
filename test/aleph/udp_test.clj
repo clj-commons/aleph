@@ -7,6 +7,8 @@
     [byte-streams :as bs]
     [aleph.udp :as udp]))
 
+(netty/leak-detector-level! :paranoid)
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
      (try
@@ -17,10 +19,21 @@
 (def words (slurp "/usr/share/dict/words"))
 
 (deftest test-echo
-  (let [s @(udp/socket {:port 10001, :epoll? true})]
+  (let [s @(udp/socket {:port 10001})]
     (s/put! s {:host "localhost", :port 10001, :message "foo"})
     (is (= "foo"
-          (bs/to-string
+           (bs/to-string
             (:message
-              @(s/take! s)))))
+             @(s/take! s)))))
+    (s/close! s)))
+
+(deftest test-echo-with-native-transport
+  (let [s @(udp/socket {:port 10001
+                        :epoll? true
+                        :kqueue? true})]
+    (s/put! s {:host "localhost", :port 10001, :message "foo"})
+    (is (= "foo"
+           (bs/to-string
+            (:message
+             @(s/take! s)))))
     (s/close! s)))
