@@ -103,6 +103,21 @@
           nil))
       (no-url req))))
 
+(defn exception-handler [ctx ex response-stream]
+  (cond
+    ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
+    ;; is part of the pipeline
+    (instance? TooLongFrameException ex)
+    (s/put! response-stream ex)
+
+    ;; when SSL handshake failed
+    (http/ssl-handshake-error? ex)
+    (let [^Throwable handshake-error (.getCause ^Throwable ex)]
+      (s/put! response-stream handshake-error))
+
+    (not (instance? IOException ex))
+    (log/warn ex "error in HTTP client")))
+
 (defn raw-client-handler
   [response-stream buffer-capacity]
   (let [stream (atom nil)
@@ -120,8 +135,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in HTTP client")))
+        (exception-handler ctx ex response-stream))
 
       :channel-inactive
       ([_ ctx]
@@ -172,14 +186,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (cond
-          ; could happens when io.netty.handler.codec.http.HttpObjectAggregator
-          ; is part of the pipeline
-          (instance? TooLongFrameException ex)
-          (s/put! response-stream ex)
-
-          (not (instance? IOException ex))
-          (log/warn ex "error in HTTP client")))
+        (exception-handler ctx ex response-stream))
 
       :channel-inactive
       ([_ ctx]
