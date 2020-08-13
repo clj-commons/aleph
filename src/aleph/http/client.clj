@@ -6,7 +6,8 @@
     [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [manifold.time :as time])
   (:import
     [java.io
      IOException]
@@ -68,13 +69,19 @@
     [io.netty.handler.logging
      LoggingHandler
      LogLevel]
+    [io.netty.util.concurrent
+     EventExecutor
+     ScheduledFuture]
     [java.util.concurrent
-     ConcurrentLinkedQueue]
+     ConcurrentLinkedQueue
+     Future
+     TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger
      AtomicBoolean]
     [aleph.utils
-     ProxyConnectionTimeoutException]))
+     ProxyConnectionTimeoutException
+     WebSocketHandshakeTimeoutException]))
 
 (set! *unchecked-math* true)
 
@@ -668,14 +675,16 @@
                              extensions?
                              headers
                              max-frame-payload
-                             nil))
+                             nil
+                             0))
   ([raw-stream?
     uri
     sub-protocols
     extensions?
     headers
     max-frame-payload
-    heartbeats]
+    heartbeats
+    handshake-timeout]
    (let [d (d/deferred)
          in (atom nil)
          desc (atom {})
@@ -685,7 +694,8 @@
                                           extensions?
                                           headers
                                           max-frame-payload)
-         closing? (AtomicBoolean. false)]
+         closing? (AtomicBoolean. false)
+         timeout-task (atom nil)]
 
      [d
 
@@ -695,11 +705,11 @@
        ([_ ctx ex]
         (when-not (d/error! d ex)
           (log/warn ex "error in websocket client"))
-        (s/close! @in)
         (netty/close ctx))
 
        :channel-inactive
        ([_ ctx]
+        (s/close! @in)
         (when (realized? d)
           ;; close only on success
           (d/chain' d s/close!)
@@ -710,7 +720,25 @@
        ([_ ctx]
         (let [ch (.channel ctx)]
           (reset! in (netty/buffered-source ch (constantly 1) 16))
-          (.handshake handshaker ch))
+
+          (let [handshake-future (.handshake handshaker ch)]
+            ;; start handshake timeout timer if necessary only
+            ;; when handshake is written and flushed
+            (when (pos? handshake-timeout)
+              (-> (netty/wrap-future handshake-future)
+                  (d/chain'
+                   (fn [_]
+                     (let [timeout (.schedule
+                                    ^EventExecutor (.executor ctx)
+                                    ^Runnable
+                                    (fn []
+                                      ;; do nothing if handshake is already completed
+                                      (when (not (.isHandshakeComplete handshaker))
+                                        (d/error! d (WebSocketHandshakeTimeoutException.))
+                                        (netty/close ctx)))
+                                    (long handshake-timeout)
+                                    TimeUnit/MILLISECONDS)]
+                       (reset! timeout-task timeout))))))))
         (.fireChannelActive ctx))
 
        :user-event-triggered
@@ -767,6 +795,10 @@
                 (s/close! @in)
                 (netty/close ctx))
               (finally
+                ;; cancel timeout if it was scheduled
+                (when-let [^ScheduledFuture timeout-future @timeout-task]
+                  (.cancel timeout-future false)
+                  (reset! timeout-task nil))
                 (netty/release msg)))
 
             (instance? FullHttpResponse msg)
@@ -837,6 +869,7 @@
            extensions?
            max-frame-payload
            max-frame-size
+           handshake-timeout
            compression?
            heartbeats]
     :or {bootstrap-transform identity
@@ -848,6 +881,7 @@
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
+         handshake-timeout 60000
          compression? false}
     :as options}]
 
@@ -873,8 +907,9 @@
                       (or extensions? compression?)
                       headers
                       max-frame-payload
-                      heartbeats)
-
+                      heartbeats
+                      handshake-timeout)
+        
         pipeline-builder
         (fn [^ChannelPipeline pipeline]
           (doto pipeline

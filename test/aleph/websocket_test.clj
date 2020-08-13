@@ -10,7 +10,9 @@
     [aleph.http :as http]
     [aleph.http.core :as http-core]
     [clojure.tools.logging :as log]
-    [clojure.string :as str]))
+    [clojure.string :as str])
+  (:import
+   [java.util.concurrent TimeoutException]))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -185,6 +187,15 @@
       (is @(s/put! c "hello raw handler 2"))
       (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
+
+(defn handshake-timeout-handler [_]
+  (time/in 2000 (fn [] {:status 200})))
+
+(deftest test-handshake-timeout
+  (with-handler handshake-timeout-handler
+    (let [c (http/websocket-client "ws://localhost:8080"
+                                   {:handshake-timeout 1000})]
+      (is (thrown? TimeoutException @c)))))
 
 (defmacro with-closed [client & body]
   `(let [closed# (d/deferred)]

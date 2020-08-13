@@ -234,6 +234,7 @@
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`
    | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`
+   | `handshake-timeout` | timeout in milliseconds to finish handshake, defaults to 60000.
    | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([url]
     (websocket-client url nil))
