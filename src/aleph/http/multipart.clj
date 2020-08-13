@@ -19,6 +19,7 @@
     Charset]
    [java.net
     URLConnection]
+   [io.netty.util ReferenceCounted]
    [io.netty.util.internal
     ThreadLocalRandom]
    [io.netty.handler.codec.http
@@ -37,7 +38,9 @@
     InterfaceHttpData
     InterfaceHttpData$HttpDataType]))
 
-(defn boundary []
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
 
 (defn mime-type-descriptor
@@ -47,7 +50,9 @@
    (when encoding
      (str "; charset=" encoding))))
 
-(defn populate-part
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  populate-part
   "Generates a part map of the appropriate format"
   [{:keys [part-name content mime-type charset transfer-encoding name]}]
   (let [file? (instance? File content)
@@ -79,7 +84,9 @@
 ;;
 ;; Note, that you can use transfer-encoding=nil or :binary to leave data "as is".
 ;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
-(defn part-headers [^String part-name ^String mime-type transfer-encoding name]
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
              (when name (str "; filename=\"" name "\""))
              "\r\n")
@@ -89,7 +96,9 @@
               (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) "\r\n"))]
     (bs/to-byte-buffer (str cd ct cte "\r\n"))))
 
-(defn encode-part
+(defn
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  encode-part
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
   (let [headers (part-headers part-name mime-type transfer-encoding name)
@@ -159,6 +168,33 @@
     (let [req' (.finalizeRequest encoder)]
       [req' (when (.isChunked encoder) encoder)])))
 
+(defrecord MultipartChunk [part-name
+                           content
+                           name
+                           charset
+                           mime-type
+                           transfer-encoding
+                           memory?
+                           file?
+                           file
+                           size
+                           ^ReferenceCounted raw-http-data]
+  ReferenceCounted
+  (refCnt [_]
+    (.refCnt raw-http-data))
+  (retain [_]
+    (.retain raw-http-data))
+  (retain [_ increment]
+    (.retain raw-http-data increment))
+  (^ReferenceCounted touch [_]
+    (.touch raw-http-data))
+  (^ReferenceCounted touch [_ ^Object hint]
+    (.touch raw-http-data hint))
+  (release [_]
+    (.release raw-http-data))
+  (release [_ decrement]
+    (.release raw-http-data decrement)))
+
 (defmulti http-data->map
   (fn [^InterfaceHttpData data]
     (.getHttpDataType data)))
@@ -166,35 +202,53 @@
 (defmethod http-data->map InterfaceHttpData$HttpDataType/Attribute
   [^Attribute attr]
   (let [content (.getValue attr)]
-    {:part-name (.getName attr)
-     :content content
-     :name nil
-     :charset (-> attr .getCharset .toString)
-     :mime-type nil
-     :transfer-encoding nil
-     :memory? (.isInMemory attr)
-     :file? false
-     :file nil
-     :size (count content)}))
+    (map->MultipartChunk
+     {:part-name (.getName attr)
+      :content content
+      :name nil
+      :charset (-> attr .getCharset .toString)
+      :mime-type nil
+      :transfer-encoding nil
+      :memory? (.isInMemory attr)
+      :file? false
+      :file nil
+      :size (count content)
+      :raw-http-data attr})))
 
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
   (let [memory? (.isInMemory data)]
-    {:part-name (.getName data)
-     :content (when memory?
-                (bs/to-input-stream (netty/acquire (.content data))))
-     :name (.getFilename data)
-     :charset (-> data .getCharset .toString)
-     :mime-type (.getContentType data)
-     :transfer-encoding (.getContentTransferEncoding data)
-     :memory? memory?
-     :file? true
-     :file (when-not memory? (.getFile data))
-     :size (.length data)}))
+    (map->MultipartChunk
+     {:part-name (.getName data)
+      :content (when memory?
+                 (bs/to-input-stream (netty/acquire (.content data))))
+      :name (.getFilename data)
+      :charset (-> data .getCharset .toString)
+      :mime-type (.getContentType data)
+      :transfer-encoding (.getContentTransferEncoding data)
+      :memory? memory?
+      :file? true
+      :file (when-not memory? (.getFile data))
+      :size (.length data)
+      :raw-http-data data})))
 
 (defn- read-attributes [^HttpPostRequestDecoder decoder parts]
-  (while (.hasNext decoder)
-    (s/put! parts (http-data->map (.next decoder)))))
+  (d/loop []
+    (if-not (.hasNext decoder)
+      (d/success-deferred true) ;; go for another chunk of body
+      (let [^InterfaceHttpData data (.next decoder)]
+        (if (nil? data)
+          ;; this probably could happen only in case of
+          ;; simultaneous access to the decoder object...
+          (d/success-deferred true)
+          (d/chain'
+           (s/put! parts (http-data->map data))
+           (fn [succeed?]
+             (if succeed?
+               (do
+                 (.removeHttpDataFromClean decoder data)
+                 (d/recur))
+               (d/success-deferred false)))))))))
 
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
@@ -203,6 +257,32 @@
    corresponding payload would be written to a temp file. Check `:memory?`
    flag to know whether content might be read directly from `:content` or
    should be fetched from the file specified in `:file`.
+
+   Each part should be released using `netty/release` helper to cleanup
+   allocated buffers and temp files (if any) as soon as the data is fully
+   consumed (i.e. temp file moved to a target location). Note, it's also
+   safer to close the stream of chunks manually to ensure all chunks that
+   were never read from the stream but were already consumed from the connection,
+   are also deallocated.
+
+   Typical usage looks like:
+
+   ```
+   (require '[aleph.http.multipart :as multipart])
+   (require '[aleph.netty :as netty])
+   (require '[manifold.stream :as stream])
+   (require '[clojure.java.io :as io])
+
+   (defn file-upload-handler [req]
+     (let [chunks (multipart/decode-request req)]
+       (d/chain'
+         (stream/take! chunks)
+         (fn [{:keys [file] :as chunk}]
+           (io/copy file writer)
+           (netty/release chunk)
+           (stream/close! chunks)
+           {:status 200 :body \"Succesfull!\"}))))
+   ```
 
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
@@ -229,13 +309,12 @@
       (fn [chunk]
         (let [content (DefaultHttpContent. chunk)]
           (.offer decoder content)
-          (read-attributes decoder parts)
-          ;; note, that releasing chunk right here relies on
-          ;; the internals of the decoder. in case those
-          ;; internal are changed in future, this flow of
-          ;; manipulations should be also reconsidered
+          ;; note, that HttpPostRequestDecoder actually
+          ;; makes a copy of the content provided, so we can
+          ;; release it here
+          ;; https://github.com/netty/netty/blob/d05666ae2d2068da7ee031a8bfc1ca572dbcc3f8/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L329
           (netty/release chunk)
-          (d/success-deferred true)))
+          (read-attributes decoder parts)))
       parts)
 
      (s/on-closed
@@ -243,6 +322,11 @@
       (fn []
         (when (compare-and-set! destroyed? false true)
           (try
+            ;; we're removing each received http data chunk
+            ;; from cleanup queue before pushing to `parts` stream,
+            ;; meaning that this `destroy` call would only cleanup
+            ;; those chunck that were not consumed for some reasons
+            ;; (i.e. the user closes the stream given earlier)
             (.destroy decoder)
             (catch Exception e
               (log/warn e "exception when cleaning up multipart decoder"))))))
