@@ -36,7 +36,7 @@
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object if an SSL connection is desired |
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
    | `manual-ssl?` | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `executor` | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
@@ -112,7 +112,7 @@
    the `connection-options` are a map describing behavior across all connections:
 
    |:---|:---
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details), only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
