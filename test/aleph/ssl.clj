@@ -44,14 +44,19 @@
 (def ^X509Certificate client-cert (gen-cert (read-string (slurp "test/client_cert.edn"))))
 (def client-key (gen-key 65537 (read-string (slurp "test/client_key.edn"))))
 
+(def server-ssl-context-opts
+  {:private-key server-key
+   :certificate-chain [server-cert]
+   :trust-store [ca-cert]
+   :client-auth :optional})
+
 (def server-ssl-context
-  (-> (SslContextBuilder/forServer server-key (into-array X509Certificate [server-cert]))
-      (.trustManager (into-array X509Certificate [ca-cert]))
-      (.clientAuth ClientAuth/OPTIONAL)
-      .build))
+  (netty/ssl-server-context server-ssl-context-opts))
+
+(def client-ssl-context-opts
+  {:private-key client-key
+   :certificate-chain [client-cert]
+   :trust-store [ca-cert]})
 
 (def client-ssl-context
-  (netty/ssl-client-context
-   {:private-key client-key
-    :certificate-chain (into-array X509Certificate [client-cert])
-    :trust-store (into-array X509Certificate [ca-cert])}))
+  (netty/ssl-client-context client-ssl-context-opts))

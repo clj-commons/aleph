@@ -33,6 +33,20 @@
         (is (= (.getSubjectDN ^X509Certificate ssl/client-cert)
                (.getSubjectDN ^X509Certificate (first (.getPeerCertificates @ssl-session)))))))))
 
+(deftest test-ssl-opts-echo
+  (let [ssl-session (atom nil)]
+    (with-server (tcp/start-server (ssl-echo-handler ssl-session)
+                                   {:port 10001
+                                    :ssl-context ssl/server-ssl-context-opts})
+      (let [c @(tcp/client {:host "localhost"
+                            :port 10001
+                            :ssl-context ssl/client-ssl-context-opts})]
+        (s/put! c "foo")
+        (is (= "foo" (bs/to-string @(s/take! c))))
+        (is (some? @ssl-session) "SSL session should be defined")
+        (is (= (.getSubjectDN ^X509Certificate ssl/client-cert)
+               (.getSubjectDN ^X509Certificate (first (.getPeerCertificates @ssl-session)))))))))
+
 (deftest test-failed-ssl-handshake
   (let [ssl-session (atom nil)]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
