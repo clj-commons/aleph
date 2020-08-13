@@ -3,6 +3,7 @@
    [aleph.http :as http]
    [aleph.http.core :as core]
    [aleph.http.multipart :as mp]
+   [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
    [clojure.edn :as edn]
    [clojure.string :as str]
@@ -188,17 +189,37 @@
 
     (.close ^java.io.Closeable s)))
 
+(defn- coerce-chunk-content [{:keys [content file] :as chunk}]
+  (let [content' (cond
+                   (string? content)
+                   content
+
+                   (some? file)
+                   (slurp (.getAbsolutePath ^java.io.File file))
+
+                   :else
+                   (bs/to-string content))]
+    (assoc chunk :content content')))
+
 (defn- pack-chunk [{:keys [content] :as chunk}]
-  (cond-> (dissoc chunk :file)
-    (not (string? content))
-    (dissoc :content)))
+  (-> chunk
+      (coerce-chunk-content)
+      (dissoc :file :raw-http-data)))
 
 (defn- decode-handler [req]
-  (let [chunks (-> req
-                   mp/decode-request
-                   s/stream->seq)]
+  (let [req' (mp/decode-request req {:memory-limit 12})
+        chunks (s/stream->seq req')
+        body (pr-str (map pack-chunk chunks))]
+    (doseq [{:keys [file content] :as chunk} chunks]
+      ;; we should be able to read file before removal (if any)
+      (when (some? file)
+        (is (some? (slurp (.getAbsolutePath ^java.io.File file)))))
+      (is (netty/release chunk))
+      ;; temp file is now removed (if any)
+      (when (some? file)
+        (is (not (.exists ^java.io.File file)))))
     {:status 200
-     :body (pr-str (map pack-chunk chunks))}))
+     :body body}))
 
 (defn- test-decoder [port url raw-stream?]
   (let [s (http/start-server decode-handler {:port port
