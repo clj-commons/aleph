@@ -23,6 +23,7 @@
      ByteBuf]
     [java.nio
      ByteBuffer]
+    [io.netty.handler.codec DecoderException]
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
@@ -61,7 +62,8 @@
      ConcurrentLinkedQueue
      TimeUnit]
     [java.util.concurrent.atomic
-     AtomicBoolean]))
+     AtomicBoolean]
+    [javax.net.ssl SSLHandshakeException]))
 
 (def non-standard-keys
   (let [ks ["Content-MD5"
@@ -672,3 +674,7 @@
              (when (and (identical? ::ping-timeout v)
                         (.isOpen ^Channel (.channel ctx)))
                (netty/close ctx))))))))
+
+(defn ssl-handshake-error? [^Throwable ex]
+  (and (instance? DecoderException ex)
+       (instance? SSLHandshakeException (.getCause ex))))
