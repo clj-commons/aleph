@@ -18,7 +18,9 @@
     [io.netty.channel.socket.nio
      NioDatagramChannel]
     [io.netty.channel.epoll
-     EpollDatagramChannel]))
+     EpollDatagramChannel]
+    [io.netty.channel.kqueue
+     KQueueDatagramChannel]))
 
 (p/def-derived-map UdpPacket [^DatagramPacket packet content]
   :sender (-> packet ^InetSocketAddress (.sender))
@@ -33,22 +35,39 @@
    | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `broadcast?` | if true, all UDP datagrams are broadcast.
+   | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
+   | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
    | `bootstrap-transform` | a function which takes the Netty `Bootstrap` object, and makes any desired changes before it's bound to a socket.
    | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform epoll?]
+  [{:keys [socket-address
+           port
+           broadcast?
+           raw-stream?
+           bootstrap-transform
+           epoll?
+           kqueue?]
     :or {epoll? false
+         kqueue? false
          broadcast? false
          raw-stream? false
          bootstrap-transform identity}}]
   (let [in (atom nil)
         d (d/deferred)
-        epoll? (and epoll? (netty/epoll-available?))
-        g (if epoll?
-            @netty/epoll-client-group
-            @netty/nio-client-group)
+
+        [g ^Class channel]
+        (cond
+          (and epoll? (netty/epoll-available?))
+          [@netty/epoll-client-group EpollDatagramChannel]
+
+          (and kqueue? (netty/kqueue-available?))
+          [@netty/kqueue-client-group KQueueDatagramChannel]
+
+          :else
+          [@netty/nio-client-group NioDatagramChannel])
+
         b (doto (Bootstrap.)
             (.group g)
-            (.channel (if epoll? EpollDatagramChannel NioDatagramChannel))
+            (.channel channel)
             (.option ChannelOption/SO_BROADCAST (boolean broadcast?))
             (.handler
               (netty/channel-inbound-handler

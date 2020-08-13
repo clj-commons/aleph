@@ -30,6 +30,7 @@
 (set! *warn-on-reflection* false)
 
 (def ^:dynamic ^io.aleph.dirigiste.IPool *pool* nil)
+(def ^:dynamic *connection-options* nil)
 
 (netty/leak-detector-level! :paranoid)
 
@@ -169,7 +170,10 @@
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool {:connection-options {:insecure? true}})]
+     (binding [*pool* (http/connection-pool
+                       {:connection-options
+                        (merge *connection-options*
+                               {:insecure? true})})]
        (try
          ~@body
          (finally
@@ -201,28 +205,77 @@
      (with-handler ~handler ~@body)
      (with-raw-handler ~handler ~@body)))
 
+(defmacro with-native-transport [handler & body]
+  `(binding [*connection-options* {:epoll? true
+                                   :kqueue? true}]
+     (with-server (http/start-server ~handler {:port port
+                                               :epoll? true
+                                               :kqueue? true})
+       ~@body)))
+
 ;;;
 
 (deftest test-response-formats
   (with-handler basic-handler
     (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
-        (= result
+       (= result
           (bs/to-string
-            (:body
-              @(http-get (str "http://localhost:" port "/" path)))))))))
+           (:body
+            @(http-get (str "http://localhost:" port "/" path)))))))))
+
+(when (netty/native-transport-available?)
+  (deftest test-response-formats-with-native-transports
+    (with-native-transport basic-handler
+      (doseq [[index [path result]] (map-indexed vector expected-results)]
+        (is
+         (= result
+            (bs/to-string
+             (:body
+              @(http-get (str "http://localhost:" port "/" path))))))))))
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
     (doseq [[index [path result]] (map-indexed vector expected-results)
             :let [resp @(http-get (str "http://localhost:" port "/" path)
-                          {:headers {:accept-encoding "gzip"}})
+                                  {:headers {:accept-encoding "gzip"}})
                   unzipped (try
                              (bs/to-string (GZIPInputStream. (:body resp)))
                              (catch ZipException _ nil))]]
-      (is (= "gzip" (get-in resp [:headers :content-encoding])) 'content-encoding-header-is-set)
+      (is (= "gzip" (get-in resp [:headers :content-encoding]))
+          'content-encoding-header-is-set)
       (is (some? unzipped) 'should-be-valid-gzip)
       (is (= result unzipped) 'decompressed-body-is-correct))))
+
+(defn- client-decompression [manual-header expected-encoding]
+  (let [decompress-pool (http/connection-pool
+                         {:connection-options {:decompress-body? true
+                                               :save-content-encoding? true}})]
+    (with-compressed-handler basic-handler
+      (doseq [[index [path result]] (map-indexed vector expected-results)
+              :let [resp @(http/get
+                           (str "http://localhost:" port "/" path)
+                           (cond-> {:pool decompress-pool}
+                             (some? manual-header)
+                             (assoc :headers {:accept-encoding manual-header})))
+                    body (bs/to-string (:body resp))]]
+        (is (= expected-encoding
+               (get-in resp [:headers :x-origin-content-encoding]))
+            'content-encoding-header-is-set)
+        (is (= result body) 'auto-decompressed-body-is-correct)))))
+
+(deftest test-client-decompress-response
+  (testing "default configuration"
+    (client-decompression nil "gzip"))
+
+  (testing "gzip priority"
+    (client-decompression "deflate, gzip" "gzip"))
+
+  (testing "manually set to gzip"
+    (client-decompression "gzip" "gzip"))
+
+  (testing "manually set to deflate"
+    (client-decompression "deflate" "deflate")))
 
 (deftest test-ssl-response-formats
   (with-ssl-handler basic-handler

@@ -13,7 +13,7 @@
      [set :as set]]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
-    [java.io IOException]
+    [java.io IOException File]
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.channel
@@ -24,10 +24,17 @@
      ChannelOutboundHandler
      ChannelHandlerContext
      ChannelInitializer]
-    [io.netty.channel.epoll Epoll EpollEventLoopGroup
-     EpollServerSocketChannel
+    [io.netty.channel.epoll
+     Epoll
+     EpollEventLoopGroup
      EpollSocketChannel
-     EpollDatagramChannel]
+     EpollDatagramChannel
+     EpollServerSocketChannel]
+    [io.netty.channel.kqueue
+     KQueue
+     KQueueEventLoopGroup
+     KQueueSocketChannel
+     KQueueServerSocketChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
@@ -37,11 +44,14 @@
      NioSocketChannel
      NioDatagramChannel]
     [io.netty.handler.ssl
+     ClientAuth
      SslContext
      SslContextBuilder
-     SslHandler]
+     SslHandler
+     SslProvider]
     [io.netty.handler.ssl.util
-     SelfSignedCertificate InsecureTrustManagerFactory]
+     SelfSignedCertificate
+     InsecureTrustManagerFactory]
     [io.netty.resolver
      AddressResolverGroup
      NoopAddressResolverGroup
@@ -712,63 +722,192 @@
 
 ;;;
 
+(defn coerce-ssl-provider [provider]
+  (case provider
+    :jdk SslProvider/JDK
+    :openssl SslProvider/OPENSSL
+    :openssl-refcnt SslProvider/OPENSSL_REFCNT))
+
+(set! *warn-on-reflection* false)
+
+(let [cert-array-class (class (into-array X509Certificate []))]
+  (defn- check-ssl-args! [private-key certificate-chain]
+    (when-not (or
+               (and (instance? File private-key)
+                    (instance? File certificate-chain))
+               (and (instance? InputStream private-key)
+                    (instance? InputStream certificate-chain))
+               (and (instance? PrivateKey private-key)
+                    (instance? cert-array-class certificate-chain)))
+      (throw
+       (IllegalArgumentException.
+        "ssl context arguments invalid"))))
+
+  (defn ssl-client-context
+    "Creates a new client SSL context.
+     Keyword arguments are:
+     |:---|:----
+     | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
+     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
+     | `private-key-password` | a string, the private key's password (optional).
+     | `trust-store` | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols` | a sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size` | the size of the cache used for storing SSL session objects.
+     | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
+     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+    ([] (ssl-client-context {}))
+    ([{:keys [private-key
+              private-key-password
+              certificate-chain
+              trust-store
+              ssl-provider
+              ciphers
+              protocols
+              session-cache-size
+              session-timeout]}]
+     (let [^SslContextBuilder builder (SslContextBuilder/forClient)
+           certificate-chain' (if-not (sequential? certificate-chain)
+                               certificate-chain
+                               (into-array X509Certificate certificate-chain))]
+       (when (and private-key certificate-chain')
+         (check-ssl-args! private-key certificate-chain')
+         (if (instance? cert-array-class certificate-chain')
+           (.keyManager builder
+                        private-key
+                        private-key-password
+                        certificate-chain')
+           (.keyManager builder
+                        certificate-chain'
+                        private-key
+                        private-key-password)))
+
+       (cond-> builder
+         (some? trust-store)
+         (.trustManager (if-not (sequential? trust-store)
+                          trust-store
+                          (into-array X509Certificate trust-store)))
+
+         (some? ssl-provider)
+         (.provider (coerce-ssl-provider ssl-provider))
+
+         (some? ciphers)
+         (.ciphers ciphers)
+
+         (some? protocols)
+         (.protocols (into-array String protocols))
+
+         (some? session-cache-size)
+         (.sessionCacheSize session-cache-size)
+
+         (some? session-timeout)
+         (.sessionTimeout session-timeout))
+
+       (.build builder))))
+
+  (defn ssl-server-context
+    "Creates a new client SSL context.
+     Keyword arguments are:
+     |:---|:----
+     | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
+     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
+     | `private-key-password` | a string, the private key's password (optional).
+     | `trust-store` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols` | a sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size` | the size of the cache used for storing SSL session objects.
+     | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
+     | `start-tls` | if the first write request shouldn't be encrypted.
+     | `client-auth` | the client authentication mode, one of `:none`, `:optional` or `:require`.
+     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+    ([] (ssl-server-context {}))
+    ([{:keys [private-key
+              private-key-password
+              certificate-chain
+              trust-store
+              ssl-provider
+              ciphers
+              protocols
+              session-cache-size
+              session-timeout
+              start-tls
+              client-auth]}]
+     (let [certificate-chain' (if-not (sequential? certificate-chain)
+                                certificate-chain
+                                (into-array X509Certificate certificate-chain))]
+       (check-ssl-args! private-key certificate-chain')
+       (let [^SslContextBuilder
+             b (cond-> (if (instance? cert-array-class certificate-chain')
+                         (SslContextBuilder/forServer private-key
+                                                      private-key-password
+                                                      certificate-chain')
+                         (SslContextBuilder/forServer certificate-chain'
+                                                      private-key
+                                                      private-key-password))
+
+                 (some? trust-store)
+                 (.trustManager (if-not (sequential? trust-store)
+                                  trust-store
+                                  (into-array X509Certificate trust-store)))
+
+                 (some? ssl-provider)
+                 (.provider (coerce-ssl-provider ssl-provider))
+
+                 (some? ciphers)
+                 (.ciphers ciphers)
+
+                 (some? protocols)
+                 (.protocols (into-array String protocols))
+
+                 (some? session-cache-size)
+                 (.sessionCacheSize session-cache-size)
+
+                 (some? session-timeout)
+                 (.sessionTimeout session-timeout)
+
+                 (some? start-tls)
+                 (.startTls (boolean start-tls))
+
+                 (some? client-auth)
+                 (.clientAuth (case client-auth
+                                :none ClientAuth/NONE
+                                :optional ClientAuth/OPTIONAL
+                                :require ClientAuth/REQUIRE)))]
+         (.build b))))))
+
+(set! *warn-on-reflection* true)
+
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
   []
   (let [cert (SelfSignedCertificate.)]
-    (.build (SslContextBuilder/forServer (.certificate cert) (.privateKey cert)))))
+    (ssl-server-context {:private-key (.privateKey cert)
+                         :certificate-chain (.certificate cert)})))
 
 (defn insecure-ssl-client-context []
-  (-> (SslContextBuilder/forClient)
-      (.trustManager InsecureTrustManagerFactory/INSTANCE)
-      .build))
+  (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
 
-(defn- check-ssl-args
-  [private-key certificate-chain]
-  (when-not
-    (or (and (instance? File private-key) (instance? File certificate-chain))
-      (and (instance? InputStream private-key) (instance? InputStream certificate-chain))
-      (and (instance? PrivateKey private-key) (instance? (class (into-array X509Certificate [])) certificate-chain)))
-    (throw (IllegalArgumentException. "ssl-client-context arguments invalid"))))
+(defn- coerce-ssl-context [options->context ssl-context]
+  (cond
+    (instance? SslContext ssl-context)
+    ssl-context
 
-(set! *warn-on-reflection* false)
+    ;; in future this option might be interesing
+    ;; for turning application config (e.g. ALPN)
+    ;; depending on the server's capabilities
+    (instance? SslContextBuilder ssl-context)
+    (.build ^SslContextBuilder ssl-context)
 
-(defn ssl-client-context
-  "Creates a new client SSL context.
+    (map? ssl-context)
+    (options->context ssl-context)))
 
-  Keyword arguments are:
+(def ^:private  coerce-ssl-server-context
+  (partial coerce-ssl-context ssl-server-context))
 
-  |:---|:----
-  | `private-key` | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
-  | `certificate-chain` | A `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
-  | `private-key-password` | A string, the private key's password (optional).
-  | `trust-store` | A `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-
-  Note that if specified, the types of `private-key` and `certificate-chain` must be
-  \"compatible\": either both input streams, both files, or a private key and an array
-  of certificates."
-  ([] (ssl-client-context {}))
-  ([{:keys [private-key private-key-password certificate-chain trust-store]}]
-    (-> (SslContextBuilder/forClient)
-      (#(if (and private-key certificate-chain)
-          (do
-            (check-ssl-args private-key certificate-chain)
-            (if (instance? (class (into-array X509Certificate [])) certificate-chain)
-              (.keyManager %
-                private-key
-                private-key-password
-                certificate-chain)
-              (.keyManager %
-                certificate-chain
-                private-key
-                private-key-password)))
-          %))
-      (#(if trust-store
-          (.trustManager % trust-store)
-          %))
-      .build)))
-
-(set! *warn-on-reflection* true)
+(def ^:private  coerce-ssl-client-context
+  (partial coerce-ssl-context ssl-client-context))
 
 (defn channel-ssl-session [^Channel ch]
   (some-> ch
@@ -784,6 +923,12 @@
 
 (defn epoll-available? []
   (Epoll/isAvailable))
+
+(defn kqueue-available? []
+  (KQueue/isAvailable))
+
+(defn native-transport-available? []
+  (or (epoll-available?) (kqueue-available?)))
 
 (defn get-default-event-loop-threads
   "Determines the default number of threads to use for a Netty EventLoopGroup.
@@ -808,11 +953,17 @@
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
+(def kqueue-client-group
+  (delay
+   (let [thread-count (get-default-event-loop-threads)
+         thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
+     (KQueueEventLoopGroup. (long thread-count) thread-factory))))
+
 (def nio-client-group
   (delay
-    (let [thread-count (get-default-event-loop-threads)
-          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (NioEventLoopGroup. (long thread-count) thread-factory))))
+   (let [thread-count (get-default-event-loop-threads)
+         thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
+     (NioEventLoopGroup. (long thread-count) thread-factory))))
 
 (defn convert-address-types [address-types]
   (case address-types
@@ -926,138 +1077,221 @@
     (DnsAddressResolverGroup. b)))
 
 (defn create-client
+  ([{:keys [pipeline-builder
+            ssl-context
+            bootstrap-transform
+            ^SocketAddress remote-address
+            ^InetSocketAddress local-address
+            epoll?
+            kqueue?
+            name-resolver]
+     :or {epoll? false
+          kqueue? false
+          name-resolver nil}}]
+   (let [[^Class channel client-group]
+         (cond
+           (and epoll? (epoll-available?))
+           [EpollSocketChannel @epoll-client-group]
+
+           (and kqueue? (kqueue-available?))
+           [KQueueSocketChannel @kqueue-client-group]
+
+           :else
+           [NioSocketChannel @nio-client-group])
+
+         ^SslContext
+         ssl-context (when (some? ssl-context)
+                       (coerce-ssl-client-context ssl-context))
+
+         pipeline-builder
+         (if (nil? ssl-context)
+           pipeline-builder
+           (fn [^ChannelPipeline p]
+             (let [^ChannelHandler
+                   ssl (if-not (instance? InetSocketAddress remote-address)
+                         (.newHandler ^SslContext ssl-context
+                                      (-> p .channel .alloc))
+                         (.newHandler ^SslContext ssl-context
+                                      (-> p .channel .alloc)
+                                      (.getHostName ^InetSocketAddress remote-address)
+                                      (.getPort ^InetSocketAddress remote-address)))]
+               (.addLast p "ssl-handler" ssl)
+               (pipeline-builder p))))
+
+         resolver' (when (some? name-resolver)
+                     (cond
+                       (identical? :default name-resolver)
+                       nil
+
+                       (identical? :noop name-resolver)
+                       NoopAddressResolverGroup/INSTANCE
+
+                       (instance? AddressResolverGroup name-resolver)
+                       name-resolver))
+
+         b (doto (Bootstrap.)
+             (.option ^Bootstrap ChannelOption/SO_REUSEADDR true)
+             (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+             (.group client-group)
+             (.channel channel)
+             (.handler (pipeline-initializer pipeline-builder))
+             (.resolver resolver')
+             bootstrap-transform)
+
+         f (if (some? local-address)
+             (.connect b ^SocketAddress remote-address local-address)
+             (.connect b ^SocketAddress remote-address))]
+
+     (-> (wrap-future f)
+         (d/chain'
+          (fn [_] (.channel ^ChannelFuture f))))))
   ([pipeline-builder
     ssl-context
     bootstrap-transform
     remote-address
     local-address
     epoll?]
-    (create-client pipeline-builder
-      ssl-context
-      bootstrap-transform
-      remote-address
-      local-address
-      epoll?
-      nil))
+   (create-client {:pipeline-builder pipeline-builder
+                   :ssl-context ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address remote-address
+                   :local-address local-address
+                   :epoll? epoll?}))
   ([pipeline-builder
-    ^SslContext ssl-context
+    ssl-context
     bootstrap-transform
-    ^SocketAddress remote-address
-    ^SocketAddress local-address
+    remote-address
+    local-address
     epoll?
     name-resolver]
-    (let [^Class
-          channel (if (and epoll? (epoll-available?))
-                    EpollSocketChannel
-                    NioSocketChannel)
+   (create-client {:pipeline-builder pipeline-builder
+                   :ssl-context ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address remote-address
+                   :local-address local-address
+                   :epoll? epoll?
+                   :name-resolver name-resolver})))
 
-          pipeline-builder (if ssl-context
-                             (fn [^ChannelPipeline p]
-                               (.addLast p "ssl-handler"
-                                 (.newHandler ^SslContext ssl-context
-                                   (-> p .channel .alloc)
-                                   (.getHostName ^InetSocketAddress remote-address)
-                                   (.getPort ^InetSocketAddress remote-address)))
-                               (pipeline-builder p))
-                             pipeline-builder)]
-      (try
-        (let [client-group (if (and epoll? (epoll-available?))
-                             @epoll-client-group
-                             @nio-client-group)
-              resolver' (when (some? name-resolver)
-                          (cond
-                            (= :default name-resolver) nil
-                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                            (instance? AddressResolverGroup name-resolver) name-resolver))
-              b (doto (Bootstrap.)
-                  (.option ChannelOption/SO_REUSEADDR true)
-                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                  (.group client-group)
-                  (.channel channel)
-                  (.handler (pipeline-initializer pipeline-builder))
-                  (.resolver resolver')
-                  bootstrap-transform)
+(defn ^SocketAddress coerce-socket-address [{:keys [socket-address
+                                                    host
+                                                    port]
+                                             :as options}]
+  (cond
+    (some? socket-address)
+    socket-address
 
-              f (if local-address
-                  (.connect b remote-address local-address)
-                  (.connect b remote-address))]
+    (and (some? host) (some? port))
+    (InetSocketAddress. ^String host (int port))
 
-          (d/chain' (wrap-future f)
-            (fn [_]
-              (let [ch (.channel ^ChannelFuture f)]
-                ch))))))))
+    (some? host)
+    (InetSocketAddress. ^String host -1)
+
+    (some? port)
+    (InetSocketAddress. port)
+
+    :else
+    (throw
+     (IllegalArgumentException.
+      (str "either "
+           (if (contains? options :host) "host, " "")
+           "port, or socket-address should be specified")))))
 
 (defn start-server
-  [pipeline-builder
-   ^SslContext ssl-context
-   bootstrap-transform
-   on-close
-   ^SocketAddress socket-address
-   epoll?]
-  (let [num-cores      (.availableProcessors (Runtime/getRuntime))
-        num-threads    (* 2 num-cores)
-        thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
-        closed?        (atom false)
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?]
+   (start-server pipeline-builder
+                 ssl-context
+                 bootstrap-transform
+                 on-close
+                 socket-address
+                 epoll?
+                 false
+                 nil))
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?
+    kqueue?
+    logger]
+   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
+         num-threads    (* 2 num-cores)
+         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
+         closed?        (atom false)
 
-        ^EventLoopGroup group
-        (if (and epoll? (epoll-available?))
-          (EpollEventLoopGroup. num-threads thread-factory)
-          (NioEventLoopGroup. num-threads thread-factory))
+         [^Class channel ^EventLoopGroup group]
+         (cond
+           (and epoll? (epoll-available?))
+           [EpollServerSocketChannel
+            (EpollEventLoopGroup. num-threads thread-factory)]
 
-        ^Class channel
-        (if (and epoll? (epoll-available?))
-          EpollServerSocketChannel
-          NioServerSocketChannel)
+           (and kqueue? (kqueue-available?))
+           [KQueueServerSocketChannel
+            (KQueueEventLoopGroup. num-threads thread-factory)]
 
-        ;; todo(kachayev): this one should be reimplemented after
-        ;;                 KQueue transport is merged into master
-        transport
-        (if (and epoll? (epoll-available?)) :epoll :nio)
+           :else
+           [NioServerSocketChannel
+            (NioEventLoopGroup. num-threads thread-factory)])
 
-        pipeline-builder
-        (if ssl-context
-          (fn [^ChannelPipeline p]
-            (.addLast p "ssl-handler"
-              (.newHandler ssl-context
-                (-> p .channel .alloc)))
-            (pipeline-builder p))
-          pipeline-builder)]
+         ^SslContext
+         ssl-context (when (some? ssl-context)
+                       (coerce-ssl-server-context ssl-context))
 
-    (try
-      (let [b (doto (ServerBootstrap.)
-                (.option ChannelOption/SO_BACKLOG (int 1024))
-                (.option ChannelOption/SO_REUSEADDR true)
-                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group group)
-                (.channel channel)
-                (.childHandler (pipeline-initializer pipeline-builder))
-                (.childOption ChannelOption/SO_REUSEADDR true)
-                (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                bootstrap-transform)
+         pipeline-builder
+         (if ssl-context
+           (fn [^ChannelPipeline p]
+             (.addLast p "ssl-handler"
+                       (.newHandler ssl-context
+                                    (-> p .channel .alloc)))
+             (pipeline-builder p))
+           pipeline-builder)]
 
-            ^ServerSocketChannel
-            ch (-> b (.bind socket-address) .sync .channel)]
-        (reify
-          java.io.Closeable
-          (close [_]
-            (when (compare-and-set! closed? false true)
-              (-> ch .close .sync)
-              (-> group .shutdownGracefully)
-              (when on-close
-                (d/chain'
-                 (wrap-future (.terminationFuture group))
-                 (fn [_] (on-close))))))
-          Object
-          (toString [_]
-            (format "AlephServer[channel:%s, transport:%s]" ch transport))
-          AlephServer
-          (port [_]
-            (-> ch .localAddress .getPort))
-          (wait-for-close [_]
-            (-> ch .closeFuture .await)
-            (-> group .terminationFuture .await)
-            nil)))
+     (try
+       (let [b (doto (ServerBootstrap.)
+                 (.option ChannelOption/SO_BACKLOG (int 1024))
+                 (.option ^ServerBootstrap ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group group)
+                 (.channel channel)
+                 (.childHandler (pipeline-initializer pipeline-builder))
+                 (.childOption ^ServerBootstrap ChannelOption/SO_REUSEADDR true)
+                 (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 bootstrap-transform)
 
-      (catch Exception e
-        @(.shutdownGracefully group)
-        (throw e)))))
+             ;; setup logger as a handler if necessary
+             _ (when (some? logger)
+                 (.handler b logger))
+
+             ^ServerSocketChannel
+             ch (-> b (.bind socket-address) .sync .channel)]
+         (reify
+           java.io.Closeable
+           (close [_]
+             (when (compare-and-set! closed? false true)
+               (-> ch .close .sync)
+               (-> group .shutdownGracefully)
+               (when on-close
+                 (d/chain'
+                  (wrap-future (.terminationFuture group))
+                  (fn [_] (on-close))))))
+           
+           Object
+           (toString [_]
+             (format "AlephServer[channel:%s, transport:%s]" ch channel))
+           
+           AlephServer
+           (port [_]
+             (-> ch .localAddress .getPort))
+           (wait-for-close [_]
+             (-> ch .closeFuture .await)
+             (-> group .terminationFuture .await)
+             nil)))
+
+       (catch Exception e
+         @(.shutdownGracefully group)
+         (throw e))))))

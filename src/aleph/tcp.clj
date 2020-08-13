@@ -13,7 +13,10 @@
     [io.netty.channel
      Channel
      ChannelHandler
-     ChannelPipeline]))
+     ChannelPipeline]
+    [io.netty.handler.ssl
+     SslHandler]
+    [io.netty.handler.logging LoggingHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -66,14 +69,24 @@
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
+   | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
+   | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [handler
-   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?]
+   {:keys [port
+           socket-address
+           ssl-context
+           bootstrap-transform
+           pipeline-transform
+           epoll?
+           kqueue?
+           log-activity]
     :or {bootstrap-transform identity
          pipeline-transform identity
-         epoll? false}
+         epoll? false
+         kqueue? false}
     :as options}]
   (netty/start-server
     (fn [^ChannelPipeline pipeline]
@@ -82,10 +95,19 @@
     ssl-context
     bootstrap-transform
     nil
-    (if socket-address
-      socket-address
-      (InetSocketAddress. port))
-    epoll?))
+    (netty/coerce-socket-address {:socket-address socket-address
+                                  :port port})
+    epoll?
+    kqueue?
+    (cond
+      (instance? LoggingHandler log-activity)
+      log-activity
+
+      (some? log-activity)
+      (netty/activity-logger "aleph-server" log-activity)
+
+      :else
+      nil)))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
@@ -111,7 +133,7 @@
            (d/success! d
              (doto
                (s/splice
-                 (netty/sink ch true netty/to-byte-buf)
+                (netty/sink ch true netty/to-byte-buf)
                  (reset! in (netty/source ch)))
                (reset-meta! {:aleph/channel ch}))))
          (.fireChannelActive ctx))
@@ -139,30 +161,49 @@
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
    | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
+   | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`.
+   | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
    | `insecure?` | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll?]
+  [{:keys [host
+           port
+           remote-address
+           local-address
+           ssl-context
+           ssl?
+           insecure?
+           pipeline-transform
+           bootstrap-transform
+           epoll?
+           kqueue?]
     :or {bootstrap-transform identity
-         epoll? false}
+         epoll? false
+         kqueue? false}
     :as options}]
-  (let [[s handler] (client-channel-handler options)]
-    (->
-      (netty/create-client
+  (let [[s handler] (client-channel-handler options)
+
+        pipeline-builder
         (fn [^ChannelPipeline pipeline]
           (.addLast pipeline "handler" ^ChannelHandler handler)
           (when pipeline-transform
-            (pipeline-transform pipeline)))
-        (if ssl-context
-          ssl-context
-          (when ssl?
-            (if insecure?
-              (netty/insecure-ssl-client-context)
-              (netty/ssl-client-context))))
-        bootstrap-transform
-        (or remote-address (InetSocketAddress. ^String host (int port)))
-        local-address
-        epoll?)
-      (d/catch' #(d/error! s %)))
+            (pipeline-transform pipeline)))]
+    (-> (netty/create-client
+         {:pipeline-builder pipeline-builder
+          :ssl-context (if ssl-context
+                         ssl-context
+                         (when ssl?
+                           (if insecure?
+                             (netty/insecure-ssl-client-context)
+                             (netty/ssl-client-context))))
+          :bootstrap-transform bootstrap-transform
+          :remote-address (netty/coerce-socket-address
+                           {:scoket-address remote-address
+                            :host host
+                            :port port})
+          :local-address local-address
+          :epoll? epoll?
+          :kqueue? kqueue?})
+        (d/catch' #(d/error! s %)))
     s))
