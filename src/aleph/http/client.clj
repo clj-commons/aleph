@@ -336,7 +336,7 @@
               (true? ssl?)))
       (throw (IllegalArgumentException.
                (str "Proxy options given require sending CONNECT request, "
-                 "but `tunnel?' option is set to 'false' explicitely. "
+                 "but `tunnel?' option is set to 'false' explicitly. "
                  "Consider setting 'tunnel?' to 'true' or omit it at all"))))
 
     (if (non-tunnel-proxy? options')
@@ -871,6 +871,8 @@
            max-frame-size
            handshake-timeout
            compression?
+           proxy-options
+           name-resolver
            heartbeats]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -882,6 +884,7 @@
          max-frame-payload 65536
          max-frame-size 1048576
          handshake-timeout 60000
+         name-resolver :default
          compression? false}
     :as options}]
 
@@ -894,6 +897,15 @@
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
         ssl? (= "wss" scheme)
+        remote-address (InetSocketAddress/createUnresolved
+                        (.getHost uri)
+                        (int
+                         (or
+                          (when (pos? (.getPort uri)) (.getPort uri))
+                          (if ssl? 443 80))))
+        host (.getHostName remote-address)
+        port (.getPort remote-address)
+        explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         heartbeats (when (some? heartbeats)
                      (merge
                       {:send-after-idle 3e4
@@ -920,6 +932,18 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
+            (#(when (some? proxy-options)
+               (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl? :keep-alive? true))]
+                 (.addFirst ^ChannelPipeline % "proxy" ^ChannelHandler proxy)
+                 ;; well, we need to wait before the proxy responded with
+                 ;; HTTP/1.1 200 Connection established
+                 ;; before sending any requests
+                 (when (instance? ProxyHandler proxy)
+                   (.addAfter ^ChannelPipeline %
+                              "proxy"
+                              "pending-proxy-connection"
+                              ^ChannelHandler
+                              (pending-proxy-connection-handler s))))))
             (http/attach-heartbeats-handler heartbeats)
             (.addLast "handler" ^ChannelHandler handler)
             pipeline-transform))]
@@ -939,5 +963,6 @@
                               (.getPort uri))))
           :local-address local-address
           :epoll? epoll?
-          :kqueue? kqueue?})
+          :kqueue? kqueue?
+          :name-resolver name-resolver})
         (d/chain' (fn [_] s)))))
