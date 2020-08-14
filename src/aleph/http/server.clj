@@ -515,7 +515,8 @@
            compression?
            log-activity
            continue-handler
-           continue-executor]
+           continue-executor
+           num-event-loop-threads]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
@@ -564,23 +565,28 @@
                                (str "invalid continue-executor specification: "
                                     (pr-str continue-executor)))))]
     (netty/start-server
-      (pipeline-builder
-        handler
-        pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor'))
-      ssl-context
-      bootstrap-transform
-      (when (and shutdown-executor? (or (instance? ExecutorService executor)
-                                        (instance? ExecutorService continue-executor)))
-        #(do
-           (when (instance? ExecutorService executor)
-             (.shutdown ^ExecutorService executor))
-           (when (instance? ExecutorService continue-executor)
-             (.shutdown ^ExecutorService continue-executor))))
-      (netty/coerce-socket-address {:socket-address socket-address :port port})
-      epoll?
-      kqueue?
-      logger)))
+      {:pipeline-builder (pipeline-builder
+                           handler
+                           pipeline-transform
+                           (assoc options
+                                  :executor executor
+                                  :ssl? (or manual-ssl? (boolean ssl-context))
+                                  :continue-executor continue-executor'))
+       :ssl-context ssl-context
+       :bootstrap-transform bootstrap-transform
+       :on-close (when (and shutdown-executor? (or (instance? ExecutorService executor)
+                                                   (instance? ExecutorService continue-executor)))
+                   #(do
+                     (when (instance? ExecutorService executor)
+                       (.shutdown ^ExecutorService executor))
+                     (when (instance? ExecutorService continue-executor)
+                       (.shutdown ^ExecutorService continue-executor))))
+       :socket-address (netty/coerce-socket-address
+                         {:socket-address socket-address :port port})
+       :epoll? epoll?
+       :kqueue? kqueue?
+       :logger logger
+       :num-event-loop-threads num-event-loop-threads})))
 
 ;;;
 
