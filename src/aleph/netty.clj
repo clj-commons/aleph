@@ -1197,31 +1197,19 @@
            "port, or socket-address should be specified")))))
 
 (defn start-server
-  ([pipeline-builder
-    ssl-context
-    bootstrap-transform
-    on-close
-    ^SocketAddress socket-address
-    epoll?]
-   (start-server pipeline-builder
-                 ssl-context
-                 bootstrap-transform
-                 on-close
-                 socket-address
-                 epoll?
-                 false
-                 nil))
-  ([pipeline-builder
-    ssl-context
-    bootstrap-transform
-    on-close
-    ^SocketAddress socket-address
-    epoll?
-    kqueue?
-    logger]
-   (let [num-threads    (long (get-default-event-loop-threads))
+  ([{:keys [pipeline-builder
+            ssl-context
+            bootstrap-transform
+            on-close
+            ^SocketAddress socket-address
+            epoll?
+            kqueue?
+            logger
+            num-event-loop-threads]}]
+   (let [num-threads (long (or num-event-loop-threads
+                               (get-default-event-loop-threads)))
          thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
-         closed?        (atom false)
+         closed? (atom false)
 
          [^Class channel ^EventLoopGroup group]
          (cond
@@ -1293,4 +1281,34 @@
 
        (catch Exception e
          @(.shutdownGracefully group)
-         (throw e))))))
+         (throw e)))))
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?]
+   (start-server {:pipeline-builder pipeline-builder
+                  :ssl-context ssl-context
+                  :bootstrap-transform bootstrap-transform
+                  :on-close on-close
+                  :socket-address socket-address
+                  :epoll? epoll?
+                  :kqueue? false
+                  :logger nil}))
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    on-close
+    ^SocketAddress socket-address
+    epoll?
+    kqueue?
+    logger]
+   (start-server {:pipeline-builder pipeline-builder
+                  :ssl-context ssl-context
+                  :bootstrap-transform bootstrap-transform
+                  :on-close on-close
+                  :socket-address socket-address
+                  :epoll? epoll?
+                  :kqueue? kqueue?
+                  :logger logger})))
