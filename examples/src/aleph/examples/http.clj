@@ -174,10 +174,12 @@
 ;; that our consumption of the body needs to be synchronous, as shown above by coercing it
 ;; to a Clojure seq.  If we want to have the body be asynchronous, we need to specify
 ;; `:raw-stream?` to be `true` for request connection pool.
+(def raw-stream-connection-pool (http/connection-pool {:connection-options {:raw-stream? true}})
+
 @(d/chain
    (http/get "http://localhost:10000/numbers"
      {:query-params {:count 10}
-      :pool (http/connection-pool {:connection-options {:raw-stream? true}})})
+      :pool raw-stream-connection-pool})
    :body
    #(s/map bs/to-byte-array %)
    #(s/reduce conj [] %)
@@ -213,7 +215,7 @@
       (.keyManager (file cert) (file key))
       .build))
 
-(defn ssl-connection-pool
+(defn build-ssl-connection-pool
   "To use the SSL context, we set the `:ssl-context` connection option on a connection pool. This
   allows the pool to make TLS connections with our client certificate."
   [ca cert key]
@@ -221,12 +223,14 @@
    {:connection-options
     {:ssl-context (build-ssl-context ca cert key)}}))
 
+(def ssl-connection-pool
+  (build-ssl-connection-pool "path/to/ca.crt" "path/to/cert.crt" "path/to/key.k8"))
+
 ;; We can use our `ssl-connection-pool` builder to GET pages from our target endpoint by passing the
 ;; `:pool` option to `aleph.http/get`.
-
 @(d/chain
   (http/get
    "https://server.with.tls.client.auth"
-   {:pool (ssl-connection-pool "path/to/ca.crt" "path/to/cert.crt" "path/to/key.k8")})
+   {:pool ssl-connection-pool})
   :body
   bs/to-string)

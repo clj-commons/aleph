@@ -118,6 +118,6 @@ To learn more, [read the documentation](http://aleph.io/examples/literate.html).
 
 ### license
 
-Copyright © 2010-2018 Zachary Tellman
+Copyright © 2010-2020 Zachary Tellman
 
 Distributed under the MIT License
