@@ -65,6 +65,10 @@
      AtomicBoolean]
     [javax.net.ssl SSLHandshakeException]))
 
+(def ^CharSequence server-name (HttpHeaders/newEntity "Server"))
+(def ^CharSequence connection-name (HttpHeaders/newEntity "Connection"))
+(def ^CharSequence date-name (HttpHeaders/newEntity "Date"))
+
 (def non-standard-keys
   (let [ks ["Content-MD5"
             "ETag"
@@ -275,6 +279,17 @@
 (defn chunked-writer-enabled? [^Channel ch]
   (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
 
+(def default-error-response
+  {:status 500
+   :headers {"content-type" "text/plain"}
+   :body "Internal server error"})
+
+;; Logs exception and returns default 500 response
+;; not to expose internal logic to the client
+(defn error-response [^Throwable e]
+  (log/error e "error in HTTP handler")
+  default-error-response)
+
 (defn send-streaming-body [ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
@@ -441,6 +456,33 @@
         (.close raf)
         (.close fc)))))
 
+(defn send-contiguous-body [ch ^HttpMessage msg body]
+  (let [omitted? (identical? :aleph/omitted body)
+        body (if (or (nil? body) omitted?)
+               empty-last-content
+               (DefaultLastHttpContent. (netty/to-byte-buf ch body)))
+        length (-> ^HttpContent body .content .readableBytes)]
+
+    (when-not omitted?
+      (if (instance? HttpResponse msg)
+        (let [code (-> ^HttpResponse msg .status .code)]
+          (when-not (or (<= 100 code 199) (= 204 code))
+            (try-set-content-length! msg length)))
+        (try-set-content-length! msg length)))
+
+    (netty/write ch msg)
+    (netty/write-and-flush ch body)))
+
+(defn send-internal-error [ch ^HttpResponse msg]
+  (let [raw-headers (.headers msg)
+        headers {:server (.get raw-headers server-name)
+                 :connection (.get raw-headers connection-name)
+                 :date (.get raw-headers date-name)}
+        resp (-> default-error-response
+                 (update :headers merge headers))
+        msg' (ring-response->netty-response resp)]
+    (send-contiguous-body ch msg' (:body resp))))
+
 (defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
@@ -467,33 +509,16 @@
 (defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
-    (send-streaming-body ch msg
-      (-> file
-        (bs/to-byte-buffers {:chunk-size (.-chunk-size file)})
-        s/->source))
+    (let [source (-> file
+                     (bs/to-byte-buffers {:chunk-size 1e6})
+                     s/->source)]
+      (send-streaming-body ch msg source))
 
     (chunked-writer-enabled? ch)
     (send-chunked-file ch msg file)
 
     :else
     (send-file-region ch msg file)))
-
-(defn send-contiguous-body [ch ^HttpMessage msg body]
-  (let [omitted? (identical? :aleph/omitted body)
-        body (if (or (nil? body) omitted?)
-               empty-last-content
-               (DefaultLastHttpContent. (netty/to-byte-buf ch body)))
-        length (-> ^HttpContent body .content .readableBytes)]
-
-    (when-not omitted?
-      (if (instance? HttpResponse msg)
-        (let [code (-> ^HttpResponse msg .status .code)]
-          (when-not (or (<= 100 code 199) (= 204 code))
-            (try-set-content-length! msg length)))
-        (try-set-content-length! msg length)))
-
-    (netty/write ch msg)
-    (netty/write-and-flush ch body)))
 
 (let [ary-class (class (byte-array 0))
 
@@ -511,35 +536,37 @@
   (defn send-message
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
-    (let [f (cond
+    (let [f (try
+              (cond
+                (or
+                 (nil? body)
+                 (identical? :aleph/omitted body)
+                 (instance? String body)
+                 (instance? ary-class body)
+                 (instance? ByteBuffer body)
+                 (instance? ByteBuf body))
+                (send-contiguous-body ch msg body)
 
-              (or
-                (nil? body)
-                (identical? :aleph/omitted body)
-                (instance? String body)
-                (instance? ary-class body)
-                (instance? ByteBuffer body)
-                (instance? ByteBuf body))
-              (send-contiguous-body ch msg body)
+                (instance? ChunkedInput body)
+                (send-chunked-body ch msg body)
 
-              (instance? ChunkedInput body)
-              (send-chunked-body ch msg body)
+                (instance? File body)
+                (send-file-body ch ssl? msg (http-file body))
 
-              (instance? File body)
-              (send-file-body ch ssl? msg (http-file body))
+                (instance? Path body)
+                (send-file-body ch ssl? msg (http-file body))
 
-              (instance? Path body)
-              (send-file-body ch ssl? msg (http-file body))
+                (instance? HttpFile body)
+                (send-file-body ch ssl? msg body)
 
-              (instance? HttpFile body)
-              (send-file-body ch ssl? msg body)
-
-              :else
-              (let [class-name (.getName (class body))]
-                (try
-                  (send-streaming-body ch msg body)
-                  (catch Throwable e
-                    (log/error e "error sending body of type " class-name)))))]
+                :else
+                (send-streaming-body ch msg body))
+              (catch Throwable e
+                (let [class-name (.getName (class body))]
+                  (log/errorf "error sending body of type %s: %s"
+                              class-name
+                              (.getMessage ^Throwable e)))
+                (send-internal-error ch msg)))]
 
       (when-not keep-alive?
         (handle-cleanup ch f))
