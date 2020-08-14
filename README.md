@@ -59,6 +59,8 @@ Aleph attempts to mimic the clj-http API and capabilities fully. It supports mul
 
 * `:cache` and `:cache-config` options are not supported as for now
 
+* `:decompress-body?` configuration should be set for the connection using `:connection-options`, defaults to `false`. When sets to `true`, "Accept-Encoding" request header would be set to "gzip, deflate" if not set manually. Note, that decompression automatically removes "Content-Encoding" header, to get the value of the original header, set `:save-content-encoding?` option to `true` (the value of the header will be copied to "X-Origin-Content-Encoding")
+
 Aleph client also supports fully async and [highly customizable](https://github.com/ztellman/aleph/blob/d33c76d6c7d1bf9788369fe6fd9d0e56434c8244/src/aleph/netty.clj#L783-L796) DNS resolver.
 
 To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.http).
@@ -116,6 +118,6 @@ To learn more, [read the documentation](http://aleph.io/examples/literate.html).
 
 ### license
 
-Copyright © 2010-2018 Zachary Tellman
+Copyright © 2010-2020 Zachary Tellman
 
 Distributed under the MIT License

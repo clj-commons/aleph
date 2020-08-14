@@ -6,7 +6,8 @@
     [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [manifold.time :as time])
   (:import
     [java.io
      IOException]
@@ -27,8 +28,10 @@
      HttpUtil
      HttpHeaderNames
      LastHttpContent
+     FullHttpRequest
      FullHttpResponse
-     HttpObjectAggregator]
+     HttpObjectAggregator
+     HttpContentDecompressor]
     [io.netty.channel
      Channel
      ChannelHandler ChannelHandlerContext
@@ -64,14 +67,21 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [io.netty.handler.logging
-     LoggingHandler]
+     LoggingHandler
+     LogLevel]
+    [io.netty.util.concurrent
+     EventExecutor
+     ScheduledFuture]
     [java.util.concurrent
-     ConcurrentLinkedQueue]
+     ConcurrentLinkedQueue
+     Future
+     TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger
      AtomicBoolean]
     [aleph.utils
-     ProxyConnectionTimeoutException]))
+     ProxyConnectionTimeoutException
+     WebSocketHandshakeTimeoutException]))
 
 (set! *unchecked-math* true)
 
@@ -100,6 +110,21 @@
           nil))
       (no-url req))))
 
+(defn exception-handler [ctx ex response-stream]
+  (cond
+    ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
+    ;; is part of the pipeline
+    (instance? TooLongFrameException ex)
+    (s/put! response-stream ex)
+
+    ;; when SSL handshake failed
+    (http/ssl-handshake-error? ex)
+    (let [^Throwable handshake-error (.getCause ^Throwable ex)]
+      (s/put! response-stream handshake-error))
+
+    (not (instance? IOException ex))
+    (log/warn ex "error in HTTP client")))
+
 (defn raw-client-handler
   [response-stream buffer-capacity]
   (let [stream (atom nil)
@@ -117,8 +142,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in HTTP client")))
+        (exception-handler ctx ex response-stream))
 
       :channel-inactive
       ([_ ctx]
@@ -169,14 +193,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (cond
-          ; could happens when io.netty.handler.codec.http.HttpObjectAggregator
-          ; is part of the pipeline
-          (instance? TooLongFrameException ex)
-          (s/put! response-stream ex)
-
-          (not (instance? IOException ex))
-          (log/warn ex "error in HTTP client")))
+        (exception-handler ctx ex response-stream))
 
       :channel-inactive
       ([_ ctx]
@@ -319,7 +336,7 @@
               (true? ssl?)))
       (throw (IllegalArgumentException.
                (str "Proxy options given require sending CONNECT request, "
-                 "but `tunnel?' option is set to 'false' explicitely. "
+                 "but `tunnel?' option is set to 'false' explicitly. "
                  "Consider setting 'tunnel?' to 'true' or omit it at all"))))
 
     (if (non-tunnel-proxy? options')
@@ -389,6 +406,19 @@
         (.remove (.pipeline ctx) this))
       (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
+(defn copy-encoding-header! [^HttpResponse msg]
+  (let [headers (.headers msg)]
+    (when-let [encoding (.get headers http/content-encoding-name)]
+      (.set headers http/origin-content-encoding-name encoding))))
+
+(defn copy-original-encoding-handler []
+  (netty/channel-inbound-handler
+   :channel-read
+   ([_ ctx msg]
+    (when (instance? HttpResponse msg)
+      (copy-encoding-header! msg))
+    (.fireChannelRead ctx msg))))
+
 (defn pipeline-builder
   [response-stream
    {:keys
@@ -396,19 +426,21 @@
      response-buffer-size
      max-initial-line-length
      max-header-size
-     max-chunk-size
      raw-stream?
      proxy-options
      ssl?
      idle-timeout
-     log-activity]
+     log-activity
+     decompress-body?
+     save-content-encoding?]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
      max-initial-line-length 65536
      max-header-size 65536
-     max-chunk-size 65536
-     idle-timeout 0}}]
+     idle-timeout 0
+     decompress-body? false
+     save-content-encoding? false}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
@@ -427,10 +459,18 @@
           (HttpClientCodec.
             max-initial-line-length
             max-header-size
-            max-chunk-size
+            Integer/MAX_VALUE
             false
             false))
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
+        (#(when decompress-body?
+            (when save-content-encoding?
+              (.addLast ^ChannelPipeline %1
+                        "orginal-encoding"
+                        ^ChannelHandler (copy-original-encoding-handler)))
+            (.addLast ^ChannelPipeline %1
+                      "deflater"
+                      ^ChannelHandler (HttpContentDecompressor.))))
         (.addLast "handler" ^ChannelHandler handler)
         (http/attach-idle-handlers idle-timeout))
       (when (some? proxy-options)
@@ -469,11 +509,14 @@
            on-closed
            response-executor
            epoll?
-           proxy-options]
+           kqueue?
+           proxy-options
+           decompress-body?]
     :or {bootstrap-transform identity
          keep-alive? true
          response-buffer-size 65536
          epoll? false
+         kqueue? false
          name-resolver :default}
     :as options}]
   (let [responses (s/stream 1024 nil response-executor)
@@ -481,18 +524,20 @@
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
+        options' (assoc options :ssl? ssl?)
         c (netty/create-client
-            (pipeline-builder responses (assoc options :ssl? ssl?))
-            (when ssl?
-              (or ssl-context
-                (if insecure?
-                  (netty/insecure-ssl-client-context)
-                  (netty/ssl-client-context))))
-            bootstrap-transform
-            remote-address
-            local-address
-            epoll?
-            name-resolver)]
+           {:pipeline-builder (pipeline-builder responses options')
+            :ssl-context (when ssl?
+                           (or ssl-context
+                               (if insecure?
+                                 (netty/insecure-ssl-client-context)
+                                 (netty/ssl-client-context))))
+            :bootstrap-transform bootstrap-transform
+            :remote-address remote-address
+            :local-address local-address
+            :epoll? epoll?
+            :kqueue? kqueue?
+            :name-resolver name-resolver})]
     (d/chain' c
       (fn [^Channel ch]
 
@@ -507,13 +552,20 @@
                                           (assoc req :uri (:request-url req))
                                           req))]
                 (when-not (.get (.headers req') "Host")
-                  (.set (.headers req') HttpHeaderNames/HOST (str host (when explicit-port? (str ":" port)))))
+                  (.set (.headers req')
+                        HttpHeaderNames/HOST
+                        (str host (when explicit-port? (str ":" port)))))
+
                 (when-not (.get (.headers req') "Connection")
                   (HttpUtil/setKeepAlive req' keep-alive?))
+
                 (when (and (non-tunnel-proxy? proxy-options')
                         (get proxy-options :keep-alive? true)
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
+                (when (and decompress-body?
+                           (not (.get (.headers req') "Accept-Encoding")))
+                  (.set (.headers req') "Accept-Encoding" "gzip, deflate"))
 
                 (let [body (:body req)
                       parts (:multipart req)
@@ -623,14 +675,16 @@
                              extensions?
                              headers
                              max-frame-payload
-                             nil))
+                             nil
+                             0))
   ([raw-stream?
     uri
     sub-protocols
     extensions?
     headers
     max-frame-payload
-    heartbeats]
+    heartbeats
+    handshake-timeout]
    (let [d (d/deferred)
          in (atom nil)
          desc (atom {})
@@ -640,7 +694,8 @@
                                           extensions?
                                           headers
                                           max-frame-payload)
-         closing? (AtomicBoolean. false)]
+         closing? (AtomicBoolean. false)
+         timeout-task (atom nil)]
 
      [d
 
@@ -650,11 +705,11 @@
        ([_ ctx ex]
         (when-not (d/error! d ex)
           (log/warn ex "error in websocket client"))
-        (s/close! @in)
         (netty/close ctx))
 
        :channel-inactive
        ([_ ctx]
+        (s/close! @in)
         (when (realized? d)
           ;; close only on success
           (d/chain' d s/close!)
@@ -665,7 +720,25 @@
        ([_ ctx]
         (let [ch (.channel ctx)]
           (reset! in (netty/buffered-source ch (constantly 1) 16))
-          (.handshake handshaker ch))
+
+          (let [handshake-future (.handshake handshaker ch)]
+            ;; start handshake timeout timer if necessary only
+            ;; when handshake is written and flushed
+            (when (pos? handshake-timeout)
+              (-> (netty/wrap-future handshake-future)
+                  (d/chain'
+                   (fn [_]
+                     (let [timeout (.schedule
+                                    ^EventExecutor (.executor ctx)
+                                    ^Runnable
+                                    (fn []
+                                      ;; do nothing if handshake is already completed
+                                      (when (not (.isHandshakeComplete handshaker))
+                                        (d/error! d (WebSocketHandshakeTimeoutException.))
+                                        (netty/close ctx)))
+                                    (long handshake-timeout)
+                                    TimeUnit/MILLISECONDS)]
+                       (reset! timeout-task timeout))))))))
         (.fireChannelActive ctx))
 
        :user-event-triggered
@@ -722,6 +795,10 @@
                 (s/close! @in)
                 (netty/close ctx))
               (finally
+                ;; cancel timeout if it was scheduled
+                (when-let [^ScheduledFuture timeout-future @timeout-task]
+                  (.cancel timeout-future false)
+                  (reset! timeout-task nil))
                 (netty/release msg)))
 
             (instance? FullHttpResponse msg)
@@ -787,20 +864,27 @@
            bootstrap-transform
            pipeline-transform
            epoll?
+           kqueue?
            sub-protocols
            extensions?
            max-frame-payload
            max-frame-size
+           handshake-timeout
            compression?
+           proxy-options
+           name-resolver
            heartbeats]
     :or {bootstrap-transform identity
          pipeline-transform identity
          raw-stream? false
          epoll? false
+         kqueue? false
          sub-protocols nil
          extensions? false
          max-frame-payload 65536
          max-frame-size 1048576
+         handshake-timeout 60000
+         name-resolver :default
          compression? false}
     :as options}]
 
@@ -813,6 +897,15 @@
         scheme (.getScheme uri)
         _ (assert (#{"ws" "wss"} scheme) "scheme must be one of 'ws' or 'wss'")
         ssl? (= "wss" scheme)
+        remote-address (InetSocketAddress/createUnresolved
+                        (.getHost uri)
+                        (int
+                         (or
+                          (when (pos? (.getPort uri)) (.getPort uri))
+                          (if ssl? 443 80))))
+        host (.getHostName remote-address)
+        port (.getPort remote-address)
+        explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         heartbeats (when (some? heartbeats)
                      (merge
                       {:send-after-idle 3e4
@@ -826,9 +919,10 @@
                       (or extensions? compression?)
                       headers
                       max-frame-payload
-                      heartbeats)]
-    (d/chain'
-      (netty/create-client
+                      heartbeats
+                      handshake-timeout)
+        
+        pipeline-builder
         (fn [^ChannelPipeline pipeline]
           (doto pipeline
             (.addLast "http-client" (HttpClientCodec.))
@@ -838,22 +932,37 @@
                 (.addLast ^ChannelPipeline %
                           "websocket-deflater"
                           WebSocketClientCompressionHandler/INSTANCE)))
+            (#(when (some? proxy-options)
+               (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl? :keep-alive? true))]
+                 (.addFirst ^ChannelPipeline % "proxy" ^ChannelHandler proxy)
+                 ;; well, we need to wait before the proxy responded with
+                 ;; HTTP/1.1 200 Connection established
+                 ;; before sending any requests
+                 (when (instance? ProxyHandler proxy)
+                   (.addAfter ^ChannelPipeline %
+                              "proxy"
+                              "pending-proxy-connection"
+                              ^ChannelHandler
+                              (pending-proxy-connection-handler s))))))
             (http/attach-heartbeats-handler heartbeats)
             (.addLast "handler" ^ChannelHandler handler)
-            pipeline-transform))
-        (when ssl?
-          (or ssl-context
-            (if insecure?
-              (netty/insecure-ssl-client-context)
-              (netty/ssl-client-context))))
-        bootstrap-transform
-        (InetSocketAddress.
-          (.getHost uri)
-          (int
-            (if (neg? (.getPort uri))
-              (if ssl? 443 80)
-              (.getPort uri))))
-        local-address
-        epoll?)
-      (fn [_]
-        s))))
+            pipeline-transform))]
+    (-> (netty/create-client
+         {:pipeline-builder pipeline-builder
+          :ssl-context (when ssl?
+                         (or ssl-context
+                             (if insecure?
+                               (netty/insecure-ssl-client-context)
+                               (netty/ssl-client-context))))
+          :bootstrap-transform bootstrap-transform
+          :remote-address (InetSocketAddress.
+                           (.getHost uri)
+                           (int
+                            (if (neg? (.getPort uri))
+                              (if ssl? 443 80)
+                              (.getPort uri))))
+          :local-address local-address
+          :epoll? epoll?
+          :kqueue? kqueue?
+          :name-resolver name-resolver})
+        (d/chain' (fn [_] s)))))

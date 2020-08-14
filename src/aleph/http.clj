@@ -12,7 +12,8 @@
     [client-middleware :as middleware]
     [core :as http-core]]
    [aleph.netty :as netty]
-   [clojure.java.io :as io])
+   [clojure.java.io :as io]
+   [clojure.tools.logging :as log])
   (:import
    [io.aleph.dirigiste Pools]
    [aleph.utils
@@ -35,7 +36,7 @@
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object if an SSL connection is desired |
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
    | `manual-ssl?` | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `executor` | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
@@ -45,14 +46,17 @@
    | `rejected-handler` | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
    | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `8192`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`
+   | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`
    | `compression?` | when `true` enables http compression, defaults to `false`
    | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
+   | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly).
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds
    | `continue-handler` | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
    | `continue-executor` | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread."
   [handler options]
+  (when (contains? options :max-chunk-size)
+    (log/warn "Ignoring :max-chunk-size option as it was deprecated"))
   (server/start-server handler options))
 
 (defn- create-connection
@@ -61,14 +65,15 @@
    will be errors, and a new connection must be created."
   [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
-        ssl? (= "https" scheme)]
+        ssl? (= "https" scheme)
+        remote-address (InetSocketAddress/createUnresolved
+                        (.getHost uri)
+                        (int
+                         (or
+                          (when (pos? (.getPort uri)) (.getPort uri))
+                          (if ssl? 443 80))))]
     (-> (client/http-connection
-          (InetSocketAddress/createUnresolved
-            (.getHost uri)
-            (int
-              (or
-                (when (pos? (.getPort uri)) (.getPort uri))
-                (if ssl? 443 80))))
+          remote-address
           ssl?
           (if on-closed
             (assoc options :on-closed on-closed)
@@ -107,7 +112,7 @@
    the `connection-options` are a map describing behavior across all connections:
 
    |:---|:---
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details), only required if a custom context is required
    | `local-address` | an optional `java.net.SocketAddress` describing which local interface should be used
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
@@ -115,15 +120,17 @@
    | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `epoll?` | if `true`, uses `epoll` transport when available, defaults to `false`
+   | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `65536`
-   | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed response, defaults to `65536`
    | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor` | optional `java.util.concurrent.Executor` that will execute response callbacks
    | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
+   | `decompress-body?` | when set to `true`, automatically decompresses the resulting gzip or deflate stream if the `Content-Encoding` header is found on the response, defaults to `false`
+   | `save-content-encoding?` | set to `true` to get information about Content-Encoding of the response before decompression, defaults to `false`
 
    Supported `proxy-options` are
 
@@ -156,6 +163,15 @@
     (throw
      (IllegalArgumentException.
       ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
+
+  (when (and (not (:decompress-body? connection-options))
+             (true? (:save-content-encoding? connection-options false)))
+    (throw
+     (IllegalArgumentException.
+      "Using :save-content-encoding? option with disabled auto decompression is disabled")))
+
+  (when (contains? connection-options :max-chunk-size)
+    (log/warn "Ignoring :max-chunk-size option as it was deprecated"))
 
   (let [log-activity (:log-activity connection-options)
         dns-options' (if-not (and (some? dns-options)
@@ -217,7 +233,23 @@
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
-   | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
+   | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`
+   | `handshake-timeout` | timeout in milliseconds to finish handshake, defaults to 60000.
+   | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout).
+   | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need.
+   | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
+
+   Supported `proxy-options` are
+
+   |:---|:---
+   | `host` | host of the proxy server
+   | `port` | an optional port to establish connection (defaults to 80 for http and 1080 for socks proxies)
+   | `protocol` | one of `:http`, `:socks4` or `:socks5` (defaults to `:http`)
+   | `user` | an optional auth username
+   | `password` | an optional auth password
+   | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
+   | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting
+   | `connection-timeout` | timeout in milliseconds for the tunnel become established, defaults to 60 seconds, setting is ignored when tunneling is not used."
   ([url]
     (websocket-client url nil))
   ([url options]

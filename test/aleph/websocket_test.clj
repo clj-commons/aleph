@@ -1,6 +1,6 @@
 (ns aleph.websocket-test
   (:use
-    [clojure test])
+   [clojure test])
   (:require
     [manifold.deferred :as d]
     [manifold.stream :as s]
@@ -9,7 +9,10 @@
     [byte-streams :as bs]
     [aleph.http :as http]
     [aleph.http.core :as http-core]
-    [clojure.tools.logging :as log]))
+    [clojure.tools.logging :as log]
+    [clojure.string :as str])
+  (:import
+   [java.util.concurrent TimeoutException]))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -33,25 +36,29 @@
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
 
+(defmacro with-native-transport [handler & body]
+  `(with-server (http/start-server ~handler {:port 8080
+                                             :epoll? true
+                                             :kqueue? true})
+     ~@body))
+
+(defn log-upgrade-error [^Throwable e]
+  (log/error "upgrade to websocket conn failed"
+             (if-not (str/ends-with? (.getMessage e) "missing upgrade")
+               e
+               ": missing upgrade")))
+
 (defn echo-handler
   ([req] (echo-handler {} req))
   ([options req]
    (-> (http/websocket-connection req options)
        (d/chain' #(s/connect % %))
-       (d/catch'
-           (fn [^Throwable e]
-             (log/error "upgrade to websocket conn failed"
-                        (.getMessage e))
-             {})))))
+       (d/catch' (fn [e] (log-upgrade-error e) {})))))
 
 (defn raw-echo-handler [req]
   (-> (http/websocket-connection req {:raw-stream? true})
     (d/chain' #(s/connect % %))
-    (d/catch'
-        (fn [^Throwable e]
-          (log/error "upgrade to websocket conn failed"
-                     (.getMessage e))
-          {}))))
+    (d/catch' (fn [e] (log-upgrade-error e) {}))))
 
 (deftest test-echo-handler
   (with-handler echo-handler
@@ -130,6 +137,14 @@
         (let [msg @(s/try-take! c 5e3)]
           (is (= "raw conn string hello" (when msg (bs/to-string msg)))))))))
 
+(when (netty/native-transport-available?)
+  (deftest test-websocket-with-native-transport
+    (with-native-transport echo-handler
+      (let [c @(http/websocket-client "ws://localhost:8080"
+                                      {:epoll? true :kqueue? true})]
+        (is @(s/put! c "hello with native transport"))
+        (is (= "hello with native transport" @(s/try-take! c 5e3)))))))
+
 (deftest test-ping-pong-protocol
   (testing "empty ping from the client"
     (with-handler #(http/websocket-connection %)
@@ -172,6 +187,15 @@
       (is @(s/put! c "hello raw handler 2"))
       (is (= "hello raw handler 2" @(s/try-take! c 5e3))))
     (is (= 400 (:status @(http/get "http://localhost:8081" {:throw-exceptions false}))))))
+
+(defn handshake-timeout-handler [_]
+  (time/in 2000 (fn [] {:status 200})))
+
+(deftest test-handshake-timeout
+  (with-handler handshake-timeout-handler
+    (let [c (http/websocket-client "ws://localhost:8080"
+                                   {:handshake-timeout 1000})]
+      (is (thrown? TimeoutException @c)))))
 
 (defmacro with-closed [client & body]
   `(let [closed# (d/deferred)]

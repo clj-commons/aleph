@@ -201,7 +201,7 @@
 
 ;; Statuses for which clj-http will not throw an exception
 (def unexceptional-status?
-  #{200 201 202 203 204 205 206 207 300 301 302 303 304 307})
+  #{200 201 202 203 204 205 206 207 300 301 302 303 304 307 308})
 
 ;; helper methods to determine realm of a response
 (defn success?
@@ -343,7 +343,7 @@
         :else
         rsp-r)
 
-      (= 307 status)
+      (#{307 308} status)
       (if (or (#{:get :head} request-method)
             (opt req :force-redirects))
         (follow-redirect client
