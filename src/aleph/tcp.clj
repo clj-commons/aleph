@@ -89,25 +89,25 @@
          kqueue? false}
     :as options}]
   (netty/start-server
-    (fn [^ChannelPipeline pipeline]
-      (.addLast pipeline "handler" (server-channel-handler handler options))
-      (pipeline-transform pipeline))
-    ssl-context
-    bootstrap-transform
-    nil
-    (netty/coerce-socket-address {:socket-address socket-address
-                                  :port port})
-    epoll?
-    kqueue?
-    (cond
-      (instance? LoggingHandler log-activity)
-      log-activity
+    {:pipeline-builder (fn [^ChannelPipeline pipeline]
+                         (.addLast pipeline "handler" (server-channel-handler handler options))
+                         (pipeline-transform pipeline))
+     :ssl-context ssl-context
+     :bootstrap-transform bootstrap-transform
+     :on-close nil
+     :socket-address (netty/coerce-socket-address {:socket-address socket-address
+                                                   :port port})
+     :epoll? epoll?
+     :kqueue? kqueue?
+     :logger (cond
+               (instance? LoggingHandler log-activity)
+               log-activity
 
-      (some? log-activity)
-      (netty/activity-logger "aleph-server" log-activity)
+               (some? log-activity)
+               (netty/activity-logger "aleph-server" log-activity)
 
-      :else
-      nil)))
+               :else
+               nil)}))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
