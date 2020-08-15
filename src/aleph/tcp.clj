@@ -73,7 +73,8 @@
    | `kqueue?` | if `true`, uses `KQueue` transport when available, defaults to `false`.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `num-event-loop-threads` | optional, defaults to double number of available processors."
   [handler
    {:keys [port
            socket-address
@@ -82,7 +83,8 @@
            pipeline-transform
            epoll?
            kqueue?
-           log-activity]
+           log-activity
+           num-event-loop-threads]
     :or {bootstrap-transform identity
          pipeline-transform identity
          epoll? false
@@ -107,7 +109,8 @@
                (netty/activity-logger "aleph-server" log-activity)
 
                :else
-               nil)}))
+               nil)
+     :num-event-loop-threads num-event-loop-threads}))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
