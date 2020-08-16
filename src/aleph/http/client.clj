@@ -1,12 +1,14 @@
 (ns aleph.http.client
   (:require
-    [clojure.tools.logging :as log]
-    [byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [aleph.http.core :as http]
-    [aleph.http.multipart :as multipart]
-    [aleph.netty :as netty])
+   [clojure.tools.logging :as log]
+   [byte-streams :as bs]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [aleph.http.core :as http]
+   [aleph.http.multipart :as multipart]
+   [aleph.netty :as netty]
+   [aleph.exceptions :as ex]
+   [potemkin :as p])
   (:import
     [java.io
      IOException]
@@ -69,9 +71,10 @@
      ConcurrentLinkedQueue]
     [java.util.concurrent.atomic
      AtomicInteger
-     AtomicBoolean]
-    [aleph.utils
-     ProxyConnectionTimeoutException]))
+     AtomicBoolean]))
+
+(p/import-vars
+ [ex ->ProxyConnectionTimeoutException])
 
 (set! *unchecked-math* true)
 
@@ -372,7 +375,7 @@
                         (.headers ^HttpProxyHandler$HttpProxyConnectException cause))
               response (cond
                          (= "timeout" message)
-                         (ProxyConnectionTimeoutException. cause)
+                         (->ProxyConnectionTimeoutException nil nil cause)
 
                          (some? headers)
                          (ex-info message {:headers (http/headers->map headers)})

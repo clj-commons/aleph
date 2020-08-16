@@ -14,7 +14,8 @@
   '[[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
     [manifold "0.1.9-alpha3"]
     [byte-streams "0.2.5-alpha2"]
-    [potemkin "0.4.5"]])
+    [potemkin "0.4.5"]
+    [com.rpl/defexception "0.2.0"]])
 
 (defproject aleph "0.4.7-alpha6"
   :description "a framework for asynchronous communication"

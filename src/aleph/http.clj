@@ -12,19 +12,22 @@
     [client-middleware :as middleware]
     [core :as http-core]]
    [aleph.netty :as netty]
-   [clojure.java.io :as io])
+   [clojure.java.io :as io]
+   [potemkin :as p]
+   [aleph.exceptions :as ex])
   (:import
    [io.aleph.dirigiste Pools]
-   [aleph.utils
-    PoolTimeoutException
-    ConnectionTimeoutException
-    RequestTimeoutException
-    ReadTimeoutException]
    [java.net
     URI
     InetSocketAddress]
    [java.util.concurrent
     TimeoutException]))
+
+(p/import-vars
+ [ex ->PoolTimeoutException
+  ->ConnectionTimeoutException
+  ->ReadTimeoutException
+  ->RequestTimeoutException])
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -311,7 +314,7 @@
                ;; pool timeout triggered
                (d/catch' TimeoutException
                  (fn [^Throwable e]
-                   (d/error-deferred (PoolTimeoutException. e))))
+                   (d/error-deferred (->PoolTimeoutException nil nil e))))
 
                (d/chain'
                  (fn [conn]
@@ -325,7 +328,7 @@
                      (d/catch' TimeoutException
                        (fn [^Throwable e]
                          (flow/dispose pool k conn)
-                         (d/error-deferred (ConnectionTimeoutException. e))))
+                         (d/error-deferred (->ConnectionTimeoutException nil nil e))))
 
                      ;; connection failed, bail out
                      (d/catch'
@@ -347,7 +350,7 @@
                                (d/catch' TimeoutException
                                  (fn [^Throwable e]
                                    (flow/dispose pool k conn)
-                                   (d/error-deferred (RequestTimeoutException. e))))
+                                   (d/error-deferred (->RequestTimeoutException nil nil e))))
 
                                ;; request failed, dispose of the connection
                                (d/catch'
@@ -366,7 +369,7 @@
                                      (d/catch' TimeoutException
                                        (fn [^Throwable e]
                                          (flow/dispose pool k conn)
-                                         (d/error-deferred (ReadTimeoutException. e))))
+                                         (d/error-deferred (->ReadTimeoutException nil nil e))))
 
                                      (d/chain'
                                        (fn [early?]
