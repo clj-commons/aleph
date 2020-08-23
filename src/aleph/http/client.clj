@@ -455,6 +455,18 @@
      :url "http://example.com"
      ::close true}))
 
+(defn req->proxy-url
+  "Includes host to URI for proxy server"
+  [{:keys [uri] :as req}]
+  (let [^URI uri' (req->domain req)]
+    (.toString (URI. (.getScheme uri')
+                     nil
+                     (.getHost uri')
+                     (.getPort uri')
+                     uri
+                     nil
+                     nil))))
+
 (defn http-connection
   [^InetSocketAddress remote-address
    ssl?
@@ -498,13 +510,12 @@
 
         (s/consume
           (fn [req]
-
             (try
               (let [proxy-options' (when (some? proxy-options)
                                      (assoc proxy-options :ssl? ssl?))
                     ^HttpRequest req' (http/ring-request->netty-request
                                         (if (non-tunnel-proxy? proxy-options')
-                                          (assoc req :uri (:request-url req))
+                                          (assoc req :uri (req->proxy-url req))
                                           req))]
                 (when-not (.get (.headers req') "Host")
                   (.set (.headers req') HttpHeaderNames/HOST (str host (when explicit-port? (str ":" port)))))
