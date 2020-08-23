@@ -455,9 +455,8 @@
      :url "http://example.com"
      ::close true}))
 
-(defn req->proxy-url
-  "Includes host to URI for proxy server"
-  [{:keys [uri] :as req}]
+;; includes host into URI for requests that go through proxy
+(defn req->proxy-url [{:keys [uri] :as req}]
   (let [^URI uri' (req->domain req)]
     (.toString (URI. (.getScheme uri')
                      nil
