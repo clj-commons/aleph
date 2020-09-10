@@ -444,6 +444,40 @@
       (handler request #(d/success! response %) #(d/error! response %))
       response)))
 
+(defn wrap-ring-middleware
+  "Wraps an async capable ring middleware and exposes an Aleph-compliant one.
+   This is useful to wrap ring defaults for example.
+
+   (require '[ring.middleware.defaults :as rd])
+
+   (def wrap-defaults
+     (wrap-ring-middleware #(rd/wrap-defaults % rd/site-defaults)))
+  "
+  [ring-middleware]
+  (fn manifold-middleware [handler]
+    (let [handler' (ring-middleware (fn arity-3-to-1 [request respond raise]
+                                      (-> (handler request)
+                                          (d/chain respond)
+                                          (d/catch raise))))]
+      (fn manifold-handler [request]
+        (let [response (d/deferred)]
+          (handler' request #(d/success! response %) #(d/error! response %))
+          response)))))
+
+(defn pipe-ring-middleware
+  "Utility function, useful in middleware chains.
+
+   (require '[ring.middleware.defaults :as rd])
+
+   (defn start-http-server []
+     (-> router-handler
+         (pipe-ring-middleware #(rd/wrap-defaults % rd/site-defaults))
+         (start-server {:port 4567})))
+  "
+  [handler ring-middleware]
+  (as-> (wrap-ring-middleware ring-middleware) <>
+    (<> handler)))
+
 (defn file
   "Specifies a file or a region of the file to be sent over the network.
    Accepts string path to the file, instance of `java.io.File` or instance of
