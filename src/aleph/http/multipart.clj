@@ -137,8 +137,9 @@
                             (URLConnection/guessContentTypeFromName filename))
               content-type (mime-type-descriptor mime-type charset)]
           (.addBodyFileUpload encoder
-                              part-name
-                              name
+                              (or part-name name)
+                              ;; Netty's multipart encoder ignores empty strings here
+                              (or name "")
                               content
                               content-type
                               false))
@@ -151,6 +152,7 @@
 
                                  (instance? Charset charset)
                                  charset)
+              part-name (or part-name name)
               attr (if (string? content)
                      (MemoryAttribute. ^String part-name ^String content charset)
                      (doto (MemoryAttribute. ^String part-name charset)
