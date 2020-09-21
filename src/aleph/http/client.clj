@@ -492,6 +492,12 @@
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
+        proxy-options' (when (some? proxy-options)
+                         (assoc proxy-options :ssl? ssl?))
+        non-tunnel-proxy? (non-tunnel-proxy? proxy-options')
+        host-header-value (str host (when explicit-port? (str ":" port)))
+        proxy-keep-alive? (when (some? proxy-options)
+                            (get proxy-options :keep-alive? true))
         c (netty/create-client
             (pipeline-builder responses (assoc options :ssl? ssl?))
             (when ssl?
@@ -510,18 +516,16 @@
         (s/consume
           (fn [req]
             (try
-              (let [proxy-options' (when (some? proxy-options)
-                                     (assoc proxy-options :ssl? ssl?))
-                    ^HttpRequest req' (http/ring-request->netty-request
-                                        (if (non-tunnel-proxy? proxy-options')
+              (let [^HttpRequest req' (http/ring-request->netty-request
+                                        (if non-tunnel-proxy?
                                           (assoc req :uri (req->proxy-url req))
                                           req))]
                 (when-not (.get (.headers req') "Host")
-                  (.set (.headers req') HttpHeaderNames/HOST (str host (when explicit-port? (str ":" port)))))
+                  (.set (.headers req') HttpHeaderNames/HOST host-header-value))
                 (when-not (.get (.headers req') "Connection")
                   (HttpUtil/setKeepAlive req' keep-alive?))
-                (when (and (non-tunnel-proxy? proxy-options')
-                        (get proxy-options :keep-alive? true)
+                (when (and non-tunnel-proxy?
+                        proxy-keep-alive?
                         (not (.get (.headers req') "Proxy-Connection")))
                   (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
 
