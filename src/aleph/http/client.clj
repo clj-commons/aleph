@@ -495,9 +495,9 @@
         proxy-options' (when (some? proxy-options)
                          (assoc proxy-options :ssl? ssl?))
         non-tunnel-proxy? (non-tunnel-proxy? proxy-options')
+        keep-alive?' (or keep-alive? (when (some? proxy-options)
+                                       (get proxy-options :keep-alive? true)))
         host-header-value (str host (when explicit-port? (str ":" port)))
-        proxy-keep-alive? (when (some? proxy-options)
-                            (get proxy-options :keep-alive? true))
         c (netty/create-client
             (pipeline-builder responses (assoc options :ssl? ssl?))
             (when ssl?
@@ -523,11 +523,7 @@
                 (when-not (.get (.headers req') "Host")
                   (.set (.headers req') HttpHeaderNames/HOST host-header-value))
                 (when-not (.get (.headers req') "Connection")
-                  (HttpUtil/setKeepAlive req' keep-alive?))
-                (when (and non-tunnel-proxy?
-                        proxy-keep-alive?
-                        (not (.get (.headers req') "Proxy-Connection")))
-                  (.set (.headers req') "Proxy-Connection" "Keep-Alive"))
+                  (HttpUtil/setKeepAlive req' keep-alive?'))
 
                 (let [body (:body req)
                       parts (:multipart req)
