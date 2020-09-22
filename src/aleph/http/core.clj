@@ -566,7 +566,8 @@
                   (log/errorf "error sending body of type %s: %s"
                               class-name
                               (.getMessage ^Throwable e)))
-                (send-internal-error ch msg)))]
+                (when (instance? HttpResponse msg)
+                  (send-internal-error ch msg))))]
 
       (when-not keep-alive?
         (handle-cleanup ch f))
