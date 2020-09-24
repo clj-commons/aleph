@@ -360,6 +360,8 @@
                          (flow/dispose pool k conn)
                          (d/error-deferred (ConnectionTimeoutException. e))))
 
+                     ;; xxx(errors-handling): seems like in this case we process
+                     ;; exception twice
                      ;; connection failed, bail out
                      (d/catch'
                        (fn [e]
@@ -382,6 +384,7 @@
                                    (flow/dispose pool k conn)
                                    (d/error-deferred (RequestTimeoutException. e))))
 
+                               ;; xxx(errors-handling): processing exception twice here
                                ;; request failed, dispose of the connection
                                (d/catch'
                                  (fn [e]

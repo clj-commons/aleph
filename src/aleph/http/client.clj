@@ -110,6 +110,14 @@
           nil))
       (no-url req))))
 
+;; xxx(errors-handling): to put exception into response-stream
+;; might not be the correct action but it would work in most cases
+;; if (and only if) we close channel right after
+;; we should somehow find a way to deal with the situation when 
+;; exception happens while realizing async body from the response
+;; (meaning that the object from response-stream is arelady taken
+;; by the user and putting a new one would simply mean we're overriding
+;; response to the next request over the same connection)
 (defn exception-handler [ctx ex response-stream]
   (cond
     ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
@@ -122,6 +130,9 @@
     (let [^Throwable handshake-error (.getCause ^Throwable ex)]
       (s/put! response-stream handshake-error))
 
+    ;; xxx(errors-handling): we should at least close the connection here
+    ;; xxx(errors-handling): is there a conceptual difference between
+    ;; processing IOException vs. any other exception?
     (not (instance? IOException ex))
     (log/warn ex "error in HTTP client")))
 
@@ -602,6 +613,10 @@
                     ;; might be different in case we use :multipart
                     (reset! save-body body))
 
+                  ;; xxx(errors-handling): this should return channel promise and
+                  ;; we need to subscribe on it to understand if request was sent or not
+                  ;; this might be non-trivial in some cases where we perform multiple
+                  ;; writes (e.g. chunked body)
                   (netty/safe-execute ch
                     (http/send-message ch true ssl? req' body))))
 

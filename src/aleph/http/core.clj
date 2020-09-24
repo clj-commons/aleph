@@ -333,6 +333,16 @@
                            (try
                              (netty/to-byte-buf x)
                              (catch Throwable e
+                               ;; xxx(errors-handling): would be much better if we can
+                               ;; deliver this error to the caller rather than just closing
+                               ;; the connection and waiting for "connection was closed" error
+                               ;; to pop up. we can obviously cheat here and use fireExceptionCaught
+                               ;; on the pipeline (forcing the exception to be thrown at the beginnig)
+                               ;; but it would turn error handling in the pipeline into mess as
+                               ;; we won't have any information whether the request was already 
+                               ;; sent or not. the correct solution would be to keep channel promise
+                               ;; open somewhere (attached to the open connection) and resolve it
+                               ;; with success only when entire body is succesfully sent (or not)
                                (log/error e "error converting " (.getName (class x)) " to ByteBuf")
                                (netty/close ch))))))
                 (netty/to-byte-buf-stream body' 8192))
@@ -566,6 +576,9 @@
                   (log/errorf "error sending body of type %s: %s"
                               class-name
                               (.getMessage ^Throwable e)))
+                ;; xxx(errors-handling): this is actually might be wrong
+                ;; there's a non-zero chance we've already sent msg and
+                ;; failed when started sending body
                 (when (instance? HttpResponse msg)
                   (send-internal-error ch msg))))]
 
