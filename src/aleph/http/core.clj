@@ -575,6 +575,12 @@
                   (log/errorf "error sending body of type %s: %s"
                               class-name
                               (.getMessage ^Throwable e))
+                  ;; duplicating logic from `handle-cleanup` as
+                  ;; we will never got there. the implementation guarantees
+                  ;; that non persistent connection would be closed
+                  ;; in any case
+                  (when-not keep-alive?
+                    (netty/close ch))
                   ;; re-throw exception so the caller could take care
                   ;; about cleaning up the mess
                   (throw e))))]
