@@ -326,25 +326,20 @@
                      (netty/flush ch)
                      body))]
 
-    (let [src (if (or (sequential? body') (s/stream? body'))
+    (let [d (d/deferred)
+          src (if (or (sequential? body') (s/stream? body'))
                 (->> body'
-                  s/->source
-                  (s/map (fn [x]
-                           (try
-                             (netty/to-byte-buf x)
-                             (catch Throwable e
-                               ;; xxx(errors-handling): would be much better if we can
-                               ;; deliver this error to the caller rather than just closing
-                               ;; the connection and waiting for "connection was closed" error
-                               ;; to pop up. we can obviously cheat here and use fireExceptionCaught
-                               ;; on the pipeline (forcing the exception to be thrown at the beginnig)
-                               ;; but it would turn error handling in the pipeline into mess as
-                               ;; we won't have any information whether the request was already 
-                               ;; sent or not. the correct solution would be to keep channel promise
-                               ;; open somewhere (attached to the open connection) and resolve it
-                               ;; with success only when entire body is succesfully sent (or not)
-                               (log/error e "error converting " (.getName (class x)) " to ByteBuf")
-                               (netty/close ch))))))
+                     s/->source
+                     (s/map (fn [x]
+                              (try
+                                (netty/to-byte-buf x)
+                                (catch Throwable e
+                                  ;; no need to print entire exception as soon as user
+                                  ;; now has access to it thus could setup proper logging
+                                  (log/error (.getMessage e)
+                                             "error converting" (.getName (class x)) "to ByteBuf")
+                                  (d/error! d e)
+                                  (netty/close ch))))))
                 (netty/to-byte-buf-stream body' 8192))
 
           sink (netty/sink ch false #(DefaultHttpContent. %))]
@@ -352,24 +347,23 @@
       (s/connect src sink)
 
       (-> ch
-        netty/channel
-        .closeFuture
-        netty/wrap-future
-        (d/chain' (fn [_] (if (s/stream? body')
-                            (s/close! body')
-                            (s/close! src)))))
+          netty/channel
+          .closeFuture
+          netty/wrap-future
+          (d/chain' (fn [_] (if (s/stream? body')
+                              (s/close! body')
+                              (s/close! src)))))
 
-      (let [d (d/deferred)]
-        (s/on-closed sink
-          (fn []
-
-            (when (instance? Closeable body)
-              (.close ^Closeable body))
-
+      (s/on-closed sink
+        (fn []
+          (when (instance? Closeable body)
+            (.close ^Closeable body))
+          
+          (when-not (d/realized? d)
             (.execute (-> ch aleph.netty/channel .eventLoop)
-              #(d/success! d
-                 (netty/write-and-flush ch empty-last-content)))))
-        d))
+              #(d/success! d (netty/write-and-flush ch empty-last-content))))))
+
+      d)
 
     (netty/write-and-flush ch empty-last-content)))
 
@@ -572,18 +566,18 @@
                 :else
                 (send-streaming-body ch msg body))
               (catch Throwable e
+                ;; xxx(errors-handling): this is actually might be wrong
+                ;; there's a non-zero chance we've already sent msg and
+                ;; failed when started sending body
+                (when (instance? HttpResponse msg)
+                  (send-internal-error ch msg))
                 (let [class-name (.getName (class body))]
                   (log/errorf "error sending body of type %s: %s"
                               class-name
                               (.getMessage ^Throwable e))
                   ;; re-throw exception so the caller could take care
                   ;; about cleaning up the mess
-                  (throw e))
-                ;; xxx(errors-handling): this is actually might be wrong
-                ;; there's a non-zero chance we've already sent msg and
-                ;; failed when started sending body
-                (when (instance? HttpResponse msg)
-                  (send-internal-error ch msg))))]
+                  (throw e))))]
 
       (when-not keep-alive?
         (handle-cleanup ch f))

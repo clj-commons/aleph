@@ -255,6 +255,11 @@
     (-> ^Channel x .alloc .ioBuffer)
     (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
+(defn channel-promise [x]
+  (if (instance? Channel x)
+    (.newPromise ^Channel x)
+    (.newPromise ^ChannelHandlerContext x)))
+
 (defn write [x msg]
   (if (instance? Channel x)
     (.write ^Channel x msg (.voidPromise ^Channel x))

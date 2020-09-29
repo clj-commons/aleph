@@ -613,12 +613,22 @@
                     ;; might be different in case we use :multipart
                     (reset! save-body body))
 
-                  ;; xxx(errors-handling): this should return channel promise and
-                  ;; we need to subscribe on it to understand if request was sent or not
-                  ;; this might be non-trivial in some cases where we perform multiple
-                  ;; writes (e.g. chunked body)
                   (-> (netty/safe-execute ch
                         (http/send-message ch true ssl? req' body))
+                      (d/chain'
+                       (fn [d]
+                         ;; so... what is happening here is the following:
+                         ;; `safe-execute` returns the result of `send-message`
+                         ;; wrapped into a deferred. `send-streaming-body` returns
+                         ;; either channel promise (created by `writeAndFlush`) or
+                         ;; custom deferred (in case body was wrapped into Manifold
+                         ;; stream). if something goes wrong with converting stream
+                         ;; into ByteBuf, the deferred would be set into error state
+                         (when (d/deferred? d)
+                           (d/catch' d
+                             (fn [^Throwable e]
+                               (s/put! responses (d/error-deferred e))
+                               (netty/close ch))))))
                       (d/catch'
                         (fn [^Throwable e]
                           ;; this might happen if request processing failed

@@ -516,7 +516,13 @@
                        (d/timeout! 1e3)
                        deref)))))
 
-  (testing "writing invalid request body")
+  (testing "writing invalid request body"
+    (with-handler echo-string-handler
+      (is (thrown? IllegalArgumentException
+                   (-> (http/post (str "http://localhost:" port)
+                                  {:body (s/->source [1])})
+                       (d/timeout! 1e3)
+                       deref)))))
   
   (testing "reading invalid response message")
   
