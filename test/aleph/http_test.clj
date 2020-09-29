@@ -518,10 +518,14 @@
   {:status 200
    :body (bs/to-string body)})
 
+(def http-line-delimiter "\r\n")
+
+(def http-message-delimiter (str http-line-delimiter http-line-delimiter))
+
 (defn tcp-handler [response]
   (fn [s ch]
     (s/take! s)
-    (s/put! s (str (str/join "\r\n" response) "\r\n\r\n"))))
+    (s/put! s (str (str/join http-line-delimiter response) http-message-delimiter))))
 
 (defmacro with-tcp-response [response & body]
   `(with-server (tcp/start-server (tcp-handler ~response) {:port port})
@@ -578,8 +582,28 @@
                      (-> (http-post (str "http://localhost:" port) {:body "hello!"})
                          (d/timeout! 1e3)
                          deref))))))
-  
-  (testing "reading invalid response body")
+
+  ;; xxx(okachaiev): double check what's gonna happen if a chunk size is
+  ;; larger than it needs to be (when it's smaller - should be similar
+  ;; to the handling of wrong content-length)
+  (testing "reading invalid chunked response body"
+    (binding [*connection-options* {:log-activity :warn}]
+      (with-tcp-response ["HTTP/1.1 4000001 Super Bad Request"
+                          "Server: Aleph"
+                          "Date: Tue, 29 Sep 2020 08:01:42 GMT"
+                          "Connection: Keep-Alive"
+                          "transfer-encoding: chunked"
+                          ""
+                          "not-a-number" ;; definitely not parsable chunk size
+                          "fail"
+                          "0"]
+      ;; xxx(okachaiev): do we need to wrap this into more generic `DecoderException`?
+        (is (thrown? NumberFormatException
+                     (-> (http-post (str "http://localhost:" port))
+                         (d/timeout! 1e3)
+                         deref
+                         :body
+                         bs/to-string))))))
 
   (testing "response body larger then content-length")
 
@@ -589,7 +613,11 @@
   
   (testing "connection closed while reading response message")
   
-  (testing "connection closed while reading response body"))
+  (testing "connection closed while reading response body")
+  
+  (testing "unknown host with JDK DNS resolver")
+  
+  (testing "unknown host with custom DNS client"))
 
 (deftest test-server-errors-handling
   (testing "reject handler when accepting connection")

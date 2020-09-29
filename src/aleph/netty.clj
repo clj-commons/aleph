@@ -129,6 +129,8 @@
 
 (def ^:const array-class (class (clojure.core/byte-array 0)))
 
+(def empty-buffer Unpooled/EMPTY_BUFFER)
+
 (defn buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
     (doary [^ByteBuffer buf (.nioBuffers buf)]
@@ -185,7 +187,7 @@
     ([x]
      (cond
        (nil? x)
-       Unpooled/EMPTY_BUFFER
+       empty-buffer
 
        (instance? array-class x)
        (Unpooled/copiedBuffer ^bytes x)
@@ -205,7 +207,7 @@
      ;; todo(kachayev): do we really need to reallocate in case
      ;;                 we already have an instance of ByteBuf here?
      (if (nil? x)
-       Unpooled/EMPTY_BUFFER
+       empty-buffer
        (doto (allocate ch)
          (append-to-buf! x))))))
 

@@ -110,6 +110,8 @@
           nil))
       (no-url req))))
 
+;; xxx(okachaiev): if `stream` is non empty we should probably try to put exception there...
+;; not as a next response 
 (defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream]
   ;; Typical non-IO exception would be TooLongFrameException, SSLHandshakeError etc
   (when-not (not (instance? IOException ex))
@@ -172,11 +174,23 @@
                 (handle-response rsp c s))))
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
-            (netty/put! (.channel ctx) @stream content)
-            (when (instance? LastHttpContent msg)
-              (d/success! @complete false)
-              (s/close! @stream)))
+          (if (http/decoder-failed? msg)
+            (do
+              (log/warn "HttpContent decoder failed" (http/decoder-failure msg))
+              ;; note that we are most likely to get this when dealing
+              ;; with transfer encoding chunked
+              (if-let [s @stream]
+                ;; xxx(okachaiev): what exactly we gonna do when the stream
+                ;; is present??? discard the rest of the content? close the stream?
+                ;; xxx(okachaiev): interesting fact, closing the connection here
+                ;; would lead to ClosedChannelException on the server side
+                (s/close! s)
+                (handle-decoder-failure ctx msg response-stream)))
+            (let [content (.content ^HttpContent msg)]
+              (netty/put! (.channel ctx) @stream content)
+              (when (instance? LastHttpContent msg)
+                (d/success! @complete false)
+                (s/close! @stream))))
 
           :else
           (.fireChannelRead ctx msg))))))
@@ -243,60 +257,72 @@
                 (reset! response rsp))))
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
-            (if (instance? LastHttpContent msg)
-              (do
+          (if (http/decoder-failed? msg)
+            (do
+              (log/warn "HttpContent decoder failed" (http/decoder-failure msg))
+              ;; note that we are most likely to get this when dealing
+              ;; with transfer encoding chunked
+              (if-let [s @stream]
+                ;; xxx(okachaiev): what exactly we gonna do when the stream
+                ;; is present??? discard the rest of the content? close the stream?
+                ;; xxx(okachaiev): interesting fact, closing the connection here
+                ;; would lead to ClosedChannelException on the server side
+                (s/close! s)
+                (handle-decoder-failure ctx msg response-stream)))
+            (let [content (.content ^HttpContent msg)]
+              (if (instance? LastHttpContent msg)
+                (do
+
+                  (if-let [s @stream]
+
+                    (do
+                      (s/put! s (netty/buf->array content))
+                      (netty/release content)
+                      (d/success! @complete false)
+                      (s/close! s))
+
+                    (let [bufs (conj @buffer content)
+                          bytes (netty/bufs->array bufs)]
+                      (doseq [b bufs]
+                        (netty/release b))
+                      (handle-response @response (d/success-deferred false) bytes)))
+
+                  (.set buffer-size 0)
+                  (reset! stream nil)
+                  (reset! buffer [])
+                  (reset! response nil))
 
                 (if-let [s @stream]
 
-                  (do
-                    (s/put! s (netty/buf->array content))
-                    (netty/release content)
-                    (d/success! @complete false)
-                    (s/close! s))
-
-                  (let [bufs (conj @buffer content)
-                        bytes (netty/bufs->array bufs)]
-                    (doseq [b bufs]
-                      (netty/release b))
-                    (handle-response @response (d/success-deferred false) bytes)))
-
-                (.set buffer-size 0)
-                (reset! stream nil)
-                (reset! buffer [])
-                (reset! response nil))
-
-              (if-let [s @stream]
-
                  ;; already have a stream going
-                (do
-                  (netty/put! (.channel ctx) s (netty/buf->array content))
-                  (netty/release content))
+                  (do
+                    (netty/put! (.channel ctx) s (netty/buf->array content))
+                    (netty/release content))
 
-                (let [len (.readableBytes ^ByteBuf content)]
+                  (let [len (.readableBytes ^ByteBuf content)]
 
-                  (when-not (zero? len)
-                    (swap! buffer conj content))
+                    (when-not (zero? len)
+                      (swap! buffer conj content))
 
-                  (let [size (.addAndGet buffer-size len)]
+                    (let [size (.addAndGet buffer-size len)]
 
                      ;; buffer size exceeded, flush it as a stream
-                    (when (< buffer-capacity size)
-                      (let [bufs @buffer
-                            c (d/deferred)
-                            s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) 16384)
-                                (s/put! (netty/bufs->array bufs)))]
+                      (when (< buffer-capacity size)
+                        (let [bufs @buffer
+                              c (d/deferred)
+                              s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) 16384)
+                                  (s/put! (netty/bufs->array bufs)))]
 
-                        (doseq [b bufs]
-                          (netty/release b))
+                          (doseq [b bufs]
+                            (netty/release b))
 
-                        (reset! buffer [])
-                        (reset! stream s)
-                        (reset! complete c)
+                          (reset! buffer [])
+                          (reset! stream s)
+                          (reset! complete c)
 
-                        (s/on-closed s #(d/success! c true))
+                          (s/on-closed s #(d/success! c true))
 
-                        (handle-response @response c s))))))))
+                          (handle-response @response c s)))))))))
 
           :else
           (.fireChannelRead ctx msg))))))
