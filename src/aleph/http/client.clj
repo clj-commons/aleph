@@ -619,12 +619,12 @@
                   ;; writes (e.g. chunked body)
                   (-> (netty/safe-execute ch
                         (http/send-message ch true ssl? req' body))
-                      (d/catch' Throwable
-                                (fn [e]
-                                  ;; this might happen if request processing failed
-                                  ;; being offloaded onto netty's event loop
-                                  (s/put! responses (d/error-deferred e))
-                                  (netty/close ch))))))
+                      (d/catch'
+                        (fn [^Throwable e]
+                          ;; this might happen if request processing failed
+                          ;; being offloaded onto netty's event loop
+                          (s/put! responses (d/error-deferred e))
+                          (netty/close ch))))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e

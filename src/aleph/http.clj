@@ -354,19 +354,14 @@
 
                      (maybe-timeout! connection-timeout)
 
-                     ;; connection timeout triggered, dispose of the connetion
-                     (d/catch' TimeoutException
-                       (fn [^Throwable e]
-                         (flow/dispose pool k conn)
-                         (d/error-deferred (ConnectionTimeoutException. e))))
-
-                     ;; xxx(errors-handling): seems like in this case we process
-                     ;; exception twice
                      ;; connection failed, bail out
                      (d/catch'
-                       (fn [e]
+                       (fn [^Throwable e]
                          (flow/dispose pool k conn)
-                         (d/error-deferred e)))
+                         (d/error-deferred
+                           (if (instance? TimeoutException e)
+                             (ConnectionTimeoutException. e)
+                             e))))
 
                      ;; actually make the request now
                      (d/chain'
@@ -378,18 +373,14 @@
                              (-> (conn' req)
                                (maybe-timeout! request-timeout)
 
-                               ;; request timeout triggered, dispose of the connection
-                               (d/catch' TimeoutException
-                                 (fn [^Throwable e]
-                                   (flow/dispose pool k conn)
-                                   (d/error-deferred (RequestTimeoutException. e))))
-
-                               ;; xxx(errors-handling): processing exception twice here
                                ;; request failed, dispose of the connection
                                (d/catch'
-                                 (fn [e]
+                                 (fn [^Throwable e]
                                    (flow/dispose pool k conn)
-                                   (d/error-deferred e)))
+                                   (d/error-deferred
+                                     (if (instance? TimeoutException e)
+                                       (RequestTimeoutException. e)
+                                       e))))
 
                                ;; clean up the response
                                (d/chain'
