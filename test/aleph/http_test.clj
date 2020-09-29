@@ -521,7 +521,9 @@
   (testing "reading invalid response message")
   
   (testing "reading invalid response body")
-  
+
+  (testing "response body larger then content-length")
+
   (testing "connection closed while writing request message")
   
   (testing "connection closed while writing request body")
@@ -530,15 +532,24 @@
   
   (testing "connection closed while reading response body"))
 
-
 (deftest test-server-errors-handling
-  (testing "reject response when accepting connection")
+  (testing "reject handler when accepting connection")
   
   (testing "reading invalid request message")
   
   (testing "reading invalid request body")
   
-  (testing "writing invalid response message")
+  (testing "writing invalid response message"
+    (let [invalid-status-handler
+          (fn [{:keys [body]}]
+            (when (some? body) (bs/to-string body))
+            {:status 1045
+             :body "there's no such status"})]
+      (with-handler invalid-status-handler
+        (= 500 (-> (http/get (str "http://localhost:" port))
+                   (d/timeout! 1e3)
+                   deref
+                   :status)))))
   
   (testing "writing invalid response body")
   

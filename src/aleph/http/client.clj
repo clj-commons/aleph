@@ -617,11 +617,18 @@
                   ;; we need to subscribe on it to understand if request was sent or not
                   ;; this might be non-trivial in some cases where we perform multiple
                   ;; writes (e.g. chunked body)
-                  (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' body))))
+                  (-> (netty/safe-execute ch
+                        (http/send-message ch true ssl? req' body))
+                      (d/catch' Throwable
+                                (fn [e]
+                                  ;; this might happen if request processing failed
+                                  ;; being offloaded onto netty's event loop
+                                  (s/put! responses (d/error-deferred e))
+                                  (netty/close ch))))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
+                (netty/close ch)
                 (s/put! responses (d/error-deferred e)))))
           requests)
 

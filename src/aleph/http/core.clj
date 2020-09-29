@@ -575,7 +575,10 @@
                 (let [class-name (.getName (class body))]
                   (log/errorf "error sending body of type %s: %s"
                               class-name
-                              (.getMessage ^Throwable e)))
+                              (.getMessage ^Throwable e))
+                  ;; re-throw exception so the caller could take care
+                  ;; about cleaning up the mess
+                  (throw e))
                 ;; xxx(errors-handling): this is actually might be wrong
                 ;; there's a non-zero chance we've already sent msg and
                 ;; failed when started sending body
