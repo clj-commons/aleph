@@ -501,6 +501,56 @@
           count)))))
 
 ;;;
+;;; errors processing
+;;;
+
+(defn echo-string-handler [{:keys [body]}]
+  {:status 200
+   :body (bs/to-string body)})
+
+(deftest test-client-errors-handling
+  (testing "writing invalid request message"
+    (with-handler echo-string-handler
+      (is (thrown? IllegalArgumentException
+                   (-> (http/post (str "http://localhost:" port) {:body 42})
+                       (d/timeout! 1e3)
+                       deref)))))
+
+  (testing "writing invalid request body")
+  
+  (testing "reading invalid response message")
+  
+  (testing "reading invalid response body")
+  
+  (testing "connection closed while writing request message")
+  
+  (testing "connection closed while writing request body")
+  
+  (testing "connection closed while reading response message")
+  
+  (testing "connection closed while reading response body"))
+
+
+(deftest test-server-errors-handling
+  (testing "reject response when accepting connection")
+  
+  (testing "reading invalid request message")
+  
+  (testing "reading invalid request body")
+  
+  (testing "writing invalid response message")
+  
+  (testing "writing invalid response body")
+  
+  (testing "connection closed while reading request message")
+  
+  (testing "connection closed while reading request body")
+  
+  (testing "connection closed while writing response message")
+  
+  (testing "connection closed while writing response body"))
+
+;;;
 
 (deftest ^:benchmark benchmark-http
   (println "starting HTTP benchmark server on 8080")
