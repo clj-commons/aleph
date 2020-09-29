@@ -6,10 +6,12 @@
     [aleph
      [http :as http]
      [netty :as netty]
-     [flow :as flow]]
+     [flow :as flow]
+     [tcp :as tcp]]
     [byte-streams :as bs]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [clojure.string :as str])
   (:import
     [java.util.concurrent
      Executors]
@@ -508,6 +510,33 @@
   {:status 200
    :body (bs/to-string body)})
 
+(defn pack-lines [lines]
+  (str (str/join "\r\n" lines) "\r\n\r\n"))
+
+(defn invalid-response-message []
+  (with-server (tcp/start-server
+                (fn [ch _]
+                  (s/take! ch)
+                    ;; note that `HttpObjectDecoder.allowDuplicateContentLengths` is
+                    ;; set to `false` by default. which means that the following
+                    ;; response leads to `HttpObjectDecoder` generating what's
+                    ;; so called "Invalid Message"
+                    ;; https://github.com/netty/netty/blob/4.1/codec-http/src/main/java/io/netty/handler/codec/http/HttpObjectDecoder.java#L561
+                  (s/put! ch (pack-lines ["HTTP/1.1 4000001 Super Bad Request"
+                                          "Server: Aleph"
+                                          "Date: Tue, 29 Sep 2020 08:01:42 GMT"
+                                          "Content-Length: 0"
+                                          "Content-Length: 100"
+                                          "Connection: close"])))
+                {:port port})
+    (is (thrown? IllegalArgumentException
+                 (-> (http/post (str "http://localhost:" port)
+                                {:body "hello!"
+                                 :throw-exceptions? false
+                                 :pool *pool*})
+                     (d/timeout! 1e3)
+                     deref)))))
+
 (deftest test-client-errors-handling
   (testing "writing invalid request message"
     (with-handler echo-string-handler
@@ -524,8 +553,14 @@
                        (d/timeout! 1e3)
                        deref)))))
   
-  (testing "reading invalid response message")
-  
+  (testing "reading invalid response message"
+    (binding [*connection-options* {:raw-stream? false}]
+      (invalid-response-message)))
+
+  (testing "reading invalid response message: raw stream"
+    (binding [*connection-options* {:raw-stream? true}]
+      (invalid-response-message)))
+
   (testing "reading invalid response body")
 
   (testing "response body larger then content-length")

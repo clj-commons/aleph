@@ -43,6 +43,9 @@
      IdleStateEvent]
     [io.netty.handler.stream
      ChunkedWriteHandler]
+    [io.netty.handler.codec
+     DecoderResult
+     DecoderResultProvider]
     [io.netty.handler.codec.http
      FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
@@ -118,7 +121,7 @@
 ;; (meaning that the object from response-stream is arelady taken
 ;; by the user and putting a new one would simply mean we're overriding
 ;; response to the next request over the same connection)
-(defn exception-handler [ctx ex response-stream]
+(defn handle-exception [ctx ex response-stream]
   (cond
     ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
     ;; is part of the pipeline
@@ -135,6 +138,14 @@
     ;; processing IOException vs. any other exception?
     (not (instance? IOException ex))
     (log/warn ex "error in HTTP client")))
+
+(defn decoder-failed? [^DecoderResultProvider msg]
+  (.isFailure ^DecoderResult (.decoderResult msg)))
+
+(defn handle-decoder-failure [^ChannelHandlerContext ctx ^DecoderResultProvider msg response-stream]
+  (let [^Throwable ex (.cause ^DecoderResult (.decoderResult msg))]
+    (s/put! response-stream ex)
+    (netty/close ctx)))
 
 (defn raw-client-handler
   [response-stream buffer-capacity]
@@ -153,7 +164,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex response-stream))
+        (handle-exception ctx ex response-stream))
 
       :channel-inactive
       ([_ ctx]
@@ -165,16 +176,16 @@
       :channel-read
       ([_ ctx msg]
         (cond
-
           (instance? HttpResponse msg)
-          (let [rsp msg]
-
-            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
-                  c (d/deferred)]
-              (reset! stream s)
-              (reset! complete c)
-              (s/on-closed s #(d/success! c true))
-              (handle-response rsp c s)))
+          (if (decoder-failed? msg)
+            (handle-decoder-failure ctx msg response-stream)
+            (let [rsp msg]
+              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
+                    c (d/deferred)]
+                (reset! stream s)
+                (reset! complete c)
+                (s/on-closed s #(d/success! c true))
+                (handle-response rsp c s))))
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
@@ -204,7 +215,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex response-stream))
+        (handle-exception ctx ex response-stream))
 
       :channel-inactive
       ([_ ctx]
@@ -222,26 +233,30 @@
 
           ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
           (instance? FullHttpResponse msg)
-          (let [^FullHttpResponse rsp msg
-                content (.content rsp)
-                c (d/deferred)
-                s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
-            (s/on-closed s #(d/success! c true))
-            (s/put! s (netty/buf->array content))
-            (netty/release content)
-            (handle-response rsp c s)
-            (s/close! s))
+          (if (decoder-failed? msg)
+            (handle-decoder-failure ctx msg response-stream)
+            (let [^FullHttpResponse rsp msg
+                  content (.content rsp)
+                  c (d/deferred)
+                  s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+              (s/on-closed s #(d/success! c true))
+              (s/put! s (netty/buf->array content))
+              (netty/release content)
+              (handle-response rsp c s)
+              (s/close! s)))
 
           (instance? HttpResponse msg)
-          (let [rsp msg]
-            (if (HttpUtil/isTransferEncodingChunked rsp)
-              (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
-                    c (d/deferred)]
-                (reset! stream s)
-                (reset! complete c)
-                (s/on-closed s #(d/success! c true))
-                (handle-response rsp c s))
-              (reset! response rsp)))
+          (if (decoder-failed? msg)
+            (handle-decoder-failure ctx msg response-stream)
+            (let [rsp msg]
+              (if (HttpUtil/isTransferEncodingChunked rsp)
+                (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
+                      c (d/deferred)]
+                  (reset! stream s)
+                  (reset! complete c)
+                  (s/on-closed s #(d/success! c true))
+                  (handle-response rsp c s))
+                (reset! response rsp))))
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
