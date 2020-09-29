@@ -113,37 +113,21 @@
           nil))
       (no-url req))))
 
-;; xxx(errors-handling): to put exception into response-stream
-;; might not be the correct action but it would work in most cases
-;; if (and only if) we close channel right after
-;; we should somehow find a way to deal with the situation when 
-;; exception happens while realizing async body from the response
-;; (meaning that the object from response-stream is arelady taken
-;; by the user and putting a new one would simply mean we're overwriting
-;; response to the next request over the same connection)
-;; ... which effectively means that we MUST close the connection when
-;; propagating throwable onto the `response-stream`
 (defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream]
-  (cond
-    ;; could happens when the response message violates `MAX_INITIAL_LINE_LENGTH` or
-    ;; `MAX_HEADER_SIZE` or when `io.netty.handler.codec.http.HttpObjectAggregator`
-    ;; is part of the pipeline
-    (instance? TooLongFrameException ex)
+  ;; Typical non-IO exception would be TooLongFrameException, SSLHandshakeError etc
+  (when-not (not (instance? IOException ex))
+    (log/warn "error in HTTP client" (.getMessage ex))
+    ;; An exception might happen while realizing async body from the response
+    ;; (the message from `response-stream` is arelady taken by the user).
+    ;; In this case, offering a new one item in the response stream would mean
+    ;; we are enqueuing response for the next request over the same connection.
+    ;; Which effectively means that we MUST close the connection when
+    ;; propagating throwable onto the `response-stream`
     (s/put! response-stream ex)
-
-    ;; when SSL handshake failed
-    (http/ssl-handshake-error? ex)
-    (let [^Throwable handshake-error (.getCause ^Throwable ex)]
-      (s/put! response-stream handshake-error))
-
-    ;; xxx(errors-handling): is there a conceptual difference between
-    ;; processing IOException vs. any other exception?
-    (not (instance? IOException ex))
-    (log/warn ex "error in HTTP client"))
-  ;; in case if closing the channel is not a desirable behavior,
-  ;; inject additional pipeline handler right before current one
-  ;; to capture and suppress throwables
-  (netty/close ctx))
+    ;; In case if closing the channel is not a desirable behavior,
+    ;; it's still possible to inject additional pipeline handler
+    ;; right before current one to capture and suppress throwables
+    (netty/close ctx)))
 
 (defn decoder-failed? [^DecoderResultProvider msg]
   (.isFailure ^DecoderResult (.decoderResult msg)))
