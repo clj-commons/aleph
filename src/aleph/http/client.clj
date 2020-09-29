@@ -123,7 +123,8 @@
 ;; response to the next request over the same connection)
 (defn handle-exception [ctx ex response-stream]
   (cond
-    ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
+    ;; could happens when the response message violates `MAX_INITIAL_LINE_LENGTH` or
+    ;; `MAX_HEADER_SIZE` or when `io.netty.handler.codec.http.HttpObjectAggregator`
     ;; is part of the pipeline
     (instance? TooLongFrameException ex)
     (s/put! response-stream ex)

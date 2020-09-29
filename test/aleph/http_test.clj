@@ -25,7 +25,9 @@
      TimeoutException]
     [aleph.utils
      ConnectionTimeoutException
-     RequestTimeoutException]))
+     RequestTimeoutException]
+   [io.netty.handler.codec
+    TooLongFrameException]))
 
 ;;;
 
@@ -47,6 +49,12 @@
     (http-get url nil))
   ([url options]
     (http/get url (merge (default-options) {:pool *pool*} options))))
+
+(defn http-post
+  ([url]
+   (http-post url nil))
+  ([url options]
+   (http/post url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-put
   ([url]
@@ -510,30 +518,29 @@
   {:status 200
    :body (bs/to-string body)})
 
-(defn pack-lines [lines]
-  (str (str/join "\r\n" lines) "\r\n\r\n"))
+(defn tcp-handler [response]
+  (fn [s ch]
+    (s/take! s)
+    (s/put! s (str (str/join "\r\n" response) "\r\n\r\n"))))
+
+(defmacro with-tcp-response [response & body]
+  `(with-server (tcp/start-server (tcp-handler ~response) {:port port})
+     ~@body))
 
 (defn invalid-response-message []
-  (with-server (tcp/start-server
-                (fn [ch _]
-                  (s/take! ch)
-                    ;; note that `HttpObjectDecoder.allowDuplicateContentLengths` is
-                    ;; set to `false` by default. which means that the following
-                    ;; response leads to `HttpObjectDecoder` generating what's
-                    ;; so called "Invalid Message"
-                    ;; https://github.com/netty/netty/blob/4.1/codec-http/src/main/java/io/netty/handler/codec/http/HttpObjectDecoder.java#L561
-                  (s/put! ch (pack-lines ["HTTP/1.1 4000001 Super Bad Request"
-                                          "Server: Aleph"
-                                          "Date: Tue, 29 Sep 2020 08:01:42 GMT"
-                                          "Content-Length: 0"
-                                          "Content-Length: 100"
-                                          "Connection: close"])))
-                {:port port})
+  ;; note that `HttpObjectDecoder.allowDuplicateContentLengths` is
+  ;; set to `false` by default. which means that the following
+  ;; response leads to `HttpObjectDecoder` generating what's
+  ;; so called "Invalid Message"
+  ;; https://github.com/netty/netty/blob/4.1/codec-http/src/main/java/io/netty/handler/codec/http/HttpObjectDecoder.java#L561
+  (with-tcp-response ["HTTP/1.1 4000001 Super Bad Request"
+                      "Server: Aleph"
+                      "Date: Tue, 29 Sep 2020 08:01:42 GMT"
+                      "Content-Length: 0"
+                      "Content-Length: 100"
+                      "Connection: close"]
     (is (thrown? IllegalArgumentException
-                 (-> (http/post (str "http://localhost:" port)
-                                {:body "hello!"
-                                 :throw-exceptions? false
-                                 :pool *pool*})
+                 (-> (http-post (str "http://localhost:" port) {:body "hello!"})
                      (d/timeout! 1e3)
                      deref)))))
 
@@ -541,15 +548,14 @@
   (testing "writing invalid request message"
     (with-handler echo-string-handler
       (is (thrown? IllegalArgumentException
-                   (-> (http/post (str "http://localhost:" port) {:body 42})
+                   (-> (http-post (str "http://localhost:" port) {:body 42})
                        (d/timeout! 1e3)
                        deref)))))
 
   (testing "writing invalid request body"
     (with-handler echo-string-handler
       (is (thrown? IllegalArgumentException
-                   (-> (http/post (str "http://localhost:" port)
-                                  {:body (s/->source [1])})
+                   (-> (http-post (str "http://localhost:" port) {:body (s/->source [1])})
                        (d/timeout! 1e3)
                        deref)))))
   
@@ -561,6 +567,18 @@
     (binding [*connection-options* {:raw-stream? true}]
       (invalid-response-message)))
 
+  (testing "reading response that violates decoder frame limit"
+    (binding [*connection-options* {:max-initial-line-length 10}]
+      (with-tcp-response ["HTTP/1.1 4000001 Super Bad Request"
+                          "Server: Aleph"
+                          "Date: Tue, 29 Sep 2020 08:01:42 GMT"
+                          "Content-Length: 0"
+                          "Connection: close"]
+        (is (thrown? TooLongFrameException
+                     (-> (http-post (str "http://localhost:" port) {:body "hello!"})
+                         (d/timeout! 1e3)
+                         deref))))))
+  
   (testing "reading invalid response body")
 
   (testing "response body larger then content-length")
