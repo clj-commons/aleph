@@ -661,7 +661,7 @@
                                                                 timeout]}]
   (let [done (d/deferred)]
     (websocket-ping conn done payload)
-    (when (pos? timeout)
+    (when (and timeout (pos? timeout))
       (-> done
           (d/timeout! timeout ::ping-timeout)
           (d/chain'
