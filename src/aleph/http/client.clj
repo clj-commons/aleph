@@ -119,9 +119,11 @@
 ;; we should somehow find a way to deal with the situation when 
 ;; exception happens while realizing async body from the response
 ;; (meaning that the object from response-stream is arelady taken
-;; by the user and putting a new one would simply mean we're overriding
+;; by the user and putting a new one would simply mean we're overwriting
 ;; response to the next request over the same connection)
-(defn handle-exception [ctx ex response-stream]
+;; ... which effectively means that we MUST close the connection when
+;; propagating throwable onto the `response-stream`
+(defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream]
   (cond
     ;; could happens when the response message violates `MAX_INITIAL_LINE_LENGTH` or
     ;; `MAX_HEADER_SIZE` or when `io.netty.handler.codec.http.HttpObjectAggregator`
@@ -134,11 +136,14 @@
     (let [^Throwable handshake-error (.getCause ^Throwable ex)]
       (s/put! response-stream handshake-error))
 
-    ;; xxx(errors-handling): we should at least close the connection here
     ;; xxx(errors-handling): is there a conceptual difference between
     ;; processing IOException vs. any other exception?
     (not (instance? IOException ex))
-    (log/warn ex "error in HTTP client")))
+    (log/warn ex "error in HTTP client"))
+  ;; in case if closing the channel is not a desirable behavior,
+  ;; inject additional pipeline handler right before current one
+  ;; to capture and suppress throwables
+  (netty/close ctx))
 
 (defn decoder-failed? [^DecoderResultProvider msg]
   (.isFailure ^DecoderResult (.decoderResult msg)))
