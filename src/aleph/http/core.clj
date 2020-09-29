@@ -23,7 +23,10 @@
      ByteBuf]
     [java.nio
      ByteBuffer]
-    [io.netty.handler.codec DecoderException]
+    [io.netty.handler.codec
+     DecoderException
+     DecoderResult
+     DecoderResultProvider]
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
@@ -284,11 +287,22 @@
    :headers {"content-type" "text/plain"}
    :body "Internal server error"})
 
+(def default-unavailable-response
+  {:status 503
+   :headers {"content-type" "text/plain"}
+   :body "503 Service Unavailable"})
+
 ;; Logs exception and returns default 500 response
 ;; not to expose internal logic to the client
 (defn error-response [^Throwable e]
   (log/error e "error in HTTP handler")
   default-error-response)
+
+(defn decoder-failed? [^DecoderResultProvider msg]
+  (.isFailure ^DecoderResult (.decoderResult msg)))
+
+(defn ^Throwable decoder-failure [^DecoderResultProvider msg]
+  (.cause ^DecoderResult (.decoderResult msg)))
 
 (defn send-streaming-body [ch ^HttpMessage msg body]
 

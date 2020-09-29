@@ -164,9 +164,7 @@
                       (rejected-handler req')
                       (catch Throwable e
                         (http/error-response e)))
-                    {:status 503
-                     :headers {"content-type" "text/plain"}
-                     :body "503 Service Unavailable"})))
+                    http/default-unavailable-response)))
 
               ;; handle it inline (hope you know what you're doing)
               (try
@@ -208,16 +206,14 @@
     (not (instance? IOException ex))
     (log/warn ex "error in HTTP server")))
 
-(defn invalid-request? [^HttpRequest req]
-  (-> req .decoderResult .isFailure))
-
 (defn reject-invalid-request [ctx ^HttpRequest req]
   (d/chain
     (netty/write-and-flush ctx
       (DefaultFullHttpResponse.
         HttpVersion/HTTP_1_1
         HttpResponseStatus/REQUEST_URI_TOO_LONG
-        (-> req .decoderResult .cause .getMessage netty/to-byte-buf)))
+       ;; xxx(okachaiev): we should not expose message from the exception here
+        (-> (http/decoder-failure req) .getMessage netty/to-byte-buf)))
     netty/wrap-future
     (fn [_] (netty/close ctx))))
 
@@ -331,7 +327,7 @@
         (cond
 
           (instance? HttpRequest msg)
-          (if (invalid-request? msg)
+          (if (http/decoder-failed? msg)
             (reject-invalid-request ctx msg)
             (process-request ctx msg))
 
@@ -379,7 +375,7 @@
         (cond
 
           (instance? HttpRequest msg)
-          (if (invalid-request? msg)
+          (if (http/decoder-failed? msg)
             (reject-invalid-request ctx msg)
             (let [req msg]
               (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]

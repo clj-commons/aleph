@@ -593,7 +593,11 @@
 
 (deftest test-server-errors-handling
   (testing "reject handler when accepting connection")
-  
+
+  (testing "throwing exception within reject handler")
+
+  (testing "throwing exception within ring handler")
+
   (testing "reading invalid request message")
   
   (testing "reading invalid request body")

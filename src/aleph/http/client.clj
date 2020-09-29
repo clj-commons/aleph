@@ -43,9 +43,6 @@
      IdleStateEvent]
     [io.netty.handler.stream
      ChunkedWriteHandler]
-    [io.netty.handler.codec
-     DecoderResult
-     DecoderResultProvider]
     [io.netty.handler.codec.http
      FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
@@ -129,11 +126,8 @@
     ;; right before current one to capture and suppress throwables
     (netty/close ctx)))
 
-(defn decoder-failed? [^DecoderResultProvider msg]
-  (.isFailure ^DecoderResult (.decoderResult msg)))
-
-(defn handle-decoder-failure [^ChannelHandlerContext ctx ^DecoderResultProvider msg response-stream]
-  (let [^Throwable ex (.cause ^DecoderResult (.decoderResult msg))]
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
+  (let [^Throwable ex (http/decoder-failure msg)]
     (s/put! response-stream ex)
     (netty/close ctx)))
 
@@ -167,7 +161,7 @@
       ([_ ctx msg]
         (cond
           (instance? HttpResponse msg)
-          (if (decoder-failed? msg)
+          (if (http/decoder-failed? msg)
             (handle-decoder-failure ctx msg response-stream)
             (let [rsp msg]
               (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
@@ -223,7 +217,7 @@
 
           ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
           (instance? FullHttpResponse msg)
-          (if (decoder-failed? msg)
+          (if (http/decoder-failed? msg)
             (handle-decoder-failure ctx msg response-stream)
             (let [^FullHttpResponse rsp msg
                   content (.content rsp)
@@ -236,7 +230,7 @@
               (s/close! s)))
 
           (instance? HttpResponse msg)
-          (if (decoder-failed? msg)
+          (if (http/decoder-failed? msg)
             (handle-decoder-failure ctx msg response-stream)
             (let [rsp msg]
               (if (HttpUtil/isTransferEncodingChunked rsp)
