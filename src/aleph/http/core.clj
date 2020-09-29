@@ -23,11 +23,15 @@
      ByteBuf]
     [java.nio
      ByteBuffer]
-    [io.netty.handler.codec DecoderException]
+    [io.netty.handler.codec
+     DecoderException
+     DecoderResult
+     DecoderResultProvider]
     [io.netty.handler.codec.http
-     DefaultHttpRequest DefaultLastHttpContent
-     DefaultHttpResponse DefaultFullHttpRequest
-     FullHttpRequest
+     DefaultHttpRequest
+     DefaultLastHttpContent
+     DefaultHttpResponse
+     DefaultFullHttpRequest
      HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
@@ -47,8 +51,7 @@
      PingWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
-     CloseWebSocketFrame
-     WebSocketChunkedInput]
+     CloseWebSocketFrame]
     [java.io
      File
      RandomAccessFile
@@ -239,21 +242,37 @@
   :aleph/complete complete
   :body body)
 
-(defn netty-request->ring-request [^HttpRequest req ssl? ch body]
-  (assoc
-    (->NettyRequest
-      req
-      ssl?
-      ch
-      (AtomicBoolean. false)
-      (-> req .uri (.indexOf (int 63))) body)
-    :aleph/request-arrived (System/nanoTime)))
+(defn netty-request->ring-request
+  ([req ssl? ch body]
+   netty-request->ring-request req ssl? ch body nil)
+  ([^HttpRequest req ssl? ch body interrupted?]
+   (let [req' (-> (->NettyRequest
+                   req
+                   ssl?
+                   ch
+                   (AtomicBoolean. false)
+                   (-> req .uri (.indexOf (int 63))) body)
+                  (assoc :aleph/request-arrived (System/nanoTime)))]
+     (if (nil? interrupted?)
+       req'
+       (assoc req' :aleph/interrupted? interrupted?)))))
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
 
 (defn ring-request-ssl-session [^NettyRequest req]
   (netty/channel-ssl-session (.ch req)))
+
+(defn wrap-complete [rsp]
+  (let [prev-flag (:aleph/complete rsp)
+        new-flag (if (nil? prev-flag)
+                   (d/success-deferred false)
+                   (let [d' (d/deferred)]
+                     (d/connect prev-flag d')
+                     d'))]
+    (-> rsp
+        (dissoc :aleph/complete)
+        (assoc :aleph/interrupted? new-flag))))
 
 ;;;
 
@@ -282,17 +301,35 @@
 (def default-error-response
   {:status 500
    :headers {"content-type" "text/plain"}
-   :body "Internal server error"})
+   :body "Internal Server Error"})
 
-;; Logs exception and returns default 500 response
-;; not to expose internal logic to the client
-(defn error-response [^Throwable e]
-  (log/error e "error in HTTP handler")
-  default-error-response)
+(def default-unavailable-response
+  {:status 503
+   :headers {"content-type" "text/plain"}
+   :body "Service Unavailable"})
 
-(defn send-streaming-body [ch ^HttpMessage msg body]
+(defn error-response
+  ([^Throwable e]
+   (error-response nil e))
+  ([error-logger ^Throwable e]
+   (let [logger (or error-logger
+                    #(log/error % "error in HTTP handler"))]
+     (try
+       (logger e)
+       (catch Throwable ex
+         (log/warn ex "error in error logger"))))
+   default-error-response))
+
+(defn decoder-failed? [^DecoderResultProvider msg]
+  (.isFailure ^DecoderResult (.decoderResult msg)))
+
+(defn ^Throwable decoder-failure [^DecoderResultProvider msg]
+  (.cause ^DecoderResult (.decoderResult msg)))
+
+(defn send-streaming-body [^AtomicBoolean message-sent? ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
+  (.set message-sent? true)
   (netty/write ch msg)
 
   (if-let [body' (if (sequential? body)
@@ -326,25 +363,20 @@
                      (netty/flush ch)
                      body))]
 
-    (let [src (if (or (sequential? body') (s/stream? body'))
+    (let [d (d/deferred)
+          src (if (or (sequential? body') (s/stream? body'))
                 (->> body'
-                  s/->source
-                  (s/map (fn [x]
-                           (try
-                             (netty/to-byte-buf x)
-                             (catch Throwable e
-                               ;; xxx(errors-handling): would be much better if we can
-                               ;; deliver this error to the caller rather than just closing
-                               ;; the connection and waiting for "connection was closed" error
-                               ;; to pop up. we can obviously cheat here and use fireExceptionCaught
-                               ;; on the pipeline (forcing the exception to be thrown at the beginnig)
-                               ;; but it would turn error handling in the pipeline into mess as
-                               ;; we won't have any information whether the request was already 
-                               ;; sent or not. the correct solution would be to keep channel promise
-                               ;; open somewhere (attached to the open connection) and resolve it
-                               ;; with success only when entire body is succesfully sent (or not)
-                               (log/error e "error converting " (.getName (class x)) " to ByteBuf")
-                               (netty/close ch))))))
+                     s/->source
+                     (s/map (fn [x]
+                              (try
+                                (netty/to-byte-buf x)
+                                (catch Throwable e
+                                  ;; no need to print entire exception as soon as user
+                                  ;; now has access to it thus could setup proper logging
+                                  (log/error (.getMessage e)
+                                             "error converting" (.getName (class x)) "to ByteBuf")
+                                  (d/error! d e)
+                                  (netty/close ch))))))
                 (netty/to-byte-buf-stream body' 8192))
 
           sink (netty/sink ch false #(DefaultHttpContent. %))]
@@ -352,24 +384,23 @@
       (s/connect src sink)
 
       (-> ch
-        netty/channel
-        .closeFuture
-        netty/wrap-future
-        (d/chain' (fn [_] (if (s/stream? body')
-                            (s/close! body')
-                            (s/close! src)))))
+          netty/channel
+          .closeFuture
+          netty/wrap-future
+          (d/chain' (fn [_] (if (s/stream? body')
+                              (s/close! body')
+                              (s/close! src)))))
 
-      (let [d (d/deferred)]
-        (s/on-closed sink
-          (fn []
-
-            (when (instance? Closeable body)
-              (.close ^Closeable body))
-
+      (s/on-closed sink
+        (fn []
+          (when (instance? Closeable body)
+            (.close ^Closeable body))
+          
+          (when-not (d/realized? d)
             (.execute (-> ch aleph.netty/channel .eventLoop)
-              #(d/success! d
-                 (netty/write-and-flush ch empty-last-content)))))
-        d))
+              #(d/success! d (netty/write-and-flush ch empty-last-content))))))
+
+      d)
 
     (netty/write-and-flush ch empty-last-content)))
 
@@ -466,7 +497,7 @@
         (.close raf)
         (.close fc)))))
 
-(defn send-contiguous-body [ch ^HttpMessage msg body]
+(defn send-contiguous-body [^AtomicBoolean message-sent? ch ^HttpMessage msg body]
   (let [omitted? (identical? :aleph/omitted body)
         body (if (or (nil? body) omitted?)
                empty-last-content
@@ -480,10 +511,11 @@
             (try-set-content-length! msg length)))
         (try-set-content-length! msg length)))
 
+    (.set message-sent? true)
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
-(defn send-internal-error [ch ^HttpResponse msg]
+(defn send-internal-error [^AtomicBoolean message-sent? ch ^HttpResponse msg]
   (let [raw-headers (.headers msg)
         headers {:server (.get raw-headers server-name)
                  :connection (.get raw-headers connection-name)
@@ -491,101 +523,136 @@
         resp (-> default-error-response
                  (update :headers merge headers))
         msg' (ring-response->netty-response resp)]
-    (send-contiguous-body ch msg' (:body resp))))
+    (send-contiguous-body message-sent? ch msg' (:body resp))))
 
-(defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
+(defn send-chunked-file [^AtomicBoolean message-sent? ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
                          (.-offset file)
                          (.-length file)
                          (.-chunk-size file))]
     (try-set-content-length! msg (.-length file))
+    (.set message-sent? true)
     (netty/write ch msg)
     (netty/write-and-flush ch (HttpChunkedInput. cf))))
 
-(defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
+(defn send-chunked-body [^AtomicBoolean message-sent? ch ^HttpMessage msg ^ChunkedInput body]
+  (.set message-sent? true)
   (netty/write ch msg)
   (netty/write-and-flush ch body))
 
-(defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
+(defn send-file-region [^AtomicBoolean message-sent? ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
         fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
     (try-set-content-length! msg (.-length file))
+    (.set message-sent? true)
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
+(defn send-file-body [^AtomicBoolean message-sent? ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
     (let [source (-> file
                      (bs/to-byte-buffers {:chunk-size 1e6})
                      s/->source)]
-      (send-streaming-body ch msg source))
+      (send-streaming-body message-sent? ch msg source))
 
     (chunked-writer-enabled? ch)
-    (send-chunked-file ch msg file)
+    (send-chunked-file message-sent? ch msg file)
 
     :else
-    (send-file-region ch msg file)))
+    (send-file-region message-sent? ch msg file)))
 
 (let [ary-class (class (byte-array 0))
+
+      handle-failure
+      (fn [f]
+        (when (instance? ChannelFuture f)
+          (.addListener ^ChannelFuture f ChannelFutureListener/CLOSE_ON_FAILURE)))
 
       ;; extracted to make `send-message` more inlineable
       handle-cleanup
       (fn [ch f]
         (-> f
-          (d/chain'
-            (fn [^ChannelFuture f]
-              (if f
-                (.addListener f ChannelFutureListener/CLOSE)
-                (netty/close ch))))
-          (d/catch' (fn [_]))))]
+            (d/chain'
+             (fn [^ChannelFuture f]
+               (if f
+                 (.addListener f ChannelFutureListener/CLOSE)
+                 (netty/close ch))))
+            (d/catch' (fn [_]))))
+
+      handle-exception
+      (fn [error-logger body e keep-alive? ^Channel ch]
+        (if (nil? error-logger)
+          (let [class-name (.getName (class body))]
+            (log/errorf "error sending body of type %s: %s"
+                        class-name
+                        (.getMessage ^Throwable e)))
+          (try
+            (error-logger e)
+            (catch Throwable ex
+              (log/error ex "error in error logger"))))
+        ;; duplicating logic from `handle-cleanup` as
+        ;; we will never got there. the implementation guarantees
+        ;; that non persistent connection would be closed
+        ;; in any case
+        (when-not keep-alive?
+          (netty/close ch))
+        
+        ;; re-throw exception so the caller could take care
+        ;; about cleaning up the mess
+        (throw e))]
 
   (defn send-message
-    [ch keep-alive? ssl? ^HttpMessage msg body]
+    ([ch keep-alive? ssl? msg body]
+     (send-message ch keep-alive? ssl? msg body nil))
+    ([ch keep-alive? ssl? ^HttpMessage msg body error-logger]
+     (let [message-sent? (AtomicBoolean. false)
+           f (try
+               (cond
+                 (or
+                  (nil? body)
+                  (identical? :aleph/omitted body)
+                  (instance? String body)
+                  (instance? ary-class body)
+                  (instance? ByteBuffer body)
+                  (instance? ByteBuf body))
+                 (send-contiguous-body message-sent? ch msg body)
 
-    (let [f (try
-              (cond
-                (or
-                 (nil? body)
-                 (identical? :aleph/omitted body)
-                 (instance? String body)
-                 (instance? ary-class body)
-                 (instance? ByteBuffer body)
-                 (instance? ByteBuf body))
-                (send-contiguous-body ch msg body)
+                 (instance? ChunkedInput body)
+                 (send-chunked-body message-sent? ch msg body)
 
-                (instance? ChunkedInput body)
-                (send-chunked-body ch msg body)
+                 (instance? File body)
+                 (send-file-body message-sent? ch ssl? msg (http-file body))
 
-                (instance? File body)
-                (send-file-body ch ssl? msg (http-file body))
+                 (instance? Path body)
+                 (send-file-body message-sent? ch ssl? msg (http-file body))
 
-                (instance? Path body)
-                (send-file-body ch ssl? msg (http-file body))
+                 (instance? HttpFile body)
+                 (send-file-body message-sent? ch ssl? msg body)
 
-                (instance? HttpFile body)
-                (send-file-body ch ssl? msg body)
+                 :else
+                 (send-streaming-body message-sent? ch msg body))
+               (catch Throwable e
+                 ;; technically, HTTP message might still not be sent
+                 ;; what we mean in reallity is "out code didn't crash
+                 ;; before asking Netty to send message". if something
+                 ;; happens on I/O loop, we will get exception as a
+                 ;; ChannelFuture failure rather than synchronosly with
+                 ;; this block
+                 (when (and (instance? HttpResponse msg)
+                            (false? (.get message-sent?)))
+                   (send-internal-error message-sent? ch msg))
+                 (handle-exception error-logger body e keep-alive? ch)))]
 
-                :else
-                (send-streaming-body ch msg body))
-              (catch Throwable e
-                (let [class-name (.getName (class body))]
-                  (log/errorf "error sending body of type %s: %s"
-                              class-name
-                              (.getMessage ^Throwable e)))
-                ;; xxx(errors-handling): this is actually might be wrong
-                ;; there's a non-zero chance we've already sent msg and
-                ;; failed when started sending body
-                (when (instance? HttpResponse msg)
-                  (send-internal-error ch msg))))]
+       (handle-failure f)
 
-      (when-not keep-alive?
-        (handle-cleanup ch f))
+       (when-not keep-alive?
+         (handle-cleanup ch f))
 
-      f)))
+       f))))
 
 (deftype WebsocketPing [deferred payload])
 

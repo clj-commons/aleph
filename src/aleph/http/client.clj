@@ -21,14 +21,12 @@
     [io.netty.handler.codec.http
      HttpClientCodec
      DefaultHttpHeaders
-     HttpHeaders
      HttpRequest
      HttpResponse
      HttpContent
      HttpUtil
      HttpHeaderNames
      LastHttpContent
-     FullHttpRequest
      FullHttpResponse
      HttpObjectAggregator
      HttpContentDecompressor]
@@ -36,15 +34,11 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
-    [io.netty.handler.codec
-     TooLongFrameException]
     [io.netty.handler.timeout
      IdleState
      IdleStateEvent]
     [io.netty.handler.stream
      ChunkedWriteHandler]
-    [io.netty.handler.codec.http
-     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -67,14 +61,12 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [io.netty.handler.logging
-     LoggingHandler
-     LogLevel]
+     LoggingHandler]
     [io.netty.util.concurrent
      EventExecutor
      ScheduledFuture]
     [java.util.concurrent
      ConcurrentLinkedQueue
-     Future
      TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger
@@ -110,34 +102,32 @@
           nil))
       (no-url req))))
 
-;; xxx(errors-handling): to put exception into response-stream
-;; might not be the correct action but it would work in most cases
-;; if (and only if) we close channel right after
-;; we should somehow find a way to deal with the situation when 
-;; exception happens while realizing async body from the response
-;; (meaning that the object from response-stream is arelady taken
-;; by the user and putting a new one would simply mean we're overriding
-;; response to the next request over the same connection)
-(defn exception-handler [ctx ex response-stream]
-  (cond
-    ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
-    ;; is part of the pipeline
-    (instance? TooLongFrameException ex)
+(defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream error-logger]
+  ;; Typical non-IO exception would be TooLongFrameException, SSLHandshakeError etc
+  (when-not (instance? IOException ex)
+   (try
+     (error-logger ex)
+     (catch Throwable e
+       (log/warn "error in error logger" e)))
+    ;; An exception might happen while realizing async body from the response
+    ;; (the message from `response-stream` is already taken by the user).
+    ;; In this case, offering a new one item in the response stream would mean
+    ;; we are enqueuing response for the next request over the same connection.
+    ;; Which effectively means that we MUST close the connection when
+    ;; propagating throwable onto the `response-stream`
     (s/put! response-stream ex)
+    ;; In case if closing the channel is not a desirable behavior,
+    ;; it's still possible to inject additional pipeline handler
+    ;; right before current one to capture and suppress throwables
+    (netty/close ctx)))
 
-    ;; when SSL handshake failed
-    (http/ssl-handshake-error? ex)
-    (let [^Throwable handshake-error (.getCause ^Throwable ex)]
-      (s/put! response-stream handshake-error))
-
-    ;; xxx(errors-handling): we should at least close the connection here
-    ;; xxx(errors-handling): is there a conceptual difference between
-    ;; processing IOException vs. any other exception?
-    (not (instance? IOException ex))
-    (log/warn ex "error in HTTP client")))
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
+  (let [^Throwable ex (http/decoder-failure msg)]
+    (s/put! response-stream ex)
+    (netty/close ctx)))
 
 (defn raw-client-handler
-  [response-stream buffer-capacity]
+  [response-stream buffer-capacity error-logger]
   (let [stream (atom nil)
         complete (atom nil)
 
@@ -153,10 +143,13 @@
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex response-stream))
+        (handle-exception ctx ex response-stream error-logger))
 
       :channel-inactive
       ([_ ctx]
+        (when-let [c @complete]
+          (when-not (d/realized? c)
+            (d/success! c true)))
         (when-let [s @stream]
           (s/close! s))
         (s/close! response-stream)
@@ -165,29 +158,39 @@
       :channel-read
       ([_ ctx msg]
         (cond
-
           (instance? HttpResponse msg)
-          (let [rsp msg]
-
-            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
+          (if (http/decoder-failed? msg)
+            (handle-decoder-failure ctx msg response-stream)
+            (let [rsp msg
+                  s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
                   c (d/deferred)]
               (reset! stream s)
               (reset! complete c)
-              (s/on-closed s #(d/success! c true))
+              (s/on-closed s #(when-not (d/realized? c)
+                                (d/success! c true)))
               (handle-response rsp c s)))
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
-            (netty/put! (.channel ctx) @stream content)
-            (when (instance? LastHttpContent msg)
-              (d/success! @complete false)
-              (s/close! @stream)))
+          (if (http/decoder-failed? msg)
+            ;; note that we are most likely to get this when dealing
+            ;; with transfer encoding chunked
+            (if-let [s @stream]
+              (do
+                ;; flag that body was not completed succesfully
+                (d/success! @complete true)
+                (s/close! s))
+              (handle-decoder-failure ctx msg response-stream))
+            (let [content (.content ^HttpContent msg)]
+              (netty/put! (.channel ctx) @stream content)
+              (when (instance? LastHttpContent msg)
+                (d/success! @complete false)
+                (s/close! @stream))))
 
           :else
           (.fireChannelRead ctx msg))))))
 
 (defn client-handler
-  [response-stream ^long buffer-capacity]
+  [response-stream ^long buffer-capacity error-logger]
   (let [response (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
@@ -204,10 +207,13 @@
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex response-stream))
+        (handle-exception ctx ex response-stream error-logger))
 
       :channel-inactive
       ([_ ctx]
+        (when-let [c @complete]
+          (when-not (d/realized? c)
+            (d/success! c true)))
         (when-let [s @stream]
           (s/close! s))
         (doseq [b @buffer]
@@ -222,82 +228,97 @@
 
           ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
           (instance? FullHttpResponse msg)
-          (let [^FullHttpResponse rsp msg
-                content (.content rsp)
-                c (d/deferred)
-                s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
-            (s/on-closed s #(d/success! c true))
-            (s/put! s (netty/buf->array content))
-            (netty/release content)
-            (handle-response rsp c s)
-            (s/close! s))
+          (if (http/decoder-failed? msg)
+            (handle-decoder-failure ctx msg response-stream)
+            (let [^FullHttpResponse rsp msg
+                  content (.content rsp)
+                  c (d/deferred)
+                  s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+              (s/on-closed s #(when-not (d/realized? c)
+                                (d/success! c true)))
+              (s/put! s (netty/buf->array content))
+              (netty/release content)
+              (handle-response rsp c s)
+              (s/close! s)))
 
           (instance? HttpResponse msg)
-          (let [rsp msg]
-            (if (HttpUtil/isTransferEncodingChunked rsp)
-              (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
-                    c (d/deferred)]
-                (reset! stream s)
-                (reset! complete c)
-                (s/on-closed s #(d/success! c true))
-                (handle-response rsp c s))
-              (reset! response rsp)))
+          (if (http/decoder-failed? msg)
+            (handle-decoder-failure ctx msg response-stream)
+            (let [rsp msg]
+              (if (HttpUtil/isTransferEncodingChunked rsp)
+                (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
+                      c (d/deferred)]
+                  (reset! stream s)
+                  (reset! complete c)
+                  (s/on-closed s #(when-not (d/realized? c)
+                                    (d/success! c true)))
+                  (handle-response rsp c s))
+                (reset! response rsp))))
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
-            (if (instance? LastHttpContent msg)
+          (if (http/decoder-failed? msg)
+            ;; note that we are most likely to get this when dealing
+            ;; with transfer encoding chunked
+            (if-let [s @stream]
               (do
+                ;; flag that body was not completed succesfully
+                (d/success! @complete true)
+                (s/close! s))
+              (handle-decoder-failure ctx msg response-stream))
+            (let [content (.content ^HttpContent msg)]
+              (if (instance? LastHttpContent msg)
+                (do
+
+                  (if-let [s @stream]
+
+                    (do
+                      (s/put! s (netty/buf->array content))
+                      (netty/release content)
+                      (d/success! @complete false)
+                      (s/close! s))
+
+                    (let [bufs (conj @buffer content)
+                          bytes (netty/bufs->array bufs)]
+                      (doseq [b bufs]
+                        (netty/release b))
+                      (handle-response @response (d/success-deferred false) bytes)))
+
+                  (.set buffer-size 0)
+                  (reset! stream nil)
+                  (reset! buffer [])
+                  (reset! response nil))
 
                 (if-let [s @stream]
 
-                  (do
-                    (s/put! s (netty/buf->array content))
-                    (netty/release content)
-                    (d/success! @complete false)
-                    (s/close! s))
-
-                  (let [bufs (conj @buffer content)
-                        bytes (netty/bufs->array bufs)]
-                    (doseq [b bufs]
-                      (netty/release b))
-                    (handle-response @response (d/success-deferred false) bytes)))
-
-                (.set buffer-size 0)
-                (reset! stream nil)
-                (reset! buffer [])
-                (reset! response nil))
-
-              (if-let [s @stream]
-
                  ;; already have a stream going
-                (do
-                  (netty/put! (.channel ctx) s (netty/buf->array content))
-                  (netty/release content))
+                  (do
+                    (netty/put! (.channel ctx) s (netty/buf->array content))
+                    (netty/release content))
 
-                (let [len (.readableBytes ^ByteBuf content)]
+                  (let [len (.readableBytes ^ByteBuf content)]
 
-                  (when-not (zero? len)
-                    (swap! buffer conj content))
+                    (when-not (zero? len)
+                      (swap! buffer conj content))
 
-                  (let [size (.addAndGet buffer-size len)]
+                    (let [size (.addAndGet buffer-size len)]
 
                      ;; buffer size exceeded, flush it as a stream
-                    (when (< buffer-capacity size)
-                      (let [bufs @buffer
-                            c (d/deferred)
-                            s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) 16384)
-                                (s/put! (netty/bufs->array bufs)))]
+                      (when (< buffer-capacity size)
+                        (let [bufs @buffer
+                              c (d/deferred)
+                              s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) 16384)
+                                  (s/put! (netty/bufs->array bufs)))]
 
-                        (doseq [b bufs]
-                          (netty/release b))
+                          (doseq [b bufs]
+                            (netty/release b))
 
-                        (reset! buffer [])
-                        (reset! stream s)
-                        (reset! complete c)
+                          (reset! buffer [])
+                          (reset! stream s)
+                          (reset! complete c)
 
-                        (s/on-closed s #(d/success! c true))
+                          (s/on-closed s #(d/success! c true))
 
-                        (handle-response @response c s))))))))
+                          (handle-response @response c s)))))))))
 
           :else
           (.fireChannelRead ctx msg))))))
@@ -329,8 +350,7 @@
 ;; throws `IllegalArgumentException` to reduce the confusion
 (defn http-proxy-handler
   [^InetSocketAddress address
-   {:keys [user password http-headers tunnel? keep-alive? ssl?]
-    :or {keep-alive? true}
+   {:keys [user password http-headers tunnel? ssl?]
     :as options}]
   (let [options' (assoc options :tunnel? (or tunnel? ssl?))]
     (when (and (nil? user) (some? password))
@@ -443,7 +463,8 @@
      idle-timeout
      log-activity
      decompress-body?
-     save-content-encoding?]
+     save-content-encoding?
+     error-logger]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
@@ -453,9 +474,12 @@
      decompress-body? false
      save-content-encoding? false}}]
   (fn [^ChannelPipeline pipeline]
-    (let [handler (if raw-stream?
-                    (raw-client-handler response-stream response-buffer-size)
-                    (client-handler response-stream response-buffer-size))
+    (let [error-logger' (or error-logger
+                            (fn [^Throwable ex]
+                              (log/warn "error in HTTP client" (.getMessage ex))))
+          handler (if raw-stream?
+                    (raw-client-handler response-stream response-buffer-size error-logger')
+                    (client-handler response-stream response-buffer-size error-logger'))
           logger (cond
                    (instance? LoggingHandler log-activity)
                    log-activity
@@ -613,16 +637,33 @@
                     ;; might be different in case we use :multipart
                     (reset! save-body body))
 
-                  ;; xxx(errors-handling): this should return channel promise and
-                  ;; we need to subscribe on it to understand if request was sent or not
-                  ;; this might be non-trivial in some cases where we perform multiple
-                  ;; writes (e.g. chunked body)
-                  (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' body))))
+                  (-> (netty/safe-execute ch
+                        (http/send-message ch true ssl? req' body))
+                      (d/chain'
+                       (fn [d]
+                         ;; so... what is happening here is the following:
+                         ;; `safe-execute` returns the result of `send-message`
+                         ;; wrapped into a deferred. `send-streaming-body` returns
+                         ;; either channel promise (created by `writeAndFlush`) or
+                         ;; custom deferred (in case body was wrapped into Manifold
+                         ;; stream). if something goes wrong with converting stream
+                         ;; into ByteBuf, the deferred would be set into error state
+                         (when (d/deferred? d)
+                           (d/catch' d
+                             (fn [^Throwable e]
+                               (s/put! responses (d/error-deferred e))
+                               (netty/close ch))))))
+                      (d/catch'
+                        (fn [^Throwable e]
+                          ;; this might happen if request processing failed
+                          ;; being offloaded onto netty's event loop
+                          (s/put! responses (d/error-deferred e))
+                          (netty/close ch))))))
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
-                (s/put! responses (d/error-deferred e)))))
+                (s/put! responses (d/error-deferred e))
+                (netty/close ch))))
           requests)
 
         (s/on-closed responses
@@ -697,7 +738,8 @@
                              headers
                              max-frame-payload
                              nil
-                             0))
+                             0
+                             nil))
   ([raw-stream?
     uri
     sub-protocols
@@ -705,7 +747,8 @@
     headers
     max-frame-payload
     heartbeats
-    handshake-timeout]
+    handshake-timeout
+    error-logger]
    (let [d (d/deferred)
          in (atom nil)
          desc (atom {})
@@ -725,7 +768,10 @@
        :exception-caught
        ([_ ctx ex]
         (when-not (d/error! d ex)
-          (log/warn ex "error in websocket client"))
+          (try
+            (error-logger ex)
+            (catch Throwable e
+              (log/warn "error in error logger" e))))
         (netty/close ctx))
 
        :channel-inactive
@@ -894,7 +940,8 @@
            compression?
            proxy-options
            name-resolver
-           heartbeats]
+           heartbeats
+           error-logger]
     :or {bootstrap-transform identity
          pipeline-transform identity
          raw-stream? false
@@ -927,6 +974,9 @@
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
+        error-logger' (or error-logger
+                          (fn [^Throwable ex]
+                            (log/warn ex "error in websocket client")))
         heartbeats (when (some? heartbeats)
                      (merge
                       {:send-after-idle 3e4
@@ -941,7 +991,8 @@
                       headers
                       max-frame-payload
                       heartbeats
-                      handshake-timeout)
+                      handshake-timeout
+                      error-logger')
         
         pipeline-builder
         (fn [^ChannelPipeline pipeline]

@@ -30,7 +30,6 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
-    [io.netty.channel.embedded EmbeddedChannel]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
      IdleState
@@ -52,15 +51,14 @@
      TextWebSocketFrame
      BinaryWebSocketFrame
      CloseWebSocketFrame
-     WebSocketFrame
      WebSocketFrameAggregator]
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
     [io.netty.handler.logging LoggingHandler]
     [java.io
      IOException]
-    [java.net
-     InetSocketAddress]
+    [java.nio.channels
+     ClosedChannelException]
     [io.netty.util.concurrent
      FastThreadLocal]
     [java.util.concurrent
@@ -106,13 +104,13 @@
 (let [[server-value keep-alive-value close-value]
       (map #(HttpHeaders/newEntity %) ["Aleph/0.4.6" "Keep-Alive" "Close"])]
   (defn send-response
-    [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
+    [^ChannelHandlerContext ctx keep-alive? ssl? rsp error-logger]
     (let [[^HttpResponse rsp body]
           (try
             [(http/ring-response->netty-response rsp)
              (get rsp :body)]
             (catch Throwable e
-              (let [rsp (http/error-response e)]
+              (let [rsp (http/error-response error-logger e)]
                 [(http/ring-response->netty-response rsp)
                  (get rsp :body)])))]
 
@@ -127,12 +125,12 @@
 
           (.set headers ^CharSequence http/connection-name (if keep-alive? keep-alive-value close-value))
 
-          (http/send-message ctx keep-alive? ssl? rsp body))))))
+          (http/send-message ctx keep-alive? ssl? rsp body error-logger))))))
 
 ;;;
 
-(defn invalid-value-response [req x]
-  (http/error-response
+(defn invalid-value-response [req x error-logger]
+  (http/error-response error-logger
     (IllegalArgumentException.
       (str "cannot treat "
         (pr-str x)
@@ -149,8 +147,11 @@
    ^HttpRequest req
    previous-response
    body
-   keep-alive?]
-  (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
+   keep-alive?
+   error-logger
+   interrupted?]
+  (let [^NettyRequest req' (http/netty-request->ring-request
+                            req ssl? (.channel ctx) body interrupted?)
         head? (identical? HttpMethod/HEAD (.method req))
         rsp (if executor
 
@@ -164,9 +165,7 @@
                       (rejected-handler req')
                       (catch Throwable e
                         (http/error-response e)))
-                    {:status 503
-                     :headers {"content-type" "text/plain"}
-                     :body "503 Service Unavailable"})))
+                    http/default-unavailable-response)))
 
               ;; handle it inline (hope you know what you're doing)
               (try
@@ -180,7 +179,7 @@
         (fn [_]
           (netty/release req)
           (-> rsp
-            (d/catch' http/error-response)
+            (d/catch' #(http/error-response error-logger %))
             (d/chain'
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
@@ -196,42 +195,73 @@
                       {:status 204}
 
                       :else
-                      (invalid-value-response req rsp))))))))))))
+                      (invalid-value-response req rsp error-logger))
+                    error-logger))))))))))
 
-(defn exception-handler [ctx ex]
-  (cond
-    ;; do not need to log an entire stack trace when SSL handshake failed
-    (http/ssl-handshake-error? ex)
-    (log/warn "SSL handshake failure:"
-              (.getMessage ^Throwable (.getCause ^Throwable ex)))
+(defn handle-exception [error-logger ctx ex]
+  (try
+    (error-logger ex)
+    (catch Throwable e
+      (log/warn "exception in error logger" e)))
+  ;; `ClosedChannelException` basically means that the application closed
+  ;; connection *before* issuing new writes. typically, should not happen
+  (when-not (instance? ClosedChannelException ex)
+    ;; :channel-inactive handler will do the rest
+    (netty/close ctx)))
 
-    (not (instance? IOException ex))
-    (log/warn ex "error in HTTP server")))
+(defn- status->default-response [^HttpResponseStatus status]
+  (let [^String reason (.reasonPhrase status)]
+    {:status (.code status)
+     :headers {"content-type" "text/plain"
+               "content-length" (.length reason)}
+     :body reason}))
 
-(defn invalid-request? [^HttpRequest req]
-  (-> req .decoderResult .isFailure))
+(def default-bad-request-response
+  (status->default-response HttpResponseStatus/BAD_REQUEST))
 
-(defn reject-invalid-request [ctx ^HttpRequest req]
-  (d/chain
-    (netty/write-and-flush ctx
-      (DefaultFullHttpResponse.
-        HttpVersion/HTTP_1_1
-        HttpResponseStatus/REQUEST_URI_TOO_LONG
-        (-> req .decoderResult .cause .getMessage netty/to-byte-buf)))
-    netty/wrap-future
-    (fn [_] (netty/close ctx))))
+(def default-uri-too-long-response
+  (status->default-response HttpResponseStatus/REQUEST_URI_TOO_LONG))
+
+(def default-header-fields-too-large-response
+  (status->default-response HttpResponseStatus/REQUEST_HEADER_FIELDS_TOO_LARGE))
+
+(defn reject-invalid-request [ctx ssl? ^HttpRequest req]
+  (let [^String error (.getMessage ^Throwable (http/decoder-failure req))
+        rsp (cond
+              (.startsWith error "An HTTP line is larger than")
+              default-uri-too-long-response
+
+              ;; xxx(okachaiev): should this be just 400? :thinking:
+              (.startsWith error "HTTP header is larger")
+              default-header-fields-too-large-response
+
+              :else
+              default-bad-request-response)
+        netty-response (http/ring-response->netty-response rsp)]
+    (netty/safe-execute ctx
+      (http/send-message ctx false ssl? netty-response (:body rsp)))))
+
+(defn reject-invalid-content [error-logger ctx stream ^HttpContent msg]
+  (when (some? stream)
+    (s/close! stream))
+  (handle-exception error-logger ctx (http/decoder-failure msg)))
+
+(defn mark-interruption [d]
+  #(when-not (d/realized? d)
+     (d/success! d true)))
 
 (defn ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity error-logger]
   (let [buffer-capacity (long buffer-capacity)
         request (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
         stream (atom nil)
         previous-response (atom nil)
+        interrupted? (atom nil)
 
         handle-request
-        (fn [^ChannelHandlerContext ctx req body]
+        (fn [^ChannelHandlerContext ctx req body interrupt-flag]
           (reset! previous-response
             (handle-request
               ctx
@@ -242,14 +272,19 @@
               req
               @previous-response
               (when body (bs/to-input-stream body))
-              (HttpHeaders/isKeepAlive req))))
+              (HttpHeaders/isKeepAlive req)
+              error-logger
+              interrupt-flag)))
 
         process-request
         (fn [ctx req]
           (if (HttpHeaders/isTransferEncodingChunked req)
-            (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+            (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
+                  d' (d/deferred)]
+              (s/on-closed s (mark-interruption d'))
               (reset! stream s)
-              (handle-request ctx req s))
+              (reset! interrupted? d')
+              (handle-request ctx req s d'))
             (reset! request req)))
 
         process-last-content
@@ -260,6 +295,8 @@
               (do
                 (s/put! s (netty/buf->array content))
                 (netty/release content)
+                (when-let [flag @interrupted?]
+                  (d/success! flag false))
                 (s/close! s))
 
               (if (and (zero? (.get buffer-size))
@@ -268,18 +305,19 @@
                 ;; there was never any body
                 (do
                   (netty/release content)
-                  (handle-request ctx @request nil))
+                  (handle-request ctx @request nil nil))
 
                 (let [bufs (conj @buffer content)
                       bytes (netty/bufs->array bufs)]
                   (doseq [b bufs]
                     (netty/release b))
-                  (handle-request ctx @request bytes))))
+                  (handle-request ctx @request bytes nil))))
 
             (.set buffer-size 0)
             (reset! stream nil)
             (reset! buffer [])
-            (reset! request nil)))
+            (reset! request nil)
+            (reset! interrupted? nil)))
 
         process-content
         (fn [ctx ^HttpContent msg]
@@ -302,25 +340,30 @@
                   (when (< buffer-capacity size)
                     (let [bufs @buffer
                           s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
-                              (s/put! (netty/bufs->array bufs)))]
+                              (s/put! (netty/bufs->array bufs)))
+                          d' (d/deferred)]
 
+                      (s/on-closed s (mark-interruption d'))
+                      
                       (doseq [b bufs]
                         (netty/release b))
 
                       (reset! buffer [])
                       (reset! stream s)
+                      (reset! interrupted? d')
 
-                      (handle-request ctx @request s))))))))]
+                      (handle-request ctx @request s d'))))))))]
 
     (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex))
+        (handle-exception error-logger ctx ex))
 
       :channel-inactive
       ([_ ctx]
         (when-let [s @stream]
+          ;; this should force interrupted? flag to be realized as "true"
           (s/close! s))
         (doseq [b @buffer]
           (netty/release b))
@@ -331,26 +374,29 @@
         (cond
 
           (instance? HttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
+          (if (http/decoder-failed? msg)
+            (reject-invalid-request ctx ssl? msg)
             (process-request ctx msg))
 
           (instance? HttpContent msg)
-          (if (instance? LastHttpContent msg)
-            (process-last-content ctx msg)
-            (process-content ctx msg))
+          (if (http/decoder-failed? msg)
+            (reject-invalid-content error-logger ctx @stream msg)
+            (if (instance? LastHttpContent msg)
+              (process-last-content ctx msg)
+              (process-content ctx msg)))
 
           :else
           (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity error-logger]
   (let [buffer-capacity (long buffer-capacity)
         stream (atom nil)
+        interrupted? (atom nil)
         previous-response (atom nil)
 
         handle-request
-        (fn [^ChannelHandlerContext ctx req body]
+        (fn [^ChannelHandlerContext ctx req body interrupt-flag]
           (reset! previous-response
             (handle-request
               ctx
@@ -361,16 +407,19 @@
               req
               @previous-response
               body
-              (HttpUtil/isKeepAlive req))))]
+              (HttpUtil/isKeepAlive req)
+              error-logger
+              interrupt-flag)))]
     (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex))
+        (handle-exception error-logger ctx ex))
 
       :channel-inactive
       ([_ ctx]
         (when-let [s @stream]
+          ;; this should force interrupted? flag to be realized as "true"
           (s/close! s))
         (.fireChannelInactive ctx))
 
@@ -379,20 +428,26 @@
         (cond
 
           (instance? HttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
+          (if (http/decoder-failed? msg)
+            (reject-invalid-request ctx ssl? msg)
             (let [req msg]
-              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
+              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
+                    d' (d/deferred)]
+                (s/on-closed s (mark-interruption d'))
                 (reset! stream s)
-                (handle-request ctx req s))))
+                (reset! interrupted? d')
+                (handle-request ctx req s d'))))
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
+          (if (http/decoder-failed? msg)
+            (reject-invalid-content error-logger ctx @stream msg)
+            (let [content (.content ^HttpContent msg)]
             ;; content might empty most probably in case of EmptyLastHttpContent
-            (when-not (zero? (.readableBytes content))
-              (netty/put! (.channel ctx) @stream content))
-            (when (instance? LastHttpContent msg)
-              (s/close! @stream)))
+              (when-not (zero? (.readableBytes content))
+                (netty/put! (.channel ctx) @stream content))
+              (when (instance? LastHttpContent msg)
+                (d/success! @interrupted? false)
+                (s/close! @stream))))
 
           :else
           (.fireChannelRead ctx msg))))))
@@ -464,7 +519,8 @@
      compression-level
      idle-timeout
      continue-handler
-     continue-executor]
+     continue-executor
+     error-logger]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -473,8 +529,8 @@
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
-                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size error-logger)
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size error-logger))
           ^ChannelHandler
           continue-handler (if (nil? continue-handler)
                              (HttpServerExpectContinueHandler.)
@@ -516,7 +572,8 @@
            log-activity
            continue-handler
            continue-executor
-           num-event-loop-threads]
+           num-event-loop-threads
+           error-logger]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
@@ -563,7 +620,17 @@
                              (throw
                               (IllegalArgumentException.
                                (str "invalid continue-executor specification: "
-                                    (pr-str continue-executor)))))]
+                                    (pr-str continue-executor)))))
+        error-logger' (or error-logger
+                          (fn [^Throwable ex]
+                            (cond
+                              ;; do not need to log an entire stack trace when SSL handshake failed
+                              (http/ssl-handshake-error? ex)
+                              (log/warn "SSL handshake failure:"
+                                        (.getMessage ^Throwable (.getCause ^Throwable ex)))
+
+                              (not (instance? IOException ex))
+                              (log/warn ex "error in HTTP server"))))]
     (netty/start-server
       {:pipeline-builder (pipeline-builder
                            handler
@@ -571,7 +638,8 @@
                            (assoc options
                                   :executor executor
                                   :ssl? (or manual-ssl? (boolean ssl-context))
-                                  :continue-executor continue-executor'))
+                                  :continue-executor continue-executor'
+                                  :error-logger error-logger'))
        :ssl-context ssl-context
        :bootstrap-transform bootstrap-transform
        :on-close (when (and shutdown-executor? (or (instance? ExecutorService executor)
@@ -592,11 +660,14 @@
 
 (defn websocket-server-handler
   ([raw-stream? ch handshaker]
-   (websocket-server-handler raw-stream? ch handshaker nil))
+   (websocket-server-handler raw-stream? ch handshaker nil nil))
+  ([raw-stream? ch handshaker heartbeats]
+   (websocket-server-handler raw-stream? ch handshaker nil nil))
   ([raw-stream?
     ^Channel ch
     ^WebSocketServerHandshaker handshaker
-    heartbeats]
+    heartbeats
+    error-logger]
    (let [d (d/deferred)
          ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
          closing? (AtomicBoolean. false)
@@ -634,7 +705,12 @@
          :exception-caught
          ([_ ctx ex]
           (when-not (instance? IOException ex)
-            (log/warn ex "error in websocket handler"))
+            (if (some? error-logger)
+              (try
+                (error-logger ex)
+                (catch Throwable e
+                  (log/warn "exception in error logger" e)))
+              (log/warn ex "error in websocket handler")))
           (s/close! out)
           (netty/close ctx))
 
@@ -733,7 +809,8 @@
            allow-extensions?
            compression?
            pipeline-transform
-           heartbeats]
+           heartbeats
+           error-logger]
     :or {raw-stream? false
          max-frame-payload 65536
          max-frame-size 1048576
@@ -766,7 +843,8 @@
           (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
                                                                       ch
                                                                       handshaker
-                                                                      heartbeats)
+                                                                      heartbeats
+                                                                      error-logger)
                 p (.newPromise ch)
                 h (doto (DefaultHttpHeaders.) (http/map->headers! headers))
                 ^ChannelPipeline pipeline (.pipeline ch)]

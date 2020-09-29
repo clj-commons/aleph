@@ -54,7 +54,8 @@
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds
    | `continue-handler` | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
    | `continue-executor` | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `num-event-loop-threads` | optional, defaults to double number of available processors."
+   | `num-event-loop-threads` | optional, defaults to double number of available processors.
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to `request-handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery."
   [handler options]
   (when (contains? options :max-chunk-size)
     (log/warn "Ignoring :max-chunk-size option as it was deprecated"))
@@ -132,7 +133,8 @@
    | `log-activity` | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
    | `decompress-body?` | when set to `true`, automatically decompresses the resulting gzip or deflate stream if the `Content-Encoding` header is found on the response, defaults to `false`
    | `save-content-encoding?` | set to `true` to get information about Content-Encoding of the response before decompression, defaults to `false`
-
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to `client-handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery
+   
    Supported `proxy-options` are
 
    |:---|:---
@@ -239,6 +241,7 @@
    | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout).
    | `name-resolver` | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need.
    | `proxy-options` | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to `client-handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery
 
    Supported `proxy-options` are
 
@@ -269,7 +272,8 @@
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`.
-   | `heartbeats` | optional configuration to send Ping frames to the client periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty uses empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
+   | `heartbeats` | optional configuration to send Ping frames to the client periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty uses empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout).
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to `request-handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery."
   ([req]
     (websocket-connection req nil))
   ([req options]
@@ -354,19 +358,14 @@
 
                      (maybe-timeout! connection-timeout)
 
-                     ;; connection timeout triggered, dispose of the connetion
-                     (d/catch' TimeoutException
-                       (fn [^Throwable e]
-                         (flow/dispose pool k conn)
-                         (d/error-deferred (ConnectionTimeoutException. e))))
-
-                     ;; xxx(errors-handling): seems like in this case we process
-                     ;; exception twice
                      ;; connection failed, bail out
                      (d/catch'
-                       (fn [e]
+                       (fn [^Throwable e]
                          (flow/dispose pool k conn)
-                         (d/error-deferred e)))
+                         (d/error-deferred
+                           (if (instance? TimeoutException e)
+                             (ConnectionTimeoutException. e)
+                             e))))
 
                      ;; actually make the request now
                      (d/chain'
@@ -378,18 +377,14 @@
                              (-> (conn' req)
                                (maybe-timeout! request-timeout)
 
-                               ;; request timeout triggered, dispose of the connection
-                               (d/catch' TimeoutException
-                                 (fn [^Throwable e]
-                                   (flow/dispose pool k conn)
-                                   (d/error-deferred (RequestTimeoutException. e))))
-
-                               ;; xxx(errors-handling): processing exception twice here
                                ;; request failed, dispose of the connection
                                (d/catch'
-                                 (fn [e]
+                                 (fn [^Throwable e]
                                    (flow/dispose pool k conn)
-                                   (d/error-deferred e)))
+                                   (d/error-deferred
+                                     (if (instance? TimeoutException e)
+                                       (RequestTimeoutException. e)
+                                       e))))
 
                                ;; clean up the response
                                (d/chain'
@@ -412,8 +407,8 @@
                                            (flow/dispose pool k conn)
                                            (flow/release pool k conn)))))
                                    (-> rsp
-                                     (dissoc :aleph/complete)
-                                     (assoc :connection-time (- end start)))))))))
+                                       http-core/wrap-complete
+                                       (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
                          (->> rsp
