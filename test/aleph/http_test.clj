@@ -14,7 +14,12 @@
     [clojure.string :as str])
   (:import
     [java.util.concurrent
-     Executors]
+     Executors
+     SynchronousQueue
+     TimeoutException
+     TimeUnit
+     ThreadPoolExecutor
+     ThreadPoolExecutor$AbortPolicy]
     [java.io
      File
      ByteArrayInputStream]
@@ -22,8 +27,6 @@
     [java.util.zip
      GZIPInputStream
      ZipException]
-    [java.util.concurrent
-     TimeoutException]
     [aleph.utils
      ConnectionTimeoutException
      RequestTimeoutException]
@@ -654,7 +657,23 @@
   (testing "connection closed while reading response body"))
 
 (deftest test-server-errors-handling
-  (testing "reject handler when accepting connection")
+  (testing "reject handler when accepting connection"
+    (let [^ThreadPoolExecutor executor (ThreadPoolExecutor.
+                                        1 1 0 TimeUnit/MILLISECONDS (SynchronousQueue.)
+                                        (ThreadPoolExecutor$AbortPolicy.))
+          d (d/deferred)]
+      (try
+        (.execute executor (fn [] @d))
+        (with-server (http/start-server echo-handler {:port port
+                                                      :executor executor
+                                                      :shutdown-executor? false})
+          (is (= 503 (-> (http-get (str "http://localhost:" port))
+                         (d/timeout! 1e3)
+                         deref
+                         :status))))
+        (finally
+          (d/success! d true)
+          (.shutdown executor)))))
 
   (testing "throwing exception within reject handler")
 
@@ -671,10 +690,10 @@
             {:status 1045
              :body "there's no such status"})]
       (with-handler invalid-status-handler
-        (= 500 (-> (http/get (str "http://localhost:" port))
-                   (d/timeout! 1e3)
-                   deref
-                   :status)))))
+        (is (= 500 (-> (http-get (str "http://localhost:" port))
+                       (d/timeout! 1e3)
+                       deref
+                       :status))))))
   
   (testing "writing invalid response body")
   
