@@ -656,33 +656,58 @@
 
   (testing "connection closed while reading response body"))
 
-(deftest test-server-errors-handling
-  (testing "reject handler when accepting connection"
-    (let [^ThreadPoolExecutor executor (ThreadPoolExecutor.
+(defmacro with-rejected-handler [handler & body]
+  `(let [handler# ~handler
+         ^ThreadPoolExecutor executor# (ThreadPoolExecutor.
                                         1 1 0 TimeUnit/MILLISECONDS (SynchronousQueue.)
                                         (ThreadPoolExecutor$AbortPolicy.))
-          d (d/deferred)]
-      (try
-        (.execute executor (fn [] @d))
-        (with-server (http/start-server echo-handler {:port port
-                                                      :executor executor
-                                                      :shutdown-executor? false})
-          (is (= 503 (-> (http-get (str "http://localhost:" port))
-                         (d/timeout! 1e3)
-                         deref
-                         :status))))
-        (finally
-          (d/success! d true)
-          (.shutdown executor)))))
+         d# (d/deferred)]
+     (try
+       (.execute executor# (fn [] @d#))
+       (with-server (http/start-server echo-handler {:port port
+                                                     :executor executor#
+                                                     :shutdown-executor? false
+                                                     :rejected-handler handler#})
+         ~@body)
+       (finally
+         (d/success! d# true)
+         (.shutdown executor#)))))
 
-  (testing "throwing exception within reject handler")
+(deftest test-server-errors-handling
+  (testing "rejected handler when accepting connection"
+    (with-rejected-handler nil
+      (is (= 503 (-> (http-get (str "http://localhost:" port))
+                     (d/timeout! 1e3)
+                     deref
+                     :status)))))
 
-  (testing "throwing exception within ring handler")
+  (testing "custom rejected handler"
+    (with-rejected-handler (fn [_] {:status 201 :body "I'm actually okayish"})
+      (is (= 201 (-> (http-get (str "http://localhost:" port))
+                     (d/timeout! 1e3)
+                     deref
+                     :status)))))
+
+  (testing "throwing exception within rejected handler"
+    (with-rejected-handler (fn [_] (throw (RuntimeException. "you shall not reject!")))
+      (let [resp (-> (http-get (str "http://localhost:" port))
+                     (d/timeout! 1e3)
+                     deref)]
+        (is (= 500 (:status resp)))
+        (is (= "Internal server error" (bs/to-string (:body resp)))))))
+
+  (testing "throwing exception within ring handler"
+    (with-handler (fn [_] (throw (RuntimeException. "you shall not pass!")))
+      (let [resp (-> (http-get (str "http://localhost:" port))
+                     (d/timeout! 1e3)
+                     deref)]
+        (is (= 500 (:status resp)))
+        (is (= "Internal server error" (bs/to-string (:body resp)))))))
 
   (testing "reading invalid request message")
-  
+
   (testing "reading invalid request body")
-  
+
   (testing "writing invalid response message"
     (let [invalid-status-handler
           (fn [{:keys [body]}]
@@ -694,15 +719,15 @@
                        (d/timeout! 1e3)
                        deref
                        :status))))))
-  
+
   (testing "writing invalid response body")
-  
+
   (testing "connection closed while reading request message")
-  
+
   (testing "connection closed while reading request body")
-  
+
   (testing "connection closed while writing response message")
-  
+
   (testing "connection closed while writing response body"))
 
 ;;;
