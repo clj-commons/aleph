@@ -266,7 +266,7 @@
                 ;; xxx(okachaiev): what exactly we gonna do when the stream
                 ;; is present??? discard the rest of the content? close the stream?
                 ;; xxx(okachaiev): interesting fact, closing the connection here
-                ;; would lead to ClosedChannelException on the server side
+                ;; would lead to `ClosedChannelException` on the server side
                 (s/close! s)
                 (handle-decoder-failure ctx msg response-stream)))
             (let [content (.content ^HttpContent msg)]

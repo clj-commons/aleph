@@ -18,6 +18,7 @@
     [java.io
      File
      ByteArrayInputStream]
+    [java.net UnknownHostException]
     [java.util.zip
      GZIPInputStream
      ZipException]
@@ -26,8 +27,8 @@
     [aleph.utils
      ConnectionTimeoutException
      RequestTimeoutException]
-   [io.netty.handler.codec
-    TooLongFrameException]))
+    [io.netty.handler.codec
+     TooLongFrameException]))
 
 ;;;
 
@@ -594,7 +595,7 @@
                           "Connection: Keep-Alive"
                           "transfer-encoding: chunked"
                           ""
-                          "not-a-number" ;; definitely not parsable chunk size
+                          "not-a-number" ;; definitely not parseable chunk size
                           "fail"
                           "0"]
       ;; xxx(okachaiev): do we need to wrap this into more generic `DecoderException`?
@@ -615,9 +616,22 @@
   
   (testing "connection closed while reading response body")
   
-  (testing "unknown host with JDK DNS resolver")
+  (testing "unknown host with JDK DNS resolver"
+    (is (thrown? UnknownHostException
+                 (-> (http/get "http://unknown-host/")
+                     (d/timeout! 1e3)
+                     deref))))
   
-  (testing "unknown host with custom DNS client"))
+  (testing "unknown host with custom DNS client"
+    (let [pool (http/connection-pool {:connection-options (assoc (default-options) :insecure? true)
+                                      :dns-options {:name-servers ["1.1.1.1"]}})]
+      (try
+        (is (thrown? UnknownHostException
+                     (-> (http/get "http://unknown-host/" {:pool pool})
+                         (d/timeout! 1e3)
+                         deref)))
+        (finally
+          (.shutdown pool))))))
 
 (deftest test-server-errors-handling
   (testing "reject handler when accepting connection")
