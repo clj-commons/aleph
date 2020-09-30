@@ -28,8 +28,11 @@
      DecoderResult
      DecoderResultProvider]
     [io.netty.handler.codec.http
-     DefaultHttpRequest DefaultLastHttpContent
-     DefaultHttpResponse DefaultFullHttpRequest
+     DefaultHttpRequest
+     DefaultLastHttpContent
+     DefaultHttpResponse
+     DefaultFullHttpRequest
+     DefaultFullHttpResponse
      FullHttpRequest
      HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
@@ -182,6 +185,18 @@
               HttpVersion/HTTP_1_1
               (HttpResponseStatus/valueOf status)
               false)]
+    (when headers
+      (map->headers! (.headers rsp) headers))
+    rsp))
+
+(defn ring-response->full-netty-response [{:keys [status headers body]}]
+  (let [^HttpResponseStatus status (if (instance? HttpResponseStatus status)
+                                     status
+                                     (HttpResponseStatus/valueOf status))
+        rsp (DefaultFullHttpResponse.
+             HttpVersion/HTTP_1_1
+             status
+             ^ByteBuf (netty/to-byte-buf body))]
     (when headers
       (map->headers! (.headers rsp) headers))
     rsp))

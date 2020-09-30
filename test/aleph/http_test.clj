@@ -39,6 +39,7 @@
 
 (def ^:dynamic ^io.aleph.dirigiste.IPool *pool* nil)
 (def ^:dynamic *connection-options* nil)
+(def ^:dynamic *response* nil)
 
 (netty/leak-detector-level! :paranoid)
 
@@ -526,14 +527,25 @@
 
 (def http-message-delimiter (str http-line-delimiter http-line-delimiter))
 
+(defn encode-http-object [lines]
+  (str (str/join http-line-delimiter lines) http-message-delimiter))
+
 (defn tcp-handler [response]
   (fn [s ch]
     (s/take! s)
-    (s/put! s (str (str/join http-line-delimiter response) http-message-delimiter))))
+    (s/put! s (encode-http-object response))))
 
 (defmacro with-tcp-response [response & body]
   `(with-server (tcp/start-server (tcp-handler ~response) {:port port})
      ~@body))
+
+(defmacro with-tcp-request [options request & body]
+  `(with-server (http/start-server echo-handler (assoc ~options :port port))
+     (let [conn# @(tcp/client {:host "localhost" :port port})]
+       (s/put! conn# (encode-http-object ~request))
+       (binding [*response* (-> conn# s/take! deref bs/to-string)]
+         ~@body)
+       (s/close! conn#))))
 
 (defn invalid-response-message []
   ;; note that `HttpObjectDecoder.allowDuplicateContentLengths` is
@@ -703,9 +715,29 @@
                      deref)]
         (is (= 500 (:status resp)))
         (is (= "Internal server error" (bs/to-string (:body resp)))))))
+  
+  (testing "reading invalid request message: bad request"
+    ;; this request should fail with `IllegalArgumentException` "multiple Content-Lenght headers"
+    (with-tcp-request {} ["GET / HTTP/1.1"
+                          "content-length: 0"
+                          "content-length: 1"]
+      (is (.startsWith *response* "HTTP/1.1 400 Bad Request"))))
 
-  (testing "reading invalid request message")
-
+  (testing "reading invalid request message: URI is too long"
+    (with-tcp-request
+      {:max-initial-line-length 1}
+      ["GET /not-very-long-uri-though HTTP/1.1"
+       "content-length: 0"]
+      (is (.startsWith *response* "HTTP/1.1 414 Request-URI Too Long"))))
+  
+  (testing "reading invalid request message: header is too large"
+    (with-tcp-request
+      {:max-header-size 5}
+      ["GET / HTTP/1.1"
+       "content-length: 0"
+       "header: value-that-is-definitely-too-large"]
+      (is (.startsWith *response* "HTTP/1.1 431 Request Header Fields"))))
+  
   (testing "reading invalid request body")
 
   (testing "writing invalid response message"

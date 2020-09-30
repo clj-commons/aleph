@@ -206,16 +206,39 @@
     (not (instance? IOException ex))
     (log/warn ex "error in HTTP server")))
 
+
+(defn- status->default-response [^HttpResponseStatus status]
+  (let [^String reason (.reasonPhrase status)]
+    {:status status
+     :headers {"content-type" "text/plain"
+               "content-length" (.length reason)}
+     :body reason}))
+
+(def default-bad-request-response
+  (status->default-response HttpResponseStatus/BAD_REQUEST))
+
+(def default-uri-too-long-response
+  (status->default-response HttpResponseStatus/REQUEST_URI_TOO_LONG))
+
+(def default-header-fields-too-large-response
+  (status->default-response HttpResponseStatus/REQUEST_HEADER_FIELDS_TOO_LARGE))
+
 (defn reject-invalid-request [ctx ^HttpRequest req]
-  (d/chain
-    (netty/write-and-flush ctx
-      (DefaultFullHttpResponse.
-        HttpVersion/HTTP_1_1
-        HttpResponseStatus/REQUEST_URI_TOO_LONG
-       ;; xxx(okachaiev): we should not expose message from the exception here
-        (-> (http/decoder-failure req) .getMessage netty/to-byte-buf)))
-    netty/wrap-future
-    (fn [_] (netty/close ctx))))
+  (let [^String error (.getMessage ^Throwable (http/decoder-failure req))
+        rsp (cond
+              (.startsWith error "An HTTP line is larger than")
+              default-uri-too-long-response
+
+              ;; xxx(okachaiev): should this be just 400? :thinking:
+              (.startsWith error "HTTP header is larger")
+              default-header-fields-too-large-response
+
+              :else
+              default-bad-request-response)
+        netty-response (http/ring-response->full-netty-response rsp)]
+    (-> (netty/write-and-flush ctx netty-response)
+        netty/wrap-future
+        (d/chain' (fn [_] (netty/close ctx))))))
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
