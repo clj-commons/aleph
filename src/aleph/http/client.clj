@@ -663,8 +663,8 @@
 
               ;; this will usually happen because of a malformed request
               (catch Throwable e
-                (netty/close ch)
-                (s/put! responses (d/error-deferred e)))))
+                (s/put! responses (d/error-deferred e))
+                (netty/close ch))))
           requests)
 
         (s/on-closed responses

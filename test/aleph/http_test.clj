@@ -563,7 +563,7 @@
                    (-> (http-post (str "http://localhost:" port) {:body (s/->source [1])})
                        (d/timeout! 1e3)
                        deref)))))
-  
+
   (testing "reading invalid response message"
     (binding [*connection-options* {:raw-stream? false}]
       (invalid-response-message)))
@@ -606,22 +606,34 @@
                          :body
                          bs/to-string))))))
 
-  (testing "response body larger then content-length")
+  (testing "response body larger then content-length"
+    (binding [*connection-options* {:response-buffer-size 1
+                                    :keep-alive? true}]
+      (let [long-line "hello body is too long to be true"]
+        (with-tcp-response ["HTTP/1.1 200 OK"
+                            "Server: Aleph"
+                            "Date: Tue, 29 Sep 2020 08:01:42 GMT"
+                            "Content-Length: 1"
+                            "Connection: Keep-Alive"
+                            ""
+                            long-line]
+          (is (= "h" (-> (http-get (str "http://localhost:" port))
+                         (d/timeout! 1e3)
+                         deref
+                         :body
+                         bs/to-string)))
+          (is (= "h" (-> (http-get (str "http://localhost:" port))
+                         (d/timeout! 1e3)
+                         deref
+                         :body
+                         bs/to-string)))))))
 
-  (testing "connection closed while writing request message")
-  
-  (testing "connection closed while writing request body")
-  
-  (testing "connection closed while reading response message")
-  
-  (testing "connection closed while reading response body")
-  
   (testing "unknown host with JDK DNS resolver"
     (is (thrown? UnknownHostException
                  (-> (http/get "http://unknown-host/")
                      (d/timeout! 1e3)
                      deref))))
-  
+
   (testing "unknown host with custom DNS client"
     (let [pool (http/connection-pool {:connection-options (assoc (default-options) :insecure? true)
                                       :dns-options {:name-servers ["1.1.1.1"]}})]
@@ -631,7 +643,15 @@
                          (d/timeout! 1e3)
                          deref)))
         (finally
-          (.shutdown pool))))))
+          (.shutdown pool)))))
+
+  (testing "connection closed while writing request message")
+  
+  (testing "connection closed while writing request body")
+
+  (testing "connection closed while reading response message")
+
+  (testing "connection closed while reading response body"))
 
 (deftest test-server-errors-handling
   (testing "reject handler when accepting connection")
