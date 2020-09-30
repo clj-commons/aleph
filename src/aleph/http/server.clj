@@ -196,7 +196,7 @@
                       :else
                       (invalid-value-response req rsp))))))))))))
 
-(defn exception-handler [ctx ex]
+(defn handle-exception [ctx ex]
   (cond
     ;; do not need to log an entire stack trace when SSL handshake failed
     (http/ssl-handshake-error? ex)
@@ -335,7 +335,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex))
+        (handle-exception ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -385,7 +385,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex))
+        (handle-exception ctx ex))
 
       :channel-inactive
       ([_ ctx]
