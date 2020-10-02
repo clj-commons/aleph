@@ -580,7 +580,7 @@
           (try
             (error-logger e)
             (catch Throwable ex
-              (log/error "error in error logger" e))))
+              (log/error ex "error in error logger"))))
         ;; duplicating logic from `handle-cleanup` as
         ;; we will never got there. the implementation guarantees
         ;; that non persistent connection would be closed
