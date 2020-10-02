@@ -206,10 +206,9 @@
     (not (instance? IOException ex))
     (log/warn ex "error in HTTP server")))
 
-
 (defn- status->default-response [^HttpResponseStatus status]
   (let [^String reason (.reasonPhrase status)]
-    {:status status
+    {:status (.code status)
      :headers {"content-type" "text/plain"
                "content-length" (.length reason)}
      :body reason}))
@@ -223,7 +222,7 @@
 (def default-header-fields-too-large-response
   (status->default-response HttpResponseStatus/REQUEST_HEADER_FIELDS_TOO_LARGE))
 
-(defn reject-invalid-request [ctx ^HttpRequest req]
+(defn reject-invalid-request [ctx ssl? ^HttpRequest req]
   (let [^String error (.getMessage ^Throwable (http/decoder-failure req))
         rsp (cond
               (.startsWith error "An HTTP line is larger than")
@@ -235,10 +234,9 @@
 
               :else
               default-bad-request-response)
-        netty-response (http/ring-response->full-netty-response rsp)]
-    (-> (netty/write-and-flush ctx netty-response)
-        netty/wrap-future
-        (d/chain' (fn [_] (netty/close ctx))))))
+        netty-response (http/ring-response->netty-response rsp)]
+    (netty/safe-execute ctx
+      (http/send-message ctx false ssl? netty-response (:body rsp)))))
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
@@ -351,7 +349,7 @@
 
           (instance? HttpRequest msg)
           (if (http/decoder-failed? msg)
-            (reject-invalid-request ctx msg)
+            (reject-invalid-request ctx ssl? msg)
             (process-request ctx msg))
 
           (instance? HttpContent msg)
@@ -399,7 +397,7 @@
 
           (instance? HttpRequest msg)
           (if (http/decoder-failed? msg)
-            (reject-invalid-request ctx msg)
+            (reject-invalid-request ctx ssl? msg)
             (let [req msg]
               (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
                 (reset! stream s)

@@ -189,18 +189,6 @@
       (map->headers! (.headers rsp) headers))
     rsp))
 
-(defn ring-response->full-netty-response [{:keys [status headers body]}]
-  (let [^HttpResponseStatus status (if (instance? HttpResponseStatus status)
-                                     status
-                                     (HttpResponseStatus/valueOf status))
-        rsp (DefaultFullHttpResponse.
-             HttpVersion/HTTP_1_1
-             status
-             ^ByteBuf (netty/to-byte-buf body))]
-    (when headers
-      (map->headers! (.headers rsp) headers))
-    rsp))
-
 (defn ring-request->netty-request [m]
   (let [headers (get m :headers)
         req (DefaultHttpRequest.
