@@ -715,7 +715,7 @@
                      deref)]
         (is (= 500 (:status resp)))
         (is (= "Internal server error" (bs/to-string (:body resp)))))))
-  
+
   (testing "reading invalid request message: bad request"
     ;; this request should fail with `IllegalArgumentException` "multiple Content-Lenght headers"
     (with-tcp-request {} ["GET / HTTP/1.1"
@@ -729,7 +729,7 @@
       ["GET /not-very-long-uri-though HTTP/1.1"
        "content-length: 0"]
       (is (.startsWith *response* "HTTP/1.1 414 Request-URI Too Long"))))
-  
+
   (testing "reading invalid request message: header is too large"
     (with-tcp-request
       {:max-header-size 5}
@@ -737,8 +737,18 @@
        "content-length: 0"
        "header: value-that-is-definitely-too-large"]
       (is (.startsWith *response* "HTTP/1.1 431 Request Header Fields"))))
-  
-  (testing "reading invalid request body")
+
+  (testing "reading invalid request body"
+    (with-tcp-request
+      {:request-buffer-size 1}
+      ["POST / HTTP/1.1"
+       "transfer-encoding: chunked"
+       ""
+       "not-a-number" ;; definitely not parseable chunk size
+       "fail"
+       "0"]
+      ;; xxx(okachaiev): what exactly we should get here?
+      (is (.startsWith *response* "HTTP/1.1 500"))))
 
   (testing "writing invalid response message"
     (let [invalid-status-handler
@@ -752,7 +762,17 @@
                        deref
                        :status))))))
 
-  (testing "writing invalid response body")
+  (testing "writing invalid response body"
+    (let [invalid-body-handler
+          (fn [{:keys [body]}]
+            (when (some? body) (bs/to-string body))
+            {:status 200
+             :body (s/->source [1])})]
+      (with-handler invalid-body-handler
+        (is (= 500 (-> (http-get (str "http://localhost:" port))
+                       (d/timeout! 1e3)
+                       deref
+                       :status))))))
 
   (testing "connection closed while reading request message")
 
