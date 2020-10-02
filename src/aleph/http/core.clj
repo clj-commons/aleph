@@ -560,16 +560,21 @@
 
 (let [ary-class (class (byte-array 0))
 
+      handle-failure
+      (fn [f]
+        (when (instance? ChannelFuture f)
+          (.addListener ^ChannelFuture f ChannelFutureListener/CLOSE_ON_FAILURE)))
+
       ;; extracted to make `send-message` more inlineable
       handle-cleanup
       (fn [ch f]
         (-> f
-          (d/chain'
-            (fn [^ChannelFuture f]
-              (if f
-                (.addListener f ChannelFutureListener/CLOSE)
-                (netty/close ch))))
-          (d/catch' (fn [_]))))]
+            (d/chain'
+             (fn [^ChannelFuture f]
+               (if f
+                 (.addListener f ChannelFutureListener/CLOSE)
+                 (netty/close ch))))
+            (d/catch' (fn [_]))))]
 
   (defn send-message
     [ch keep-alive? ssl? ^HttpMessage msg body]
@@ -623,6 +628,8 @@
                   ;; re-throw exception so the caller could take care
                   ;; about cleaning up the mess
                   (throw e))))]
+
+      (handle-failure f)
 
       (when-not keep-alive?
         (handle-cleanup ch f))
