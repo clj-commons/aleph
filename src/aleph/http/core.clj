@@ -502,7 +502,7 @@
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
-(defn send-internal-error [ch ^HttpResponse msg]
+(defn send-internal-error [^AtomicBoolean message-sent? ch ^HttpResponse msg]
   (let [raw-headers (.headers msg)
         headers {:server (.get raw-headers server-name)
                  :connection (.get raw-headers connection-name)
@@ -510,7 +510,7 @@
         resp (-> default-error-response
                  (update :headers merge headers))
         msg' (ring-response->netty-response resp)]
-    (send-contiguous-body ch msg' (:body resp))))
+    (send-contiguous-body message-sent? ch msg' (:body resp))))
 
 (defn send-chunked-file [^AtomicBoolean message-sent? ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
@@ -608,7 +608,7 @@
                 ;; this block
                 (when (and (instance? HttpResponse msg)
                            (true? (.get message-sent?)))
-                  (send-internal-error ch msg))
+                  (send-internal-error message-sent? ch msg))
                 (let [class-name (.getName (class body))]
                   (log/errorf "error sending body of type %s: %s"
                               class-name
