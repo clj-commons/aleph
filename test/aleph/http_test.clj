@@ -709,7 +709,7 @@
                      (d/timeout! 1e3)
                      deref)]
         (is (= 500 (:status resp)))
-        (is (= "Internal server error" (bs/to-string (:body resp)))))))
+        (is (= "Internal Server Error" (bs/to-string (:body resp)))))))
 
   (testing "throwing exception within ring handler"
     (with-handler (fn [_] (throw (RuntimeException. "you shall not pass!")))
@@ -717,7 +717,7 @@
                      (d/timeout! 1e3)
                      deref)]
         (is (= 500 (:status resp)))
-        (is (= "Internal server error" (bs/to-string (:body resp)))))))
+        (is (= "Internal Server Error" (bs/to-string (:body resp)))))))
 
   (testing "reading invalid request message: bad request"
     ;; this request should fail with `IllegalArgumentException` "multiple Content-Lenght headers"

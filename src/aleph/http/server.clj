@@ -383,7 +383,8 @@
               req
               @previous-response
               body
-              (HttpUtil/isKeepAlive req))))]
+              (HttpUtil/isKeepAlive req)
+              error-logger)))]
     (netty/channel-inbound-handler
 
       :exception-caught

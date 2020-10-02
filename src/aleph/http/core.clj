@@ -623,14 +623,14 @@
                  :else
                  (send-streaming-body message-sent? ch msg body))
                (catch Throwable e
-                ;; technically, HTTP message might still not be sent
-                ;; what we mean in reallity is "out code didn't crash
-                ;; before asking Netty to send message". if something
-                ;; happens on I/O loop, we will get exception as a
-                ;; ChannelFuture failure rather than synchronosly with
-                ;; this block
+                 ;; technically, HTTP message might still not be sent
+                 ;; what we mean in reallity is "out code didn't crash
+                 ;; before asking Netty to send message". if something
+                 ;; happens on I/O loop, we will get exception as a
+                 ;; ChannelFuture failure rather than synchronosly with
+                 ;; this block
                  (when (and (instance? HttpResponse msg)
-                            (true? (.get message-sent?)))
+                            (false? (.get message-sent?)))
                    (send-internal-error message-sent? ch msg))
                  (handle-exception error-logger body e keep-alive? ch)))]
 
