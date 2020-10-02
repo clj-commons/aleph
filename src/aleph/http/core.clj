@@ -319,9 +319,10 @@
 (defn ^Throwable decoder-failure [^DecoderResultProvider msg]
   (.cause ^DecoderResult (.decoderResult msg)))
 
-(defn send-streaming-body [ch ^HttpMessage msg body]
+(defn send-streaming-body [^AtomicBoolean message-sent? ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
+  (.set message-sent? true)
   (netty/write ch msg)
 
   (if-let [body' (if (sequential? body)
@@ -489,7 +490,7 @@
         (.close raf)
         (.close fc)))))
 
-(defn send-contiguous-body [ch ^HttpMessage msg body]
+(defn send-contiguous-body [^AtomicBoolean message-sent? ch ^HttpMessage msg body]
   (let [omitted? (identical? :aleph/omitted body)
         body (if (or (nil? body) omitted?)
                empty-last-content
@@ -503,6 +504,7 @@
             (try-set-content-length! msg length)))
         (try-set-content-length! msg length)))
 
+    (.set message-sent? true)
     (netty/write ch msg)
     (netty/write-and-flush ch body)))
 
@@ -516,42 +518,45 @@
         msg' (ring-response->netty-response resp)]
     (send-contiguous-body ch msg' (:body resp))))
 
-(defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
+(defn send-chunked-file [^AtomicBoolean message-sent? ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
                          (.-offset file)
                          (.-length file)
                          (.-chunk-size file))]
     (try-set-content-length! msg (.-length file))
+    (.set message-sent? true)
     (netty/write ch msg)
     (netty/write-and-flush ch (HttpChunkedInput. cf))))
 
-(defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
+(defn send-chunked-body [^AtomicBoolean message-sent? ch ^HttpMessage msg ^ChunkedInput body]
+  (.set message-sent? true)
   (netty/write ch msg)
   (netty/write-and-flush ch body))
 
-(defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
+(defn send-file-region [^AtomicBoolean message-sent? ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
         fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
     (try-set-content-length! msg (.-length file))
+    (.set message-sent? true)
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
-(defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
+(defn send-file-body [^AtomicBoolean message-sent? ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
     (let [source (-> file
                      (bs/to-byte-buffers {:chunk-size 1e6})
                      s/->source)]
-      (send-streaming-body ch msg source))
+      (send-streaming-body message-sent? ch msg source))
 
     (chunked-writer-enabled? ch)
-    (send-chunked-file ch msg file)
+    (send-chunked-file message-sent? ch msg file)
 
     :else
-    (send-file-region ch msg file)))
+    (send-file-region message-sent? ch msg file)))
 
 (let [ary-class (class (byte-array 0))
 
@@ -569,7 +574,8 @@
   (defn send-message
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
-    (let [f (try
+    (let [message-sent? (AtomicBoolean. false)
+          f (try
               (cond
                 (or
                  (nil? body)
@@ -578,27 +584,31 @@
                  (instance? ary-class body)
                  (instance? ByteBuffer body)
                  (instance? ByteBuf body))
-                (send-contiguous-body ch msg body)
+                (send-contiguous-body message-sent? ch msg body)
 
                 (instance? ChunkedInput body)
-                (send-chunked-body ch msg body)
+                (send-chunked-body message-sent? ch msg body)
 
                 (instance? File body)
-                (send-file-body ch ssl? msg (http-file body))
+                (send-file-body message-sent? ch ssl? msg (http-file body))
 
                 (instance? Path body)
-                (send-file-body ch ssl? msg (http-file body))
+                (send-file-body message-sent? ch ssl? msg (http-file body))
 
                 (instance? HttpFile body)
-                (send-file-body ch ssl? msg body)
+                (send-file-body message-sent? ch ssl? msg body)
 
                 :else
-                (send-streaming-body ch msg body))
+                (send-streaming-body message-sent? ch msg body))
               (catch Throwable e
-                ;; xxx(errors-handling): this is actually might be wrong
-                ;; there's a non-zero chance we've already sent msg and
-                ;; failed when started sending body
-                (when (instance? HttpResponse msg)
+                ;; technically, HTTP message might still not be sent
+                ;; what we mean in reallity is "out code didn't crash
+                ;; before asking Netty to send message". if something
+                ;; happens on I/O loop, we will get exception as a
+                ;; ChannelFuture failure rather than synchronosly with
+                ;; this block
+                (when (and (instance? HttpResponse msg)
+                           (true? (.get message-sent?)))
                   (send-internal-error ch msg))
                 (let [class-name (.getName (class body))]
                   (log/errorf "error sending body of type %s: %s"
