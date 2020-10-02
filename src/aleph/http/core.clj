@@ -288,12 +288,12 @@
 (def default-error-response
   {:status 500
    :headers {"content-type" "text/plain"}
-   :body "Internal server error"})
+   :body "Internal Server Error"})
 
 (def default-unavailable-response
   {:status 503
    :headers {"content-type" "text/plain"}
-   :body "503 Service Unavailable"})
+   :body "Service Unavailable"})
 
 ;; Logs exception and returns default 500 response
 ;; not to expose internal logic to the client
