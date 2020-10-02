@@ -31,7 +31,10 @@
      ConnectionTimeoutException
      RequestTimeoutException]
     [io.netty.handler.codec
-     TooLongFrameException]))
+     TooLongFrameException]
+    [io.netty.channel
+     ChannelHandlerContext
+     ChannelPipeline]))
 
 ;;;
 
@@ -781,6 +784,26 @@
   (testing "connection closed while writing response message")
 
   (testing "connection closed while writing response body"))
+
+(deftest test-custom-error-handler
+  (let [error (atom "")
+        logger (fn [^Throwable ex]
+                 (reset! error (.getMessage ex)))
+        fire-exception (netty/channel-inbound-handler
+                        :channel-active
+                        ([_ ctx]
+                         (let [ex (RuntimeException. "you shall not log!")]
+                           (.fireExceptionCaught ^ChannelHandlerContext ctx ex))))
+        pipeline (fn [^ChannelPipeline p]
+                   (.addBefore p "request-handler" "fire-exception" ^ChannelHandler fire-exception))]
+    (with-server (http/start-server echo-handler {:port port
+                                                  :error-logger logger
+                                                  :pipeline-transform pipeline})
+      (-> (http-get (str "http://localhost:" port))
+          (d/timeout! 1e3)
+          (d/catch' (fn [_]))
+          deref))
+    (is (.contains @error "not log!"))))
 
 ;;;
 

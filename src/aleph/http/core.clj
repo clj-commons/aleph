@@ -295,11 +295,17 @@
    :headers {"content-type" "text/plain"}
    :body "Service Unavailable"})
 
-;; Logs exception and returns default 500 response
-;; not to expose internal logic to the client
-(defn error-response [^Throwable e]
-  (log/error e "error in HTTP handler")
-  default-error-response)
+(defn error-response
+  ([^Throwable e]
+   (error-response nil e))
+  ([error-logger ^Throwable e]
+   (let [logger (or error-logger
+                    #(log/error % "error in HTTP handler"))]
+     (try
+       (logger e)
+       (catch Throwable ex
+         (log/warn ex "error in error logger"))))
+   default-error-response))
 
 (defn decoder-failed? [^DecoderResultProvider msg]
   (.isFailure ^DecoderResult (.decoderResult msg)))

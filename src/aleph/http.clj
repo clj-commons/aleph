@@ -54,7 +54,8 @@
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds
    | `continue-handler` | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
    | `continue-executor` | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `num-event-loop-threads` | optional, defaults to double number of available processors."
+   | `num-event-loop-threads` | optional, defaults to double number of available processors.
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to `request-handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery."
   [handler options]
   (when (contains? options :max-chunk-size)
     (log/warn "Ignoring :max-chunk-size option as it was deprecated"))

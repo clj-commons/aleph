@@ -8,6 +8,8 @@
   (:import
     [java.io
      IOException]
+    [java.nio.channels
+     ClosedChannelException]
     [java.net
      InetSocketAddress]
     [io.netty.channel
@@ -27,14 +29,22 @@
 (alter-meta! #'->TcpConnection assoc :private true)
 
 (defn- ^ChannelHandler server-channel-handler
-  [handler {:keys [raw-stream?] :as options}]
+  [handler {:keys [raw-stream? error-logger] :as options}]
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in TCP server")))
+        (let [error-logger' (or error-logger
+                                (fn [^Throwable ex]
+                                  (when-not (instance? IOException ex)
+                                    (log/warn ex "error in TCP server"))))]
+          (try
+            (error-logger ex)
+            (catch Throwable e
+              (log/warn e "error in error logger")))
+          (when-not (instance? ClosedChannelException)
+            (netty/close ctx))))
 
       :channel-inactive
       ([_ ctx]
@@ -74,7 +84,8 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `num-event-loop-threads` | optional, defaults to double number of available processors."
+   | `num-event-loop-threads` | optional, defaults to double number of available processors.
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to the `handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery."
   [handler
    {:keys [port
            socket-address
@@ -84,7 +95,8 @@
            epoll?
            kqueue?
            log-activity
-           num-event-loop-threads]
+           num-event-loop-threads
+           error-logger]
     :or {bootstrap-transform identity
          pipeline-transform identity
          epoll? false

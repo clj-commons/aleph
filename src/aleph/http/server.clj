@@ -59,6 +59,8 @@
     [io.netty.handler.logging LoggingHandler]
     [java.io
      IOException]
+    [java.nio.channels
+     ClosedChannelException]
     [java.net
      InetSocketAddress]
     [io.netty.util.concurrent
@@ -106,13 +108,13 @@
 (let [[server-value keep-alive-value close-value]
       (map #(HttpHeaders/newEntity %) ["Aleph/0.4.6" "Keep-Alive" "Close"])]
   (defn send-response
-    [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
+    [^ChannelHandlerContext ctx keep-alive? ssl? rsp error-logger]
     (let [[^HttpResponse rsp body]
           (try
             [(http/ring-response->netty-response rsp)
              (get rsp :body)]
             (catch Throwable e
-              (let [rsp (http/error-response e)]
+              (let [rsp (http/error-response error-logger e)]
                 [(http/ring-response->netty-response rsp)
                  (get rsp :body)])))]
 
@@ -131,8 +133,8 @@
 
 ;;;
 
-(defn invalid-value-response [req x]
-  (http/error-response
+(defn invalid-value-response [req x error-logger]
+  (http/error-response error-logger
     (IllegalArgumentException.
       (str "cannot treat "
         (pr-str x)
@@ -149,7 +151,8 @@
    ^HttpRequest req
    previous-response
    body
-   keep-alive?]
+   keep-alive?
+   error-logger]
   (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
         head? (identical? HttpMethod/HEAD (.method req))
         rsp (if executor
@@ -178,7 +181,7 @@
         (fn [_]
           (netty/release req)
           (-> rsp
-            (d/catch' http/error-response)
+            (d/catch' #(http/error-response error-logger %))
             (d/chain'
               (fn [rsp]
                 (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
@@ -194,17 +197,18 @@
                       {:status 204}
 
                       :else
-                      (invalid-value-response req rsp))))))))))))
+                      (invalid-value-response req rsp error-logger))
+                    error-logger))))))))))
 
-(defn handle-exception [ctx ex]
-  (cond
-    ;; do not need to log an entire stack trace when SSL handshake failed
-    (http/ssl-handshake-error? ex)
-    (log/warn "SSL handshake failure:"
-              (.getMessage ^Throwable (.getCause ^Throwable ex)))
-
-    (not (instance? IOException ex))
-    (log/warn ex "error in HTTP server")))
+(defn handle-exception [error-logger ctx ex]
+  (try
+    (error-logger ex)
+    (catch Throwable e
+      (log/warn "exception in error logger" e)))
+  ;; `ClosedChannelException` basically means that the application closed
+  ;; connection *before* issuing new writes. typically, should not happen
+  (when-not (instance? ClosedChannelException ex)
+    (netty/close ctx)))
 
 (defn- status->default-response [^HttpResponseStatus status]
   (let [^String reason (.reasonPhrase status)]
@@ -239,7 +243,7 @@
       (http/send-message ctx false ssl? netty-response (:body rsp)))))
 
 (defn ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity error-logger]
   (let [buffer-capacity (long buffer-capacity)
         request (atom nil)
         buffer (atom [])
@@ -259,7 +263,8 @@
               req
               @previous-response
               (when body (bs/to-input-stream body))
-              (HttpHeaders/isKeepAlive req))))
+              (HttpHeaders/isKeepAlive req)
+              error-logger)))
 
         process-request
         (fn [ctx req]
@@ -333,7 +338,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (handle-exception ctx ex))
+        (handle-exception error-logger ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -361,7 +366,7 @@
           (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity error-logger]
   (let [buffer-capacity (long buffer-capacity)
         stream (atom nil)
         previous-response (atom nil)
@@ -383,7 +388,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (handle-exception ctx ex))
+        (handle-exception error-logger ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -481,7 +486,8 @@
      compression-level
      idle-timeout
      continue-handler
-     continue-executor]
+     continue-executor
+     error-logger]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -490,8 +496,8 @@
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
-                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size error-logger)
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size error-logger))
           ^ChannelHandler
           continue-handler (if (nil? continue-handler)
                              (HttpServerExpectContinueHandler.)
@@ -533,7 +539,8 @@
            log-activity
            continue-handler
            continue-executor
-           num-event-loop-threads]
+           num-event-loop-threads
+           error-logger]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
@@ -580,7 +587,17 @@
                              (throw
                               (IllegalArgumentException.
                                (str "invalid continue-executor specification: "
-                                    (pr-str continue-executor)))))]
+                                    (pr-str continue-executor)))))
+        error-logger' (or error-logger
+                          (fn [^Throwable ex]
+                            (cond
+                              ;; do not need to log an entire stack trace when SSL handshake failed
+                              (http/ssl-handshake-error? ex)
+                              (log/warn "SSL handshake failure:"
+                                        (.getMessage ^Throwable (.getCause ^Throwable ex)))
+
+                              (not (instance? IOException ex))
+                              (log/warn ex "error in HTTP server"))))]
     (netty/start-server
       {:pipeline-builder (pipeline-builder
                            handler
@@ -588,7 +605,8 @@
                            (assoc options
                                   :executor executor
                                   :ssl? (or manual-ssl? (boolean ssl-context))
-                                  :continue-executor continue-executor'))
+                                  :continue-executor continue-executor'
+                                  :error-logger error-logger'))
        :ssl-context ssl-context
        :bootstrap-transform bootstrap-transform
        :on-close (when (and shutdown-executor? (or (instance? ExecutorService executor)
