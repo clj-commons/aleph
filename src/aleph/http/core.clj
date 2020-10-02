@@ -568,67 +568,78 @@
                (if f
                  (.addListener f ChannelFutureListener/CLOSE)
                  (netty/close ch))))
-            (d/catch' (fn [_]))))]
+            (d/catch' (fn [_]))))
+
+      handle-exception
+      (fn [error-logger body e keep-alive? ^Channel ch]
+        (if (nil? error-logger)
+          (let [class-name (.getName (class body))]
+            (log/errorf "error sending body of type %s: %s"
+                        class-name
+                        (.getMessage ^Throwable e)))
+          (try
+            (error-logger e)
+            (catch Throwable ex
+              (log/error "error in error logger" e))))
+        ;; duplicating logic from `handle-cleanup` as
+        ;; we will never got there. the implementation guarantees
+        ;; that non persistent connection would be closed
+        ;; in any case
+        (when-not keep-alive?
+          (netty/close ch))
+        
+        ;; re-throw exception so the caller could take care
+        ;; about cleaning up the mess
+        (throw e))]
 
   (defn send-message
-    [ch keep-alive? ssl? ^HttpMessage msg body]
+    ([ch keep-alive? ssl? msg body]
+     (send-message ch keep-alive? ssl? msg body nil))
+    ([ch keep-alive? ssl? ^HttpMessage msg body error-logger]
+     (let [message-sent? (AtomicBoolean. false)
+           f (try
+               (cond
+                 (or
+                  (nil? body)
+                  (identical? :aleph/omitted body)
+                  (instance? String body)
+                  (instance? ary-class body)
+                  (instance? ByteBuffer body)
+                  (instance? ByteBuf body))
+                 (send-contiguous-body message-sent? ch msg body)
 
-    (let [message-sent? (AtomicBoolean. false)
-          f (try
-              (cond
-                (or
-                 (nil? body)
-                 (identical? :aleph/omitted body)
-                 (instance? String body)
-                 (instance? ary-class body)
-                 (instance? ByteBuffer body)
-                 (instance? ByteBuf body))
-                (send-contiguous-body message-sent? ch msg body)
+                 (instance? ChunkedInput body)
+                 (send-chunked-body message-sent? ch msg body)
 
-                (instance? ChunkedInput body)
-                (send-chunked-body message-sent? ch msg body)
+                 (instance? File body)
+                 (send-file-body message-sent? ch ssl? msg (http-file body))
 
-                (instance? File body)
-                (send-file-body message-sent? ch ssl? msg (http-file body))
+                 (instance? Path body)
+                 (send-file-body message-sent? ch ssl? msg (http-file body))
 
-                (instance? Path body)
-                (send-file-body message-sent? ch ssl? msg (http-file body))
+                 (instance? HttpFile body)
+                 (send-file-body message-sent? ch ssl? msg body)
 
-                (instance? HttpFile body)
-                (send-file-body message-sent? ch ssl? msg body)
-
-                :else
-                (send-streaming-body message-sent? ch msg body))
-              (catch Throwable e
+                 :else
+                 (send-streaming-body message-sent? ch msg body))
+               (catch Throwable e
                 ;; technically, HTTP message might still not be sent
                 ;; what we mean in reallity is "out code didn't crash
                 ;; before asking Netty to send message". if something
                 ;; happens on I/O loop, we will get exception as a
                 ;; ChannelFuture failure rather than synchronosly with
                 ;; this block
-                (when (and (instance? HttpResponse msg)
-                           (true? (.get message-sent?)))
-                  (send-internal-error message-sent? ch msg))
-                (let [class-name (.getName (class body))]
-                  (log/errorf "error sending body of type %s: %s"
-                              class-name
-                              (.getMessage ^Throwable e))
-                  ;; duplicating logic from `handle-cleanup` as
-                  ;; we will never got there. the implementation guarantees
-                  ;; that non persistent connection would be closed
-                  ;; in any case
-                  (when-not keep-alive?
-                    (netty/close ch))
-                  ;; re-throw exception so the caller could take care
-                  ;; about cleaning up the mess
-                  (throw e))))]
+                 (when (and (instance? HttpResponse msg)
+                            (true? (.get message-sent?)))
+                   (send-internal-error message-sent? ch msg))
+                 (handle-exception error-logger body e keep-alive? ch)))]
 
-      (handle-failure f)
+       (handle-failure f)
 
-      (when-not keep-alive?
-        (handle-cleanup ch f))
+       (when-not keep-alive?
+         (handle-cleanup ch f))
 
-      f)))
+       f))))
 
 (deftype WebsocketPing [deferred payload])
 

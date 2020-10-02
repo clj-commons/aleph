@@ -129,7 +129,7 @@
 
           (.set headers ^CharSequence http/connection-name (if keep-alive? keep-alive-value close-value))
 
-          (http/send-message ctx keep-alive? ssl? rsp body))))))
+          (http/send-message ctx keep-alive? ssl? rsp body error-logger))))))
 
 ;;;
 
