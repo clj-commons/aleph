@@ -543,10 +543,14 @@
      ~@body))
 
 (defmacro with-tcp-request [options request & body]
-  `(with-server (http/start-server echo-handler (assoc ~options :port port))
-     (let [conn# @(tcp/client {:host "localhost" :port port})]
+  `(with-tcp-request-handler echo-handler ~options ~request ~@body))
+
+(defmacro with-tcp-request-handler [handler options request & body]
+  `(with-server (http/start-server ~handler (assoc ~options :port port))
+     (let [conn# @(tcp/client {:host "localhost" :port port})
+           decode# (fnil bs/to-string "")]
        (s/put! conn# (encode-http-object ~request))
-       (binding [*response* (-> conn# s/take! deref bs/to-string)]
+       (binding [*response* (-> conn# s/take! deref decode#)]
          ~@body)
        (s/close! conn#))))
 
@@ -658,15 +662,7 @@
                          (d/timeout! 1e3)
                          deref)))
         (finally
-          (.shutdown pool)))))
-
-  (testing "connection closed while writing request message")
-  
-  (testing "connection closed while writing request body")
-
-  (testing "connection closed while reading response message")
-
-  (testing "connection closed while reading response body"))
+          (.shutdown pool))))))
 
 (defmacro with-rejected-handler [handler & body]
   `(let [handler# ~handler
@@ -739,16 +735,23 @@
       (is (.startsWith *response* "HTTP/1.1 431 Request Header Fields"))))
 
   (testing "reading invalid request body"
-    (with-tcp-request
-      {:request-buffer-size 1}
-      ["POST / HTTP/1.1"
-       "transfer-encoding: chunked"
-       ""
-       "not-a-number" ;; definitely not parseable chunk size
-       "fail"
-       "0"]
-      ;; xxx(okachaiev): what exactly we should get here?
-      (is (.startsWith *response* "HTTP/1.1 500"))))
+    (let [interrupted? (d/deferred)]
+      (with-tcp-request-handler
+        (fn [req]
+          (try
+            (bs/to-string (:body req))
+            (catch Throwable _))
+          (d/success! interrupted? @(:aleph/interrupted? req))
+          {:status 201
+           :body "not good"})
+        {:request-buffer-size 1}
+        ["POST / HTTP/1.1"
+         "transfer-encoding: chunked"
+         ""
+         "not-a-number" ;; definitely not parseable chunk size
+         "fail"
+         "0"]
+        (is (true? @interrupted?)))))
 
   (testing "writing invalid response message"
     (let [invalid-status-handler
@@ -772,15 +775,7 @@
         (is (= 500 (-> (http-get (str "http://localhost:" port))
                        (d/timeout! 1e3)
                        deref
-                       :status))))))
-
-  (testing "connection closed while reading request message")
-
-  (testing "connection closed while reading request body")
-
-  (testing "connection closed while writing response message")
-
-  (testing "connection closed while writing response body"))
+                       :status)))))))
 
 (deftest test-custom-error-handler
   (let [error (atom "")

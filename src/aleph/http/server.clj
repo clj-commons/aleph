@@ -152,8 +152,10 @@
    previous-response
    body
    keep-alive?
-   error-logger]
-  (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
+   error-logger
+   interrupted?]
+  (let [^NettyRequest req' (http/netty-request->ring-request
+                            req ssl? (.channel ctx) body interrupted?)
         head? (identical? HttpMethod/HEAD (.method req))
         rsp (if executor
 
@@ -208,6 +210,7 @@
   ;; `ClosedChannelException` basically means that the application closed
   ;; connection *before* issuing new writes. typically, should not happen
   (when-not (instance? ClosedChannelException ex)
+    ;; :channel-inactive handler will do the rest
     (netty/close ctx)))
 
 (defn- status->default-response [^HttpResponseStatus status]
@@ -242,6 +245,15 @@
     (netty/safe-execute ctx
       (http/send-message ctx false ssl? netty-response (:body rsp)))))
 
+(defn reject-invalid-content [error-logger ctx stream ^HttpContent msg]
+  (when (some? stream)
+    (s/close! stream))
+  (handle-exception error-logger ctx (http/decoder-failure msg)))
+
+(defn mark-interruption [d]
+  #(when-not (d/realized? d)
+     (d/success! d true)))
+
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity error-logger]
   (let [buffer-capacity (long buffer-capacity)
@@ -250,9 +262,10 @@
         buffer-size (AtomicInteger. 0)
         stream (atom nil)
         previous-response (atom nil)
+        interrupted? (atom nil)
 
         handle-request
-        (fn [^ChannelHandlerContext ctx req body]
+        (fn [^ChannelHandlerContext ctx req body interrupt-flag]
           (reset! previous-response
             (handle-request
               ctx
@@ -264,14 +277,18 @@
               @previous-response
               (when body (bs/to-input-stream body))
               (HttpHeaders/isKeepAlive req)
-              error-logger)))
+              error-logger
+              interrupt-flag)))
 
         process-request
         (fn [ctx req]
           (if (HttpHeaders/isTransferEncodingChunked req)
-            (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+            (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
+                  d' (d/deferred)]
+              (s/on-closed s (mark-interruption d'))
               (reset! stream s)
-              (handle-request ctx req s))
+              (reset! interrupted? d')
+              (handle-request ctx req s d'))
             (reset! request req)))
 
         process-last-content
@@ -282,6 +299,8 @@
               (do
                 (s/put! s (netty/buf->array content))
                 (netty/release content)
+                (when-let [flag @interrupted?]
+                  (d/success! flag false))
                 (s/close! s))
 
               (if (and (zero? (.get buffer-size))
@@ -290,18 +309,19 @@
                 ;; there was never any body
                 (do
                   (netty/release content)
-                  (handle-request ctx @request nil))
+                  (handle-request ctx @request nil nil))
 
                 (let [bufs (conj @buffer content)
                       bytes (netty/bufs->array bufs)]
                   (doseq [b bufs]
                     (netty/release b))
-                  (handle-request ctx @request bytes))))
+                  (handle-request ctx @request bytes nil))))
 
             (.set buffer-size 0)
             (reset! stream nil)
             (reset! buffer [])
-            (reset! request nil)))
+            (reset! request nil)
+            (reset! interrupted? nil)))
 
         process-content
         (fn [ctx ^HttpContent msg]
@@ -324,15 +344,19 @@
                   (when (< buffer-capacity size)
                     (let [bufs @buffer
                           s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
-                              (s/put! (netty/bufs->array bufs)))]
+                              (s/put! (netty/bufs->array bufs)))
+                          d' (d/deferred)]
 
+                      (s/on-closed s (mark-interruption d'))
+                      
                       (doseq [b bufs]
                         (netty/release b))
 
                       (reset! buffer [])
                       (reset! stream s)
+                      (reset! interrupted? d')
 
-                      (handle-request ctx @request s))))))))]
+                      (handle-request ctx @request s d'))))))))]
 
     (netty/channel-inbound-handler
 
@@ -343,6 +367,7 @@
       :channel-inactive
       ([_ ctx]
         (when-let [s @stream]
+          ;; this should force interrupted? flag to be realized as "true"
           (s/close! s))
         (doseq [b @buffer]
           (netty/release b))
@@ -358,9 +383,11 @@
             (process-request ctx msg))
 
           (instance? HttpContent msg)
-          (if (instance? LastHttpContent msg)
-            (process-last-content ctx msg)
-            (process-content ctx msg))
+          (if (http/decoder-failed? msg)
+            (reject-invalid-content error-logger ctx @stream msg)
+            (if (instance? LastHttpContent msg)
+              (process-last-content ctx msg)
+              (process-content ctx msg)))
 
           :else
           (.fireChannelRead ctx msg))))))
@@ -369,10 +396,11 @@
   [ssl? handler rejected-handler executor buffer-capacity error-logger]
   (let [buffer-capacity (long buffer-capacity)
         stream (atom nil)
+        interrupted? (atom nil)
         previous-response (atom nil)
 
         handle-request
-        (fn [^ChannelHandlerContext ctx req body]
+        (fn [^ChannelHandlerContext ctx req body interrupt-flag]
           (reset! previous-response
             (handle-request
               ctx
@@ -384,7 +412,8 @@
               @previous-response
               body
               (HttpUtil/isKeepAlive req)
-              error-logger)))]
+              error-logger
+              interrupt-flag)))]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -394,6 +423,7 @@
       :channel-inactive
       ([_ ctx]
         (when-let [s @stream]
+          ;; this should force interrupted? flag to be realized as "true"
           (s/close! s))
         (.fireChannelInactive ctx))
 
@@ -405,17 +435,23 @@
           (if (http/decoder-failed? msg)
             (reject-invalid-request ctx ssl? msg)
             (let [req msg]
-              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
+              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
+                    d' (d/deferred)]
+                (s/on-closed s (mark-interruption d'))
                 (reset! stream s)
-                (handle-request ctx req s))))
+                (reset! interrupted? d')
+                (handle-request ctx req s d'))))
 
           (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
+          (if (http/decoder-failed? msg)
+            (reject-invalid-content error-logger ctx @stream msg)
+            (let [content (.content ^HttpContent msg)]
             ;; content might empty most probably in case of EmptyLastHttpContent
-            (when-not (zero? (.readableBytes content))
-              (netty/put! (.channel ctx) @stream content))
-            (when (instance? LastHttpContent msg)
-              (s/close! @stream)))
+              (when-not (zero? (.readableBytes content))
+                (netty/put! (.channel ctx) @stream content))
+              (when (instance? LastHttpContent msg)
+                (d/success! @interrupted? false)
+                (s/close! @stream))))
 
           :else
           (.fireChannelRead ctx msg))))))
