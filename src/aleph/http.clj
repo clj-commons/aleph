@@ -404,8 +404,8 @@
                                            (flow/dispose pool k conn)
                                            (flow/release pool k conn)))))
                                    (-> rsp
-                                     (dissoc :aleph/complete)
-                                     (assoc :connection-time (- end start)))))))))
+                                       http-core/wrap-complete
+                                       (assoc :connection-time (- end start)))))))))
 
                        (fn [rsp]
                          (->> rsp

@@ -261,6 +261,17 @@
 (defn ring-request-ssl-session [^NettyRequest req]
   (netty/channel-ssl-session (.ch req)))
 
+(defn wrap-complete [rsp]
+  (let [prev-flag (:aleph/complete rsp)
+        new-flag (if (nil? prev-flag)
+                   (d/success-deferred false)
+                   (let [d' (d/deferred)]
+                     (d/connect prev-flag d')
+                     d'))]
+    (-> rsp
+        (dissoc :aleph/complete)
+        (assoc :aleph/interrupted? new-flag))))
+
 ;;;
 
 (defn has-content-length? [^HttpMessage msg]

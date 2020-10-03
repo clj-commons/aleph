@@ -602,27 +602,23 @@
                          (d/timeout! 1e3)
                          deref))))))
 
-  ;; xxx(okachaiev): double check what's gonna happen if a chunk size is
-  ;; larger than it needs to be (when it's smaller - should be similar
-  ;; to the handling of wrong content-length)
   (testing "reading invalid chunked response body"
-    (binding [*connection-options* {:log-activity :warn}]
-      (with-tcp-response ["HTTP/1.1 4000001 Super Bad Request"
-                          "Server: Aleph"
-                          "Date: Tue, 29 Sep 2020 08:01:42 GMT"
-                          "Connection: Keep-Alive"
-                          "transfer-encoding: chunked"
-                          ""
-                          "not-a-number" ;; definitely not parseable chunk size
-                          "fail"
-                          "0"]
+    (with-tcp-response ["HTTP/1.1 4000001 Super Bad Request"
+                        "Server: Aleph"
+                        "Date: Tue, 29 Sep 2020 08:01:42 GMT"
+                        "Connection: Keep-Alive"
+                        "transfer-encoding: chunked"
+                        ""
+                        "not-a-number" ;; definitely not parseable chunk size
+                        "fail"
+                        "0"]
       ;; xxx(okachaiev): do we need to wrap this into more generic `DecoderException`?
-        (is (thrown? NumberFormatException
-                     (-> (http-post (str "http://localhost:" port))
-                         (d/timeout! 1e3)
-                         deref
-                         :body
-                         bs/to-string))))))
+      (let [rsp (-> (http-post (str "http://localhost:" port))
+                    (d/timeout! 1e3)
+                    deref)]
+        (bs/to-string (:body rsp))
+        (is (d/deferred? (:aleph/interrupted? rsp)))
+        (is (true? @(:aleph/interrupted? rsp))))))
 
   (testing "response body larger then content-length"
     (binding [*connection-options* {:response-buffer-size 1
@@ -653,8 +649,9 @@
                      deref))))
 
   (testing "unknown host with custom DNS client"
-    (let [pool (http/connection-pool {:connection-options (assoc (default-options) :insecure? true)
-                                      :dns-options {:name-servers ["1.1.1.1"]}})]
+    (let [pool (http/connection-pool
+                {:connection-options (assoc (default-options) :insecure? true)
+                 :dns-options {:name-servers ["1.1.1.1"]}})]
       (try
         (is (thrown? UnknownHostException
                      (-> (http/get "http://unknown-host/" {:pool pool})

@@ -154,6 +154,9 @@
 
       :channel-inactive
       ([_ ctx]
+        (when-let [c @complete]
+          (when-not (d/realized? c)
+            (d/success! c true)))
         (when-let [s @stream]
           (s/close! s))
         (s/close! response-stream)
@@ -170,7 +173,8 @@
                     c (d/deferred)]
                 (reset! stream s)
                 (reset! complete c)
-                (s/on-closed s #(d/success! c true))
+                (s/on-closed s #(when-not (d/realized? c)
+                                  (d/success! c true)))
                 (handle-response rsp c s))))
 
           (instance? HttpContent msg)
@@ -180,11 +184,10 @@
               ;; note that we are most likely to get this when dealing
               ;; with transfer encoding chunked
               (if-let [s @stream]
-                ;; xxx(okachaiev): what exactly we gonna do when the stream
-                ;; is present??? discard the rest of the content? close the stream?
-                ;; xxx(okachaiev): interesting fact, closing the connection here
-                ;; would lead to ClosedChannelException on the server side
-                (s/close! s)
+                (do
+                  ;; flag that body was not completed succesfully
+                  (d/success! @complete true)
+                  (s/close! s))
                 (handle-decoder-failure ctx msg response-stream)))
             (let [content (.content ^HttpContent msg)]
               (netty/put! (.channel ctx) @stream content)
@@ -217,6 +220,9 @@
 
       :channel-inactive
       ([_ ctx]
+        (when-let [c @complete]
+          (when-not (d/realized? c)
+            (d/success! c true)))
         (when-let [s @stream]
           (s/close! s))
         (doseq [b @buffer]
@@ -237,7 +243,8 @@
                   content (.content rsp)
                   c (d/deferred)
                   s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
-              (s/on-closed s #(d/success! c true))
+              (s/on-closed s #(when-not (d/realized? c)
+                                (d/success! c true)))
               (s/put! s (netty/buf->array content))
               (netty/release content)
               (handle-response rsp c s)
@@ -252,7 +259,8 @@
                       c (d/deferred)]
                   (reset! stream s)
                   (reset! complete c)
-                  (s/on-closed s #(d/success! c true))
+                  (s/on-closed s #(when-not (d/realized? c)
+                                    (d/success! c true)))
                   (handle-response rsp c s))
                 (reset! response rsp))))
 
@@ -263,11 +271,10 @@
               ;; note that we are most likely to get this when dealing
               ;; with transfer encoding chunked
               (if-let [s @stream]
-                ;; xxx(okachaiev): what exactly we gonna do when the stream
-                ;; is present??? discard the rest of the content? close the stream?
-                ;; xxx(okachaiev): interesting fact, closing the connection here
-                ;; would lead to `ClosedChannelException` on the server side
-                (s/close! s)
+                (do
+                  ;; flag that body was not completed succesfully
+                  (d/success! @complete true)
+                  (s/close! s))
                 (handle-decoder-failure ctx msg response-stream)))
             (let [content (.content ^HttpContent msg)]
               (if (instance? LastHttpContent msg)
