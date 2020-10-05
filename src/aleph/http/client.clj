@@ -110,10 +110,13 @@
           nil))
       (no-url req))))
 
-(defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream]
+(defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream error-logger]
   ;; Typical non-IO exception would be TooLongFrameException, SSLHandshakeError etc
   (when-not (not (instance? IOException ex))
-    (log/warn "error in HTTP client" (.getMessage ex))
+    (try
+      (error-logger ex)
+      (catch Throwable e
+        (log/warn "error in error logger" e)))
     ;; An exception might happen while realizing async body from the response
     ;; (the message from `response-stream` is arelady taken by the user).
     ;; In this case, offering a new one item in the response stream would mean
@@ -132,7 +135,7 @@
     (netty/close ctx)))
 
 (defn raw-client-handler
-  [response-stream buffer-capacity]
+  [response-stream buffer-capacity error-logger]
   (let [stream (atom nil)
         complete (atom nil)
 
@@ -148,7 +151,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (handle-exception ctx ex response-stream))
+        (handle-exception ctx ex response-stream error-logger))
 
       :channel-inactive
       ([_ ctx]
@@ -177,16 +180,14 @@
 
           (instance? HttpContent msg)
           (if (http/decoder-failed? msg)
-            (do
-              (log/warn "HttpContent decoder failed" (http/decoder-failure msg))
-              ;; note that we are most likely to get this when dealing
-              ;; with transfer encoding chunked
-              (if-let [s @stream]
-                (do
-                  ;; flag that body was not completed succesfully
-                  (d/success! @complete true)
-                  (s/close! s))
-                (handle-decoder-failure ctx msg response-stream)))
+            ;; note that we are most likely to get this when dealing
+            ;; with transfer encoding chunked
+            (if-let [s @stream]
+              (do
+                ;; flag that body was not completed succesfully
+                (d/success! @complete true)
+                (s/close! s))
+              (handle-decoder-failure ctx msg response-stream))
             (let [content (.content ^HttpContent msg)]
               (netty/put! (.channel ctx) @stream content)
               (when (instance? LastHttpContent msg)
@@ -197,7 +198,7 @@
           (.fireChannelRead ctx msg))))))
 
 (defn client-handler
-  [response-stream ^long buffer-capacity]
+  [response-stream ^long buffer-capacity error-logger]
   (let [response (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
@@ -214,7 +215,7 @@
 
       :exception-caught
       ([_ ctx ex]
-        (handle-exception ctx ex response-stream))
+        (handle-exception ctx ex response-stream error-logger))
 
       :channel-inactive
       ([_ ctx]
@@ -264,16 +265,14 @@
 
           (instance? HttpContent msg)
           (if (http/decoder-failed? msg)
-            (do
-              (log/warn "HttpContent decoder failed" (http/decoder-failure msg))
-              ;; note that we are most likely to get this when dealing
-              ;; with transfer encoding chunked
-              (if-let [s @stream]
-                (do
-                  ;; flag that body was not completed succesfully
-                  (d/success! @complete true)
-                  (s/close! s))
-                (handle-decoder-failure ctx msg response-stream)))
+            ;; note that we are most likely to get this when dealing
+            ;; with transfer encoding chunked
+            (if-let [s @stream]
+              (do
+                ;; flag that body was not completed succesfully
+                (d/success! @complete true)
+                (s/close! s))
+              (handle-decoder-failure ctx msg response-stream))
             (let [content (.content ^HttpContent msg)]
               (if (instance? LastHttpContent msg)
                 (do
@@ -472,7 +471,8 @@
      idle-timeout
      log-activity
      decompress-body?
-     save-content-encoding?]
+     save-content-encoding?
+     error-logger]
     :or
     {pipeline-transform identity
      response-buffer-size 65536
@@ -482,9 +482,12 @@
      decompress-body? false
      save-content-encoding? false}}]
   (fn [^ChannelPipeline pipeline]
-    (let [handler (if raw-stream?
-                    (raw-client-handler response-stream response-buffer-size)
-                    (client-handler response-stream response-buffer-size))
+    (let [error-logger' (or error-logger
+                            (fn [^Throwable ex]
+                              (log/warn "error in HTTP client" (.getMessage ex))))
+          handler (if raw-stream?
+                    (raw-client-handler response-stream response-buffer-size error-logger')
+                    (client-handler response-stream response-buffer-size error-logger'))
           logger (cond
                    (instance? LoggingHandler log-activity)
                    log-activity
@@ -743,7 +746,8 @@
                              headers
                              max-frame-payload
                              nil
-                             0))
+                             0
+                             nil))
   ([raw-stream?
     uri
     sub-protocols
@@ -751,7 +755,8 @@
     headers
     max-frame-payload
     heartbeats
-    handshake-timeout]
+    handshake-timeout
+    error-logger]
    (let [d (d/deferred)
          in (atom nil)
          desc (atom {})
@@ -771,7 +776,10 @@
        :exception-caught
        ([_ ctx ex]
         (when-not (d/error! d ex)
-          (log/warn ex "error in websocket client"))
+          (try
+            (error-logger ex)
+            (catch Throwable e
+              (log/warn "error in error logger" e))))
         (netty/close ctx))
 
        :channel-inactive
@@ -940,7 +948,8 @@
            compression?
            proxy-options
            name-resolver
-           heartbeats]
+           heartbeats
+           error-logger]
     :or {bootstrap-transform identity
          pipeline-transform identity
          raw-stream? false
@@ -973,6 +982,9 @@
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
+        error-logger' (or error-logger
+                          (fn [^Throwable ex]
+                            (log/warn ex "error in websocket client")))
         heartbeats (when (some? heartbeats)
                      (merge
                       {:send-after-idle 3e4
@@ -987,7 +999,8 @@
                       headers
                       max-frame-payload
                       heartbeats
-                      handshake-timeout)
+                      handshake-timeout
+                      error-logger')
         
         pipeline-builder
         (fn [^ChannelPipeline pipeline]
