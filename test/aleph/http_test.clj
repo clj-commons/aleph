@@ -759,6 +759,8 @@
           (fn [{:keys [body]}]
             (when (some? body) (bs/to-string body))
             {:status 1045
+             ;; this leads to `NullPointerException` in `http.core/normalize-header-key`
+             :headers {nil "not such header"}
              :body "there's no such status"})]
       (with-handler invalid-status-handler
         (is (= 500 (-> (http-get (str "http://localhost:" port))
