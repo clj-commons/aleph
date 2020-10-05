@@ -33,6 +33,7 @@
     [io.netty.handler.codec
      TooLongFrameException]
     [io.netty.channel
+     ChannelHandler
      ChannelHandlerContext
      ChannelPipeline]))
 

@@ -270,7 +270,8 @@
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `allow-extensions?` | if true, allows extensions to the WebSocket protocol, defaults to `false`.
-   | `heartbeats` | optional configuration to send Ping frames to the client periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty uses empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
+   | `heartbeats` | optional configuration to send Ping frames to the client periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty uses empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout).
+   | `error-logger` | optional, function to be invoked on each exception propagated through the pipeline up to `request-handler`. Supposed to be used only for logging, crash reporting, metrics, etc rather than error recovery."
   ([req]
     (websocket-connection req nil))
   ([req options]

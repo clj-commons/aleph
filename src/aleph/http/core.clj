@@ -245,17 +245,20 @@
   :aleph/complete complete
   :body body)
 
-(defn netty-request->ring-request [^HttpRequest req ssl? ch body interrupted?]
-  (let [req' (-> (->NettyRequest
-                  req
-                  ssl?
-                  ch
-                  (AtomicBoolean. false)
-                  (-> req .uri (.indexOf (int 63))) body)
-                 (assoc :aleph/request-arrived (System/nanoTime)))]
-    (if (nil? interrupted?)
-      req'
-      (assoc req' :aleph/interrupted? interrupted?))))
+(defn netty-request->ring-request
+  ([req ssl? ch body]
+   netty-request->ring-request req ssl? ch body nil)
+  ([^HttpRequest req ssl? ch body interrupted?]
+   (let [req' (-> (->NettyRequest
+                   req
+                   ssl?
+                   ch
+                   (AtomicBoolean. false)
+                   (-> req .uri (.indexOf (int 63))) body)
+                  (assoc :aleph/request-arrived (System/nanoTime)))]
+     (if (nil? interrupted?)
+       req'
+       (assoc req' :aleph/interrupted? interrupted?)))))
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))

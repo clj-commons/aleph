@@ -664,11 +664,14 @@
 
 (defn websocket-server-handler
   ([raw-stream? ch handshaker]
-   (websocket-server-handler raw-stream? ch handshaker nil))
+   (websocket-server-handler raw-stream? ch handshaker nil nil))
+  ([raw-stream? ch handshaker heartbeats]
+   (websocket-server-handler raw-stream? ch handshaker nil nil))
   ([raw-stream?
     ^Channel ch
     ^WebSocketServerHandshaker handshaker
-    heartbeats]
+    heartbeats
+    error-logger]
    (let [d (d/deferred)
          ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
          closing? (AtomicBoolean. false)
@@ -706,7 +709,12 @@
          :exception-caught
          ([_ ctx ex]
           (when-not (instance? IOException ex)
-            (log/warn ex "error in websocket handler"))
+            (if (some? error-logger)
+              (try
+                (error-logger ex)
+                (catch Throwable e
+                  (log/warn "exception in error logger" e)))
+              (log/warn ex "error in websocket handler")))
           (s/close! out)
           (netty/close ctx))
 
@@ -805,7 +813,8 @@
            allow-extensions?
            compression?
            pipeline-transform
-           heartbeats]
+           heartbeats
+           error-logger]
     :or {raw-stream? false
          max-frame-payload 65536
          max-frame-size 1048576
@@ -838,7 +847,8 @@
           (let [[s ^ChannelHandler handler] (websocket-server-handler raw-stream?
                                                                       ch
                                                                       handshaker
-                                                                      heartbeats)
+                                                                      heartbeats
+                                                                      error-logger)
                 p (.newPromise ch)
                 h (doto (DefaultHttpHeaders.) (http/map->headers! headers))
                 ^ChannelPipeline pipeline (.pipeline ch)]
