@@ -775,10 +775,11 @@
             {:status 200
              :body (s/->source [1])})]
       (with-handler invalid-body-handler
-        (is (= 500 (-> (http-get (str "http://localhost:" port))
+        (let [resp (-> (http-get (str "http://localhost:" port))
                        (d/timeout! 1e3)
-                       deref
-                       :status)))))))
+                       deref)]
+          (is (= 200 (:status resp)))
+          (is (true? @(:aleph/interrupted? resp))))))))
 
 (deftest test-custom-error-handler
   (let [error (atom "")
