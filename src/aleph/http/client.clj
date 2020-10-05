@@ -110,8 +110,6 @@
           nil))
       (no-url req))))
 
-;; xxx(okachaiev): if `stream` is non empty we should probably try to put exception there...
-;; not as a next response 
 (defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream]
   ;; Typical non-IO exception would be TooLongFrameException, SSLHandshakeError etc
   (when-not (not (instance? IOException ex))
@@ -168,14 +166,14 @@
           (instance? HttpResponse msg)
           (if (http/decoder-failed? msg)
             (handle-decoder-failure ctx msg response-stream)
-            (let [rsp msg]
-              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
-                    c (d/deferred)]
-                (reset! stream s)
-                (reset! complete c)
-                (s/on-closed s #(when-not (d/realized? c)
-                                  (d/success! c true)))
-                (handle-response rsp c s))))
+            (let [rsp msg
+                  s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
+                  c (d/deferred)]
+              (reset! stream s)
+              (reset! complete c)
+              (s/on-closed s #(when-not (d/realized? c)
+                                (d/success! c true)))
+              (handle-response rsp c s)))
 
           (instance? HttpContent msg)
           (if (http/decoder-failed? msg)
@@ -361,8 +359,7 @@
 ;; throws `IllegalArgumentException` to reduce the confusion
 (defn http-proxy-handler
   [^InetSocketAddress address
-   {:keys [user password http-headers tunnel? keep-alive? ssl?]
-    :or {keep-alive? true}
+   {:keys [user password http-headers tunnel? ssl?]
     :as options}]
   (let [options' (assoc options :tunnel? (or tunnel? ssl?))]
     (when (and (nil? user) (some? password))
