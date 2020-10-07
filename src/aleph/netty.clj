@@ -36,7 +36,6 @@
      KQueueSocketChannel
      KQueueServerSocketChannel]
     [io.netty.util Attribute AttributeKey]
-    [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
     [io.netty.channel.socket.nio

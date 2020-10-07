@@ -32,8 +32,6 @@
      DefaultLastHttpContent
      DefaultHttpResponse
      DefaultFullHttpRequest
-     DefaultFullHttpResponse
-     FullHttpRequest
      HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
@@ -53,8 +51,7 @@
      PingWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
-     CloseWebSocketFrame
-     WebSocketChunkedInput]
+     CloseWebSocketFrame]
     [java.io
      File
      RandomAccessFile

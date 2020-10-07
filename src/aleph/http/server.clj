@@ -30,7 +30,6 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
-    [io.netty.channel.embedded EmbeddedChannel]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
      IdleState
@@ -52,7 +51,6 @@
      TextWebSocketFrame
      BinaryWebSocketFrame
      CloseWebSocketFrame
-     WebSocketFrame
      WebSocketFrameAggregator]
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
@@ -61,8 +59,6 @@
      IOException]
     [java.nio.channels
      ClosedChannelException]
-    [java.net
-     InetSocketAddress]
     [io.netty.util.concurrent
      FastThreadLocal]
     [java.util.concurrent

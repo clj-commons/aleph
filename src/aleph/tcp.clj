@@ -10,14 +10,10 @@
      IOException]
     [java.nio.channels
      ClosedChannelException]
-    [java.net
-     InetSocketAddress]
     [io.netty.channel
      Channel
      ChannelHandler
      ChannelPipeline]
-    [io.netty.handler.ssl
-     SslHandler]
     [io.netty.handler.logging LoggingHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]

@@ -21,14 +21,12 @@
     [io.netty.handler.codec.http
      HttpClientCodec
      DefaultHttpHeaders
-     HttpHeaders
      HttpRequest
      HttpResponse
      HttpContent
      HttpUtil
      HttpHeaderNames
      LastHttpContent
-     FullHttpRequest
      FullHttpResponse
      HttpObjectAggregator
      HttpContentDecompressor]
@@ -36,15 +34,11 @@
      Channel
      ChannelHandler ChannelHandlerContext
      ChannelPipeline]
-    [io.netty.handler.codec
-     TooLongFrameException]
     [io.netty.handler.timeout
      IdleState
      IdleStateEvent]
     [io.netty.handler.stream
      ChunkedWriteHandler]
-    [io.netty.handler.codec.http
-     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame
@@ -67,14 +61,12 @@
      Socks4ProxyHandler
      Socks5ProxyHandler]
     [io.netty.handler.logging
-     LoggingHandler
-     LogLevel]
+     LoggingHandler]
     [io.netty.util.concurrent
      EventExecutor
      ScheduledFuture]
     [java.util.concurrent
      ConcurrentLinkedQueue
-     Future
      TimeUnit]
     [java.util.concurrent.atomic
      AtomicInteger
