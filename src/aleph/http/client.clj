@@ -112,13 +112,13 @@
 
 (defn handle-exception [^ChannelHandlerContext ctx ^Throwable ex response-stream error-logger]
   ;; Typical non-IO exception would be TooLongFrameException, SSLHandshakeError etc
-  (when-not (not (instance? IOException ex))
-    (try
-      (error-logger ex)
-      (catch Throwable e
-        (log/warn "error in error logger" e)))
+  (when-not (instance? IOException ex)
+   (try
+     (error-logger ex)
+     (catch Throwable e
+       (log/warn "error in error logger" e)))
     ;; An exception might happen while realizing async body from the response
-    ;; (the message from `response-stream` is arelady taken by the user).
+    ;; (the message from `response-stream` is already taken by the user).
     ;; In this case, offering a new one item in the response stream would mean
     ;; we are enqueuing response for the next request over the same connection.
     ;; Which effectively means that we MUST close the connection when
