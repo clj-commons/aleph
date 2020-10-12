@@ -16,7 +16,7 @@
     [byte-streams "0.2.5-alpha2"]
     [potemkin "0.4.5"]])
 
-(defproject aleph "0.4.7-alpha6"
+(defproject aleph "0.4.7-alpha7"
   :description "a framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
