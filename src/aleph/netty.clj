@@ -845,8 +845,9 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
-(defn dns-resolver-group
-  "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to Bootstrap.
+(defn dns-resolver-group-builder
+  "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and 
+initialize an DnsAddressResolverGroup instance.
 
    DNS options are a map of:
 
@@ -923,7 +924,13 @@
               (not (empty? name-servers)))
             (.nameServerProvider ^DnsServerAddressStreamProvider
               (dns-name-servers-provider name-servers)))]
-    (DnsAddressResolverGroup. b)))
+    b))
+
+(defn dns-resolver-group
+  "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to
+ Bootstrap. The supported options are the same as to `dns-resolver-group-builder`."
+  [dns-options]
+  (DnsAddressResolverGroup. (dns-resolver-group-builder dns-options)))
 
 (defn create-client
   ([pipeline-builder
