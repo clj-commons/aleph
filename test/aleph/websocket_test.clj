@@ -9,6 +9,7 @@
     [byte-streams :as bs]
     [aleph.http :as http]
     [aleph.http.core :as http-core]
+    [aleph.http.server :as http-server]
     [clojure.tools.logging :as log]))
 
 (netty/leak-detector-level! :paranoid)
@@ -33,6 +34,18 @@
   `(with-server (http/start-server ~handler {:port 8080, :compression? true})
      ~@body))
 
+(defn connection-handler
+  ([req] (connection-handler {} req))
+  ([options req]
+   (if (http-server/websocket-upgrade-request? req)
+     (-> (http/websocket-connection req options)
+         (d/chain' #(s/connect % %))
+         (d/catch'
+          (fn [^Throwable e]
+            (log/error "upgrade to websocket conn failed"
+                       (.getMessage e))
+            {}))))))
+
 (defn echo-handler
   ([req] (echo-handler {} req))
   ([options req]
@@ -52,6 +65,20 @@
           (log/error "upgrade to websocket conn failed"
                      (.getMessage e))
           {}))))
+
+(deftest test-connection-header
+  (with-handler connection-handler
+    (let [c @(http/websocket-client "ws://localhost:8080")]
+      (is @(s/put! c "hello"))
+      (is (= "hello" @(s/try-take! c 5e3)))
+      (is (= "upgrade" (get-in (s/description c) [:sink :websocket-handshake-headers "connection"]))))
+    (let [c @(http/websocket-client "ws://localhost:8080" {:headers {:connection "keep-alive, Upgrade"}})]
+      (is @(s/put! c "hello"))
+      (is (= "hello" @(s/try-take! c 5e3)))
+      (is (= "upgrade" (get-in (s/description c) [:sink :websocket-handshake-headers "connection"]))))
+    (is (= 204 (:status @(http/get "http://localhost:8080"
+                                   {:throw-exceptions false})))))
+  )
 
 (deftest test-echo-handler
   (with-handler echo-handler
