@@ -708,7 +708,10 @@
   (let [headers (:headers req)
         conn (get headers :connection)
         upgrade (get headers :upgrade)]
-    (and (= "upgrade" (when (some? conn) (str/lower-case conn)))
+    (and (contains? (when (some? conn)
+                      (set (map str/trim
+                                (-> (str/lower-case conn) (str/split #",")))))
+                    "upgrade")
          (= "websocket" (when (some? upgrade) (str/lower-case upgrade))))))
 
 (defn initialize-websocket-handler
