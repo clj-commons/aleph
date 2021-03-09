@@ -896,35 +896,33 @@ initialize an DnsAddressResolverGroup instance.
   (let [^Class
         channel-type (if (and epoll? (epoll-available?))
                        EpollDatagramChannel
-                       NioDatagramChannel)
+                       NioDatagramChannel)]
+    (cond-> (doto (DnsNameResolverBuilder.)
+              (.channelType channel-type)
+              (.maxPayloadSize max-payload-size)
+              (.maxQueriesPerResolve max-queries-per-resolve)
+              (.queryTimeoutMillis query-timeout)
+              (.ttl min-ttl max-ttl)
+              (.traceEnabled trace-enabled?)
+              (.optResourceEnabled opt-resources-enabled?)
+              (.ndots ndots)
+              (.decodeIdn decode-idn?)
+              (.recursionDesired recursion-desired?))
 
-        b (cond-> (doto (DnsNameResolverBuilder.)
-                    (.channelType channel-type)
-                    (.maxPayloadSize max-payload-size)
-                    (.maxQueriesPerResolve max-queries-per-resolve)
-                    (.queryTimeoutMillis query-timeout)
-                    (.ttl min-ttl max-ttl)
-                    (.traceEnabled trace-enabled?)
-                    (.optResourceEnabled opt-resources-enabled?)
-                    (.ndots ndots)
-                    (.decodeIdn decode-idn?)
-                    (.recursionDesired recursion-desired?))
+      (some? address-types)
+      (.resolvedAddressTypes (convert-address-types address-types))
 
-            (some? address-types)
-            (.resolvedAddressTypes (convert-address-types address-types))
+      (some? negative-ttl)
+      (.negativeTtl negative-ttl)
 
-            (some? negative-ttl)
-            (.negativeTtl negative-ttl)
+      (and (some? search-domains)
+           (not (empty? search-domains)))
+      (.searchDomains search-domains)
 
-            (and (some? search-domains)
-              (not (empty? search-domains)))
-            (.searchDomains search-domains)
-
-            (and (some? name-servers)
-              (not (empty? name-servers)))
-            (.nameServerProvider ^DnsServerAddressStreamProvider
-              (dns-name-servers-provider name-servers)))]
-    b))
+      (and (some? name-servers)
+           (not (empty? name-servers)))
+      (.nameServerProvider ^DnsServerAddressStreamProvider
+                           (dns-name-servers-provider name-servers)))))
 
 (defn dns-resolver-group
   "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to
