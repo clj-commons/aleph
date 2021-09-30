@@ -12,8 +12,8 @@
 
 (def other-dependencies
   '[[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
-    [manifold "0.1.9-alpha3"]
-    [byte-streams "0.2.5-alpha2"]
+    [manifold "0.1.9"]
+    [org.clj-commons/byte-streams "0.2.8"]
     [potemkin "0.4.5"]])
 
 (defproject aleph "0.4.7-alpha8"
