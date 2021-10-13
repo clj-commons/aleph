@@ -1,4 +1,4 @@
-(def netty-version "4.1.64.Final")
+(def netty-version "4.1.69.Final")
 
 (def netty-modules
   '[transport
