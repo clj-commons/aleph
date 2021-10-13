@@ -89,7 +89,7 @@
   (swap! connection-stats-callbacks disj c))
 
 (def default-response-executor
-  (flow/utilization-executor 0.9 256 {:onto? false}))
+  (delay (flow/utilization-executor 0.9 256 {:onto? false})))
 
 (defn connection-pool
   "Returns a connection pool which can be used as an argument in `request`.
@@ -194,11 +194,11 @@
     @(deliver p pool)))
 
 (def default-connection-pool
-  (connection-pool
-    {:stats-callback
-     (fn [s]
-       (doseq [c @connection-stats-callbacks]
-         (c s)))}))
+  (delay (connection-pool
+          {:stats-callback
+           (fn [s]
+             (doseq [c @connection-stats-callbacks]
+               (c s)))})))
 
 (defn websocket-client
   "Given a url, returns a deferred which yields a duplex stream that can be used to
@@ -292,8 +292,8 @@
              request-timeout
              read-timeout
              follow-redirects?]
-      :or {pool default-connection-pool
-           response-executor default-response-executor
+      :or {pool @default-connection-pool
+           response-executor @default-response-executor
            middleware identity
            connection-timeout 6e4} ;; 60 seconds
       :as req}]
@@ -395,12 +395,12 @@
         :url url))))
 
 (def ^:private arglists
-  '[[url]
-    [url
-     {:keys [pool middleware headers body multipart]
-      :or {pool default-connection-pool
-           middleware identity}
-      :as options}]])
+  (delay '[[url]
+           [url
+            {:keys [pool middleware headers body multipart]
+             :or {pool @default-connection-pool
+                  middleware identity}
+             :as options}]]))
 
 (defmacro ^:private def-http-method [method]
   `(do
@@ -415,7 +415,7 @@
    | `headers` | the HTTP headers for the request
    | `body` | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/ztellman/byte-streams)
    | `multipart` | a vector of bodies")
-       :arglists arglists)))
+       :arglists @arglists)))
 
 (def-http-method get)
 (def-http-method post)
