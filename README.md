@@ -1,5 +1,5 @@
 [![Clojars Project](https://img.shields.io/clojars/v/aleph.svg)](https://clojars.org/aleph)
-[![cljdoc badge](https://cljdoc.org/badge/aleph)](https://cljdoc.org/d/aleph)
+[![cljdoc badge](https://cljdoc.org/badge/aleph/aleph)](https://cljdoc.org/d/aleph/aleph)
 [![CircleCI](https://circleci.com/gh/clj-commons/aleph.svg?style=svg)](https://circleci.com/gh/clj-commons/aleph)
 
 ![](docs/aleph.png)
