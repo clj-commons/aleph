@@ -12,3 +12,5 @@ target/**
 .nrepl*
 /doc
 .java-version
+**/.clj-kondo/.cache
+**/.lsp
