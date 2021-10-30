@@ -13,10 +13,10 @@
 (def other-dependencies
   '[[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
     [manifold "0.1.9"]
-    [org.clj-commons/byte-streams "0.2.8"]
+    [org.clj-commons/byte-streams "0.2.10"]
     [potemkin "0.4.5"]])
 
-(defproject aleph "0.4.7-alpha9"
+(defproject aleph "0.4.7-alpha10"
   :description "A framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
