@@ -20,6 +20,7 @@
   :description "A framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
+  :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
   :dependencies ~(concat
                    other-dependencies
