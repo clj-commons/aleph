@@ -31,7 +31,10 @@
                                   [criterium "0.4.6"]
                                   [cheshire "5.10.0"]
                                   [org.slf4j/slf4j-simple "1.7.30"]
-                                  [com.cognitect/transit-clj "1.0.324"]]}}
+                                   [com.cognitect/transit-clj "1.0.324"]]}
+             ;; This is for self-generating certs for testing ONLY:
+             :test {:dependencies [[org.bouncycastle/bcprov-jdk15on "1.69"]
+                                   [org.bouncycastle/bcpkix-jdk15on "1.69"]]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
