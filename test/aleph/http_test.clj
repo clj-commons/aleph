@@ -234,7 +234,9 @@
             @(http-get (str "https://localhost:" port "/" path)))))
        (str path "path failed")))))
 
-(def words (slurp "/usr/share/dict/words"))
+(def characters
+  (let [charset (conj (mapv char (range 32 127)) \newline)]
+    (repeatedly #(rand-nth charset))))
 
 (deftest test-bulk-requests
   (with-handler basic-handler
@@ -255,13 +257,13 @@
 (deftest test-echo
   (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5 1e6 1e7]]
-      (let [words (->> words (take len) (apply str))
+      (let [characters (->> characters (take len) (apply str))
             body (:body
                    @(http-put (str "http://localhost:" port "/echo")
-                      {:body words}))
+                      {:body characters}))
             body' (bs/to-string body)]
-        (assert (== (min (count words) len) (count body')))
-        (is (= words body'))))))
+        (assert (== (min (count characters) len) (count body')))
+        (is (= characters body'))))))
 
 (deftest test-redirect
   (with-both-handlers basic-handler
@@ -293,11 +295,11 @@
 (deftest test-line-echo
   (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5]]
-      (let [words (->> words (take len) (apply str))
+      (let [characters (->> characters (take len) (apply str))
             body (:body
                    @(http-put (str "http://localhost:" port "/line_echo")
-                      {:body words}))]
-        (is (= (.replace ^String words "\n" "") (bs/to-string body)))))))
+                      {:body characters}))]
+        (is (= (.replace ^String characters "\n" "") (bs/to-string body)))))))
 
 (deftest test-illegal-character-in-url
   (with-handler hello-handler
