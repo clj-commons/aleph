@@ -23,7 +23,6 @@ jobs:
 
     steps:
       - checkout
-      - run: sudo apt-get install wbritish
       # Download and cache dependencies
       - restore_cache:
           keys:
