@@ -1,10 +1,21 @@
 ### 0.4.7
 
-Contributions by (in alphebetical order):
+Contributions by (in alphabetical order):
 
-Erik Assum, Yoan Blanc, Reynald Borer, Michael Cameron, Jonathan Chen, Matthew Davidson, Rafal Dittwald, Ganesh Gautam, 
-Aaron Muir Hamilton, Moritz Heidkamp, Alexey Kachayev, Dominic Pearson, Matthew Phillips, Denis Shilov, Zach Tellman, 
-Mark Wardle, Alexander Yakushev
+Erik Assum, Yoan Blanc, Reynald Borer, Michael Cameron, Jonathan Chen, Daniel Compton, Matthew Davidson, Rafal Dittwald, 
+Ganesh Gautam, Aaron Muir Hamilton, Moritz Heidkamp, Alexey Kachayev, Dominic Pearson, Matthew Phillips, Denis Shilov, 
+Zach Tellman, Mark Wardle, and Alexander Yakushev
+
+#### 0.4.7-rc3
+
+* Bumped up Netty to 4.1.65.Final for a regression
+* Added `javac` options to force 1.8-compatible classes
+
+#### 0.4.7-rc2
+
+* Fixed regression compiling for later Java 17
+
+#### 0.4.7-rc1
 
 * Remove unused Travis config
 * Remove test dependency on /usr/share/dict/words
