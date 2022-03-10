@@ -212,7 +212,7 @@
             ;; workaround for the issue with executing RT.readString
             ;; on a Netty thread that doesn't have appropriate class loader
             ;; more information here:
-            ;; https://github.com/ztellman/aleph/issues/365
+            ;; https://github.com/clj-commons/aleph/issues/365
             class-loader (or (clojure.lang.RT/baseLoader)
                              (clojure.lang.RT/makeClassLoader))]
         (.addListener f

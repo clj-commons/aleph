@@ -774,7 +774,7 @@
               ;; WebSocketServerCompressionHandler is stateful and requires
               ;; HTTP request to be send through the pipeline
               ;; See more:
-              ;; * https://github.com/ztellman/aleph/issues/494
+              ;; * https://github.com/clj-commons/aleph/issues/494
               ;; * https://github.com/netty/netty/pull/8973
               (let [compression-handler (WebSocketServerCompressionHandler.)
                     ctx (.context pipeline "websocket-frame-aggregator")]
