@@ -1,0 +1,1 @@
+{:hooks {:macroexpand {aleph.http/def-http-method aleph.clj-kondo-hooks/def-http-method}}}
