@@ -1,11 +1,10 @@
 (ns aleph.udp-test
-  (:use
-    [clojure test])
   (:require
-    [manifold.stream :as s]
-    [aleph.netty :as netty]
-    [clj-commons.byte-streams :as bs]
-    [aleph.udp :as udp]))
+   [aleph.netty :as netty]
+   [aleph.udp :as udp]
+   [clj-commons.byte-streams :as bs]
+   [clojure.test :refer [deftest is]]
+   [manifold.stream :as s]))
 
 (netty/leak-detector-level! :paranoid)
 

@@ -1,15 +1,14 @@
 (ns aleph.http-continue-test
-  (:use [clojure test])
-  (:require [aleph
-             [http :as http]
-             [netty :as netty]
-             [flow :as flow]
-             [tcp :as tcp]]
-            [clj-commons.byte-streams :as bs]
-            [manifold.deferred :as d]
-            [manifold.stream :as s]
-            [clojure.string :as str])
-  (:import [java.util.concurrent ExecutorService]))
+  (:require
+   [aleph.flow :as flow]
+   [aleph.http :as http]
+   [aleph.netty :as netty]
+   [aleph.tcp :as tcp]
+   [clj-commons.byte-streams :as bs]
+   [clojure.string :as str]
+   [clojure.test :refer [deftest is testing]]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]

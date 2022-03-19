@@ -1,1 +1,5 @@
-{:config-paths ["../resources/clj-kondo.exports/clj-commons/aleph"]}
+{:config-paths ["../resources/clj-kondo.exports/clj-commons/aleph"]
+ :linters      {:unsorted-required-namespaces {:level :warning}}
+ :lint-as      {dynamic-redef.core/with-dynamic-redefs clojure.core/with-redefs
+                manifold.deferred/let-flow clojure.core/let
+                manifold.deferred/loop clojure.core/let}}

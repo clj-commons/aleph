@@ -1,16 +1,15 @@
 (ns aleph.websocket-test
-  (:use
-    [clojure test])
   (:require
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [manifold.time :as time]
-    [aleph.netty :as netty]
-    [clj-commons.byte-streams :as bs]
-    [aleph.http :as http]
-    [aleph.http.core :as http-core]
-    [aleph.http.server :as http-server]
-    [clojure.tools.logging :as log]))
+   [aleph.http :as http]
+   [aleph.http.core :as http-core]
+   [aleph.http.server :as http-server]
+   [aleph.netty :as netty]
+   [clj-commons.byte-streams :as bs]
+   [clojure.test :refer [deftest is testing]]
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [manifold.time :as time]))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -37,7 +36,7 @@
 (defn connection-handler
   ([req] (connection-handler {} req))
   ([options req]
-   (if (http-server/websocket-upgrade-request? req)
+   (when (http-server/websocket-upgrade-request? req)
      (-> (http/websocket-connection req options)
          (d/chain' #(s/connect % %))
          (d/catch'

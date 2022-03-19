@@ -1,11 +1,13 @@
 (ns aleph.ssl
-  (:require [aleph.netty :as netty])
-  (:import [io.netty.handler.ssl SslContextBuilder ClientAuth]
-           [java.io ByteArrayInputStream]
-           [java.security KeyFactory PrivateKey]
-           [java.security.cert CertificateFactory X509Certificate]
-           [java.security.spec RSAPrivateCrtKeySpec]
-           [org.apache.commons.codec.binary Base64]))
+  (:require
+   [aleph.netty :as netty])
+  (:import
+   (io.netty.handler.ssl ClientAuth SslContextBuilder)
+   (java.io ByteArrayInputStream)
+   (java.security KeyFactory PrivateKey)
+   (java.security.cert CertificateFactory X509Certificate)
+   (java.security.spec RSAPrivateCrtKeySpec)
+   (org.apache.commons.codec.binary Base64)))
 
 (set! *warn-on-reflection* false)
 
