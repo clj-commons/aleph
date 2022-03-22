@@ -185,28 +185,28 @@
                   (error-response e))))]
 
     (-> previous-response
-      (d/chain'
-        netty/wrap-future
-        (fn [_]
-          (netty/release req)
-          (-> rsp
-            (d/catch' error-response)
-            (d/chain'
-              (fn [rsp]
-                (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
-                  (send-response ctx keep-alive? ssl?
-                    (cond
+        (d/chain'
+          netty/wrap-future
+          (fn [_]
+            (netty/release req)
+            (-> rsp
+                (d/catch' error-response)
+                (d/chain'
+                  (fn [rsp]
+                    (when (not (-> req' ^AtomicBoolean (.websocket?) .get))
+                      (send-response ctx keep-alive? ssl?
+                                     (cond
 
-                      (map? rsp)
-                      (if head?
-                        (assoc rsp :body :aleph/omitted)
-                        rsp)
+                                       (map? rsp)
+                                       (if head?
+                                         (assoc rsp :body :aleph/omitted)
+                                         rsp)
 
-                      (nil? rsp)
-                      {:status 204}
+                                       (nil? rsp)
+                                       {:status 204}
 
-                      :else
-                      (invalid-value-response req rsp))))))))))))
+                                       :else
+                                       (invalid-value-response req rsp))))))))))))
 
 (defn exception-handler [ctx ex]
   (when-not (instance? IOException ex)

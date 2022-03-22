@@ -308,37 +308,39 @@
 
     (let [src (if (or (sequential? body') (s/stream? body'))
                 (->> body'
-                  s/->source
-                  (s/map (fn [x]
-                           (try
-                             (netty/to-byte-buf x)
-                             (catch Throwable e
-                               (log/error e "error converting " (.getName (class x)) " to ByteBuf")
-                               (netty/close ch))))))
+                     s/->source
+                     (s/map (fn [x]
+                              (try
+                                (netty/to-byte-buf x)
+                                (catch Throwable e
+                                  (log/error e "error converting " (.getName (class x)) " to ByteBuf")
+                                  (netty/close ch))))))
                 (netty/to-byte-buf-stream body' 8192))
 
-          sink (netty/sink ch false #(DefaultHttpContent. %))]
+          sink (netty/sink ch false #(DefaultHttpContent. %))
+
+          ;; mustn't close over body' if NOT a stream, can hold on to data too long when conns are keep-alive
+          ch-close-handler (if (s/stream? body')
+                             #(s/close! body')
+                             #(s/close! src))]
 
       (s/connect src sink)
 
       (-> ch
-        netty/channel
-        .closeFuture
-        netty/wrap-future
-        (d/chain' (fn [_] (if (s/stream? body')
-                            (s/close! body')
-                            (s/close! src)))))
+          netty/channel
+          .closeFuture
+          netty/wrap-future
+          (d/chain' (fn [_] (ch-close-handler))))
 
       (let [d (d/deferred)]
         (s/on-closed sink
-          (fn []
+                     (fn []
+                       (when (instance? Closeable body)
+                         (.close ^Closeable body))
 
-            (when (instance? Closeable body)
-              (.close ^Closeable body))
-
-            (.execute (-> ch aleph.netty/channel .eventLoop)
-              #(d/success! d
-                 (netty/write-and-flush ch empty-last-content)))))
+                       (.execute (-> ch aleph.netty/channel .eventLoop)
+                                 #(d/success! d
+                                              (netty/write-and-flush ch empty-last-content)))))
         d))
 
     (netty/write-and-flush ch empty-last-content)))
@@ -496,12 +498,12 @@
       handle-cleanup
       (fn [ch f]
         (-> f
-          (d/chain'
-            (fn [^ChannelFuture f]
-              (if f
-                (.addListener f ChannelFutureListener/CLOSE)
-                (netty/close ch))))
-          (d/catch' (fn [_]))))]
+            (d/chain'
+              (fn [^ChannelFuture f]
+                (if f
+                  (.addListener f ChannelFutureListener/CLOSE)
+                  (netty/close ch))))
+            (d/catch' (fn [_]))))]
 
   (defn send-message
     [ch keep-alive? ssl? ^HttpMessage msg body]
