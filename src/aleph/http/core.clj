@@ -82,24 +82,30 @@
 
 (defn normalize-header-key
   "Normalizes a header key to `Ab-Cd` format."
-  [s]
-  (if-let [s' (.get cached-header-keys s)]
-    s'
-    (let [s' (str/lower-case (name s))
-          s' (or
-               (non-standard-keys s')
-               (->> (str/split s' #"-")
-                 (map str/capitalize)
-                 (str/join "-")
-                 HttpHeaders/newEntity))]
+  ([s header-key-transform]
+     (if-let [s' (.get cached-header-keys [s header-key-transform])]
+       s'
+       (let [s' (str/lower-case (name s))
+             s' (or
+                  (non-standard-keys s')
+                  (when header-key-transform
+                    (-> (name s)
+                        header-key-transform
+                        HttpHeaders/newEntity))
+                  (->> (str/split s' #"-")
+                       (map str/capitalize)
+                       (str/join "-")
+                       HttpHeaders/newEntity))]
 
-      ;; in practice this should never happen, so we
-      ;; can be stupid about cache expiration
-      (when (< 10000 (.size cached-header-keys))
-        (.clear cached-header-keys))
+         ;; in practice this should never happen, so we
+         ;; can be stupid about cache expiration
+         (when (< 10000 (.size cached-header-keys))
+           (.clear cached-header-keys))
 
-      (.put cached-header-keys s s')
-      s')))
+         (.put cached-header-keys [s header-key-transform] s')
+         s')))
+  ([s]
+   (normalize-header-key s nil)))
 
 (p/def-map-type HeaderMap
   [^HttpHeaders headers
@@ -148,9 +154,10 @@
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
-(defn map->headers! [^HttpHeaders h m]
+(defn map->headers!
+  ([^HttpHeaders h m header-key-transform]
   (doseq [e m]
-    (let [k (normalize-header-key (key e))
+    (let [k (normalize-header-key (key e) header-key-transform)
           v (val e)]
 
       (cond
@@ -162,17 +169,22 @@
 
         :else
         (.add h ^CharSequence k ^Object v)))))
+  ([h m]
+   (map->headers! h m nil)))
 
-(defn ring-response->netty-response [m]
-  (let [status (get m :status 200)
-        headers (get m :headers)
-        rsp (DefaultHttpResponse.
-              HttpVersion/HTTP_1_1
-              (HttpResponseStatus/valueOf status)
-              false)]
-    (when headers
-      (map->headers! (.headers rsp) headers))
-    rsp))
+(defn ring-response->netty-response
+  ([m header-key-transform]
+   (let [status (get m :status 200)
+         headers (get m :headers)
+         rsp (DefaultHttpResponse.
+               HttpVersion/HTTP_1_1
+               (HttpResponseStatus/valueOf status)
+               false)]
+     (when headers
+       (map->headers! (.headers rsp) headers header-key-transform))
+     rsp))
+  ([m]
+   (ring-response->netty-response m nil)))
 
 (defn ring-request->netty-request [m]
   (let [headers (get m :headers)
