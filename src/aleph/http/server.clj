@@ -116,14 +116,14 @@
       [server-value keep-alive-value close-value]
       (map #(HttpHeaders/newEntity %) ["Aleph/0.4.7" "Keep-Alive" "Close"])]
   (defn send-response
-    [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
+    [^ChannelHandlerContext ctx keep-alive? ssl? rsp header-key-transform]
     (let [[^HttpResponse rsp body]
           (try
-            [(http/ring-response->netty-response rsp)
+            [(http/ring-response->netty-response rsp header-key-transform)
              (get rsp :body)]
             (catch Throwable e
               (let [rsp (error-response e)]
-                [(http/ring-response->netty-response rsp)
+                [(http/ring-response->netty-response rsp header-key-transform)
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
@@ -159,7 +159,8 @@
    ^HttpRequest req
    previous-response
    body
-   keep-alive?]
+   keep-alive?
+   header-key-transform]
   (let [^NettyRequest req' (http/netty-request->ring-request req ssl? (.channel ctx) body)
         head? (identical? HttpMethod/HEAD (.method req))
         rsp (if executor
@@ -206,7 +207,8 @@
                       {:status 204}
 
                       :else
-                      (invalid-value-response req rsp))))))))))))
+                      (invalid-value-response req rsp))
+                                 header-key-transform))))))))))
 
 (defn exception-handler [ctx ex]
   (when-not (instance? IOException ex)
@@ -226,7 +228,7 @@
     (fn [_] (netty/close ctx))))
 
 (defn ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity header-key-transform]
   (let [buffer-capacity (long buffer-capacity)
         request (atom nil)
         buffer (atom [])
@@ -246,7 +248,8 @@
               req
               @previous-response
               (when body (bs/to-input-stream body))
-              (HttpHeaders/isKeepAlive req))))
+              (HttpHeaders/isKeepAlive req)
+              header-key-transform)))
 
         process-request
         (fn [ctx req]
@@ -348,7 +351,7 @@
           (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
-  [ssl? handler rejected-handler executor buffer-capacity]
+  [ssl? handler rejected-handler executor buffer-capacity header-key-transform]
   (let [buffer-capacity (long buffer-capacity)
         stream (atom nil)
         previous-response (atom nil)
@@ -365,7 +368,8 @@
               req
               @previous-response
               body
-              (HttpUtil/isKeepAlive req))))]
+              (HttpUtil/isKeepAlive req)
+              header-key-transform)))]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -469,7 +473,8 @@
      compression-level
      idle-timeout
      continue-handler
-     continue-executor]
+     continue-executor
+     header-key-transform]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -479,8 +484,8 @@
      idle-timeout 0}}]
   (fn [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
-                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler executor request-buffer-size))
+                    (raw-ring-handler ssl? handler rejected-handler executor request-buffer-size header-key-transform)
+                    (ring-handler ssl? handler rejected-handler executor request-buffer-size header-key-transform))
           ^ChannelHandler
           continue-handler (if (nil? continue-handler)
                              (HttpServerExpectContinueHandler.)
@@ -519,7 +524,8 @@
            epoll?
            compression?
            continue-handler
-           continue-executor]
+           continue-executor
+           header-key-transform]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
@@ -562,7 +568,8 @@
       (pipeline-builder
         handler
         pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor'))
+        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor'
+                       :header-key-transform header-key-transform))
       ssl-context
       bootstrap-transform
       (when (and shutdown-executor? (or (instance? ExecutorService executor)
