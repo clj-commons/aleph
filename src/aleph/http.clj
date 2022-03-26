@@ -280,6 +280,7 @@
      | `pool` | a custom connection pool
      | `middleware` | custom client middleware for the request
      | `pool-timeout` | timeout in milliseconds for the pool to generate a connection
+     | `response-executor` | optional `java.util.concurrent.Executor` that will handle the requests (defaults to a `flow/utilization-executor` of 256 `max-threads` and a `queue-length` of 0)
      | `connection-timeout` | timeout in milliseconds for the connection to become established
      | `request-timeout` | timeout in milliseconds for the arrival of a response over the established connection
      | `read-timeout` | timeout in milliseconds for the response to be completed
@@ -290,8 +291,7 @@
              response-executor
              connection-timeout
              request-timeout
-             read-timeout
-             follow-redirects?]
+             read-timeout]
       :or {pool default-connection-pool
            response-executor default-response-executor
            middleware identity
