@@ -683,7 +683,7 @@
                (netty/release msg)
                ;; reusing the same buffer
                ;; will be deallocated by Netty
-               (.close handshaker ch msg))
+               (.close handshaker ch ^CloseWebSocketFrame msg))
 
              :else
              ;; no need to release buffer when passing to a next handler
