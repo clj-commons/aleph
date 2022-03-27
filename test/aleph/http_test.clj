@@ -2,7 +2,6 @@
   (:use
     [clojure test])
   (:require
-    [clojure.java.io :as io]
     [aleph
      [http :as http]
      [netty :as netty]
@@ -11,19 +10,23 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
-    [java.util.concurrent
-     Executors]
-    [java.io
-     File
-     ByteArrayInputStream]
-    [java.util.zip
-     GZIPInputStream
-     ZipException]
-    [java.util.concurrent
-     TimeoutException]
-    [aleph.utils
-     ConnectionTimeoutException
-     RequestTimeoutException]))
+    (java.io
+      File)
+    (java.util.zip
+      GZIPInputStream
+      ZipException)
+    (java.util.concurrent
+      TimeoutException)
+    (aleph.utils
+      ConnectionTimeoutException
+      RequestTimeoutException)
+    (io.netty.channel
+      ChannelHandlerContext
+      ChannelOutboundHandlerAdapter
+      ChannelPipeline
+      ChannelPromise)
+    (io.netty.handler.codec.http
+      HttpMessage)))
 
 ;;;
 
@@ -450,3 +453,28 @@
     (Thread/sleep (* 1000 60))
     (println "stopping server")
     (.close ^java.io.Closeable server)))
+
+
+(deftest test-pipeline-header-alteration
+  (let [test-header-name "aleph-test"
+        test-header-val "MOOP"]
+    (with-server (http/start-server
+                   basic-handler
+                   {:port port
+                    :pipeline-transform
+                    (fn [^ChannelPipeline pipeline]
+                      (.addBefore pipeline
+                                  "request-handler"
+                                  "test-header-inserter"
+                                  (proxy [ChannelOutboundHandlerAdapter] []
+                                    (write [^ChannelHandlerContext ctx
+                                            ^Object msg
+                                            ^ChannelPromise p]
+                                      (when (instance? HttpMessage msg)
+                                        (let [^HttpMessage http-msg msg]
+                                          (-> http-msg
+                                              (.headers)
+                                              (.set test-header-name test-header-val))))
+                                      (.write ctx msg p)))))})
+      (let [resp @(http-get (str "http://localhost:" port "/string"))]
+        (is (= test-header-val (get (:headers resp) test-header-name)))))))
