@@ -247,7 +247,7 @@
         (apply d/zip)
         deref))))
 
-(deftest test-overly-long-request
+(deftest test-overly-long-url
   (let [long-url (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))]
     (with-handler basic-handler
       (is (= 414 (:status @(http-get long-url)))))))
@@ -259,10 +259,10 @@
     (with-handler basic-handler
       (is (= 431 (:status @(http-get url opts)))))))
 
-(deftest test-invalid-http-version
+(deftest test-invalid-http-version-format
   (with-handler basic-handler
     (let [client @(tcp/client {:host "localhost" :port port})
-          _ @(s/put! client "GET / HTTP/1.1 INVALID\r\n\r\n")
+          _ @(s/put! client "GET / HTTP-1,1\r\n\r\n")
           response (bs/to-string @(s/take! client))]
       (is (str/starts-with? response "HTTP/1.1 400"))
       (s/close! client))))
