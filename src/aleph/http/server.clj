@@ -7,7 +7,7 @@
     [clojure.tools.logging :as log]
     [clojure.string :as str]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]) 
   (:import
     [java.util
      EnumSet
@@ -217,7 +217,7 @@
 
 (defn- ^HttpResponseStatus cause->status [^Throwable cause]
   (if (instance? TooLongFrameException cause)
-    (let [message ^String (.getMessage cause)]
+    (let [message (.getMessage cause)]
       (cond
         (.startsWith message "An HTTP line is larger than")
         HttpResponseStatus/REQUEST_URI_TOO_LONG
