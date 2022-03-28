@@ -217,7 +217,7 @@
 
 (defn- ^HttpResponseStatus cause->status [^Throwable cause]
   (if (instance? TooLongFrameException cause)
-    (let [message ^String (.getMessage cause)]
+    (let [message (.getMessage cause)]
       (cond
         (.startsWith message "An HTTP line is larger than")
         HttpResponseStatus/REQUEST_URI_TOO_LONG
@@ -233,13 +233,13 @@
   (let [cause (-> req .decoderResult .cause)
         status (cause->status cause)]
     (d/chain
-     (netty/write-and-flush ctx
-                            (DefaultFullHttpResponse.
-                             HttpVersion/HTTP_1_1
-                             status
-                             (-> cause .getMessage netty/to-byte-buf)))
-     netty/wrap-future
-     (fn [_] (netty/close ctx)))))
+      (netty/write-and-flush ctx
+                             (DefaultFullHttpResponse.
+                               HttpVersion/HTTP_1_1
+                               status
+                               (-> cause .getMessage netty/to-byte-buf)))
+      netty/wrap-future
+      (fn [_] (netty/close ctx)))))
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]
