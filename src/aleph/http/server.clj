@@ -7,7 +7,7 @@
     [clojure.tools.logging :as log]
     [clojure.string :as str]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]) 
   (:import
     [java.util
      EnumSet
@@ -30,11 +30,12 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
-    [io.netty.channel.embedded EmbeddedChannel]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
      IdleState
      IdleStateEvent]
+    [io.netty.handler.codec
+     TooLongFrameException]
     [io.netty.handler.codec.http
      DefaultFullHttpResponse
      HttpContent HttpHeaders HttpUtil
@@ -52,7 +53,6 @@
      TextWebSocketFrame
      BinaryWebSocketFrame
      CloseWebSocketFrame
-     WebSocketFrame
      WebSocketFrameAggregator]
     [io.netty.handler.codec.http.websocketx.extensions.compression
      WebSocketServerCompressionHandler]
@@ -215,15 +215,31 @@
 (defn invalid-request? [^HttpRequest req]
   (-> req .decoderResult .isFailure))
 
-(defn reject-invalid-request [ctx ^HttpRequest req]
-  (d/chain
-    (netty/write-and-flush ctx
-      (DefaultFullHttpResponse.
-        HttpVersion/HTTP_1_1
+(defn- ^HttpResponseStatus cause->status [^Throwable cause]
+  (if (instance? TooLongFrameException cause)
+    (let [message (.getMessage cause)]
+      (cond
+        (.startsWith message "An HTTP line is larger than")
         HttpResponseStatus/REQUEST_URI_TOO_LONG
-        (-> req .decoderResult .cause .getMessage netty/to-byte-buf)))
-    netty/wrap-future
-    (fn [_] (netty/close ctx))))
+
+        (.startsWith message "HTTP header is larger than")
+        HttpResponseStatus/REQUEST_HEADER_FIELDS_TOO_LARGE
+
+        :else
+        HttpResponseStatus/BAD_REQUEST))
+    HttpResponseStatus/BAD_REQUEST))
+
+(defn reject-invalid-request [ctx ^HttpRequest req]
+  (let [cause (-> req .decoderResult .cause)
+        status (cause->status cause)]
+    (d/chain
+     (netty/write-and-flush ctx
+                            (DefaultFullHttpResponse.
+                             HttpVersion/HTTP_1_1
+                             status
+                             (-> cause .getMessage netty/to-byte-buf)))
+     netty/wrap-future
+     (fn [_] (netty/close ctx)))))
 
 (defn ring-handler
   [ssl? handler rejected-handler executor buffer-capacity]

@@ -1,11 +1,12 @@
 (ns aleph.http-test
-  (:use
-    [clojure test])
   (:require
+    [clojure.string :as str]
+    [clojure.test :refer [deftest testing is]]
     [aleph
      [http :as http]
      [netty :as netty]
-     [flow :as flow]]
+     [flow :as flow]
+     [tcp :as tcp]]
     [byte-streams :as bs]
     [manifold.deferred :as d]
     [manifold.stream :as s])
@@ -253,9 +254,25 @@
         (apply d/zip)
         deref))))
 
-(deftest test-overly-long-request
+(deftest test-overly-long-url
+  (let [long-url (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))]
+    (with-handler basic-handler
+      (is (= 414 (:status @(http-get long-url)))))))
+
+(deftest test-overly-long-header
+  (let [url (str "http://localhost:" port)
+        long-header-value (apply str (repeat 1e5 "a"))
+        opts {:headers {"X-Long" long-header-value}}]
+    (with-handler basic-handler
+      (is (= 431 (:status @(http-get url opts)))))))
+
+(deftest test-invalid-http-version-format
   (with-handler basic-handler
-    (= 414 @(http-get (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))))))
+    (let [client @(tcp/client {:host "localhost" :port port})
+          _ @(s/put! client "GET / HTTP-1,1\r\n\r\n")
+          response (bs/to-string @(s/take! client))]
+      (is (str/starts-with? response "HTTP/1.1 400"))
+      (s/close! client))))
 
 (deftest test-echo
   (with-handler basic-handler
