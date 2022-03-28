@@ -16,7 +16,7 @@
     [org.clj-commons/byte-streams "0.2.10"]
     [potemkin "0.4.5"]])
 
-(defproject aleph "0.4.7-rc3"
+(defproject aleph "0.4.7"
   :description "A framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}

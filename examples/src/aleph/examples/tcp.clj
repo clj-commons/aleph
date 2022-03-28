@@ -11,7 +11,7 @@
 
 ;; ## the basics
 
-;; This uses [Gloss](https://github.com/ztellman/gloss), which is a library for defining byte
+;; This uses [Gloss](https://github.com/clj-commons/gloss), which is a library for defining byte
 ;; formats, which are automatically compiled into encoder and streaming decoders.
 ;;
 ;; Here, we define a simple protocol where each frame starts with a 32-bit integer describing

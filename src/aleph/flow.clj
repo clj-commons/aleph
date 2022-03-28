@@ -26,7 +26,7 @@
      TimeUnit]))
 
 (defn instrumented-pool
-  "Returns a [Dirigiste](https://github.com/ztellman/dirigiste) object pool, which can be interacted
+  "Returns a [Dirigiste](https://github.com/clj-commons/dirigiste) object pool, which can be interacted
    with via `acquire`, `release`, and `dispose`.
 
    |:---|:----

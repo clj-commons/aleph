@@ -17,7 +17,7 @@
 ;; [Ring spec](https://github.com/ring-clojure/ring/blob/master/SPEC), which means it can be
 ;; used as a drop-in replacement for pretty much any other Clojure webserver.  In order to
 ;; allow for asynchronous responses, however, it allows for the use of
-;; [Manifold](https://github.com/ztellman/manifold) deferreds and streams.  Uses of both
+;; [Manifold](https://github.com/clj-commons/manifold) deferreds and streams.  Uses of both
 ;; will be illustrated below.
 
 ;; Complete documentation for the `aleph.http` namespace can be found [here](http://aleph.io/codox/aleph/aleph.http.html).
@@ -174,7 +174,7 @@
 ;; that our consumption of the body needs to be synchronous, as shown above by coercing it
 ;; to a Clojure seq.  If we want to have the body be asynchronous, we need to specify
 ;; `:raw-stream?` to be `true` for request connection pool.
-(def raw-stream-connection-pool (http/connection-pool {:connection-options {:raw-stream? true}})
+(def raw-stream-connection-pool (http/connection-pool {:connection-options {:raw-stream? true}}))
 
 @(d/chain
    (http/get "http://localhost:10000/numbers"

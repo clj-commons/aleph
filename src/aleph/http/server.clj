@@ -114,7 +114,7 @@
       (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
 
       [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.6" "Keep-Alive" "Close"])]
+      (map #(HttpHeaders/newEntity %) ["Aleph/0.4.7" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? ssl? rsp]
     (let [[^HttpResponse rsp body]
@@ -699,7 +699,7 @@
                (netty/release msg)
                ;; reusing the same buffer
                ;; will be deallocated by Netty
-               (.close handshaker ch msg))
+               (.close handshaker ch ^CloseWebSocketFrame msg))
 
              :else
              ;; no need to release buffer when passing to a next handler
@@ -790,7 +790,7 @@
               ;; WebSocketServerCompressionHandler is stateful and requires
               ;; HTTP request to be send through the pipeline
               ;; See more:
-              ;; * https://github.com/ztellman/aleph/issues/494
+              ;; * https://github.com/clj-commons/aleph/issues/494
               ;; * https://github.com/netty/netty/pull/8973
               (let [compression-handler (WebSocketServerCompressionHandler.)
                     ctx (.context pipeline "websocket-frame-aggregator")]
