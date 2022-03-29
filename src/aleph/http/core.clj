@@ -459,13 +459,16 @@
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
+(defn- file->stream [^HttpFile file]
+  (-> file
+      (bs/to-byte-buffers {:chunk-size (.-chunk-size file)})
+      s/->source))
+
 (defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
-    (send-streaming-body ch msg
-      (-> file
-        (bs/to-byte-buffers {:chunk-size (.-chunk-size file)})
-        s/->source))
+    (let [body (when (pos-int? (.length file)) (file->stream file))]
+      (send-streaming-body ch msg body))
 
     (chunked-writer-enabled? ch)
     (send-chunked-file ch msg file)
