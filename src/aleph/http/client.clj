@@ -495,8 +495,8 @@
         proxy-options' (when (some? proxy-options)
                          (assoc proxy-options :ssl? ssl?))
         non-tunnel-proxy? (non-tunnel-proxy? proxy-options')
-        keep-alive?' (or keep-alive? (when (some? proxy-options)
-                                       (get proxy-options :keep-alive? true)))
+        keep-alive?' (boolean (or keep-alive? (when (some? proxy-options)
+                                                (get proxy-options :keep-alive? true))))
         host-header-value (str host (when explicit-port? (str ":" port)))
         c (netty/create-client
             (pipeline-builder responses (assoc options :ssl? ssl?))
@@ -511,100 +511,100 @@
             epoll?
             name-resolver)]
     (d/chain' c
-      (fn [^Channel ch]
+              (fn [^Channel ch]
 
-        (s/consume
-          (fn [req]
-            (try
-              (let [^HttpRequest req' (http/ring-request->netty-request
-                                        (if non-tunnel-proxy?
-                                          (assoc req :uri (req->proxy-url req))
-                                          req))]
-                (when-not (.get (.headers req') "Host")
-                  (.set (.headers req') HttpHeaderNames/HOST host-header-value))
-                (when-not (.get (.headers req') "Connection")
-                  (HttpUtil/setKeepAlive req' keep-alive?'))
+                (s/consume
+                  (fn [req]
+                    (try
+                      (let [^HttpRequest req' (http/ring-request->netty-request
+                                                (if non-tunnel-proxy?
+                                                  (assoc req :uri (req->proxy-url req))
+                                                  req))]
+                        (when-not (.get (.headers req') "Host")
+                          (.set (.headers req') HttpHeaderNames/HOST host-header-value))
+                        (when-not (.get (.headers req') "Connection")
+                          (HttpUtil/setKeepAlive req' keep-alive?'))
 
-                (let [body (:body req)
-                      parts (:multipart req)
-                      multipart? (some? parts)
-                      [req' body] (cond
-                                    ;; RFC #7231 4.3.8. TRACE
-                                    ;; A client MUST NOT send a message body...
-                                    (= :trace (:request-method req))
-                                    (do
-                                      (when (or (some? body) multipart?)
-                                        (log/warn "TRACE request body was omitted"))
-                                      [req' nil])
+                        (let [body (:body req)
+                              parts (:multipart req)
+                              multipart? (some? parts)
+                              [req' body] (cond
+                                            ;; RFC #7231 4.3.8. TRACE
+                                            ;; A client MUST NOT send a message body...
+                                            (= :trace (:request-method req))
+                                            (do
+                                              (when (or (some? body) multipart?)
+                                                (log/warn "TRACE request body was omitted"))
+                                              [req' nil])
 
-                                    (not multipart?)
-                                    [req' body]
+                                            (not multipart?)
+                                            [req' body]
 
-                                    :else
-                                    (multipart/encode-request req' parts))]
+                                            :else
+                                            (multipart/encode-request req' parts))]
 
-                  (when-let [save-message (get req :aleph/save-request-message)]
-                    ;; debug purpose only
-                    ;; note, that req' is effectively mutable, so
-                    ;; it will "capture" all changes made during "send-message"
-                    ;; execution
-                    (reset! save-message req'))
+                          (when-let [save-message (get req :aleph/save-request-message)]
+                            ;; debug purpose only
+                            ;; note, that req' is effectively mutable, so
+                            ;; it will "capture" all changes made during "send-message"
+                            ;; execution
+                            (reset! save-message req'))
 
-                  (when-let [save-body (get req :aleph/save-request-body)]
-                    ;; might be different in case we use :multipart
-                    (reset! save-body body))
+                          (when-let [save-body (get req :aleph/save-request-body)]
+                            ;; might be different in case we use :multipart
+                            (reset! save-body body))
 
-                  (netty/safe-execute ch
-                    (http/send-message ch true ssl? req' body))))
+                          (netty/safe-execute ch
+                            (http/send-message ch true ssl? req' body))))
 
-              ;; this will usually happen because of a malformed request
-              (catch Throwable e
-                (s/put! responses (d/error-deferred e)))))
-          requests)
+                      ;; this will usually happen because of a malformed request
+                      (catch Throwable e
+                        (s/put! responses (d/error-deferred e)))))
+                  requests)
 
-        (s/on-closed responses
-          (fn []
-            (when on-closed (on-closed))
-            (s/close! requests)))
+                (s/on-closed responses
+                             (fn []
+                               (when on-closed (on-closed))
+                               (s/close! requests)))
 
-        (let [t0 (System/nanoTime)]
-          (fn [req]
-            (if (contains? req ::close)
-              (netty/wrap-future (netty/close ch))
-              (let [raw-stream? (get req :raw-stream? raw-stream?)
-                    rsp (locking ch
-                          (s/put! requests req)
-                          (s/take! responses ::closed))]
-                (d/chain' rsp
-                  (fn [rsp]
-                    (cond
-                      (instance? Throwable rsp)
-                      (d/error-deferred rsp)
+                (let [t0 (System/nanoTime)]
+                  (fn [req]
+                    (if (contains? req ::close)
+                      (netty/wrap-future (netty/close ch))
+                      (let [raw-stream? (get req :raw-stream? raw-stream?)
+                            rsp (locking ch
+                                  (s/put! requests req)
+                                  (s/take! responses ::closed))]
+                        (d/chain' rsp
+                                  (fn [rsp]
+                                    (cond
+                                      (instance? Throwable rsp)
+                                      (d/error-deferred rsp)
 
-                      (identical? ::closed rsp)
-                      (d/error-deferred
-                        (ex-info
-                          (format "connection was closed after %.3f seconds" (/ (- (System/nanoTime) t0) 1e9))
-                          {:request req}))
+                                      (identical? ::closed rsp)
+                                      (d/error-deferred
+                                        (ex-info
+                                          (format "connection was closed after %.3f seconds" (/ (- (System/nanoTime) t0) 1e9))
+                                          {:request req}))
 
-                      raw-stream?
-                      rsp
+                                      raw-stream?
+                                      rsp
 
-                      :else
-                      (d/chain' rsp
-                        (fn [rsp]
-                          (let [body (:body rsp)]
+                                      :else
+                                      (d/chain' rsp
+                                                (fn [rsp]
+                                                  (let [body (:body rsp)]
 
-                            ;; handle connection life-cycle
-                            (when-not keep-alive?
-                              (if (s/stream? body)
-                                (s/on-closed body #(netty/close ch))
-                                (netty/close ch)))
+                                                    ;; handle connection life-cycle
+                                                    (when-not keep-alive?
+                                                      (if (s/stream? body)
+                                                        (s/on-closed body #(netty/close ch))
+                                                        (netty/close ch)))
 
-                            (assoc rsp
-                              :body
-                              (bs/to-input-stream body
-                                {:buffer-size response-buffer-size}))))))))))))))))
+                                                    (assoc rsp
+                                                      :body
+                                                      (bs/to-input-stream body
+                                                                          {:buffer-size response-buffer-size}))))))))))))))))
 
 ;;;
 
