@@ -139,7 +139,7 @@
           (.addBodyFileUpload encoder
                               (or part-name name)
                               ;; Netty's multipart encoder ignores empty strings here
-                              (or name "")
+                              (or filename "")
                               content
                               content-type
                               false))

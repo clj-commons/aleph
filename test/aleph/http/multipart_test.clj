@@ -1,15 +1,21 @@
 (ns aleph.http.multipart-test
-  (:use
-   [clojure test])
   (:require
    [aleph.http :as http]
+   [aleph.http.core :as core]
    [aleph.http.multipart :as mp]
    [byte-streams :as bs]
+   [clojure.edn :as edn]
+   [clojure.test :refer [deftest testing is]]
    [manifold.deferred :as d]
    [manifold.stream :as s]
-   [clojure.string :as str]
-   [clojure.edn :as edn])
+   [clojure.string :as str])
   (:import
+   [io.netty.buffer
+    ByteBufAllocator]
+   [io.netty.handler.codec.http
+    HttpContent]
+   [io.netty.handler.stream
+    ChunkedInput]
    [java.io
     File]))
 
@@ -84,37 +90,47 @@
 
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
-        (mp/encode-body [{:part-name "part1"
-                          :content "content1"
-                          :transfer-encoding :uknown-transfer-encoding}]))))
+      (mp/encode-body [{:part-name "part1"
+                        :content "content1"
+                        :transfer-encoding :uknown-transfer-encoding}]))))
 
 (deftest test-content-as-file
-  (let [body (mp/encode-body [{:part-name "part1"
-                               :content file-to-send}
-                              {:part-name "part2"
-                               :mime-type "application/png"
-                               :content file-to-send}
-                              {:part-name "part3"
-                               :name "text-file-to-send.txt"
-                               :content file-to-send}
-                              {:part-name "part4"
-                               :charset "UTF-8"
-                               :content file-to-send}
-                              {:content file-to-send}
-                              {:content file-to-send
-                               :transfer-encoding :base64}])
-        body-str (bs/to-string body)]
-    (is (.contains body-str "name=\"part1\""))
-    (is (.contains body-str "name=\"part2\""))
-    (is (.contains body-str "name=\"part3\""))
-    (is (.contains body-str "name=\"part4\""))
-    (is (.contains body-str "name=\"file.txt\""))
-    (is (.contains body-str "filename=\"file.txt\""))
-    (is (.contains body-str "filename=\"text-file-to-send.txt\""))
-    (is (.contains body-str "Content-Type: text/plain\r\n"))
-    (is (.contains body-str "Content-Type: text/plain; charset=UTF-8\r\n"))
-    (is (.contains body-str "Content-Type: application/png\r\n"))
-    (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
+  (let [parts [{:part-name "part1"
+                :content file-to-send}
+               {:part-name "part2"
+                :mime-type "application/png"
+                :content file-to-send}
+               {:part-name "part3"
+                :name "text-file-to-send.txt"
+                :content file-to-send}
+               {:part-name "part4"
+                :charset "UTF-8"
+                :content file-to-send}
+               {:content file-to-send}
+               {:content file-to-send
+                :transfer-encoding :base64}]
+        validate (fn [^String body-str]
+                   (is (.contains body-str "name=\"part1\""))
+                   (is (.contains body-str "name=\"part2\""))
+                   (is (.contains body-str "name=\"part3\""))
+                   (is (.contains body-str "name=\"part4\""))
+                   (is (.contains body-str "name=\"file.txt\""))
+                   (is (.contains body-str "filename=\"file.txt\""))
+                   (is (.contains body-str "filename=\"file.txt\""))
+                   (is (.contains (str/lower-case body-str) (str/lower-case "Content-Type: text/plain\r\n")))
+                   (is (.contains (str/lower-case body-str) (str/lower-case "Content-Type: text/plain; charset=UTF-8\r\n")))
+                   (is (.contains (str/lower-case body-str) (str/lower-case "Content-Type: application/png\r\n"))))]
+    (testing "legacy encode-body"
+      (let [body (mp/encode-body parts)
+            body-str (bs/to-string body)]
+        (validate body-str)
+        (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
+    (testing "encode-request"
+      (let [req (core/ring-request->netty-request {:request-method :get})
+            [_ body] (mp/encode-request req parts)
+            body-str (-> ^ChunkedInput body ^HttpContent (.readChunk ByteBufAllocator/DEFAULT) .content bs/to-string)]
+        (validate body-str)
+        (is (.contains body-str "content-transfer-encoding: binary\r\n"))))))
 
 (def port1 26023)
 (def port2 26024)
@@ -165,7 +181,7 @@
     (is (.contains resp "; charset=ISO-8859-1"))
 
     ;; explicit filename
-    (is (.contains resp "filename=\"text-file-to-send.txt\""))
+    (is (.contains resp "filename=\"file.txt\""))
 
     (.close ^java.io.Closeable s)))
 
@@ -205,7 +221,7 @@
 
     ;; filename
     (is (= "file.txt" (get-in chunks [3 :name])))
-    (is (= "text-file-to-send.txt" (get-in chunks [4 :name])))
+    (is (= "file.txt" (get-in chunks [4 :name])))
 
     ;; charset
     (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
