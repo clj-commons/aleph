@@ -1,12 +1,15 @@
 (ns aleph.http-test
   (:require
+    [clojure.java.io :as io]
     [clojure.string :as str]
     [clojure.test :refer [deftest testing is]]
     [aleph
      [http :as http]
      [netty :as netty]
      [flow :as flow]
+     [ssl :as ssl]
      [tcp :as tcp]]
+    [aleph.http.core :as core]
     [byte-streams :as bs]
     [manifold.deferred :as d]
     [manifold.stream :as s])
@@ -192,9 +195,12 @@
      (with-server (http/start-server ~handler {:port port :compression-level 3})
        ~@body)))
 
-(defmacro with-ssl-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port port, :ssl-context (netty/self-signed-ssl-context)})
-     ~@body))
+(def default-ssl-options {:port port, :ssl-context (netty/self-signed-ssl-context)})
+
+(defmacro with-handler-options
+   [handler options & body]
+   `(with-server (http/start-server ~handler ~options)
+      ~@body))
 
 (defmacro with-raw-handler [handler & body]
   `(with-server (http/start-server ~handler {:port port, :raw-stream? true})
@@ -228,8 +234,9 @@
       (is (some? unzipped) 'should-be-valid-gzip)
       (is (= result unzipped) 'decompressed-body-is-correct))))
 
+
 (deftest test-ssl-response-formats
-  (with-ssl-handler basic-handler
+  (with-handler-options basic-handler default-ssl-options
     (doseq [[index [path result]] (map-indexed vector expected-results)]
       (is
        (= result
@@ -237,6 +244,34 @@
            (:body
             @(http-get (str "https://localhost:" port "/" path)))))
        (str path "path failed")))))
+
+(deftest test-files
+  (let [client-url (str "http://localhost:" port)]
+    (with-handler identity
+      (is (str/blank?
+             (bs/to-string
+              (:body @(http-put client-url
+                                {:body (io/file "test/empty.txt")})))))
+      (is (= (slurp "test/file.txt" :encoding "UTF-8")
+             (bs/to-string
+              (:body @(http-put client-url
+                                {:body (io/file "test/file.txt")}))))))))
+
+(deftest test-ssl-files
+  (let [client-url (str "https://localhost:" port)
+        client-options {:connection-options {:ssl-context ssl/client-ssl-context}}
+        client-pool    (http/connection-pool client-options)]
+    (with-handler-options identity (merge default-ssl-options {:ssl-context ssl/server-ssl-context})
+      (is (str/blank?
+           (bs/to-string
+            (:body @(http-put client-url
+                              {:body (io/file "test/empty.txt")
+                               :pool client-pool})))))
+      (is (= (slurp "test/file.txt" :encoding "UTF-8")
+             (bs/to-string
+              (:body @(http-put client-url
+                                {:body (io/file "test/file.txt")
+                                 :pool client-pool}))))))))
 
 (def characters
   (let [charset (conj (mapv char (range 32 127)) \newline)]
