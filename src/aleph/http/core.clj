@@ -539,7 +539,8 @@
                 (try
                   (send-streaming-body ch msg body)
                   (catch Throwable e
-                    (log/error e "error sending body of type " class-name)))))]
+                    (log/error e "error sending body of type " class-name)
+                    (throw e)))))]
 
       (when-not keep-alive?
         (handle-cleanup ch f))

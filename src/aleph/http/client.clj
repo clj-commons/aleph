@@ -554,8 +554,11 @@
                             ;; might be different in case we use :multipart
                             (reset! save-body body))
 
-                          (netty/safe-execute ch
-                            (http/send-message ch true ssl? req' body))))
+                          (-> (netty/safe-execute ch
+                                                  (http/send-message ch true ssl? req' body))
+                              (d/catch' (fn [e]
+                                          (s/put! responses e)
+                                          (netty/close ch))))))
 
                       ;; this will usually happen because of a malformed request
                       (catch Throwable e

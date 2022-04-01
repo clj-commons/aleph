@@ -273,6 +273,13 @@
                                 {:body (io/file "test/file.txt")
                                  :pool client-pool}))))))))
 
+(deftest test-invalid-body
+  (let [client-url (str "http://localhost:" port)]
+    (with-handler identity
+      (is (thrown? IllegalArgumentException
+                   @(http-put client-url
+                              {:body 123}))))))
+
 (def characters
   (let [charset (conj (mapv char (range 32 127)) \newline)]
     (repeatedly #(rand-nth charset))))
