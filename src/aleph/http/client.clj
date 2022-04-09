@@ -557,7 +557,7 @@
                           (-> (netty/safe-execute ch
                                                   (http/send-message ch true ssl? req' body))
                               (d/catch' (fn [e]
-                                          (s/put! responses e)
+                                          (s/put! responses (d/error-deferred e))
                                           (netty/close ch))))))
 
                       ;; this will usually happen because of a malformed request
