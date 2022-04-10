@@ -1,23 +1,23 @@
 (ns aleph.http.multipart-test
   (:require
-   [aleph.http :as http]
-   [aleph.http.core :as core]
-   [aleph.http.multipart :as mp]
-   [byte-streams :as bs]
-   [clojure.edn :as edn]
-   [clojure.test :refer [deftest testing is]]
-   [manifold.deferred :as d]
-   [manifold.stream :as s]
-   [clojure.string :as str])
+    [aleph.http :as http]
+    [aleph.http.core :as core]
+    [aleph.http.multipart :as mp]
+    [byte-streams :as bs]
+    [clojure.edn :as edn]
+    [clojure.test :refer [deftest testing is]]
+    [manifold.deferred :as d]
+    [manifold.stream :as s]
+    [clojure.string :as str])
   (:import
-   [io.netty.buffer
-    ByteBufAllocator]
-   [io.netty.handler.codec.http
-    HttpContent]
-   [io.netty.handler.stream
-    ChunkedInput]
-   [java.io
-    File]))
+    (io.netty.buffer
+      ByteBufAllocator)
+    (io.netty.handler.codec.http
+      HttpContent)
+    (io.netty.handler.stream
+      ChunkedInput)
+    (java.io
+      File)))
 
 (def file-to-send (File. (str (System/getProperty "user.dir") "/test/file.txt")))
 
@@ -125,6 +125,7 @@
             body-str (bs/to-string body)]
         (validate body-str)
         (is (.contains body-str "Content-Transfer-Encoding: base64\r\n"))))
+
     (testing "encode-request"
       (let [req (core/ring-request->netty-request {:request-method :get})
             [_ body] (mp/encode-request req parts)

@@ -105,7 +105,8 @@
       (.flip))))
 
 (defn
-  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
+  ^{:deprecated "0.4.7-alpha2"
+    :superseded-by "encode-request"}
   encode-body
   ([parts]
     (encode-body (boundary) parts))
