@@ -509,6 +509,12 @@
             (d/catch' (fn [_]))))]
 
   (defn send-message
+    "Write an HttpMessage and body to a Netty channel.
+
+     Accepts Strings, ByteBuffers, ByteBufs, byte[], ChunkedInputs,
+     Files, Paths, HttpFiles, seqs and streams for bodies.
+
+     Seqs and streams must be, or be coercible to, a stream of ByteBufs."
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
     (let [f (cond

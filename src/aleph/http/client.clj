@@ -555,14 +555,15 @@
                             (reset! save-body body))
 
                           (-> (netty/safe-execute ch
-                                                  (http/send-message ch true ssl? req' body))
+                                (http/send-message ch true ssl? req' body))
                               (d/catch' (fn [e]
                                           (s/put! responses (d/error-deferred e))
                                           (netty/close ch))))))
 
                       ;; this will usually happen because of a malformed request
                       (catch Throwable e
-                        (s/put! responses (d/error-deferred e)))))
+                        (s/put! responses (d/error-deferred e))
+                        (netty/close ch))))
                   requests)
 
                 (s/on-closed responses
