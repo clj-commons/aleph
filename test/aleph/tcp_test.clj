@@ -4,7 +4,7 @@
   (:require
     [manifold.stream :as s]
     [aleph.netty :as netty]
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [aleph.tcp :as tcp]))
 
 (netty/leak-detector-level! :paranoid)

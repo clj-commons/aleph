@@ -6,7 +6,7 @@
     [manifold.stream :as s]
     [manifold.time :as time]
     [aleph.netty :as netty]
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [aleph.http :as http]
     [aleph.http.core :as http-core]
     [aleph.http.server :as http-server]

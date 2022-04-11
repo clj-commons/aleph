@@ -1,7 +1,7 @@
 (ns aleph.http.client
   (:require
     [clojure.tools.logging :as log]
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [manifold.deferred :as d]
     [manifold.stream :as s]
     [aleph.http.core :as http]

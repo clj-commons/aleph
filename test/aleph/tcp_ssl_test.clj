@@ -3,7 +3,7 @@
             [aleph.tcp :as tcp]
             [aleph.ssl :as ssl]
             [aleph.netty :as netty]
-            [byte-streams :as bs]
+            [clj-commons.byte-streams :as bs]
             [clojure.test :refer [deftest is]]
             [manifold.stream :as s])
   (:import [java.security.cert X509Certificate]))
