@@ -7,7 +7,7 @@
     [compojure.route :as route]
     [compojure.response :refer [Renderable]]
     [aleph.http :as http]
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [manifold.stream :as s]
     [manifold.deferred :as d]
     [clojure.core.async :as a]
