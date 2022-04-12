@@ -1,7 +1,7 @@
 (ns aleph.http.multipart
   (:require
    [clojure.core :as cc]
-   [byte-streams :as bs]
+   [clj-commons.byte-streams :as bs]
    [aleph.http.encoding :refer [encode]]
    [aleph.http.core :as http-core]
    [aleph.netty :as netty]

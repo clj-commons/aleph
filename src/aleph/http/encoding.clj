@@ -1,7 +1,7 @@
 (ns aleph.http.encoding
   (:require
-    [byte-streams :as bs]
-    [primitive-math :as p])
+    [clj-commons.byte-streams :as bs]
+    [clj-commons.primitive-math :as p])
   (:import
     [io.netty.buffer
      ByteBuf

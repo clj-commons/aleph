@@ -10,7 +10,7 @@
      [ssl :as ssl]
      [tcp :as tcp]]
     [aleph.http.core :as core]
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import

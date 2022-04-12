@@ -2,7 +2,7 @@
   (:use
     [clojure test])
   (:require
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [aleph.netty :as netty]
     [aleph.http :as http])
   (:import

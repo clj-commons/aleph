@@ -4,11 +4,9 @@
     [ring.middleware.params :as params]
     [compojure.route :as route]
     [aleph.http :as http]
-    [byte-streams :as bs]
     [manifold.stream :as s]
     [manifold.deferred :as d]
-    [manifold.bus :as bus]
-    [clojure.core.async :as a]))
+    [manifold.bus :as bus]))
 
 (def non-websocket-request
   {:status 400
@@ -111,8 +109,8 @@
 
 ;; Here we create two clients, and have them speak to each other
 (let [conn1 @(http/websocket-client "ws://localhost:10000/chat")
-      conn2 @(http/websocket-client "ws://localhost:10000/chat")
-      ]
+      conn2 @(http/websocket-client "ws://localhost:10000/chat")]
+      
 
   ;; sign our two users in
   (s/put-all! conn1 ["shoes and ships" "Alice"])
@@ -126,7 +124,7 @@
   (s/put! conn2 "hi!")
 
   @(s/take! conn1)   ;=> "Bob: hi!"
-  @(s/take! conn2)   ;=> "Bob: hi!"
-  )
+  @(s/take! conn2))   ;=> "Bob: hi!"
+  
 
 (.close s)

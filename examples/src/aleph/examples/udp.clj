@@ -1,10 +1,9 @@
 (ns aleph.examples.udp
   (:require
-    [manifold.deferred :as d]
     [manifold.stream :as s]
     [aleph.udp :as udp]
     [clojure.string :as str]
-    [byte-streams :as bs]))
+    [clj-commons.byte-streams :as bs]))
 
 ;; Full documentation for the `aleph.udp` namespace can be found [here](http://aleph.io/codox/aleph/aleph.udp.html).
 

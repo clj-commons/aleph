@@ -3,7 +3,7 @@
     [aleph.http :as http]
     [aleph.http.core :as core]
     [aleph.http.multipart :as mp]
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [clojure.edn :as edn]
     [clojure.test :refer [deftest testing is]]
     [manifold.deferred :as d]

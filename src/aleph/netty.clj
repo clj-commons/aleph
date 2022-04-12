@@ -1,13 +1,13 @@
 (ns aleph.netty
   (:refer-clojure :exclude [flush])
   (:require
-    [byte-streams :as bs]
+    [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.executor :as e]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
-    [primitive-math :as p]
+    [clj-commons.primitive-math :as p]
     [clojure
      [string :as str]
      [set :as set]]
