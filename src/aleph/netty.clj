@@ -272,7 +272,12 @@
     x
     (.channel ^ChannelHandlerContext x)))
 
-(defmacro safe-execute [ch & body]
+(defmacro safe-execute
+  "Executes the body on the event-loop (an executor service) associated with the Netty channel.
+
+   Executes immediately if current thread is in the event loop. Otherwise, returns a deferred
+   that will hold the result once done."
+  [ch & body]
   `(let [f# (fn [] ~@body)
          event-loop# (-> ~ch aleph.netty/channel .eventLoop)]
      (if (.inEventLoop event-loop#)

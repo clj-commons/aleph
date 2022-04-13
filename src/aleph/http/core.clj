@@ -509,6 +509,12 @@
             (d/catch' (fn [_]))))]
 
   (defn send-message
+    "Write an HttpMessage and body to a Netty channel.
+
+     Accepts Strings, ByteBuffers, ByteBufs, byte[], ChunkedInputs,
+     Files, Paths, HttpFiles, seqs and streams for bodies.
+
+     Seqs and streams must be, or be coercible to, a stream of ByteBufs."
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
     (let [f (cond
@@ -539,7 +545,8 @@
                 (try
                   (send-streaming-body ch msg body)
                   (catch Throwable e
-                    (log/error e "error sending body of type " class-name)))))]
+                    (log/error e "error sending body of type " class-name)
+                    (throw e)))))]
 
       (when-not keep-alive?
         (handle-cleanup ch f))
