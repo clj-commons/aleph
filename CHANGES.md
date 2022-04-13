@@ -1,3 +1,19 @@
+### 0.5.0-SNAPSHOT
+
+* Add initial clj-kondo hooks
+* Minor bugfix in examples code
+* Add pipeline-transform test
+* Add missing type hint in websocket-server-handler
+* Correctly handle too large headers/URIs
+* Add doc for undocumented response-executor parameter
+* Minor bugfix for keep-alive? false
+* Fixed major memory leak when sending InputStreams
+* Fixed bug when sending empty files
+* Fix returned filename in multipart uploads for clj-http parity
+* Ensure client exceptions handled and channel closed on invalid input
+
+Contributions by Arnaud Geiser, Moritz Heidkamp, and Matthew Davidson
+
 ### 0.4.7
 
 Contributions by (in alphabetical order):
