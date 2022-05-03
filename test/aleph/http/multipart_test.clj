@@ -199,47 +199,61 @@
                    (bs/to-string content))]
     (assoc chunk :content content')))
 
-(defn- pack-chunk [{:keys [content] :as chunk}]
+(defn- pack-chunk [chunk]
   (-> chunk
       (coerce-chunk-content)
       (dissoc :file :raw-http-data)))
 
-(defn- decode-handler [req]
-  (let [req' (mp/decode-request req {:memory-limit 12})
-        chunks (s/stream->seq req')
-        body (pr-str (map pack-chunk chunks))]
-    (doseq [{:keys [file content] :as chunk} chunks]
-      ;; we should be able to read file before removal (if any)
-      (when (some? file)
-        (is (some? (slurp (.getAbsolutePath ^java.io.File file)))))
-      (is (netty/release chunk))
-      ;; temp file is now removed (if any)
-      (when (some? file)
-        (is (not (.exists ^java.io.File file)))))
-    {:status 200
-     :body body}))
+(defn- decode-handler [req options]
+  (let [chunks (mp/decode-request req options)]
+    (->
+     (d/loop [body []]
+       (d/chain' (s/take! chunks)
+                 (fn [{:keys [file] :as chunk}]
+                   (Thread/sleep 20)
+                   (if (nil? chunk)
+                     ;; when `chunks` stream has been closed and there is no more
+                     ;; `chunk` left.
+                     body
+                     (let [packed-chunk (pack-chunk chunk)]
+                       ;; we should be able to read file before removal (if any)
+                       (when (some? file)
+                         (is (some? (slurp (.getAbsolutePath ^java.io.File file)))))
+                       (is (netty/release chunk))
+                       ;; temp file is now removed (if any)
+                       (when (some? file)
+                         (is (not (.exists ^java.io.File file))))
+                       (d/recur (conj body packed-chunk)))))))
+     (d/chain'
+      (fn [body]
+        {:status 200
+         :body (pr-str body)})))))
 
-(defn- test-decoder [port url raw-stream?]
-  (let [s (http/start-server decode-handler {:port port
-                                             :raw-stream? raw-stream?})
-        chunks (-> (http/post url {:multipart parts})
-                   (deref 1e3 {:body "timeout"})
-                   :body
-                   bs/to-string
-                   clojure.edn/read-string
-                   vec)]
-    (is (= 6 (count chunks)))
+(defn- test-decoder
+  ([port url]
+   (test-decoder port url {}))
+  ([port url options]
+   (let [handler #(decode-handler % options)
+         s (http/start-server handler (merge {:port port}
+                                             options))
+         chunks (-> (http/post url {:multipart parts})
+                    (deref 1e3 {:body "timeout"})
+                    :body
+                    bs/to-string
+                    clojure.edn/read-string
+                    vec)]
+     (is (= 6 (count chunks)))
 
-    ;; part-names
-    (is (= (map :part-name parts)
-           (map :part-name chunks)))
+     ;; part-names
+     (is (= (map :part-name parts)
+            (map :part-name chunks)))
 
-    ;; content
-    (is (= "CONTENT1" (get-in chunks [0 :content])))
+     ;; content
+     (is (= "CONTENT1" (get-in chunks [0 :content])))
 
-    ;; mime type
-    (is (= "text/plain" (get-in chunks [2 :mime-type])))
-    (is (= "application/png" (get-in chunks [3 :mime-type])))
+     ;; mime type
+     (is (= "text/plain" (get-in chunks [2 :mime-type])))
+     (is (= "application/png" (get-in chunks [3 :mime-type])))
 
     ;; filename
     (is (= "file.txt" (get-in chunks [3 :name])))
@@ -248,10 +262,27 @@
     ;; charset
     (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
 
-    (.close ^java.io.Closeable s)))
+    (.close ^java.io.Closeable s))))
 
 (deftest test-mutlipart-request-decode-with-ring-handler
-  (test-decoder port2 url2 false))
+  (testing "without memory-limit"
+    (test-decoder port2 url2))
+  (testing "with infinite memory-limit"
+    (test-decoder port2 url2 {:memory-limit Long/MAX_VALUE}))
+  (testing "with small memory-limit"
+    (test-decoder port2 url2 {:memory-limit 12}))
+  (testing "with zero memory-limit"
+    (test-decoder port2 url2 {:memory-limit 0})))
 
 (deftest test-mutlipart-request-decode-with-raw-handler
-  (test-decoder port3 url3 true))
+  (testing "without memory-limit"
+    (test-decoder port3 url3 {:raw-stream? true}))
+  (testing "with infinite memory-limit"
+    (test-decoder port3 url3 {:raw-stream? true
+                              :memory-limit Long/MAX_VALUE}))
+  (testing "with small memory-limit"
+    (test-decoder port3 url3 {:raw-stream? true
+                              :memory-limit 12}))
+  (testing "with zero memory-limit"
+    (test-decoder port3 url3 {:raw-stream? true
+                              :memory-limit 0})))
