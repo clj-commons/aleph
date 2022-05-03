@@ -205,7 +205,7 @@
       (dissoc :file :raw-http-data)))
 
 (defn- decode-handler [req options]
-  (let [chunks (mp/decode-request req options)]
+  (let [[chunks destroy-decoder-fn] (mp/decode-request req options)]
     (->
      (d/loop [body []]
        (d/chain' (s/take! chunks)
@@ -227,7 +227,8 @@
      (d/chain'
       (fn [body]
         {:status 200
-         :body (pr-str body)})))))
+         :body (pr-str body)}))
+     (d/finally' destroy-decoder-fn))))
 
 (defn- test-decoder
   ([port url]
