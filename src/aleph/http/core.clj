@@ -237,7 +237,8 @@
       ssl?
       ch
       (AtomicBoolean. false)
-      (-> req .uri (.indexOf (int 63))) body)
+      (-> req .uri (.indexOf (int 63)))
+      body)
     :aleph/request-arrived (System/nanoTime)))
 
 (defn netty-response->ring-response [rsp complete body]

@@ -28,7 +28,7 @@
                    (map
                      #(vector (symbol "io.netty" (str "netty-" %)) netty-version)
                      netty-modules))
-  :profiles {:dev  {:dependencies [[org.clojure/clojure "1.10.1"]
+  :profiles {:dev  {:dependencies [[org.clojure/clojure "1.10.3"]
                                    [criterium "0.4.6"]
                                    [cheshire "5.10.0"]
                                    [org.slf4j/slf4j-simple "1.7.30"]
