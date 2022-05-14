@@ -35,7 +35,8 @@
                                    [com.cognitect/transit-clj "1.0.324"]]}
              ;; This is for self-generating certs for testing ONLY:
              :test {:dependencies [[org.bouncycastle/bcprov-jdk15on "1.69"]
-                                   [org.bouncycastle/bcpkix-jdk15on "1.69"]]}}
+                                   [org.bouncycastle/bcpkix-jdk15on "1.69"]]
+                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
