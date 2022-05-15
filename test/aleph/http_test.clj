@@ -328,20 +328,32 @@
         (is (= characters body'))))))
 
 (deftest test-redirect
-  (with-both-handlers basic-handler
-    (is (= "ok"
-          (-> @(http-get (str "http://localhost:" port "/redirect?count=10"))
-            :body
-            bs/to-string)))
-    (is (= "redirected!"
-          (-> @(http-get (str "http://localhost:" port "/redirect?count=25"))
-            :body
-            bs/to-string)))
-    (is (= "ok"
-          (-> @(http-get (str "http://localhost:" port "/redirect?count=25")
-                 {:max-redirects 30})
-            :body
-            bs/to-string)))))
+  (testing "basic redirecting"
+    (with-both-handlers basic-handler
+      (is (= "ok"
+             (-> @(http-get (str "http://localhost:" port "/redirect?count=10"))
+                 :body
+                 bs/to-string)))
+      (is (= "redirected!"
+             (-> @(http-get (str "http://localhost:" port "/redirect?count=25"))
+                 :body
+                 bs/to-string)))
+      (is (= "ok"
+             (-> @(http-get (str "http://localhost:" port "/redirect?count=25")
+                            {:max-redirects 30})
+                 :body
+                 bs/to-string)))))
+
+  (testing "works with :method as well as :request-method"
+    (with-handler
+      (fn [{:keys [uri]}]
+        (case uri
+          "/200" {:status 200}
+          "/301" {:status  301
+                  :headers {"Location" "/200"}}))
+      (is (= 200 (:status @(http/request {:method            :get
+                                          :url               (str "http://localhost:" port "/301")
+                                          :follow-redirects? true})))))))
 
 (deftest test-middleware
   (with-both-handlers basic-handler
