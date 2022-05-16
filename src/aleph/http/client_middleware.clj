@@ -264,30 +264,40 @@
                   (str "status: " status)
                   (assoc rsp :body (s/->source body)))))))))))
 
+(defn wrap-method
+  "Middleware converting the :method option into the :request-method option"
+  [req]
+  (if-let [m (:method req)]
+    (-> req
+        (dissoc :method)
+        (assoc :request-method m))
+    req))
+
 (defn follow-redirect
   "Attempts to follow the redirects from the \"location\" header, if no such
   header exists (bad server!), returns the response without following the
   request."
   [client
    {:keys [uri url scheme server-name server-port trace-redirects]
-    :or {trace-redirects []}
-    :as req}
+    :or   {trace-redirects []}
+    :as   req}
    {:keys [body] :as rsp}]
   (let [url (or url (str (name scheme) "://" server-name
-                      (when server-port (str ":" server-port)) uri))]
+                         (when server-port (str ":" server-port)) uri))]
     (if-let [raw-redirect (get-in rsp [:headers "location"])]
       (let [redirect (str (URL. (URL. url) raw-redirect))]
         (client
           (-> req
-            (dissoc :query-params)
-            (assoc :url redirect)
-            (assoc :trace-redirects (conj trace-redirects redirect)))))
+              (dissoc :query-params)
+              (assoc :url redirect)
+              (assoc :trace-redirects (conj trace-redirects redirect)))))
       ;; Oh well, we tried, but if no location is set, return the response
       rsp)))
 
 (defn handle-redirects
   "Middleware that follows redirects in the response. A slingshot exception is
-  thrown if too many redirects occur. Options
+  thrown if too many redirects occur. Options:
+
   :follow-redirects - default:true, whether to follow redirects
   :max-redirects - default:20, maximum number of redirects to follow
   :force-redirects - default:false, force redirecting methods to GET requests
@@ -295,14 +305,16 @@
   In the response:
   :redirects-count - number of redirects
   :trace-redirects - vector of sites the request was redirected from"
-  [client
-   {:keys [request-method max-redirects redirects-count trace-redirects url]
-    :or {redirects-count 0
-         ;; max-redirects default taken from Firefox
-         max-redirects 20}
-    :as req}
-   {:keys [status] :as rsp}]
-  (let [rsp-r (if (empty? trace-redirects)
+  [client req rsp]
+  ;; The req passed to this fn is the req from BEFORE standard middleware was
+  ;; applied, so we may have to fix :method again
+  (let [req (wrap-method req)
+        {:keys [request-method max-redirects redirects-count trace-redirects url]
+         :or   {redirects-count 0
+                ;; max-redirects default taken from Firefox
+                max-redirects   20}} req
+        status (:status rsp)
+        rsp-r (if (empty? trace-redirects)
                 rsp
                 (assoc rsp :trace-redirects trace-redirects))]
     (cond
@@ -319,35 +331,35 @@
 
       (= 303 status)
       (follow-redirect client
-        (assoc req
-          :request-method :get
-          :redirects-count (inc redirects-count))
-        rsp-r)
+                       (assoc req
+                              :request-method :get
+                              :redirects-count (inc redirects-count))
+                       rsp-r)
 
 
       (#{301 302} status)
       (cond
         (#{:get :head} request-method)
         (follow-redirect client
-          (assoc req
-            :redirects-count (inc redirects-count))
-          rsp-r)
+                         (assoc req
+                                :redirects-count (inc redirects-count))
+                         rsp-r)
 
         (opt req :force-redirects)
         (follow-redirect client
-          (assoc req
-            :request-method :get
-            :redirects-count (inc redirects-count))
-          rsp-r)
+                         (assoc req
+                                :request-method :get
+                                :redirects-count (inc redirects-count))
+                         rsp-r)
 
         :else
         rsp-r)
 
       (#{307 308} status)
       (if (or (#{:get :head} request-method)
-            (opt req :force-redirects))
+              (opt req :force-redirects))
         (follow-redirect client
-          (assoc req :redirects-count (inc redirects-count)) rsp-r)
+                         (assoc req :redirects-count (inc redirects-count)) rsp-r)
         rsp-r)
 
       :else
@@ -487,15 +499,6 @@
   [req]
   (if-let [[user password] (parse-user-info (:user-info req))]
     (assoc req :basic-auth [user password])
-    req))
-
-(defn wrap-method
-  "Middleware converting the :method option into the :request-method option"
-  [req]
-  (if-let [m (:method req)]
-    (-> req
-      (dissoc :method)
-      (assoc :request-method m))
     req))
 
 (defmulti coerce-form-params
