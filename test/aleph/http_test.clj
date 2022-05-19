@@ -9,10 +9,10 @@
      [flow :as flow]
      [ssl :as ssl]
      [tcp :as tcp]]
-    [aleph.http.core :as core]
     [clj-commons.byte-streams :as bs]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [manifold.time :as t])
   (:import
     (java.io
       File)
@@ -490,6 +490,45 @@
       (set-prop initial-threads-property)
       (clear-prop))))
 
+(defn- slow-stream
+  "Produces a `manifold.stream` which yield a value
+  every 50 milliseconds six times."
+  []
+  (let [body (s/stream 10)]
+    (-> (d/loop [cnt 0]
+          (t/in 50
+                (fn []
+                  (d/chain' (s/put! body (str cnt))
+                            (fn [_]
+                              (when (< cnt 5)
+                                (d/recur (inc cnt))))))))
+        (d/chain' (fn [_] (s/close! body))))
+    body))
+
+(deftest test-idle-timeout
+  (let [url (str "http://localhost:" port)
+        echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
+        slow-handler (fn [_] {:body (slow-stream)})]
+   (testing "Server is slow to write"
+     (with-handler-options slow-handler {:idle-timeout 70
+                                         :port port}
+       (is (= "012345" (bs/to-string (:body @(http/get url)))))))
+   (testing "Server is too slow to write"
+     (with-handler-options slow-handler {:idle-timeout 30
+                                         :port port}
+       (is (= ""
+              (bs/to-string (:body @(http/get url)))))))
+   (testing "Client is slow to write"
+     (with-handler-options echo-handler {:idle-timeout 70
+                                         :port port
+                                         :raw-stream? true}
+       (is (= "012345" (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))
+   (testing "Client is too slow to write"
+     (with-handler-options echo-handler {:idle-timeout 30
+                                         :port port
+                                         :raw-stream? true}
+       (is (thrown-with-msg? Exception #"connection was close"
+                             (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))))
 ;;;
 
 (deftest test-large-responses
