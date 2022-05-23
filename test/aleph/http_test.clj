@@ -510,7 +510,7 @@
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
    (testing "Server is slow to write"
-     (with-handler-options slow-handler {:idle-timeout 150
+     (with-handler-options slow-handler {:idle-timeout 200
                                          :port port}
        (is (= "012345" (bs/to-string (:body @(http/get url)))))))
    (testing "Server is too slow to write"
@@ -519,7 +519,7 @@
        (is (= ""
               (bs/to-string (:body @(http/get url)))))))
    (testing "Client is slow to write"
-     (with-handler-options echo-handler {:idle-timeout 150
+     (with-handler-options echo-handler {:idle-timeout 200
                                          :port port
                                          :raw-stream? true}
        (is (= "012345" (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))
