@@ -505,6 +505,7 @@
                                                    ssl?))]
 
       (doto pipeline
+        (http/attach-idle-handlers idle-timeout)
         (.addLast "http-server"
           (HttpServerCodec.
             max-initial-line-length
@@ -517,7 +518,6 @@
             (let [compressor (HttpContentCompressor. (or compression-level 6))]
               (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
             (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
-        (http/attach-idle-handlers idle-timeout)
         pipeline-transform))))
 
 ;;;

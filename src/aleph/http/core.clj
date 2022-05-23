@@ -633,7 +633,7 @@
 (defn attach-idle-handlers [^ChannelPipeline pipeline idle-timeout]
   (if (pos? idle-timeout)
     (doto pipeline
-      (.addFirst "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
+      (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
       (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
     pipeline))
 
