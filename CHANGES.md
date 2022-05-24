@@ -1,4 +1,4 @@
-### 0.5.0-SNAPSHOT
+### 0.5.0
 
 * Add initial clj-kondo hooks
 * Minor bugfix in examples code
@@ -11,8 +11,11 @@
 * Fixed bug when sending empty files
 * Fix returned filename in multipart uploads for clj-http parity
 * Ensure client exceptions handled and channel closed on invalid input
+* Fix minor bug with redirects and `:method` key
+* Fix bug in idle state timeouts
+* Disable misleading logs during tests
 
-Contributions by Arnaud Geiser, Moritz Heidkamp, and Matthew Davidson
+Contributions by Arnaud Geiser, Moritz Heidkamp, Erik Assum, and Matthew Davidson
 
 ### 0.4.7
 
