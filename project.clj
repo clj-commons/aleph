@@ -12,7 +12,7 @@
 
 (def other-dependencies
   '[[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
-    [manifold "0.2.3"]
+    [manifold "0.2.4"]
     [org.clj-commons/byte-streams "0.3.0"]
     [org.clj-commons/primitive-math "1.0.0"]
     [potemkin "0.4.5"]])
