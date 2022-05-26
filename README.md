@@ -6,15 +6,20 @@
 
 Aleph exposes data from the network as a [Manifold](https://github.com/clj-commons/manifold) stream, which can easily be transformed into a `java.io.InputStream`, [core.async](https://github.com/clojure/core.async) channel, Clojure sequence, or [many other byte representations](https://github.com/clj-commons/byte-streams).  It exposes simple default wrappers for HTTP, TCP, and UDP, but allows access to full performance and flexibility of the underlying [Netty](https://github.com/netty/netty) library.
 
-```clj
-[aleph "0.4.7"]
+Leiningen:
+```clojure
+[aleph "0.5.0-rc2"]
+```
+deps.edn:
+```clojure
+aleph/aleph {:mvn/version "0.5.0-rc2"}
 ```
 
 ### HTTP
 
-Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/clj-commons/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/clj-commons/manifold/blob/master/doc/deferred.md#let-flow) operator. `aleph.http/wrap-ring-async-handler` helper can be used to covert async 3-arity Ring handler to Aleph-compliant one.
+Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/clj-commons/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/clj-commons/manifold/blob/master/doc/deferred.md#let-flow) operator. The `aleph.http/wrap-ring-async-handler` helper can be used to covert async 3-arity Ring handler to Aleph-compliant one.
 
-```clj
+```clojure
 (require '[aleph.http :as http])
 
 (defn handler [req]
@@ -29,20 +34,20 @@ The body of the response may also be a Manifold stream, where each message from 
 
 For HTTP client requests, Aleph models itself after [clj-http](https://github.com/dakrone/clj-http), except that every request immediately returns a Manifold deferred representing the response.
 
-```clj
+```clojure
 (require
   '[manifold.deferred :as d]
   '[byte-streams :as bs])
 
 (-> @(http/get "https://google.com/")
-  :body
-  bs/to-string
-  prn)
+    :body
+    bs/to-string
+    prn)
 
 (d/chain (http/get "https://google.com")
-  :body
-  bs/to-string
-  prn)
+         :body
+         bs/to-string
+         prn)
 ```
 
 Aleph attempts to mimic the clj-http API and capabilities fully. It supports multipart/form-data requests, cookie stores, proxy servers and requests inspection with a few notable differences:
@@ -71,7 +76,7 @@ To learn more, [read the example code](http://aleph.io/examples/literate.html#al
 
 On any HTTP request which has the proper `Upgrade` headers, you may call `(aleph.http/websocket-connection req)`, which returns a deferred which yields a **duplex stream**, which uses a single stream to represent bidirectional communication.  Messages from the client can be received via `take!`, and sent to the client via `put!`.  An echo WebSocket handler, then, would just consist of:
 
-```clj
+```clojure
 (require '[manifold.stream :as s])
 
 (defn echo-handler [req]
@@ -91,7 +96,7 @@ A TCP server is similar to an HTTP server, except that for each connection the h
 
 An echo TCP server is very similar to the above WebSocket example:
 
-```clj
+```clojure
 (require '[aleph.tcp :as tcp])
 
 (defn echo-handler [s info]
@@ -108,7 +113,7 @@ To learn more, [read the example code](http://aleph.io/examples/literate.html#al
 
 A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast? false})`.  If the `:port` is specified, it will yield a duplex socket which can be used to send and receive messages, which are structured as maps with the following data:
 
-```clj
+```clojure
 {:host "example.com"
  :port 10001
  :message ...}
