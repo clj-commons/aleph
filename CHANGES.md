@@ -14,6 +14,7 @@
 * Fix minor bug with redirects and `:method` key
 * Fix bug in idle state timeouts
 * Disable misleading logs during tests
+* Switch to Netty's `FastThreadLocalThread` for threads
 
 Contributions by Arnaud Geiser, Moritz Heidkamp, Erik Assum, and Matthew Davidson
 
