@@ -8,9 +8,6 @@
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
     [clj-commons.primitive-math :as p]
-    [clojure
-     [string :as str]
-     [set :as set]]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
     [java.io IOException]
@@ -29,7 +26,6 @@
      EpollSocketChannel
      EpollDatagramChannel]
     [io.netty.util Attribute AttributeKey]
-    [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
     [io.netty.channel.socket.nio
@@ -56,7 +52,7 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     GenericFutureListener Future]
+     FastThreadLocalThread GenericFutureListener Future]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [io.netty.util.internal SystemPropertyUtil]
@@ -803,7 +799,8 @@
      #(str prefix "-" (swap! num-threads inc))
      (deliver (promise) nil)
      nil
-     daemon?)))
+     daemon?
+     (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
 
 (def ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
