@@ -136,7 +136,9 @@
    | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
    | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting
    | `connection-timeout` | timeout in milliseconds for the tunnel become established, defaults to 60 seconds, setting is ignored when tunneling is not used."
-  [{:keys [connections-per-host
+  [{:keys [pool-builder-fn
+           pool-controller-builder-fn
+           connections-per-host
            total-connections
            target-utilization
            connection-options
@@ -170,7 +172,11 @@
                         (some? log-activity)
                         (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
         p (promise)
-        pool (flow/instrumented-pool
+        create-pool-fn      (or pool-builder-fn
+                                flow/instrumented-pool)
+        create-pool-ctrl-fn (or pool-controller-builder-fn
+                                #(Pools/utilizationController %1 %2 %3))
+        pool (create-pool-fn
               {:generate (fn [host]
                            (let [c (promise)
                                  conn (create-connection
@@ -186,7 +192,7 @@
                                     client/close-connection))
                :control-period control-period
                :max-queue-size max-queue-size
-               :controller (Pools/utilizationController
+               :controller (create-pool-ctrl-fn
                             target-utilization
                             connections-per-host
                             total-connections)
