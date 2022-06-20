@@ -1,6 +1,7 @@
 (ns aleph.netty
   (:refer-clojure :exclude [flush])
   (:require
+    [aleph.netty.impl :refer [operation-complete]]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -8,9 +9,6 @@
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
     [clj-commons.primitive-math :as p]
-    [clojure
-     [string :as str]
-     [set :as set]]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
     [java.io IOException]
@@ -29,7 +27,6 @@
      EpollSocketChannel
      EpollDatagramChannel]
     [io.netty.util Attribute AttributeKey]
-    [io.netty.handler.codec Headers]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
     [io.netty.channel.socket.nio
@@ -222,20 +219,7 @@
                 (. clojure.lang.Var
                    (pushThreadBindings {clojure.lang.Compiler/LOADER
                                         class-loader}))
-                (cond
-                  (.isSuccess f)
-                  (d/success! d (.getNow f))
-
-                  (.isCancelled f)
-                  (d/error! d (CancellationException. "future is cancelled."))
-
-                  (some? (.cause f))
-                  (if (instance? java.nio.channels.ClosedChannelException (.cause f))
-                    (d/success! d false)
-                    (d/error! d (.cause f)))
-
-                  :else
-                  (d/error! d (IllegalStateException. "future in unknown state")))
+                (operation-complete f d)
                 (finally
                   (. clojure.lang.Var (popThreadBindings)))))))
         d))))
