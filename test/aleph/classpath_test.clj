@@ -37,6 +37,5 @@
         (with-handler :term
           (.close ^java.io.Closeable server))
         (.exec (Runtime/getRuntime) (format "kill -SIGTERM %s" (pid)))
-        ;; XXX: this test needs to be true!
-        (is (false? @result))
+        (is @result)
         (require 'aleph.netty.impl :reload)))))
