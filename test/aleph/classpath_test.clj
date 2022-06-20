@@ -38,4 +38,5 @@
           (.close ^java.io.Closeable server))
         (.exec (Runtime/getRuntime) (format "kill -SIGTERM %s" (pid)))
         (is @result)
-        (require 'aleph.netty.impl :reload)))))
+        (require 'aleph.netty.impl :reload)
+        (require 'aleph.netty :reload)))))
