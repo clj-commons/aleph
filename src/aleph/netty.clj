@@ -1,7 +1,6 @@
 (ns aleph.netty
   (:refer-clojure :exclude [flush])
   (:require
-    [aleph.netty.impl :refer [operation-complete]]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -213,6 +212,22 @@
       (.setContextClassLoader
         thread (DynamicClassLoader. (or context-class-loader
                                         compiler-class-loader))))))
+
+(defn operation-complete [^Future f d]
+  (cond
+     (.isSuccess f)
+     (d/success! d (.getNow f))
+
+     (.isCancelled f)
+     (d/error! d (CancellationException. "future is cancelled."))
+
+     (some? (.cause f))
+     (if (instance? java.nio.channels.ClosedChannelException (.cause f))
+       (d/success! d false)
+       (d/error! d (.cause f)))
+
+     :else
+     (d/error! d (IllegalStateException. "future in unknown state"))))
 
 (defn wrap-future
   [^Future f]
