@@ -213,7 +213,7 @@
         thread (DynamicClassLoader. (or context-class-loader
                                         compiler-class-loader))))))
 
-(defn operation-complete [^Future f d]
+(defn- operation-complete [^Future f d]
   (cond
      (.isSuccess f)
      (d/success! d (.getNow f))
