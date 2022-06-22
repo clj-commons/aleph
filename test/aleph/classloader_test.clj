@@ -14,10 +14,13 @@
   returns a completed `CompletableFuture` containing either
   `true` or `false` in case of Throwable."
   [^CompletableFuture result ^Future f d]
-  (try (d/success! d (.getNow f))
-       (.complete result true)
-       d
-       (catch Throwable _ (do (.complete result false) d))))
+  (try
+    (d/success! d (.getNow f))
+    (.complete result true)
+    d
+    (catch Throwable e
+      (.completeExceptionally result e)
+      d)))
 
 (defn pid
   "Gets this process' PID."
@@ -41,4 +44,4 @@
           (with-handler :int
             (.close ^java.io.Closeable server))
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))
-          (is @result))))))
+          (is (= (deref result 30000 ::timeout) true)))))))

@@ -201,17 +201,18 @@
     (s/onto nil)))
 
 (defn ensure-dynamic-classloader
-  "Ensure the context class loader is always a `clojure.lang.DynamicClassLoader`
-  to prevent `ClassNotFoundException`.
-  https://github.com/clj-commons/aleph/issues/603."
+  "Ensure the context class loader has a valid loader chain to
+   prevent `ClassNotFoundException`.
+   https://github.com/clj-commons/aleph/issues/603."
   []
   (let [thread (Thread/currentThread)
         context-class-loader (.getContextClassLoader thread)
         compiler-class-loader (.getClassLoader clojure.lang.Compiler)]
     (when-not (instance? DynamicClassLoader context-class-loader)
       (.setContextClassLoader
-        thread (DynamicClassLoader. (or context-class-loader
-                                        compiler-class-loader))))))
+        thread
+        (DynamicClassLoader. (or context-class-loader
+                                 compiler-class-loader))))))
 
 (defn- operation-complete [^Future f d]
   (cond
