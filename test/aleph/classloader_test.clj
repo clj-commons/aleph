@@ -12,7 +12,7 @@
 (defn- operation-complete
   "Stubs for `GenericFutureListener/operationComplete` which
   returns a completed `CompletableFuture` containing either
-  `true` or `false` in case of Throwable."
+  `true` or a Throwable."
   [^CompletableFuture result ^Future f d]
   (try
     (d/success! d (.getNow f))
