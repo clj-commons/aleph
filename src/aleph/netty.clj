@@ -235,12 +235,13 @@
   (when f
     (if (.isSuccess f)
       (d/success-deferred (.getNow f) nil)
-      (let [d (d/deferred nil)]
+      (let [d (d/deferred nil)
+            bound-operation-complete (bound-fn* operation-complete)]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
               (ensure-dynamic-classloader)
-              (operation-complete f d))))
+              (bound-operation-complete f d))))
         d))))
 
 (defn allocate [x]

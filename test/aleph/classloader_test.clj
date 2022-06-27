@@ -1,10 +1,11 @@
 (ns aleph.classloader-test
-  (:require  [clojure.test      :refer [deftest testing is]]
-             [aleph.http        :as http]
-             [aleph.netty       :as netty]
-             [manifold.deferred :as d]
-             [manifold.utils    :refer [when-class]]
-             [signal.handler    :refer [with-handler]])
+  (:require  [clojure.test       :refer [deftest testing is]]
+             [aleph.http         :as http]
+             [aleph.netty        :as netty]
+             [manifold.deferred  :as d]
+             [manifold.utils     :refer [when-class]]
+             [signal.handler     :refer [on-signal]]
+             [dynamic-redef.core :refer [with-dynamic-redefs]])
   (:import [io.netty.util.concurrent Future]
            [java.lang.management ManagementFactory]
            [java.util.concurrent CompletableFuture]))
@@ -19,6 +20,7 @@
     (.complete result true)
     d
     (catch Throwable e
+      (prn e)
       (.completeExceptionally result e)
       d)))
 
@@ -37,11 +39,11 @@
 (deftest test-classloader
   (testing "classloader: ensure the class loader is always a DynamicClassLoader"
     (let [result (CompletableFuture.)]
-      (with-redefs [netty/operation-complete (partial operation-complete result)]
+      (with-dynamic-redefs [netty/operation-complete (partial operation-complete result)]
         (let [server (http/start-server
                       (constantly {:body "ok"})
                       {:port 9999})]
-          (with-handler :int
-            (.close ^java.io.Closeable server))
+          (on-signal :int
+                     (bound-fn [_] (.close ^java.io.Closeable server)))
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))
-          (is (= (deref result 30000 ::timeout) true)))))))
+          (is (= (deref result 10000 ::timeout) true)))))))
