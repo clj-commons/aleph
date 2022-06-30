@@ -10,6 +10,7 @@
     [clj-commons.primitive-math :as p]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
+    [clojure.lang DynamicClassLoader]
     [java.io IOException]
     [io.netty.bootstrap Bootstrap ServerBootstrap]
     [io.netty.buffer ByteBuf Unpooled]
@@ -55,6 +56,7 @@
      FastThreadLocalThread GenericFutureListener Future]
     [java.io InputStream File]
     [java.nio ByteBuffer]
+    [java.nio.channels ClosedChannelException]
     [io.netty.util.internal SystemPropertyUtil]
     [java.util.concurrent
      ConcurrentHashMap
@@ -199,41 +201,51 @@
   (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
     (s/onto nil)))
 
+(defn ensure-dynamic-classloader
+  "Ensure the context class loader has a valid loader chain to
+   prevent `ClassNotFoundException`.
+   https://github.com/clj-commons/aleph/issues/603."
+  []
+  (let [thread (Thread/currentThread)
+        context-class-loader (.getContextClassLoader thread)
+        compiler-class-loader (.getClassLoader clojure.lang.Compiler)]
+    (when-not (instance? DynamicClassLoader context-class-loader)
+      (.setContextClassLoader
+        thread
+        (DynamicClassLoader. (or context-class-loader
+                                 compiler-class-loader))))))
+
+(defn- operation-complete [^Future f d]
+  (cond
+     (.isSuccess f)
+     (d/success! d (.getNow f))
+
+     (.isCancelled f)
+     (d/error! d (CancellationException. "future is cancelled."))
+
+     (some? (.cause f))
+     (if (instance? ClosedChannelException (.cause f))
+       (d/success! d false)
+       (d/error! d (.cause f)))
+
+     :else
+     (d/error! d (IllegalStateException. "future in unknown state"))))
+
 (defn wrap-future
   [^Future f]
   (when f
     (if (.isSuccess f)
       (d/success-deferred (.getNow f) nil)
       (let [d (d/deferred nil)
-            ;; workaround for the issue with executing RT.readString
-            ;; on a Netty thread that doesn't have appropriate class loader
-            ;; more information here:
-            ;; https://github.com/clj-commons/aleph/issues/365
-            class-loader (or (clojure.lang.RT/baseLoader)
-                             (clojure.lang.RT/makeClassLoader))]
+            ;; Ensure the same bindings are installed on the Netty thread (vars,
+            ;; classloader) than the thread registering the
+            ;; `operationComplete` callback.
+            bound-operation-complete (bound-fn* operation-complete)]
         (.addListener f
           (reify GenericFutureListener
             (operationComplete [_ _]
-              (try
-                (. clojure.lang.Var
-                   (pushThreadBindings {clojure.lang.Compiler/LOADER
-                                        class-loader}))
-                (cond
-                  (.isSuccess f)
-                  (d/success! d (.getNow f))
-
-                  (.isCancelled f)
-                  (d/error! d (CancellationException. "future is cancelled."))
-
-                  (some? (.cause f))
-                  (if (instance? java.nio.channels.ClosedChannelException (.cause f))
-                    (d/success! d false)
-                    (d/error! d (.cause f)))
-
-                  :else
-                  (d/error! d (IllegalStateException. "future in unknown state")))
-                (finally
-                  (. clojure.lang.Var (popThreadBindings)))))))
+              (ensure-dynamic-classloader)
+              (bound-operation-complete f d))))
         d))))
 
 (defn allocate [x]
