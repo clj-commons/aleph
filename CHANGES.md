@@ -15,8 +15,9 @@
 * Fix bug in idle state timeouts
 * Disable misleading logs during tests
 * Switch to Netty's `FastThreadLocalThread` for threads
+* Ensure `wrap-future` callbacks have thread bindings and a full classloader chain
 
-Contributions by Arnaud Geiser, Moritz Heidkamp, Erik Assum, and Matthew Davidson
+Contributions by Arnaud Geiser, Moritz Heidkamp, Erik Assum, Ivar Refsdal, and Matthew Davidson
 
 ### 0.4.7
 
