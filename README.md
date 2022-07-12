@@ -8,11 +8,11 @@ Aleph exposes data from the network as a [Manifold](https://github.com/clj-commo
 
 Leiningen:
 ```clojure
-[aleph "0.5.0-rc2"]
+[aleph "0.5.0"]
 ```
 deps.edn:
 ```clojure
-aleph/aleph {:mvn/version "0.5.0-rc2"}
+aleph/aleph {:mvn/version "0.5.0"}
 ```
 
 ### HTTP
@@ -123,7 +123,7 @@ Where incoming packets will have a `:message` that is a byte-array, which can be
 
 To learn more, [read the documentation](http://aleph.io/examples/literate.html).
 
-### license
+### License
 
 Copyright © 2010-2020 Zachary Tellman
 

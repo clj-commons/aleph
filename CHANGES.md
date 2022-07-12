@@ -16,6 +16,8 @@
 * Disable misleading logs during tests
 * Switch to Netty's `FastThreadLocalThread` for threads
 * Ensure `wrap-future` callbacks have thread bindings and a full classloader chain
+* Fix minor reflection warning in HttpContentCompressor ctor
+* Add missing direct dependency on Dirigiste
 
 Contributions by Arnaud Geiser, Moritz Heidkamp, Erik Assum, Ivar Refsdal, and Matthew Davidson
 
