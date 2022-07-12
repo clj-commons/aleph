@@ -515,7 +515,7 @@
         (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
-            (let [compressor (HttpContentCompressor. (or compression-level 6))]
+            (let [compressor (HttpContentCompressor. (int (or compression-level 6)))]
               (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
             (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
         pipeline-transform))))
