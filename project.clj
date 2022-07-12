@@ -12,6 +12,7 @@
 
 (def other-dependencies
   '[[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
+    [org.clj-commons/dirigiste "1.0.1"]
     [manifold "0.2.4"]
     [org.clj-commons/byte-streams "0.3.1"]
     [org.clj-commons/primitive-math "1.0.0"]
