@@ -516,14 +516,13 @@
 
 (deftest test-large-responses
   (with-handler basic-handler
-    (let [_pool (http/connection-pool {:connection-options {:response-buffer-size 16}})]
-      (dotimes [_ 1 #_1e6]
-        #_(when (zero? (rem i 1e2))
-            (prn i))
-        (-> @(http/get (str "http://localhost:" port "/big")
-                       {:as :byte-array})
-            :body
-            count)))))
+    (dotimes [_ 1 #_1e6]
+      #_(when (zero? (rem i 1e2))
+          (prn i))
+      (-> @(http/get (str "http://localhost:" port "/big")
+                     {:as :byte-array})
+          :body
+          count))))
 
 ;;;
 
