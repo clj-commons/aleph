@@ -32,7 +32,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
 ```clj
 (require
   '[manifold.deferred :as d]
-  '[byte-streams :as bs])
+  '[clj-commons.byte-streams :as bs])
 
 (-> @(http/get "https://google.com/")
   :body
