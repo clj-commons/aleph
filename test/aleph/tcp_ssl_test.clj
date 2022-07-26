@@ -12,25 +12,27 @@
 
 (set! *warn-on-reflection* false)
 
-(defn ssl-echo-handler
-  [s c]
-  (is (some? (:ssl-session c)) "SSL session should be defined")
-  (s/connect
-    ; note we need to inspect the SSL session *after* we start reading
-    ; data. Otherwise, the session might not be set up yet.
-    (s/map (fn [msg]
-             (is (= (.getSubjectDN ^X509Certificate ssl/client-cert)
-                   (.getSubjectDN ^X509Certificate (first (.getPeerCertificates (:ssl-session c))))))
-             msg)
-      s)
-    s))
+(defn ssl-echo-handler [ssl-session]
+  (fn [s c]
+    (s/connect
+     ;; note we need to capture the SSL session *after* we start
+     ;; reading data. Otherwise, the session might not be set up yet.
+     (s/map (fn [msg]
+              (reset! ssl-session (:ssl-session c))
+              msg)
+            s)
+     s)))
 
 (deftest test-ssl-echo
-  (with-server (tcp/start-server ssl-echo-handler
-                                 {:port 10001
-                                  :ssl-context ssl/server-ssl-context})
-    (let [c @(tcp/client {:host "localhost"
-                          :port 10001
-                          :ssl-context ssl/client-ssl-context})]
-      (s/put! c "foo")
-      (is (= "foo" (bs/to-string @(s/take! c)))))))
+  (let [ssl-session (atom nil)]
+    (with-server (tcp/start-server (ssl-echo-handler ssl-session)
+                                   {:port 10001
+                                    :ssl-context ssl/server-ssl-context})
+      (let [c @(tcp/client {:host "localhost"
+                            :port 10001
+                            :ssl-context ssl/client-ssl-context})]
+        (s/put! c "foo")
+        (is (= "foo" (bs/to-string @(s/take! c))))
+        (is (some? @ssl-session) "SSL session should be defined")
+        (is (= (.getSubjectDN ^X509Certificate ssl/client-cert)
+               (.getSubjectDN ^X509Certificate (first (.getPeerCertificates @ssl-session)))))))))
