@@ -13,7 +13,10 @@
     [io.netty.channel
      Channel
      ChannelHandler
-     ChannelPipeline]))
+     ChannelHandlerContext
+     ChannelPipeline]
+    [io.netty.handler.ssl
+     SslHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -25,7 +28,16 @@
 
 (defn- ^ChannelHandler server-channel-handler
   [handler {:keys [raw-stream?] :as options}]
-  (let [in (atom nil)]
+  (let [in (atom nil)
+        call-handler (fn [^ChannelHandlerContext ctx]
+                       (let [ch (.channel ctx)]
+                         (handler
+                          (doto
+                              (s/splice
+                               (netty/sink ch true netty/to-byte-buf)
+                               (reset! in (netty/source ch)))
+                            (reset-meta! {:aleph/channel ch}))
+                          (->TcpConnection ch))))]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -40,15 +52,20 @@
 
       :channel-active
       ([_ ctx]
-        (let [ch (.channel ctx)]
-          (handler
-            (doto
-              (s/splice
-                (netty/sink ch true netty/to-byte-buf)
-                (reset! in (netty/source ch)))
-              (reset-meta! {:aleph/channel ch}))
-            (->TcpConnection ch)))
-        (.fireChannelActive ctx))
+       (if-let [^SslHandler ssl-handler (-> ctx .pipeline (.get SslHandler))]
+         (-> ssl-handler
+             .handshakeFuture
+             netty/wrap-future
+             (d/on-realized (fn [_]
+                              (call-handler ctx))
+                            ;; No need to handle errors here since
+                            ;; the SSL handler will terminate the
+                            ;; whole pipeline by throwing a
+                            ;; `javax.net.ssl.SSLHandshakeException`
+                            ;; in this case anyway.
+                            (fn [_])))
+         (call-handler ctx))
+       (.fireChannelActive ctx))
 
       :channel-read
       ([_ ctx msg]
