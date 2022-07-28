@@ -1,3 +1,7 @@
+### Unreleased
+
+* Make TCP+SSL server call handler only after successful SSL handshake
+
 ### 0.5.0
 
 * Add initial clj-kondo hooks
