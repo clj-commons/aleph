@@ -1,13 +1,9 @@
 (ns aleph.ring-test
-  (:use
-    [clojure test])
   (:require
-    [clj-commons.byte-streams :as bs]
-    [aleph.netty :as netty]
-    [aleph.http :as http])
-  (:import
-    [java.util.concurrent
-     Executors]))
+   [aleph.http :as http]
+   [aleph.netty :as netty]
+   [clj-commons.byte-streams :as bs]
+   [clojure.test :refer [deftest is]]))
 
 (netty/leak-detector-level! :paranoid)
 

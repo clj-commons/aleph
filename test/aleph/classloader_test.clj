@@ -1,14 +1,16 @@
 (ns aleph.classloader-test
-  (:require  [clojure.test       :refer [deftest testing is]]
-             [aleph.http         :as http]
-             [aleph.netty        :as netty]
-             [manifold.deferred  :as d]
-             [manifold.utils     :refer [when-class]]
-             [signal.handler     :refer [on-signal]]
-             [dynamic-redef.core :refer [with-dynamic-redefs]])
-  (:import [io.netty.util.concurrent Future]
-           [java.lang.management ManagementFactory]
-           [java.util.concurrent CompletableFuture]))
+  (:require
+   [aleph.http :as http]
+   [aleph.netty :as netty]
+   [clojure.test :refer [deftest is testing]]
+   [dynamic-redef.core :refer [with-dynamic-redefs]]
+   [manifold.deferred :as d]
+   [manifold.utils :refer [when-class]]
+   [signal.handler :refer [on-signal]])
+  (:import
+   (io.netty.util.concurrent Future)
+   (java.lang.management ManagementFactory)
+   (java.util.concurrent CompletableFuture)))
 
 (defn- operation-complete
   "Stubs for `GenericFutureListener/operationComplete` which

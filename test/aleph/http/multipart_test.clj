@@ -1,26 +1,23 @@
 (ns aleph.http.multipart-test
   (:require
-    [aleph.http :as http]
-    [aleph.http.core :as core]
-    [aleph.http.multipart :as mp]
-    [clj-commons.byte-streams :as bs]
-    [clojure.edn :as edn]
-    [clojure.test :refer [deftest testing is]]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [clojure.string :as str])
+   [aleph.http :as http]
+   [aleph.http.core :as core]
+   [aleph.http.multipart :as mp]
+   [clj-commons.byte-streams :as bs]
+   [clojure.edn :as edn]
+   [clojure.string :as str]
+   [clojure.test :refer [deftest is testing]]
+   [manifold.deferred :as d]
+   [manifold.stream :as s])
   (:import
-    (io.netty.buffer
-      ByteBufAllocator)
-    (io.netty.handler.codec.http
-      HttpContent)
-    (io.netty.handler.stream
-      ChunkedInput)
-    (java.io
-      File)))
+   (io.netty.buffer ByteBufAllocator)
+   (io.netty.handler.codec.http HttpContent)
+   (io.netty.handler.stream ChunkedInput)
+   (java.io File)))
 
 (def file-to-send (File. (str (System/getProperty "user.dir") "/test/file.txt")))
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-multipart-builder
   (let [body (mp/encode-body [{:part-name "part1"
                                :content "content1"
@@ -58,12 +55,14 @@
     ;; filename header
     (is (.contains body-str "filename=\"content5.pdf\""))))
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-custom-boundary
   (let [b (mp/boundary)
         body (mp/encode-body b [{:part-name "part1" :content "content1"}])
         body-str (bs/to-string body)]
     (is (.endsWith body-str (str b "--")))))
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-base64-content-transfer-encoding
   (let [body (mp/encode-body [{:part-name "part1"
                                :content "content1"
@@ -72,6 +71,7 @@
     (is (.contains body-str "base64"))
     (is (.contains body-str "Y29udGVudDE="))))
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-binary-content-transfer-encoding
   (testing "specify 'binary' in headers"
     (let [body (mp/encode-body [{:part-name "part1"
@@ -88,12 +88,14 @@
       (is (.contains body-str "content2"))
       (is (false? (.contains body-str "Content-Transfer-Encoding"))))))
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
       (mp/encode-body [{:part-name "part1"
                         :content "content1"
                         :transfer-encoding :uknown-transfer-encoding}]))))
 
+#_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-content-as-file
   (let [parts [{:part-name "part1"
                 :content file-to-send}

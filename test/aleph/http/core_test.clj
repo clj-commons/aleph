@@ -1,11 +1,9 @@
 (ns aleph.http.core-test
-  (:use
-    [clojure test])
   (:require
-    [aleph.http.core :as core])
+   [aleph.http.core :as core]
+   [clojure.test :refer [deftest is]])
   (:import
-    [io.netty.handler.codec.http
-     DefaultHttpRequest]))
+   (io.netty.handler.codec.http DefaultHttpRequest)))
 
 (deftest test-HeaderMap-keys
   (let [^DefaultHttpRequest req (core/ring-request->netty-request

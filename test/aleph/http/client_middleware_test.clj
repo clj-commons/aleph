@@ -1,7 +1,9 @@
 (ns aleph.http.client-middleware-test
-  (:require [aleph.http.client-middleware :as middleware]
-    [clojure.test :as t :refer [deftest is]])
-  (:import java.net.URLDecoder))
+  (:require
+   [aleph.http.client-middleware :as middleware]
+   [clojure.test :as t :refer [deftest is]])
+  (:import
+   (java.net URLDecoder)))
 
 (deftest test-empty-query-string
   (is (= "" (middleware/generate-query-string {})))

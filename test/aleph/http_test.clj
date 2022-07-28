@@ -1,36 +1,24 @@
 (ns aleph.http-test
   (:require
-    [clojure.java.io :as io]
-    [clojure.string :as str]
-    [clojure.test :refer [deftest testing is]]
-    [aleph
-     [http :as http]
-     [netty :as netty]
-     [flow :as flow]
-     [ssl :as ssl]
-     [tcp :as tcp]]
-    [clj-commons.byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [manifold.time :as t])
+   [aleph.flow :as flow]
+   [aleph.http :as http]
+   [aleph.netty :as netty]
+   [aleph.ssl :as ssl]
+   [aleph.tcp :as tcp]
+   [clj-commons.byte-streams :as bs]
+   [clojure.java.io :as io]
+   [clojure.string :as str]
+   [clojure.test :refer [deftest is testing]]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [manifold.time :as t])
   (:import
-    (java.io
-      File)
-    (java.util.zip
-      GZIPInputStream
-      ZipException)
-    (java.util.concurrent
-      TimeoutException)
-    (aleph.utils
-      ConnectionTimeoutException
-      RequestTimeoutException)
-    (io.netty.channel
-      ChannelHandlerContext
-      ChannelOutboundHandlerAdapter
-      ChannelPipeline
-      ChannelPromise)
-    (io.netty.handler.codec.http
-      HttpMessage)))
+   (aleph.utils ConnectionTimeoutException RequestTimeoutException)
+   (io.netty.channel ChannelHandlerContext ChannelOutboundHandlerAdapter ChannelPipeline ChannelPromise)
+   (io.netty.handler.codec.http HttpMessage)
+   (java.io File)
+   (java.util.concurrent TimeoutException)
+   (java.util.zip GZIPInputStream ZipException)))
 
 ;;;
 
@@ -69,35 +57,35 @@
 (def http-file-region-response (http/file filepath 5 4))
 (def stream-response "Stream!")
 
-(defn string-handler [request]
+(defn string-handler [_request]
   {:status 200
    :body string-response})
 
-(defn seq-handler [request]
+(defn seq-handler [_request]
   {:status 200
    :body seq-response})
 
-(defn file-handler [request]
+(defn file-handler [_request]
   {:status 200
    :body file-response})
 
-(defn http-file-handler [request]
+(defn http-file-handler [_request]
   {:status 200
    :body http-file-response})
 
-(defn http-file-region-handler [request]
+(defn http-file-region-handler [_request]
   {:status 200
    :body http-file-region-response})
 
-(defn stream-handler [request]
+(defn stream-handler [_request]
   {:status 200
    :body (bs/to-input-stream stream-response)})
 
-(defn slow-handler [request]
+(defn slow-handler [_request]
   {:status 200
    :body (cons "1" (lazy-seq (do (Thread/sleep 500) '("2"))))})
 
-(defn manifold-handler [request]
+(defn manifold-handler [_request]
   {:status 200
    :body (->> stream-response (map str) s/->source)})
 
@@ -109,14 +97,14 @@
   {:status 200
    :body (->> request :body bs/to-line-seq)})
 
-(defn hello-handler [request]
+(defn hello-handler [_request]
   {:status 200
    :body "hello"})
 
-(defn big-handler [request]
+(defn big-handler [_request]
   {:status 200
    :body (->> (s/periodically 0.1 #(byte-array 1024))
-           (s/transform (take 1e3)))})
+              (s/transform (take (long 1e3))))})
 
 (defn redirect-handler [{:keys [query-string] :as request}]
   (let [count (-> (.split #"[?=]" query-string) second Integer/parseInt)
@@ -152,7 +140,7 @@
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
                (.close ^java.io.Closeable @browser-server)
-               (catch Exception e)))})
+               (catch Exception _)))})
 
 (defn print-vals [& args]
   (apply prn args)
@@ -215,18 +203,17 @@
 
 (deftest test-response-formats
   (with-handler basic-handler
-    (doseq [[index [path result]] (map-indexed vector expected-results)]
-      (is
-        (= result
-          (bs/to-string
-            (:body
-              @(http-get (str "http://localhost:" port "/" path)))))))))
+    (doseq [[path result] expected-results]
+      (is (= result
+             (bs/to-string
+              (:body
+               @(http-get (str "http://localhost:" port "/" path)))))))))
 
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
-    (doseq [[index [path result]] (map-indexed vector expected-results)
+    (doseq [[path result] expected-results
             :let [resp @(http-get (str "http://localhost:" port "/" path)
-                          {:headers {:accept-encoding "gzip"}})
+                                  {:headers {:accept-encoding "gzip"}})
                   unzipped (try
                              (bs/to-string (GZIPInputStream. (:body resp)))
                              (catch ZipException _ nil))]]
@@ -237,7 +224,7 @@
 
 (deftest test-ssl-response-formats
   (with-handler-options basic-handler default-ssl-options
-    (doseq [[index [path result]] (map-indexed vector expected-results)]
+    (doseq [[path result] expected-results]
       (is
        (= result
           (bs/to-string
@@ -297,13 +284,13 @@
         deref))))
 
 (deftest test-overly-long-url
-  (let [long-url (apply str "http://localhost:" port  "/" (repeat 1e4 "a"))]
+  (let [long-url (apply str "http://localhost:" port  "/" (repeat (long 1e4) "a"))]
     (with-handler basic-handler
       (is (= 414 (:status @(http-get long-url)))))))
 
 (deftest test-overly-long-header
   (let [url (str "http://localhost:" port)
-        long-header-value (apply str (repeat 1e5 "a"))
+        long-header-value (apply str (repeat (long 1e5) "a"))
         opts {:headers {"X-Long" long-header-value}}]
     (with-handler basic-handler
       (is (= 431 (:status @(http-get url opts)))))))
@@ -436,10 +423,6 @@
          (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
            (is (= http/default-response-executor (.executor rsp))))))))
 
-(defn echo-handler [req]
-  {:status 200
-   :body (:body req)})
-
 (deftest test-trace-request-omitted-body
   (with-handler echo-handler
     (is (= "" (-> @(http/trace (str "http://localhost:" port) {:body "REQUEST"})
@@ -496,7 +479,7 @@
   []
   (let [body (s/stream 10)]
     (-> (d/loop [cnt 0]
-          (t/in 50
+          (t/in 50.0
                 (fn []
                   (d/chain' (s/put! body (str cnt))
                             (fn [_]
@@ -533,14 +516,13 @@
 
 (deftest test-large-responses
   (with-handler basic-handler
-    (let [pool (http/connection-pool {:connection-options {:response-buffer-size 16}})]
-      (dotimes [i 1 #_1e6]
-        #_(when (zero? (rem i 1e2))
-            (prn i))
-        (-> @(http/get (str "http://localhost:" port "/big")
-               {:as :byte-array})
+    (dotimes [_ 1 #_1e6]
+      #_(when (zero? (rem i 1e2))
+          (prn i))
+      (-> @(http/get (str "http://localhost:" port "/big")
+                     {:as :byte-array})
           :body
-          count)))))
+          count))))
 
 ;;;
 
