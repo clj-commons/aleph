@@ -211,7 +211,7 @@
 (defn exception-handler [ctx ex]
   (cond
     ;; do not need to log an entire stack trace when SSL handshake failed
-    (http/ssl-handshake-error? ex)
+    (netty/ssl-handshake-error? ex)
     (log/warn "SSL handshake failure:"
               (.getMessage ^Throwable (.getCause ^Throwable ex)))
 

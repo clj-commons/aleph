@@ -108,7 +108,7 @@
     (s/put! response-stream ex)
 
     ;; when SSL handshake failed
-    (http/ssl-handshake-error? ex)
+    (netty/ssl-handshake-error? ex)
     (let [^Throwable handshake-error (.getCause ^Throwable ex)]
       (s/put! response-stream handshake-error))
 
