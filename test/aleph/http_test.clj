@@ -15,7 +15,7 @@
   (:import
    (aleph.utils ConnectionTimeoutException RequestTimeoutException)
    (io.netty.channel ChannelHandlerContext ChannelOutboundHandlerAdapter ChannelPipeline ChannelPromise)
-   (io.netty.handler.codec.http HttpMessage)
+   (io.netty.handler.codec.http HttpMessage HttpObjectAggregator)
    (java.io File)
    (java.util.concurrent TimeoutException)
    (java.util.zip GZIPInputStream ZipException)))
@@ -570,3 +570,41 @@
                                       (.write ctx msg p)))))})
       (let [resp @(http-get (str "http://localhost:" port "/string"))]
         (is (= test-header-val (get (:headers resp) test-header-name)))))))
+
+(defn add-http-object-aggregator [^ChannelPipeline pipeline]
+  (let [max-content-length 5]
+    (.addBefore pipeline
+                "request-handler"
+                "http-object-aggregator"
+                (HttpObjectAggregator. max-content-length))))
+
+(deftest test-http-object-aggregator-support
+  (with-server (http/start-server
+                basic-handler
+                {:port port
+                 :pipeline-transform add-http-object-aggregator})
+    (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                         {:body "hello"})]
+      (is (= "hello" (bs/to-string (:body rsp))))
+      (is (= 200 (:status rsp))))
+
+    (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                         {:body "hello, world!"})]
+      (is (= 413 (:status rsp)))
+      (is (empty? (bs/to-string (:body rsp)))))))
+
+(deftest test-http-object-aggregator-raw-stream-support
+  (with-server (http/start-server
+                basic-handler
+                {:port port
+                 :raw-stream? true
+                 :pipeline-transform add-http-object-aggregator})
+    (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                         {:body "hello"})]
+      (is (= "hello" (bs/to-string (:body rsp))))
+      (is (= 200 (:status rsp))))
+
+    (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                         {:body "hello, world!"})]
+      (is (= 413 (:status rsp)))
+      (is (empty? (bs/to-string (:body rsp)))))))
