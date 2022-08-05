@@ -14,6 +14,7 @@
                  [potemkin "0.4.5"]
                  [io.netty/netty-transport ~netty-version]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-x86_64"]
+                 [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-aarch_64"]
                  [io.netty/netty-codec ~netty-version]
                  [io.netty/netty-codec-http ~netty-version]
                  [io.netty/netty-handler ~netty-version]
