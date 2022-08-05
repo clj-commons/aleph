@@ -83,6 +83,7 @@
     [java.security PrivateKey]
     [javax.net.ssl
      SSLHandshakeException
+     TrustManager
      TrustManagerFactory]))
 
 ;;;
@@ -744,6 +745,8 @@
           (.trustManager builder ^File trust-store)
           (instance? InputStream trust-store)
           (.trustManager builder ^InputStream trust-store)
+          (instance? TrustManager trust-store)
+          (.trustManager builder ^TrustManager trust-store)
           (instance? TrustManagerFactory trust-store)
           (.trustManager builder ^TrustManagerFactory trust-store)
           (instance? cert-array-class trust-store)
@@ -763,7 +766,7 @@
      | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
      | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
      | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store` | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `trust-store` | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
      | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
      | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
      | `protocols` | a sequence of strings, the TLS protocol versions to enable.
@@ -845,7 +848,7 @@
      | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
      | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
      | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `trust-store` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
      | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
      | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
      | `protocols` | a sequence of strings, the TLS protocol versions to enable.
