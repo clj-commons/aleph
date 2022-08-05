@@ -34,15 +34,17 @@
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
    | `broadcast?` | if true, all UDP datagrams are broadcast.
    | `bootstrap-transform` | a function which takes the Netty `Bootstrap` object, and makes any desired changes before it's bound to a socket.
-   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `epoll?` | if `true`, uses `epoll`, defaults to `false`"
   [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform epoll?]
     :or {epoll? false
          broadcast? false
          raw-stream? false
          bootstrap-transform identity}}]
+  (when epoll?
+    (netty/ensure-epoll-available!))
   (let [in (atom nil)
         d (d/deferred)
-        epoll? (and epoll? (netty/epoll-available?))
         g (if epoll?
             @netty/epoll-client-group
             @netty/nio-client-group)
