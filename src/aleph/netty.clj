@@ -81,7 +81,9 @@
      LogLevel]
     [java.security.cert X509Certificate]
     [java.security PrivateKey]
-    [javax.net.ssl SSLHandshakeException]))
+    [javax.net.ssl
+     SSLHandshakeException
+     TrustManagerFactory]))
 
 ;;;
 
@@ -730,26 +732,29 @@
 
 ;;;
 
-(defn coerce-ssl-provider [provider]
+(defn coerce-ssl-provider ^SslProvider [provider]
   (case provider
     :jdk SslProvider/JDK
     :openssl SslProvider/OPENSSL
     :openssl-refcnt SslProvider/OPENSSL_REFCNT))
 
-(set! *warn-on-reflection* false)
-
 (let [cert-array-class (class (into-array X509Certificate []))]
-  (defn- check-ssl-args! [private-key certificate-chain]
-    (when-not (or
-               (and (instance? File private-key)
-                    (instance? File certificate-chain))
-               (and (instance? InputStream private-key)
-                    (instance? InputStream certificate-chain))
-               (and (instance? PrivateKey private-key)
-                    (instance? cert-array-class certificate-chain)))
-      (throw
-       (IllegalArgumentException.
-        "ssl context arguments invalid"))))
+  (defn- add-ssl-trust-manager! ^SslContextBuilder [^SslContextBuilder builder trust-store]
+    (cond (instance? File trust-store)
+          (.trustManager builder ^File trust-store)
+          (instance? InputStream trust-store)
+          (.trustManager builder ^InputStream trust-store)
+          (instance? TrustManagerFactory trust-store)
+          (.trustManager builder ^TrustManagerFactory trust-store)
+          (instance? cert-array-class trust-store)
+          (.trustManager builder ^"[Ljava.security.cert.X509Certificate;" trust-store)
+          (sequential? trust-store)
+          (let [^"[Ljava.security.cert.X509Certificate;" trust-store' (into-array X509Certificate trust-store)]
+            (.trustManager builder trust-store'))
+          :else
+          (throw
+           (IllegalArgumentException.
+            "ssl context arguments invalid"))))
 
   (defn ssl-client-context
     "Creates a new client SSL context.
@@ -767,50 +772,69 @@
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
     ([] (ssl-client-context {}))
     ([{:keys [private-key
-              private-key-password
+              ^String private-key-password
               certificate-chain
               trust-store
               ssl-provider
-              ciphers
+              ^Iterable ciphers
               protocols
-              session-cache-size
-              session-timeout]}]
-     (let [^SslContextBuilder builder (SslContextBuilder/forClient)
-           certificate-chain' (if-not (sequential? certificate-chain)
-                                certificate-chain
-                                (into-array X509Certificate certificate-chain))]
-       (when (and private-key certificate-chain')
-         (check-ssl-args! private-key certificate-chain')
-         (if (instance? cert-array-class certificate-chain')
-           (.keyManager builder
-                        private-key
-                        private-key-password
-                        certificate-chain')
-           (.keyManager builder
-                        certificate-chain'
-                        private-key
-                        private-key-password)))
+              ^long session-cache-size
+              ^long session-timeout]}]
+     (let [^SslContextBuilder
+           builder (SslContextBuilder/forClient)
 
-       (cond-> builder
-         (some? trust-store)
-         (.trustManager (if-not (sequential? trust-store)
-                          trust-store
-                          (into-array X509Certificate trust-store)))
+           ^SslContextBuilder
+           builder (if (or private-key certificate-chain)
+                     (cond (and (instance? File private-key)
+                                (instance? File certificate-chain))
+                           (.keyManager builder
+                                        ^File certificate-chain
+                                        ^File private-key
+                                        private-key-password)
+                           (and (instance? InputStream private-key)
+                                (instance? InputStream certificate-chain))
+                           (.keyManager builder
+                                        ^InputStream certificate-chain
+                                        ^InputStream private-key
+                                        private-key-password)
+                           (and (instance? PrivateKey private-key)
+                                (instance? cert-array-class certificate-chain))
+                           (.keyManager builder
+                                        ^PrivateKey private-key
+                                        private-key-password
+                                        ^"[Ljava.security.cert.X509Certificate;" certificate-chain)
+                           (and (instance? PrivateKey private-key)
+                                (sequential? certificate-chain))
+                           (let [^"[Ljava.security.cert.X509Certificate;" certificate-chain' (into-array X509Certificate certificate-chain)]
+                             (.keyManager builder
+                                          ^PrivateKey private-key
+                                          private-key-password
+                                          certificate-chain'))
+                           :else
+                           (throw
+                            (IllegalArgumentException.
+                             "ssl context arguments invalid")))
+                     builder)
 
-         (some? ssl-provider)
-         (.provider (coerce-ssl-provider ssl-provider))
+           ^SslContextBuilder
+           builder (cond-> builder
+                     (some? trust-store)
+                     (add-ssl-trust-manager! trust-store)
 
-         (some? ciphers)
-         (.ciphers ciphers)
+                     (some? ssl-provider)
+                     (.sslProvider (coerce-ssl-provider ssl-provider))
 
-         (some? protocols)
-         (.protocols (into-array String protocols))
+                     (some? ciphers)
+                     (.ciphers ciphers)
 
-         (some? session-cache-size)
-         (.sessionCacheSize session-cache-size)
+                     (some? protocols)
+                     (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
 
-         (some? session-timeout)
-         (.sessionTimeout session-timeout))
+                     (some? session-cache-size)
+                     (.sessionCacheSize session-cache-size)
+
+                     (some? session-timeout)
+                     (.sessionTimeout session-timeout))]
 
        (.build builder))))
 
@@ -832,60 +856,74 @@
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
     ([] (ssl-server-context {}))
     ([{:keys [private-key
-              private-key-password
+              ^String private-key-password
               certificate-chain
               trust-store
               ssl-provider
-              ciphers
+              ^Iterable ciphers
               protocols
-              session-cache-size
-              session-timeout
+              ^long session-cache-size
+              ^long session-timeout
               start-tls
               client-auth]}]
-     (let [certificate-chain' (if-not (sequential? certificate-chain)
-                                certificate-chain
-                                (into-array X509Certificate certificate-chain))]
-       (check-ssl-args! private-key certificate-chain')
-       (let [^SslContextBuilder
-             b (cond-> (if (instance? cert-array-class certificate-chain')
-                         (SslContextBuilder/forServer private-key
-                                                      private-key-password
-                                                      certificate-chain')
-                         (SslContextBuilder/forServer certificate-chain'
-                                                      private-key
-                                                      private-key-password))
+     (let [^SslContextBuilder
+           b (cond (and (instance? File private-key)
+                        (instance? File certificate-chain))
+                   (SslContextBuilder/forServer ^File certificate-chain
+                                                ^File private-key
+                                                private-key-password)
+                   (and (instance? InputStream private-key)
+                        (instance? InputStream certificate-chain))
+                   (SslContextBuilder/forServer ^InputStream certificate-chain
+                                                ^InputStream private-key
+                                                private-key-password)
+                   (and (instance? PrivateKey private-key)
+                        (instance? cert-array-class certificate-chain))
+                   (SslContextBuilder/forServer ^PrivateKey private-key
+                                                private-key-password
+                                                ^"[Ljava.security.cert.X509Certificate;" certificate-chain)
+                   (and (instance? PrivateKey private-key)
+                        (sequential? certificate-chain))
+                   (let [^"[Ljava.security.cert.X509Certificate;" certificate-chain' (into-array X509Certificate certificate-chain)]
+                     (SslContextBuilder/forServer ^PrivateKey private-key
+                                                  private-key-password
+                                                  certificate-chain'))
+                   :else
+                   (throw
+                    (IllegalArgumentException.
+                     "ssl context arguments invalid")))
 
-                 (some? trust-store)
-                 (.trustManager (if-not (sequential? trust-store)
-                                  trust-store
-                                  (into-array X509Certificate trust-store)))
+           ^SslContextBuilder
+           b (cond-> b
+               (some? trust-store)
+               (add-ssl-trust-manager! trust-store)
 
-                 (some? ssl-provider)
-                 (.provider (coerce-ssl-provider ssl-provider))
+               (some? ssl-provider)
+               (.sslProvider (coerce-ssl-provider ssl-provider))
 
-                 (some? ciphers)
-                 (.ciphers ciphers)
+               (some? ciphers)
+               (.ciphers ciphers)
 
-                 (some? protocols)
-                 (.protocols (into-array String protocols))
 
-                 (some? session-cache-size)
-                 (.sessionCacheSize session-cache-size)
+               (some? protocols)
+               (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
 
-                 (some? session-timeout)
-                 (.sessionTimeout session-timeout)
 
-                 (some? start-tls)
-                 (.startTls (boolean start-tls))
+               (some? session-cache-size)
+               (.sessionCacheSize session-cache-size)
 
-                 (some? client-auth)
-                 (.clientAuth (case client-auth
-                                :none ClientAuth/NONE
-                                :optional ClientAuth/OPTIONAL
-                                :require ClientAuth/REQUIRE)))]
-         (.build b))))))
+               (some? session-timeout)
+               (.sessionTimeout session-timeout)
 
-(set! *warn-on-reflection* true)
+               (some? start-tls)
+               (.startTls (boolean start-tls))
+
+               (some? client-auth)
+               (.clientAuth (case client-auth
+                              :none ClientAuth/NONE
+                              :optional ClientAuth/OPTIONAL
+                              :require ClientAuth/REQUIRE)))]
+       (.build b)))))
 
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
