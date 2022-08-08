@@ -798,6 +798,13 @@
 (defn epoll-available? []
   (Epoll/isAvailable))
 
+(defn ensure-epoll-available! []
+  (when-let [cause (Epoll/unavailabilityCause)]
+    (throw (IllegalArgumentException. (str "Epoll transport requested but implementation not available. "
+                                           "See https://netty.io/wiki/native-transports.html on how to add the necessary "
+                                           "dependency for your platform.")
+                                      cause))))
+
 (defn get-default-event-loop-threads
   "Determines the default number of threads to use for a Netty EventLoopGroup.
    This mimics the default used by Netty as of version 4.1."
@@ -880,7 +887,7 @@ initialize an DnsAddressResolverGroup instance.
    | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
    | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`"
+   | `epoll?` | if `true`, uses `epoll`, defaults to `false`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -907,8 +914,10 @@ initialize an DnsAddressResolverGroup instance.
          decode-idn? true
          recursion-desired? true
          epoll? false}}]
+  (when epoll?
+    (ensure-epoll-available!))
   (let [^Class
-        channel-type (if (and epoll? (epoll-available?))
+        channel-type (if epoll?
                        EpollDatagramChannel
                        NioDatagramChannel)]
     (cond-> (doto (DnsNameResolverBuilder.)
@@ -965,8 +974,10 @@ initialize an DnsAddressResolverGroup instance.
     ^SocketAddress local-address
     epoll?
     name-resolver]
+   (when epoll?
+     (ensure-epoll-available!))
     (let [^Class
-          channel (if (and epoll? (epoll-available?))
+          channel (if epoll?
                     EpollSocketChannel
                     NioSocketChannel)
 
@@ -980,7 +991,7 @@ initialize an DnsAddressResolverGroup instance.
                                (pipeline-builder p))
                              pipeline-builder)]
       (try
-        (let [client-group (if (and epoll? (epoll-available?))
+        (let [client-group (if epoll?
                              @epoll-client-group
                              @nio-client-group)
               resolver' (when (some? name-resolver)
@@ -1013,25 +1024,27 @@ initialize an DnsAddressResolverGroup instance.
    on-close
    ^SocketAddress socket-address
    epoll?]
+  (when epoll?
+    (ensure-epoll-available!))
   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
         num-threads    (* 2 num-cores)
         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
         closed?        (atom false)
 
         ^EventLoopGroup group
-        (if (and epoll? (epoll-available?))
+        (if epoll?
           (EpollEventLoopGroup. num-threads thread-factory)
           (NioEventLoopGroup. num-threads thread-factory))
 
         ^Class channel
-        (if (and epoll? (epoll-available?))
+        (if epoll?
           EpollServerSocketChannel
           NioServerSocketChannel)
 
         ;; todo(kachayev): this one should be reimplemented after
         ;;                 KQueue transport is merged into master
         transport
-        (if (and epoll? (epoll-available?)) :epoll :nio)
+        (if epoll? :epoll :nio)
 
         pipeline-builder
         (if ssl-context

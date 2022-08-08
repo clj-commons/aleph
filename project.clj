@@ -1,34 +1,26 @@
 (def netty-version "4.1.74.Final")
 
-(def netty-modules
-  '[transport
-    transport-native-epoll
-    codec
-    codec-http
-    handler
-    handler-proxy
-    resolver
-    resolver-dns])
-
-(def other-dependencies
-  '[[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
-    [org.clj-commons/dirigiste "1.0.1"]
-    [manifold "0.2.4"]
-    [org.clj-commons/byte-streams "0.3.1"]
-    [org.clj-commons/primitive-math "1.0.0"]
-    [potemkin "0.4.5"]])
-
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.5.0")
   :description "A framework for asynchronous communication"
   :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
                  "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
-  :dependencies ~(concat
-                   other-dependencies
-                   (map
-                     #(vector (symbol "io.netty" (str "netty-" %)) netty-version)
-                     netty-modules))
+  :dependencies [[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
+                 [org.clj-commons/dirigiste "1.0.1"]
+                 [manifold "0.2.4"]
+                 [org.clj-commons/byte-streams "0.3.1"]
+                 [org.clj-commons/primitive-math "1.0.0"]
+                 [potemkin "0.4.5"]
+                 [io.netty/netty-transport ~netty-version]
+                 [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-x86_64"]
+                 [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-aarch_64"]
+                 [io.netty/netty-codec ~netty-version]
+                 [io.netty/netty-codec-http ~netty-version]
+                 [io.netty/netty-handler ~netty-version]
+                 [io.netty/netty-handler-proxy ~netty-version]
+                 [io.netty/netty-resolver ~netty-version]
+                 [io.netty/netty-resolver-dns ~netty-version]]
   :profiles {:dev  {:dependencies [[org.clojure/clojure "1.10.3"]
                                    [criterium "0.4.6"]
                                    [cheshire "5.10.0"]

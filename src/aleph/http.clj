@@ -46,7 +46,7 @@
    | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `8192`
    | `max-header-size` | the maximum characters that can be in a single header entry of a request, defaults to `8192`
    | `max-chunk-size` | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `epoll?` | if `true`, uses `epoll`, defaults to `false`.
    | `compression?` | when `true` enables http compression, defaults to `false`
    | `compression-level` | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
    | `idle-timeout` | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
@@ -115,7 +115,7 @@
    | `response-buffer-size` | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?` | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
    | `idle-timeout` | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `epoll?` | if `true`, uses `epoll`, defaults to `false`
    | `raw-stream?` | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
    | `max-header-size` | the maximum characters that can be in a single header entry of a response, defaults to `65536`
@@ -216,7 +216,7 @@
    | `max-frame-payload` | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size` | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
-   | `epoll?` | if `true`, uses `epoll` when available, defaults to `false`
+   | `epoll?` | if `true`, uses `epoll`, defaults to `false`
    | `heartbeats` | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([url]
     (websocket-client url nil))
