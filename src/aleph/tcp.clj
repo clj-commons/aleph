@@ -42,8 +42,14 @@
 
       :exception-caught
       ([_ ctx ex]
-        (when-not (instance? IOException ex)
-          (log/warn ex "error in TCP server")))
+       (cond
+         ;; do not need to log an entire stack trace when SSL handshake failed
+         (netty/ssl-handshake-error? ex)
+         (log/warn "SSL handshake failure:"
+                   (.getMessage ^Throwable (.getCause ^Throwable ex)))
+
+         (not (instance? IOException ex))
+         (log/warn ex "error in TCP server")))
 
       :channel-inactive
       ([_ ctx]
@@ -115,7 +121,11 @@
        :exception-caught
        ([_ ctx ex]
          (when-not (d/error! d ex)
-           (log/warn ex "error in TCP client")))
+           (if (netty/ssl-handshake-error? ex)
+             ;; do not need to log an entire stack trace when SSL handshake failed
+             (log/warn "SSL handshake failure:"
+                       (.getMessage ^Throwable (.getCause ^Throwable ex)))
+             (log/warn ex "error in TCP client"))))
 
        :channel-inactive
        ([_ ctx]

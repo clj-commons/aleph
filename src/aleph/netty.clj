@@ -37,6 +37,7 @@
      SslContext
      SslContextBuilder
      SslHandler]
+    [io.netty.handler.codec DecoderException]
     [io.netty.handler.ssl.util
      SelfSignedCertificate InsecureTrustManagerFactory]
     [io.netty.resolver
@@ -76,7 +77,8 @@
      LoggingHandler
      LogLevel]
     [java.security.cert X509Certificate]
-    [java.security PrivateKey]))
+    [java.security PrivateKey]
+    [javax.net.ssl SSLHandshakeException]))
 
 ;;;
 
@@ -789,6 +791,11 @@
           ^SslHandler (.get SslHandler)
           .engine
           .getSession))
+
+(defn ssl-handshake-error? [^Throwable ex]
+  (and (instance? DecoderException ex)
+       (instance? SSLHandshakeException (.getCause ex))))
+
 ;;;
 
 (defprotocol AlephServer
