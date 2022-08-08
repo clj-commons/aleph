@@ -16,14 +16,8 @@
 
 (defn ssl-echo-handler [ssl-session]
   (fn [s c]
-    (s/connect
-     ;; note we need to capture the SSL session *after* we start
-     ;; reading data. Otherwise, the session might not be set up yet.
-     (s/map (fn [msg]
-              (reset! ssl-session (:ssl-session c))
-              msg)
-            s)
-     s)))
+    (reset! ssl-session (:ssl-session c))
+    (s/connect s s)))
 
 (deftest test-ssl-echo
   (let [ssl-session (atom nil)]
@@ -38,3 +32,18 @@
         (is (some? @ssl-session) "SSL session should be defined")
         (is (= (.getSubjectDN ^X509Certificate ssl/client-cert)
                (.getSubjectDN ^X509Certificate (first (.getPeerCertificates @ssl-session)))))))))
+
+(deftest test-failed-ssl-handshake
+  (let [ssl-session (atom nil)]
+    (with-server (tcp/start-server (ssl-echo-handler ssl-session)
+                                   {:port 10001
+                                    :ssl-context ssl/server-ssl-context})
+      (let [c @(tcp/client {:host "localhost"
+                            :port 10001
+                            :ssl-context (netty/ssl-client-context
+                                          ;; Note the intentionally wrong private key here
+                                          {:private-key ssl/server-key
+                                           :certificate-chain (into-array X509Certificate [ssl/client-cert])
+                                           :trust-store (into-array X509Certificate [ssl/ca-cert])})})]
+        (is (nil? @(s/take! c)))
+        (is (nil? @ssl-session) "SSL session should be undefined")))))

@@ -2,6 +2,7 @@
   (:require
    [aleph.flow :as flow]
    [aleph.http :as http]
+   [aleph.http.core :as http.core]
    [aleph.netty :as netty]
    [aleph.ssl :as ssl]
    [aleph.tcp :as tcp]
@@ -18,7 +19,8 @@
    (io.netty.handler.codec.http HttpMessage)
    (java.io File)
    (java.util.concurrent TimeoutException)
-   (java.util.zip GZIPInputStream ZipException)))
+   (java.util.zip GZIPInputStream ZipException)
+   (javax.net.ssl SSLSession)))
 
 ;;;
 
@@ -259,6 +261,35 @@
               (:body @(http-put client-url
                                 {:body (io/file "test/file.txt")
                                  :pool client-pool}))))))))
+
+(defn ssl-session-capture-handler [ssl-session-atom]
+  (fn [req]
+    (reset! ssl-session-atom (http.core/ring-request-ssl-session req))
+    {:status 200 :body "ok"}))
+
+(deftest test-ssl-session-access
+  (let [ssl-session (atom nil)]
+    (with-handler-options
+      (ssl-session-capture-handler ssl-session)
+      default-ssl-options
+      (is (= 200 (:status @(http-get (str "https://localhost:" port)))))
+      (is (some? @ssl-session))
+      (when-let [^SSLSession s @ssl-session]
+        (is (.isValid s))
+        (is (not (str/includes? "NULL" (.getCipherSuite s))))))))
+
+(deftest test-ssl-with-plain-client-request
+  (let [ssl-session (atom nil)]
+    (with-handler-options
+      (ssl-session-capture-handler ssl-session)
+      default-ssl-options
+      ;; Note the intentionally wrong "http" scheme here
+      (is (some-> (http-get (str "http://localhost:" port))
+                  (d/catch identity)
+                  deref
+                  ex-message
+                  (str/includes? "connection was closed")))
+      (is (nil? @ssl-session)))))
 
 (deftest test-invalid-body
   (let [client-url (str "http://localhost:" port)]

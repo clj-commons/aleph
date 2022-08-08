@@ -13,7 +13,10 @@
     [io.netty.channel
      Channel
      ChannelHandler
-     ChannelPipeline]))
+     ChannelHandlerContext
+     ChannelPipeline]
+    [io.netty.handler.ssl
+     SslHandler]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -25,7 +28,16 @@
 
 (defn- ^ChannelHandler server-channel-handler
   [handler {:keys [raw-stream?] :as options}]
-  (let [in (atom nil)]
+  (let [in (atom nil)
+        call-handler (fn [^ChannelHandlerContext ctx]
+                       (let [ch (.channel ctx)]
+                         (handler
+                          (doto
+                              (s/splice
+                               (netty/sink ch true netty/to-byte-buf)
+                               (reset! in (netty/source ch)))
+                            (reset-meta! {:aleph/channel ch}))
+                          (->TcpConnection ch))))]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -40,15 +52,20 @@
 
       :channel-active
       ([_ ctx]
-        (let [ch (.channel ctx)]
-          (handler
-            (doto
-              (s/splice
-                (netty/sink ch true netty/to-byte-buf)
-                (reset! in (netty/source ch)))
-              (reset-meta! {:aleph/channel ch}))
-            (->TcpConnection ch)))
-        (.fireChannelActive ctx))
+       (if-let [^SslHandler ssl-handler (-> ctx .pipeline (.get SslHandler))]
+         (-> ssl-handler
+             .handshakeFuture
+             netty/wrap-future
+             (d/on-realized (fn [_]
+                              (call-handler ctx))
+                            ;; No need to handle errors here since
+                            ;; the SSL handler will terminate the
+                            ;; whole pipeline by throwing a
+                            ;; `javax.net.ssl.SSLHandshakeException`
+                            ;; in this case anyway.
+                            (fn [_])))
+         (call-handler ctx))
+       (.fireChannelActive ctx))
 
       :channel-read
       ([_ ctx msg]
@@ -65,7 +82,7 @@
    |:---|:-----
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
