@@ -469,7 +469,7 @@
   (with-handler invalid-handler
     (let [{:keys [body status]} @(http-get (apply str "http://localhost:" port  "/invalid"))]
       (is (= 500 status))
-      (is (re-find #"java\.lang\.IllegalArgumentException: code: -100 \(expected: >= 0\)"
+      (is (re-find #"java\.lang\.IllegalArgumentException: code : -100 \(expected: >= 0\)"
                    (bs/to-string body)))))
   (testing "custom error handler"
     (with-server (http/start-server invalid-handler
