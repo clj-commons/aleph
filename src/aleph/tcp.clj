@@ -88,7 +88,7 @@
    |:---|:-----
    | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object. If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
+   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details). If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
@@ -164,7 +164,7 @@
    | `port` | the port of the server.
    | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
-   | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` to use. Defers to `ssl?` and `insecure?` configuration if omitted.
+   | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `insecure?` | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
