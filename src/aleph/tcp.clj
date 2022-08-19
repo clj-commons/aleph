@@ -62,8 +62,12 @@
          (-> ssl-handler
              .handshakeFuture
              netty/wrap-future
-             (d/on-realized (fn [_]
-                              (call-handler ctx))
+             (d/on-realized (fn [ok?]
+                              ;; See
+                              ;; https://github.com/clj-commons/aleph/issues/618
+                              ;; for why this conditional is necessary
+                              (when ok?
+                                (call-handler ctx)))
                             ;; No need to handle errors here since
                             ;; the SSL handler will terminate the
                             ;; whole pipeline by throwing a
