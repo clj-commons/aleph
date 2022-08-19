@@ -65,11 +65,11 @@
 (deftest test-connection-close-during-ssl-handshake
   (let [ssl-session (atom nil)
         connection-closed (promise)
-        notify-connection-closed (netty/channel-handler
-                                  :channel-inactive
-                                  ([_ ctx]
-                                   (deliver connection-closed true)
-                                   (.fireChannelInactive ctx)))]
+        notify-connection-closed #_:clj-kondo/ignore (netty/channel-handler
+                                                      :channel-inactive
+                                                      ([_ ctx]
+                                                       (deliver connection-closed true)
+                                                       (.fireChannelInactive ctx)))]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
                                    {:port 10001
                                     :ssl-context ssl/server-ssl-context
