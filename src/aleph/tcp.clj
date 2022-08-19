@@ -53,8 +53,8 @@
 
       :channel-inactive
       ([_ ctx]
-        (s/close! @in)
-        (.fireChannelInactive ctx))
+       (some-> @in s/close!)
+       (.fireChannelInactive ctx))
 
       :channel-active
       ([_ ctx]
