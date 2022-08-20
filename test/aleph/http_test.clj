@@ -454,6 +454,23 @@
          (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
            (is (= http/default-response-executor (.executor rsp))))))))
 
+(deftest test-max-lifetime
+  (testing "with max-lifetime"
+    (let [pool   (http/connection-pool {:connection-options {:max-lifetime 200}})
+          get-fn (partial http-get (str "http://localhost:" port) {:pool pool})]
+     (with-handler hello-handler
+       (is (:aleph/keep-alive? @(get-fn)))
+       (Thread/sleep 300)
+       (is (not (:aleph/keep-alive? @(get-fn))))
+       (is (:aleph/keep-alive? @(get-fn))))))
+  (testing "without max-lifetime"
+    (let [get-fn (partial http-get (str "http://localhost:" port))]
+     (with-handler hello-handler
+       (is (:aleph/keep-alive? @(get-fn)))
+       (Thread/sleep 300)
+       (is (:aleph/keep-alive? @(get-fn)))
+       (is (:aleph/keep-alive? @(get-fn)))))))
+
 (deftest test-trace-request-omitted-body
   (with-handler echo-handler
     (is (= "" (-> @(http/trace (str "http://localhost:" port) {:body "REQUEST"})
