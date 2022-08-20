@@ -103,6 +103,8 @@
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
    | `dns-options` | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instance
    | `middleware` | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`
+   | `pool-builder-fn` | a one arity function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
+   | `pool-controller-builder-fn` | a zero arity function which returns a `io.aleph.dirigiste.IPool$Controller`.
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -136,9 +138,7 @@
    | `http-headers` | (HTTP proxy only) an optional map to set additional HTTP headers when establishing connection to the proxy server
    | `tunnel?` | (HTTP proxy only) if `true`, sends HTTP CONNECT to the proxy and waits for the 'HTTP/1.1 200 OK' response before sending any subsequent requests. Defaults to `false`. When using authorization or specifying additional headers uses tunneling disregarding this setting
    | `connection-timeout` | timeout in milliseconds for the tunnel become established, defaults to 60 seconds, setting is ignored when tunneling is not used."
-  [{:keys [pool-builder-fn
-           pool-controller-builder-fn
-           connections-per-host
+  [{:keys [connections-per-host
            total-connections
            target-utilization
            connection-options
@@ -146,7 +146,9 @@
            stats-callback
            control-period
            middleware
-           max-queue-size]
+           max-queue-size
+           pool-builder-fn
+           pool-controller-builder-fn]
     :or {connections-per-host 8
          total-connections 1024
          target-utilization 0.9
@@ -175,7 +177,7 @@
         create-pool-fn      (or pool-builder-fn
                                 flow/instrumented-pool)
         create-pool-ctrl-fn (or pool-controller-builder-fn
-                                #(Pools/utilizationController %1 %2 %3))
+                                #(Pools/utilizationController target-utilization connections-per-host total-connections))
         pool (create-pool-fn
               {:generate (fn [host]
                            (let [c (promise)
@@ -192,10 +194,7 @@
                                     client/close-connection))
                :control-period control-period
                :max-queue-size max-queue-size
-               :controller (create-pool-ctrl-fn
-                            target-utilization
-                            connections-per-host
-                            total-connections)
+               :controller (create-pool-ctrl-fn)
                :stats-callback stats-callback})]
     @(deliver p pool)))
 
