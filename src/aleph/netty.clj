@@ -240,19 +240,19 @@
 (defn wrap-future
   [^Future f]
   (when f
-    (if (.isSuccess f)
-      (d/success-deferred (.getNow f) nil)
-      (let [d (d/deferred nil)
-            ;; Ensure the same bindings are installed on the Netty thread (vars,
-            ;; classloader) than the thread registering the
-            ;; `operationComplete` callback.
-            bound-operation-complete (bound-fn* operation-complete)]
-        (.addListener f
-          (reify GenericFutureListener
-            (operationComplete [_ _]
-              (ensure-dynamic-classloader)
-              (bound-operation-complete f d))))
-        d))))
+    (let [d (d/deferred nil)]
+      (if (.isDone f)
+        (operation-complete f d)
+        (let [;; Ensure the same bindings are installed on the Netty thread (vars,
+              ;; classloader) than the thread registering the
+              ;; `operationComplete` callback.
+              bound-operation-complete (bound-fn* operation-complete)]
+          (.addListener f
+                        (reify GenericFutureListener
+                          (operationComplete [_ _]
+                            (ensure-dynamic-classloader)
+                            (bound-operation-complete f d))))))
+      d)))
 
 (defn allocate [x]
   (if (instance? Channel x)
