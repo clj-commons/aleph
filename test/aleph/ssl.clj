@@ -2,7 +2,6 @@
   (:require
    [aleph.netty :as netty])
   (:import
-   (io.netty.handler.ssl ClientAuth SslContextBuilder)
    (java.io ByteArrayInputStream)
    (java.security KeyFactory PrivateKey)
    (java.security.cert CertificateFactory X509Certificate)

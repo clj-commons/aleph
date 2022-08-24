@@ -61,3 +61,22 @@
                                            :trust-store (into-array X509Certificate [ssl/ca-cert])})})]
         (is (nil? @(s/take! c)))
         (is (nil? @ssl-session) "SSL session should be undefined")))))
+
+(deftest test-connection-close-during-ssl-handshake
+  (let [ssl-session (atom nil)
+        connection-closed (promise)
+        notify-connection-closed #_:clj-kondo/ignore (netty/channel-handler
+                                                      :channel-inactive
+                                                      ([_ ctx]
+                                                       (deliver connection-closed true)
+                                                       (.fireChannelInactive ctx)))]
+    (with-server (tcp/start-server (ssl-echo-handler ssl-session)
+                                   {:port 10001
+                                    :ssl-context ssl/server-ssl-context
+                                    :pipeline-transform (fn [p]
+                                                          (.addLast p notify-connection-closed))})
+      (let [c @(tcp/client {:host "localhost"
+                            :port 10001})]
+        (s/close! c)
+        (is (deref connection-closed 1000 false))
+        (is (nil? @ssl-session) "SSL session should be undefined")))))
