@@ -243,10 +243,10 @@
     (let [d (d/deferred nil)]
       (if (.isDone f)
         (operation-complete f d)
-        (let [;; Ensure the same bindings are installed on the Netty thread (vars,
-              ;; classloader) than the thread registering the
-              ;; `operationComplete` callback.
-              bound-operation-complete (bound-fn* operation-complete)]
+        ;; Ensure the same bindings are installed on the Netty thread (vars,
+        ;; classloader) than the thread registering the
+        ;; `operationComplete` callback.
+        (let [bound-operation-complete (bound-fn* operation-complete)]
           (.addListener f
                         (reify GenericFutureListener
                           (operationComplete [_ _]
