@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+lein with-profiles -default pprint | lein with-profiles +lein-to-deps run -m aleph.lein-to-deps/run

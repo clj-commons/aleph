@@ -28,6 +28,7 @@
                                    [com.cognitect/transit-clj "1.0.324"]
                                    [spootnik/signal "0.2.4"]
                                    [me.mourjo/dynamic-redef "0.1.0"]]}
+             :lein-to-deps {:source-paths ["deps"]}
              ;; This is for self-generating certs for testing ONLY:
              :test {:dependencies [[org.bouncycastle/bcprov-jdk15on "1.69"]
                                    [org.bouncycastle/bcpkix-jdk15on "1.69"]]
@@ -43,6 +44,7 @@
   :plugins [[lein-codox "0.10.7"]
             [lein-jammin "0.1.1"]
             [lein-marginalia "0.9.1"]
+            [lein-pprint "1.3.2"]
             [ztellman/lein-cljfmt "0.1.10"]]
   :java-source-paths ["src/aleph/utils"]
   :cljfmt {:indents {#".*" [[:inner 0]]}}
