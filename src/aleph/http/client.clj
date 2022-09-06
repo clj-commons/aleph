@@ -680,9 +680,12 @@
 
        :channel-active
        ([_ ctx]
-        (let [ch (.channel ctx)]
-          (reset! in (netty/buffered-source ch (constantly 1) 16))
-          (.handshake handshaker ch))
+        (-> (.channel ctx)
+            netty/maybe-ssl-handshake-future
+            (d/on-realized (fn [ch]
+                             (reset! in (netty/buffered-source ch (constantly 1) 16))
+                             (.handshake handshaker ch))
+                           netty/ignore-ssl-handshake-errors))
         (.fireChannelActive ctx))
 
        :user-event-triggered

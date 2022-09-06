@@ -28,16 +28,7 @@
 
 (defn- ^ChannelHandler server-channel-handler
   [handler {:keys [raw-stream?] :as options}]
-  (let [in (atom nil)
-        call-handler (fn [^ChannelHandlerContext ctx]
-                       (let [ch (.channel ctx)]
-                         (handler
-                          (doto
-                              (s/splice
-                               (netty/sink ch true netty/to-byte-buf)
-                               (reset! in (netty/source ch)))
-                            (reset-meta! {:aleph/channel ch}))
-                          (->TcpConnection ch))))]
+  (let [in (atom nil)]
     (netty/channel-inbound-handler
 
       :exception-caught
@@ -58,19 +49,16 @@
 
       :channel-active
       ([_ ctx]
-       (if-let [^SslHandler ssl-handler (-> ctx .pipeline (.get SslHandler))]
-         (-> ssl-handler
-             .handshakeFuture
-             netty/wrap-future
-             (d/on-realized (fn [_]
-                              (call-handler ctx))
-                            ;; No need to handle errors here since
-                            ;; the SSL handler will terminate the
-                            ;; whole pipeline by throwing a
-                            ;; `javax.net.ssl.SSLHandshakeException`
-                            ;; in this case anyway.
-                            (fn [_])))
-         (call-handler ctx))
+       (-> (.channel ctx)
+           netty/maybe-ssl-handshake-future
+           (d/on-realized (fn [ch]
+                            (handler
+                             (doto (s/splice
+                                    (netty/sink ch true netty/to-byte-buf)
+                                    (reset! in (netty/source ch)))
+                               (reset-meta! {:aleph/channel ch}))
+                             (->TcpConnection ch)))
+                          netty/ignore-ssl-handshake-errors))
        (.fireChannelActive ctx))
 
       :channel-read
@@ -129,19 +117,20 @@
 
        :channel-inactive
        ([_ ctx]
-         (s/close! @in)
+         (some-> @in s/close!)
          (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
-         (let [ch (.channel ctx)]
-           (d/success! d
-             (doto
-               (s/splice
-                 (netty/sink ch true netty/to-byte-buf)
-                 (reset! in (netty/source ch)))
-               (reset-meta! {:aleph/channel ch}))))
-         (.fireChannelActive ctx))
+        (-> (.channel ctx)
+            netty/maybe-ssl-handshake-future
+            (d/on-realized (fn [ch]
+                             (d/success! d (doto (s/splice
+                                                  (netty/sink ch true netty/to-byte-buf)
+                                                  (reset! in (netty/source ch)))
+                                             (reset-meta! {:aleph/channel ch}))))
+                           netty/ignore-ssl-handshake-errors))
+        (.fireChannelActive ctx))
 
        :channel-read
        ([_ ctx msg]
