@@ -1,6 +1,18 @@
-### Unreleased
+### 0.5.1
 
+* Fix bug treating a `ClosedChannelException` during an SSL/TLS handshake as a success deferred
+* Bump Netty to 4.1.79.Final
+* Support replacing Dirigiste with custom pools
+* Improve options for setting up SSL/TLS. Now accepts a map. See `ssl-server-context`.
+* Support custom error handlers
+* Support HttpObjectAggregator on the pipeline
+* Log less info on SSL/TLS handshake failure
+* If epoll is missing, setting `epoll? true` will now be an error instead of automatically downgrading
 * Make TCP+SSL server call handler only after successful SSL handshake
+* Clarified `idle-timeout` docstring
+
+Contributions by Arnaud Geiser, Moritz Heidkamp, Anthony Bondarenko, Alexey Kachayev, 
+Alexander Yakushev, Andrew Rudenko, and Matthew Davidson
 
 ### 0.5.0
 
@@ -10,7 +22,7 @@
 * Add missing type hint in websocket-server-handler
 * Correctly handle too large headers/URIs
 * Add doc for undocumented response-executor parameter
-* Minor bugfix for keep-alive? false
+* Minor bugfix for `keep-alive? false`
 * Fixed major memory leak when sending InputStreams
 * Fixed bug when sending empty files
 * Fix returned filename in multipart uploads for clj-http parity
@@ -29,9 +41,10 @@ Contributions by Arnaud Geiser, Moritz Heidkamp, Erik Assum, Ivar Refsdal, and M
 
 Contributions by (in alphabetical order):
 
-Erik Assum, Yoan Blanc, Reynald Borer, Michael Cameron, Jonathan Chen, Daniel Compton, Matthew Davidson, Rafal Dittwald, 
-Ganesh Gautam, Aaron Muir Hamilton, Moritz Heidkamp, Alexey Kachayev, Dominic Pearson, Matthew Phillips, Denis Shilov, 
-Zach Tellman, Mark Wardle, and Alexander Yakushev
+Erik Assum, Yoan Blanc, Reynald Borer, Michael Cameron, Jonathan Chen, Daniel Compton, 
+Matthew Davidson, Rafal Dittwald, Ganesh Gautam, Aaron Muir Hamilton, Moritz Heidkamp, 
+Alexey Kachayev, Dominic Pearson, Matthew Phillips, Denis Shilov, Zach Tellman, 
+Mark Wardle, and Alexander Yakushev
 
 #### 0.4.7-rc3
 
