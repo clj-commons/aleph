@@ -16,7 +16,7 @@
          (.close ^java.io.Closeable server#)))))
 
 (deftest test-echo
-  (let [s @(udp/socket {:port 10001, :epoll? true})]
+  (let [s @(udp/socket {:port 10001})]
     (s/put! s {:host "localhost", :port 10001, :message "foo"})
     (is (= "foo"
           (bs/to-string
