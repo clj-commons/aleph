@@ -123,6 +123,12 @@ Where incoming packets will have a `:message` that is a byte-array, which can be
 
 To learn more, [read the documentation](http://aleph.io/examples/literate.html).
 
+### Development
+
+Aleph uses [Leinigen](https://leiningen.org/) for managing dependencies, running REPLs and tests, and building the code.
+
+Minimal [`tools.deps`](https://github.com/clojure/tools.deps.alpha) support is available in the form of a `deps.edn` file which is generated from `project.clj`. It provides just enough to be able to use Aleph as a git or `:local/root` dependency. When committing changes to `project.clj`, run `deps/lein-to-deps` and commit the resulting changes, too.
+
 ### License
 
 Copyright © 2010-2020 Zachary Tellman
