@@ -13,6 +13,8 @@ Leiningen:
 deps.edn:
 ```clojure
 aleph/aleph {:mvn/version "0.5.0"}
+;; alternatively
+io.github.clj-commons/aleph {:git/sha "..."}
 ```
 
 ### HTTP
