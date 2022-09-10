@@ -6,9 +6,11 @@
    [aleph.tcp-test :refer [with-server]]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest is]]
+   [manifold.deferred :as d]
    [manifold.stream :as s])
   (:import
-   (java.security.cert X509Certificate)))
+   (java.security.cert X509Certificate)
+   (java.util.concurrent TimeoutException)))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -80,3 +82,26 @@
         (s/close! c)
         (is (deref connection-closed 1000 false))
         (is (nil? @ssl-session) "SSL session should be undefined")))))
+
+(deftest test-client-yields-stream-only-after-successful-handshake
+  (let [connection-active (promise)
+        continue-handshake (promise)
+        notify-connection-active #_:clj-kondo/ignore (netty/channel-inbound-handler
+                                                      :channel-active
+                                                      ([_ ctx]
+                                                       (deliver connection-active true)
+                                                       (when-not (deref continue-handshake 5000 false)
+                                                         (throw (TimeoutException.)))
+                                                       (.fireChannelActive ctx)))]
+    (with-server (tcp/start-server (fn [s _])
+                                   {:port 10001
+                                    :ssl-context ssl/server-ssl-context})
+      (let [c (tcp/client {:host "localhost"
+                           :port 10001
+                           :ssl-context ssl/client-ssl-context-opts
+                           :pipeline-transform (fn [p]
+                                                 (.addAfter p "handler" "notify-active" notify-connection-active))})]
+        (is (deref connection-active 1000 false))
+        (is (not (d/realized? c)))
+        (deliver continue-handshake true)
+        (is (deref c 1000 false))))))

@@ -1131,6 +1131,25 @@ initialize an DnsAddressResolverGroup instance.
   [dns-options]
   (DnsAddressResolverGroup. (dns-resolver-group-builder dns-options)))
 
+(defn ^:nodoc maybe-ssl-handshake-future
+  "Returns a deferred which resolves to the channel after a potential
+  SSL handshake has completed successfully. If no `SslHandler` is
+  present on the associated pipeline, resolves immediately."
+  [^Channel ch]
+  (if-let [^SslHandler ssl-handler (-> ch .pipeline (.get SslHandler))]
+    (-> ssl-handler
+        .handshakeFuture
+        wrap-future)
+    (d/success-deferred ch)))
+
+(defn ^:nodoc ignore-ssl-handshake-errors
+  "Intended for use as error callback on a `maybe-ssl-handshake-future`
+  within a `:channel-active` handler. In this context, SSL handshake
+  errors don't need to be handled since the SSL handler will terminate
+  the whole pipeline by throwing `javax.net.ssl.SSLHandshakeException`
+  anyway."
+  [_])
+
 (defn create-client
   ([pipeline-builder
     ssl-context
@@ -1197,7 +1216,7 @@ initialize an DnsAddressResolverGroup instance.
           (d/chain' (wrap-future f)
             (fn [_]
               (let [ch (.channel ^ChannelFuture f)]
-                ch))))))))
+                (maybe-ssl-handshake-future ch)))))))))
 
 (defn start-server
   [pipeline-builder
