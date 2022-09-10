@@ -13,6 +13,8 @@ Leiningen:
 deps.edn:
 ```clojure
 aleph/aleph {:mvn/version "0.5.0"}
+;; alternatively
+io.github.clj-commons/aleph {:git/sha "..."}
 ```
 
 ### HTTP
@@ -122,6 +124,12 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
 Where incoming packets will have a `:message` that is a byte-array, which can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
 
 To learn more, [read the documentation](http://aleph.io/examples/literate.html).
+
+### Development
+
+Aleph uses [Leiningen](https://leiningen.org/) for managing dependencies, running REPLs and tests, and building the code.
+
+Minimal [`tools.deps`](https://github.com/clojure/tools.deps.alpha) support is available in the form of a `deps.edn` file which is generated from `project.clj`. It provides just enough to be able to use Aleph as a git or `:local/root` dependency. When committing changes to `project.clj`, run `deps/lein-to-deps` and commit the resulting changes, too.
 
 ### License
 

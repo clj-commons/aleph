@@ -37,5 +37,7 @@ jobs:
             - ~/.m2
           key: v1-dependencies-{{ checksum "project.clj" }}
 
+      - run: deps/ensure-deps-up-to-date
+
       # run tests!
       - run: lein do clean, test
