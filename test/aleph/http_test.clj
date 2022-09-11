@@ -541,7 +541,14 @@
         (d/chain' (fn [_] (s/close! body))))
     body))
 
+(defn force-stream-to-string-memoization! []
+  (bs/to-string (doto (s/stream 1) (s/put! "x") s/close!)))
+
 (deftest test-idle-timeout
+  ;; Required so that the conversion initialization doesn't count
+  ;; toward the idle timeout. See
+  ;; https://github.com/clj-commons/aleph/issues/626 for background.
+  (force-stream-to-string-memoization!)
   (let [url (str "http://localhost:" port)
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
