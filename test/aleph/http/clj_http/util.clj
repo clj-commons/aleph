@@ -11,6 +11,9 @@
              FilterInputStream
              InputStream)))
 
+;; turn off default middleware for the core tests
+(def no-middleware-pool (http/connection-pool {:middleware identity}))
+
 (def base-req
   {:scheme :http
    :server-name "localhost"
@@ -80,7 +83,7 @@
            ;;_ (clojure.pprint/pprint ring-map)
            clj-http-resp (core/request ring-map)
            ;;_ (clojure.pprint/pprint ring-map)
-           aleph-resp @(http/request ring-map)]
+           aleph-resp @(http/request (assoc ring-map :pool no-middleware-pool))]
        (is (= (:status clj-http-resp) (:status aleph-resp)))
        (is-headers= (:headers clj-http-resp) (:headers aleph-resp))
        (let [new-clj-http-body (is-input-stream= (:body clj-http-resp) (:body aleph-resp))]
