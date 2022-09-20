@@ -13,8 +13,6 @@
             [ring.util.codec :refer [form-decode-str]]
             [slingshot.slingshot :refer [try+]])
   (:import java.io.ByteArrayInputStream
-           java.io.PipedInputStream
-           java.io.PipedOutputStream
            java.net.UnknownHostException
            org.apache.http.HttpEntity
            org.apache.logging.log4j.LogManager))
@@ -27,13 +25,6 @@
   {:scheme :http
    :server-name "localhost"
    :server-port 18080})
-
-#_
-(defn request
-  ([req]
-   (client/request (merge base-req req)))
-  ([req respond raise]
-   (client/request (merge base-req req) respond raise)))
 
 (defn parse-form-params [s]
   (->> (str/split (form-decode-str s) #"&")
@@ -1760,36 +1751,3 @@
       (is (= (.getMessage e)
              (str "only :flatten-nested-keys or :ignore-nested-query-string/"
                   ":flatten-nested-keys may be specified, not both"))))))
-
-(defn transit-resp [body]
-  {:body body
-   :status 200
-   :headers {"content-type" "application/transit-json"}})
-
-(deftest issue-609-empty-transit-response
-  (testing "Body is available right away"
-    (is (= {:foo "bar"}
-           (:body (client/coerce-response-body
-                    {:as :transit+json}
-                    (transit-resp (ByteArrayInputStream.
-                                    (.getBytes "[\"^ \",\"~:foo\",\"bar\"]"))))))))
-
-  (testing "Empty body is read as nil"
-    (is (nil? (:body (client/coerce-response-body
-                       {:as :transit+json}
-                       (transit-resp (ByteArrayInputStream. (.getBytes ""))))))))
-
-  (testing "Body is read correctly even if the data becomes available later"
-    ;; Ensure both streams are closed (normally done inside future).
-    (with-open [o (PipedOutputStream.)
-                i (PipedInputStream.)]
-      (.connect i o)
-      (future
-        (Thread/sleep 10)
-        (.write o (.getBytes "[\"^ \",\"~:foo\",\"bar\"]"))
-        ;; Close right now, with-open will wait until test is done.
-        (.close o))
-      (is (= {:foo "bar"}
-             (:body (client/coerce-response-body
-                      {:as :transit+json}
-                      (transit-resp i))))))))
