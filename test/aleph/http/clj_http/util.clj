@@ -2,7 +2,7 @@
   (:require
     [aleph.http :as http]
     [clj-commons.byte-streams :as bs]
-    [clj-http.core :as core]
+    [clj-http.core :as clj-http]
     [clojure.set :as set]
     [clojure.test :refer :all])
   (:import
@@ -19,12 +19,12 @@
    :server-name "localhost"
    :server-port 18080})
 
-(def uninteresting-headers ["date" "connection" "server"])
+(def ignored-headers ["date" "connection" "server"])
 
 (defn header-keys
   "Returns a set of headers of interest"
   [m]
-  (-> (apply dissoc m uninteresting-headers)
+  (-> (apply dissoc m ignored-headers)
       (keys)
       (set)))
 
@@ -72,18 +72,15 @@
   ([req]
    (request req nil nil))
   ([req respond raise]
-   #_(core/request (merge base-req req) respond raise)        ; no aleph
-
    (if (or respond raise)
      ;; do not attempt to compare when using async clj-http...for now
      (let [ring-map (merge base-req req)]
-       (core/request ring-map respond raise))
+       (clj-http/request ring-map respond raise))
 
-     (let [ring-map (merge base-req req)
-           ;;_ (clojure.pprint/pprint ring-map)
-           clj-http-resp (core/request ring-map)
-           ;;_ (clojure.pprint/pprint ring-map)
-           aleph-resp @(http/request (assoc ring-map :pool no-middleware-pool))]
+     (let [clj-http-ring-map (merge base-req req)
+           aleph-ring-map (merge base-req req {:pool no-middleware-pool})
+           clj-http-resp (clj-http/request clj-http-ring-map)
+           aleph-resp @(http/request aleph-ring-map)]
        (is (= (:status clj-http-resp) (:status aleph-resp)))
        (is-headers= (:headers clj-http-resp) (:headers aleph-resp))
        (let [new-clj-http-body (is-input-stream= (:body clj-http-resp) (:body aleph-resp))]
