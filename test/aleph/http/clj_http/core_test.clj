@@ -107,8 +107,6 @@
     {:status 200 :body "delete-with-body"}
     [:post "/multipart"]
     {:status 200 :body (:body req)}
-    [:head "/head-with-body"]
-    {:status 200 :headers {"body" (slurp (:body req))}}
     [:get "/get-with-body"]
     {:status 200 :body (:body req)}
     [:options "/options"]
@@ -150,11 +148,6 @@
   (defonce ^org.eclipse.jetty.server.Server server
     (ring/run-jetty (add-headers-if-requested #'handler) {:port 18080 :join? false})))
 
-(defn restart-server
-  []
-  (.stop server)
-  (.start server))
-
 (defn localhost [path]
   (str "http://localhost:18080" path))
 
@@ -165,7 +158,6 @@
 
 (defn slurp-body [req]
   (slurp (:body req)))
-
 
 (deftest ^:integration makes-get-request
   (run-server)
@@ -422,10 +414,8 @@
 
 (deftest ^:integration head-with-body
   (run-server)
-  (let [resp (request {:request-method :head :uri "/head-with-body"
-                       :body (.getBytes "foo")})]
-    (is (= 200 (:status resp)))
-    (is (= "foo" (get-in resp [:headers "body"])))))
+  (let [resp (request {:request-method :head :uri "/head" :body "foo"})]
+    (is (= 200 (:status resp)))))
 
 (deftest ^:integration t-clojure-output-coercion
   (run-server)
