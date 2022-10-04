@@ -224,9 +224,10 @@
   :remote-addr (netty/channel-remote-address ch))
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
-  :status (-> rsp .status .code)
+  :status (-> rsp (.status) (.code))
+  :reason-phrase (-> rsp (.status) (.reasonPhrase))
   :aleph/keep-alive? (HttpUtil/isKeepAlive rsp)
-  :headers (-> rsp .headers headers->map)
+  :headers (-> rsp (.headers) headers->map)
   :aleph/complete complete
   :body body)
 

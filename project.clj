@@ -56,7 +56,7 @@
   :java-source-paths ["src/aleph/utils"]
   :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default     #(not
-                                   (some #{:benchmark :stress :integration}
+                                   (some #{:benchmark :stress :integration :ignore}
                                      (cons (:tag %) (keys %))))
                    :benchmark   :benchmark
                    :integration :integration

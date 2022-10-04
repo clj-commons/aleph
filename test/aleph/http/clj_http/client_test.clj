@@ -1,6 +1,6 @@
 (ns aleph.http.clj-http.client-test
   (:require [aleph.http.clj-http.core-test :refer [run-server]]
-            [aleph.http.clj-http.util :refer [request]]
+            [aleph.http.clj-http.util :refer [make-request]]
             [cheshire.core :as json]
             [clj-http.client :as client]
             [clj-http.conn-mgr :as conn]
@@ -25,6 +25,8 @@
   {:scheme :http
    :server-name "localhost"
    :server-port 18080})
+
+(def request (make-request #'client/request {:using-middleware? true}))
 
 (defn parse-form-params [s]
   (->> (str/split (form-decode-str s) #"&")

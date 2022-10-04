@@ -1,5 +1,5 @@
 (ns aleph.http.clj-http.core-test
-  (:require [aleph.http.clj-http.util :refer [request]]
+  (:require [aleph.http.clj-http.util :refer [make-request]]
             [cheshire.core :as json]
             [clj-http.client :as client]
             [clj-http.conn-mgr :as conn]
@@ -156,6 +156,8 @@
    :server-name "localhost"
    :server-port 18080})
 
+(def request (make-request #'core/request {:using-middleware? false}))
+
 (defn slurp-body [req]
   (slurp (:body req)))
 
@@ -165,7 +167,7 @@
     (is (= 200 (:status resp)))
     (is (= "get" (slurp-body resp)))))
 
-(deftest ^:integration dns-resolver
+(deftest ^:ignore dns-resolver
   (run-server)
   (let [custom-dns-resolver (doto (InMemoryDnsResolver.)
                                   (.add "foo.bar.com" (into-array[(InetAddress/getByAddress (byte-array [127 0 0 1]))])))
@@ -175,7 +177,7 @@
     (is (= 200 (:status resp)))
     (is (= "get" (slurp-body resp)))))
 
-(deftest ^:integration dns-resolver-unknown-host
+(deftest ^:ignore dns-resolver-unknown-host
   (run-server)
   (let [custom-dns-resolver (doto (InMemoryDnsResolver.)
                                   (.add "foo.bar.com" (into-array[(InetAddress/getByAddress (byte-array [127 0 0 1]))])))]
@@ -183,7 +185,7 @@
                                                          :server-name "www.google.com"
                                                          :dns-resolver custom-dns-resolver})))))
 
-(deftest ^:integration dns-resolver-reusable-connection-manager
+(deftest ^:ignore dns-resolver-reusable-connection-manager
   (run-server)
   (let [custom-dns-resolver (doto (InMemoryDnsResolver.)
                                   (.add "totallynonexistant.google.com"
