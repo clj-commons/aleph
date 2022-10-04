@@ -61,6 +61,10 @@
                    :benchmark   :benchmark
                    :integration :integration
                    :stress      :stress
+                   :clj-http    [(fn clj-http-ns-pred [namespc & _]
+                                   (.contains (str namespc) "clj-http"))
+                                 (fn clj-http-test-pred [m & _]
+                                   (not (:ignore m)))]
                    :all         (constantly true)}
   :jvm-opts ^:replace ["-server"
                        "-Xmx2g"
