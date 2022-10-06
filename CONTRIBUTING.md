@@ -1,4 +1,4 @@
-# How to contribute to aleph
+# How to contribute to Aleph
 
 This document is a work in progress!
 
