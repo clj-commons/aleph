@@ -1,4 +1,4 @@
-(def netty-version "4.1.79.Final")
+(def netty-version "4.1.82.Final")
 
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.5.0")
   :description "A framework for asynchronous communication"
