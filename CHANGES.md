@@ -183,7 +183,7 @@ Mark Wardle, and Alexander Yakushev
 * Fix typo and remove unused namespaces
 * Document follow-redirects? as the handler provides extra options
 
-#### 0.4.7-alpha1 
+#### 0.4.7-alpha1
 
 * fix #391, mark 0.4.7-alpha1
 
