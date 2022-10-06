@@ -156,7 +156,13 @@
    :server-name "localhost"
    :server-port 18080})
 
-(def request (make-request #'core/request {:using-middleware? false}))
+
+(def request (make-request core/request {:using-middleware? false}))
+
+(use-fixtures :once
+              (fn [f]
+                (binding [client/request (make-request client/request {:using-middleware? true})]
+                  (f))))
 
 (defn slurp-body [req]
   (slurp (:body req)))

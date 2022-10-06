@@ -28,9 +28,10 @@
 (defn header-keys
   "Returns a set of headers of interest"
   [m]
-  (-> (apply dissoc m ignored-headers)
-      (keys)
-      (set)))
+  (->> (apply dissoc m ignored-headers)
+       (keys)
+       (map str/lower-case)
+       (set)))
 
 (defn is-headers=
   "Are the two header maps equal?
@@ -71,9 +72,15 @@
                 (.close clj-http-body)
                 (proxy-super close))))))
 
-      (do
-        (is (bs/bytes= clj-http-body aleph-body))
-        clj-http-body))
+      (try
+        (do
+          (is (bs/bytes= clj-http-body aleph-body))
+          clj-http-body)
+        (catch Exception e
+          (println "clj-http body class: " (class clj-http-body))
+          (prn clj-http-body)
+          (flush)
+          (throw e))))
     (do
       (is (= clj-http-body aleph-body))
       clj-http-body)))
@@ -170,6 +177,7 @@
              aleph-resp @(http/request aleph-ring-map)]
          (is (= (:status clj-http-resp) (:status aleph-resp)))
 
+         (prn aleph-resp)
 
          #_(when (not= (:status clj-http-resp) (:status aleph-resp))
            (println "clj-http req:")

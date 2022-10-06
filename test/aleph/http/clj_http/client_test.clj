@@ -26,7 +26,7 @@
    :server-name "localhost"
    :server-port 18080})
 
-(def request (make-request #'client/request {:using-middleware? true}))
+(def request (make-request client/request {:using-middleware? true}))
 
 (defn parse-form-params [s]
   (->> (str/split (form-decode-str s) #"&")
