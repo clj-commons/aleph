@@ -155,8 +155,8 @@
                                  :content (clojure.java.io/file
                                             "test-resources/m.txt")}]}
                    resp
-                   exception
-                   )]
+                   exception)]
+                   
     (is (= 200 (:status @resp)))
     (is (not (realized? exception)))
     #_(when (realized? exception) (prn @exception)))
