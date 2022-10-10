@@ -22,7 +22,7 @@ If you are fixing a bug, create a test that demonstrates it _first_, then write 
 
 There’s some extra steps to test when updating dependencies:
 
-1. Obviously, after you've made your changes to `project.clj`, be sure to rerun the tests with `lein test`.
+1. After you've made your changes to `project.clj`, be sure to rerun the tests with `lein test`.
 
 2. When you’re ready to commit, run the `deps/lein-to-deps` script to update `deps.edn` as well, so we can support `deps.edn` users. 
 
