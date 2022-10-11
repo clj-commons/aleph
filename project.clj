@@ -28,12 +28,13 @@
                                    [org.slf4j/slf4j-simple "1.7.30"]
                                    [com.cognitect/transit-clj "1.0.324"]
                                    [spootnik/signal "0.2.4"]
-                                   [me.mourjo/dynamic-redef "0.1.0"]]}
-             :lein-to-deps {:source-paths ["deps"]}
-             ;; This is for self-generating certs for testing ONLY:
-             :test {:dependencies [[org.bouncycastle/bcprov-jdk15on "1.69"]
+                                   [me.mourjo/dynamic-redef "0.1.0"]
+                                   ;; This is for self-generating certs for testing ONLY:
+                                   [org.bouncycastle/bcprov-jdk15on "1.69"]
                                    [org.bouncycastle/bcpkix-jdk15on "1.69"]]
-                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}}
+                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
+             :lein-to-deps {:source-paths ["deps"]}
+             :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
