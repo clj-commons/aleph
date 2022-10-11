@@ -30,8 +30,8 @@
                                    [spootnik/signal "0.2.4"]
                                    [me.mourjo/dynamic-redef "0.1.0"]
                                    ;; This is for self-generating certs for testing ONLY:
-                                   [org.bouncycastle/bcprov-jdk15on "1.69"]
-                                   [org.bouncycastle/bcpkix-jdk15on "1.69"]]
+                                   [org.bouncycastle/bcprov-jdk18on "1.72"]
+                                   [org.bouncycastle/bcpkix-jdk18on "1.72"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
              :lein-to-deps {:source-paths ["deps"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}}
