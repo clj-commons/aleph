@@ -155,6 +155,7 @@
     {:scheme (keyword (.getProtocol url-parsed))
      :server-name (.getHost url-parsed)
      :server-port (when-pos (.getPort url-parsed))
+     :url url
      :uri (url-encode-illegal-characters (.getPath url-parsed))
      :user-info (when-let [user-info (.getUserInfo url-parsed)]
                   (URLDecoder/decode user-info))
@@ -243,12 +244,13 @@
       (if (unexceptional-status? status)
         rsp
         (cond
-
           (false? (opt req :throw-exceptions))
           rsp
 
           (instance? InputStream body)
-          (d/chain' (d/future (bs/to-byte-array body))
+          (d/chain'
+            (d/future
+              (bs/to-byte-array body))
             (fn [body]
               (d/error-deferred
                 (ex-info
@@ -563,9 +565,8 @@
   [req]
   (if-let [url (:url req)]
     (-> req
-      (dissoc :url)
-      (assoc :request-url url)
-      (merge (parse-url url)))
+        (assoc :request-url url)
+        (merge (parse-url url)))
     req))
 
 (defn wrap-request-timing
@@ -918,7 +919,13 @@
       (opt req :save-request)
       (assoc :aleph/request req'))))
 
+(def default-client-middleware
+  "Default middleware that takes a client fn"
+  [wrap-exceptions
+   wrap-request-timing])
+
 (def default-middleware
+  "Default middleware that takes a request map"
   [wrap-method
    wrap-url
    wrap-nested-params
@@ -937,22 +944,24 @@
   "Returns a batteries-included HTTP request function corresponding to the given
   core client. See default-middleware for the middleware wrappers that are used
   by default"
-  [client]
-  (let [client' (-> client
-                  wrap-exceptions
-                  wrap-request-timing)]
-    (fn [req]
-      (let [executor (ex/executor)]
-        (if (:aleph.http.client/close req)
-          (client req)
+  ([client]
+   (wrap-request client default-client-middleware default-middleware))
+  ([client client-middleware middleware]
+   (let [client' (reduce #(%2 %1)
+                         client
+                         client-middleware)]
+     (fn [req]
+       (let [executor (ex/executor)]
+         (if (:aleph.http.client/close req)
+           (client req)
 
-          (let [req' (reduce #(%2 %1) req default-middleware)]
-            (d/chain' (client' req')
+           (let [req' (reduce #(%2 %1) req middleware)]
+             (d/chain' (client' req')
 
-              ;; coerce the response body
-              (fn [{:keys [body] :as rsp}]
-                (let [rsp' (handle-response-debug req' rsp)]
-                  (if (and (some? body) (some? (:as req')))
-                    (d/future-with (or executor (ex/wait-pool))
-                      (coerce-response-body req' rsp'))
-                    rsp'))))))))))
+                       ;; coerce the response body
+                       (fn [{:keys [body] :as rsp}]
+                         (let [rsp' (handle-response-debug req' rsp)]
+                           (if (and (some? body) (some? (:as req')))
+                             (d/future-with (or executor (ex/wait-pool))
+                               (coerce-response-body req' rsp'))
+                             rsp')))))))))))
