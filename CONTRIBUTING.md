@@ -18,6 +18,12 @@ If you are fixing a bug, create a test that demonstrates it _first_, then write 
 
 [clj-kondo](https://github.com/clj-kondo/clj-kondo) is recommended for linting. Because of the potemkin library and various proto-potemkin macros, Aleph can trigger a lot of false positives, and clj-kondo is the least bad at understanding them. (Handling this is ongoing; PRs welcome.) 
 
+## Formatting
+
+Generally, we try to follow the [Clojure Style Guide](https://guide.clojure.style/). However, there are a few caveats. Due to Aleph's age, it predates a common Clojure style, so much of it will not follow the guide. 
+
+While it's tempting to reformat things left and right, this has the downside of creating a lot of irrelevant diffs in any PR. To keep PR review manageable, please only reformat relevant code.
+
 ## Updating dependencies
 
 There’s some extra steps to test when updating dependencies:
