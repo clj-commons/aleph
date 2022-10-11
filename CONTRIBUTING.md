@@ -2,7 +2,7 @@
 
 Thanks for helping out! Aleph is a collaborative project that wouldn’t exist without the generous time and effort of many people.
 
-This document is a work in progress, so if there's anything you feel needs to be added, pleae let us know, or file a PR.
+This document is a work in progress, so if there's anything you feel needs to be added, please let us know, or file a PR.
 
 ## Local development environment
 
