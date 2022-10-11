@@ -2,7 +2,7 @@
 
 Thanks for helping out! Aleph is a collaborative project that wouldn’t exist without the generous time and effort of many people.
 
-This document is a work in progress, so if there's anything you feel needs to be added, pleae let us know, or file a PR.
+This document is a work in progress, so if there's anything you feel needs to be added, please let us know, or file a PR.
 
 ## Local development environment
 
@@ -28,7 +28,7 @@ While it's tempting to reformat things left and right, this has the downside of 
 
 There’s some extra steps to test when updating dependencies:
 
-1. Obviously, after you've made your changes to `project.clj`, be sure to rerun the tests with `lein test`.
+1. After you've made your changes to `project.clj`, be sure to rerun the tests with `lein test`.
 
 2. When you’re ready to commit, run the `deps/lein-to-deps` script to update `deps.edn` as well, so we can support `deps.edn` users. 
 
