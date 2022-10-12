@@ -90,10 +90,10 @@
       (is (false? (.contains body-str "Content-Transfer-Encoding"))))))
 
 (deftest reject-unknown-transfer-encoding
-  (is (thrown? IllegalArgumentException)
-      (mp/encode-body [{:part-name "part1"
-                        :content "content1"
-                        :transfer-encoding :uknown-transfer-encoding}])))
+  (is (thrown? IllegalArgumentException
+               (mp/encode-body [{:part-name "part1"
+                                 :content "content1"
+                                 :transfer-encoding :uknown-transfer-encoding}]))))
 
 (deftest test-content-as-file
   (let [parts [{:part-name "part1"
@@ -233,9 +233,9 @@
   (let [chunks (mp/transduce-request (map pack-chunk) conj [] req options)]
     (->
      (d/chain' chunks
-     (fn [body]
-        {:status 200
-         :body (pr-str body)})))))
+               (fn [body]
+                 {:status 200
+                  :body (pr-str body)})))))
 
 (defn- test-decoder
   ([port url]
