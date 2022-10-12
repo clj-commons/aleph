@@ -25,11 +25,13 @@
    [io.netty.handler.codec.http
     DefaultHttpContent
     DefaultHttpRequest
+    FullHttpRequest
     HttpConstants]
    [io.netty.handler.codec.http.multipart
     Attribute
     MemoryAttribute
     FileUpload
+    HttpDataFactory
     DefaultHttpDataFactory
     HttpPostRequestDecoder
     HttpPostRequestEncoder
@@ -37,8 +39,7 @@
     InterfaceHttpData$HttpDataType]))
 
 (defn
-  ^{:deprecated "0.4.7-alpha2"
-    :superseded-by "encode-request"}
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
   boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
 
@@ -50,15 +51,14 @@
      (str "; charset=" encoding))))
 
 (defn
-  ^{:deprecated "0.4.7-alpha2"
-    :superseded-by "encode-request"}
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
   populate-part
   "Generates a part map of the appropriate format"
   [{:keys [part-name content mime-type charset transfer-encoding name]}]
   (let [file? (instance? File content)
         mt (or mime-type
-               (when file?
-                 (URLConnection/guessContentTypeFromName (.getName ^File content))))
+             (when file?
+               (URLConnection/guessContentTypeFromName (.getName ^File content))))
         ;; populate file name when working with file object
         filename (or name (when file? (.getName ^File content)))
         ;; use "name" as a part name when the last is not provided
@@ -85,12 +85,11 @@
 ;; Note, that you can use transfer-encoding=nil or :binary to leave data "as is".
 ;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
 (defn
-  ^{:deprecated "0.4.7-alpha2"
-    :superseded-by "encode-request"}
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
   part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
-                (when name (str "; filename=\"" name "\""))
-                "\r\n")
+             (when name (str "; filename=\"" name "\""))
+             "\r\n")
         ct (str "Content-Type: " mime-type "\r\n")
         cte (if (nil? transfer-encoding)
               ""
@@ -98,8 +97,7 @@
     (bs/to-byte-buffer (str cd ct cte "\r\n"))))
 
 (defn
-  ^{:deprecated "0.4.7-alpha2"
-    :superseded-by "encode-request"}
+  ^{:deprecated "use aleph.http.multipart/encode-request instead"}
   encode-part
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
@@ -255,20 +253,6 @@
                  (d/recur))
                (d/success-deferred false)))))))))
 
-(defn- destroy-decoder [^HttpPostRequestDecoder decoder parts]
-  (try
-    ;; ensure the `parts` stream is closed in case of the `destroy-decoder` is
-    ;; called before the stream is fully consumed.
-    (s/close! parts)
-    ;; we're removing each received http data chunk
-    ;; from cleanup queue before pushing to `parts` stream,
-    ;; meaning that this `destroy` call would only cleanup
-    ;; those chunks that were not consumed for some reasons
-    ;; (i.e. the user closes the stream given earlier)
-    (.destroy decoder)
-    (catch Exception e
-      (log/warn e "exception when cleaning up multipart decoder"))))
-
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
    parts of the mutlipart/form-data encoded body. In case the size of
@@ -280,8 +264,9 @@
    Each part should be released using `netty/release` helper to cleanup
    allocated buffers and temp files (if any) as soon as the data is fully
    consumed (i.e. temp file moved to a target location). Note, it's also
-   safer to always call `destroy-decoder-fn` on a `d/finally` to ensure all
-   chunks have been deallocated.
+   safer to close the stream of chunks manually to ensure all chunks that
+   were never read from the stream but were already consumed from the connection,
+   are also deallocated.
 
    Typical usage looks like:
 
@@ -292,17 +277,14 @@
    (require '[clojure.java.io :as io])
 
    (defn file-upload-handler [req]
-     (let [[chunks destroy-decoder-fn] (multipart/decode-request req)]
-       (-> (d/loop []
-             (d/chain' (s/take! chunks)
-                       (fn [{:keys [file] :as chunk}]
-                         (when (some? chunk)
-                           (io/copy file writer)
-                           (netty/release chunk)
-                           (d/recur)))))
-           (d/chain' (fn [_]
-                       {:status 200 :body \"Successful!\"}))
-           (d/finally' destroy-decoder-fn))))
+     (let [chunks (multipart/decode-request req)]
+       (d/chain'
+         (stream/take! chunks)
+         (fn [{:keys [file] :as chunk}]
+           (io/copy file writer)
+           (netty/release chunk)
+           (stream/close! chunks)
+           {:status 200 :body \"Succesfull!\"}))))
    ```
 
    Note, that if your handler works with multipart requests only,
@@ -317,11 +299,11 @@
    (let [body (if (s/stream? body)
                 body
                 (netty/to-byte-buf-stream body body-buffer-size))
+         destroyed? (atom false)
          req' (http-core/ring-request->netty-request req)
          factory (DefaultHttpDataFactory. (long memory-limit))
          decoder (HttpPostRequestDecoder. factory req')
-         parts (s/stream)
-         destroy-decoder-fn (partial destroy-decoder decoder parts)]
+         parts (s/stream)]
 
      ;; on each HttpContent chunk, put it into the decoder
      ;; and resume our attempts to get the next attribute available
@@ -338,9 +320,18 @@
           (read-attributes decoder parts)))
       parts)
 
-     ;; a vector containing a stream of `parts` and a function to
-     ;; destroy the decoder is returned.
-     ;; we cannot rely on the `parts` stream being closed to destroy
-     ;; the decoder as it will happens before all of the `parts` have
-     ;; been consumed.
-     [parts destroy-decoder-fn])))
+     (s/on-closed
+      parts
+      (fn []
+        (when (compare-and-set! destroyed? false true)
+          (try
+            ;; we're removing each received http data chunk
+            ;; from cleanup queue before pushing to `parts` stream,
+            ;; meaning that this `destroy` call would only cleanup
+            ;; those chunck that were not consumed for some reasons
+            ;; (i.e. the user closes the stream given earlier)
+            (.destroy decoder)
+            (catch Exception e
+              (log/warn e "exception when cleaning up multipart decoder"))))))
+
+     parts)))
