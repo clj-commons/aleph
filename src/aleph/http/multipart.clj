@@ -25,13 +25,11 @@
    [io.netty.handler.codec.http
     DefaultHttpContent
     DefaultHttpRequest
-    FullHttpRequest
     HttpConstants]
    [io.netty.handler.codec.http.multipart
     Attribute
     MemoryAttribute
     FileUpload
-    HttpDataFactory
     DefaultHttpDataFactory
     HttpPostRequestDecoder
     HttpPostRequestEncoder
@@ -118,24 +116,24 @@
     :superseded-by "encode-request"}
   encode-body
   ([parts]
-    (encode-body (boundary) parts))
+   (encode-body (boundary) parts))
   ([^String boundary parts]
-    (let [b (bs/to-byte-buffer (str "--" boundary))
-          b-len (+ 6 (.length boundary))
-          ps (map #(-> % populate-part encode-part) parts)
-          boundaries-len (* (inc (count parts)) b-len)
-          part-len (reduce (fn [acc ^ByteBuffer p] (+ acc (.limit p))) 0 ps)
-          buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
-      (.put buf b)
-      (doseq [^ByteBuffer part ps]
-        (.put buf (bs/to-byte-buffer "\r\n"))
-        (.put buf part)
-        (.put buf (bs/to-byte-buffer "\r\n"))
-        (.flip b)
-        (.put buf b))
-      (.put buf (bs/to-byte-buffer "--"))
-      (.flip buf)
-      (bs/to-byte-array buf))))
+   (let [b (bs/to-byte-buffer (str "--" boundary))
+         b-len (+ 6 (.length boundary))
+         ps (map #(-> % populate-part encode-part) parts)
+         boundaries-len (* (inc (count parts)) b-len)
+         part-len (reduce (fn [acc ^ByteBuffer p] (+ acc (.limit p))) 0 ps)
+         buf (ByteBuffer/allocate (+ 2 boundaries-len part-len))]
+     (.put buf b)
+     (doseq [^ByteBuffer part ps]
+       (.put buf (bs/to-byte-buffer "\r\n"))
+       (.put buf part)
+       (.put buf (bs/to-byte-buffer "\r\n"))
+       (.flip b)
+       (.put buf b))
+     (.put buf (bs/to-byte-buffer "--"))
+     (.flip buf)
+     (bs/to-byte-array buf))))
 
 (defn encode-request [^DefaultHttpRequest req parts]
   (let [^HttpPostRequestEncoder encoder (HttpPostRequestEncoder. req true)]
@@ -253,6 +251,51 @@
                  (d/recur))
                (d/success-deferred false)))))))))
 
+(defn- destroy-decoder [^HttpPostRequestDecoder decoder parts]
+  (try
+    ;; ensure the `parts` stream is closed in case of the `destroy-decoder` is
+    ;; called before the stream is fully consumed.
+    (s/close! parts)
+    ;; we're removing each received http data chunk
+    ;; from cleanup queue before pushing to `parts` stream,
+    ;; meaning that this `destroy` call would only cleanup
+    ;; those chunks that were not consumed for some reasons
+    ;; (i.e. the user closes the stream given earlier)
+    (.destroy decoder)
+    (catch Exception e
+      (log/warn e "exception when cleaning up multipart decoder"))))
+
+(defn- decode
+  [{:keys [body] :as req}
+   {:keys [body-buffer-size
+           memory-limit]
+    :or {body-buffer-size 65536
+         memory-limit DefaultHttpDataFactory/MINSIZE}}]
+  (let [body (if (s/stream? body)
+               body
+               (netty/to-byte-buf-stream body body-buffer-size))
+        req' (http-core/ring-request->netty-request req)
+        factory (DefaultHttpDataFactory. (long memory-limit))
+        decoder (HttpPostRequestDecoder. factory req')
+        parts (s/stream)
+        destroy-decoder-fn (partial destroy-decoder decoder parts)]
+
+    ;; on each HttpContent chunk, put it into the decoder
+    ;; and resume our attempts to get the next attribute available
+    (s/connect-via
+     body
+     (fn [chunk]
+       (let [content (DefaultHttpContent. chunk)]
+         (.offer decoder content)
+         ;; note, that HttpPostRequestDecoder actually
+         ;; makes a copy of the content provided, so we can
+         ;; release it here
+         ;; https://github.com/netty/netty/blob/d05666ae2d2068da7ee031a8bfc1ca572dbcc3f8/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L329
+         (netty/release chunk)
+         (read-attributes decoder parts)))
+     parts)
+    [parts destroy-decoder-fn]))
+
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
    parts of the mutlipart/form-data encoded body. In case the size of
@@ -291,47 +334,29 @@
    it's better to set `:raw-stream?` to `true` to avoid additional
    input stream coercion."
   ([req] (decode-request req {}))
-  ([{:keys [body] :as req}
-    {:keys [body-buffer-size
-            memory-limit]
-     :or {body-buffer-size 65536
-          memory-limit DefaultHttpDataFactory/MINSIZE}}]
-   (let [body (if (s/stream? body)
-                body
-                (netty/to-byte-buf-stream body body-buffer-size))
-         destroyed? (atom false)
-         req' (http-core/ring-request->netty-request req)
-         factory (DefaultHttpDataFactory. (long memory-limit))
-         decoder (HttpPostRequestDecoder. factory req')
-         parts (s/stream)]
-
-     ;; on each HttpContent chunk, put it into the decoder
-     ;; and resume our attempts to get the next attribute available
-     (s/connect-via
-      body
-      (fn [chunk]
-        (let [content (DefaultHttpContent. chunk)]
-          (.offer decoder content)
-          ;; note, that HttpPostRequestDecoder actually
-          ;; makes a copy of the content provided, so we can
-          ;; release it here
-          ;; https://github.com/netty/netty/blob/d05666ae2d2068da7ee031a8bfc1ca572dbcc3f8/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L329
-          (netty/release chunk)
-          (read-attributes decoder parts)))
-      parts)
+  ([req opts]
+   (let [destroyed? (atom false)
+         [parts destroy-decoder-fn] (decode req opts)]
 
      (s/on-closed
       parts
       (fn []
         (when (compare-and-set! destroyed? false true)
-          (try
-            ;; we're removing each received http data chunk
-            ;; from cleanup queue before pushing to `parts` stream,
-            ;; meaning that this `destroy` call would only cleanup
-            ;; those chunck that were not consumed for some reasons
-            ;; (i.e. the user closes the stream given earlier)
-            (.destroy decoder)
-            (catch Exception e
-              (log/warn e "exception when cleaning up multipart decoder"))))))
-
+          (destroy-decoder-fn))))
      parts)))
+
+(defn transduce-request
+  ([xform f init req opts]
+   (let [reducer (if (some? xform) (xform f) f)
+         [parts destroy-decoder-fn] (decode req opts)]
+     (-> (d/loop [acc init]
+           (d/chain' (s/take! parts)
+                     (fn [part]
+                       (if (some? part)
+                         (let [new-acc (reducer acc part)]
+                           (netty/release part)
+                           (if (reduced? new-acc)
+                             (unreduced new-acc)
+                             (d/recur new-acc)))
+                         acc))))
+         (d/finally' destroy-decoder-fn)))))
