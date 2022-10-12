@@ -231,11 +231,10 @@
 
 (defn- transduce-handler [req options]
   (let [chunks (mp/transduce-request (map pack-chunk) conj [] req options)]
-    (->
-     (d/chain' chunks
-               (fn [body]
-                 {:status 200
-                  :body (pr-str body)})))))
+    (d/chain' chunks
+              (fn [body]
+                {:status 200
+                 :body (pr-str body)}))))
 
 (defn- test-decoder
   ([port url]
