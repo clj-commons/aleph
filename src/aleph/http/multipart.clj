@@ -1,13 +1,14 @@
 (ns aleph.http.multipart
   (:require
-   [clojure.core :as cc]
-   [clj-commons.byte-streams :as bs]
-   [aleph.http.encoding :refer [encode]]
    [aleph.http.core :as http-core]
+   [aleph.http.encoding :refer [encode]]
    [aleph.netty :as netty]
-   [manifold.stream :as s]
+   [clj-commons.byte-streams :as bs]
+   [clojure.core :as cc]
    [clojure.tools.logging :as log]
-   [manifold.deferred :as d])
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [manifold.time :as t])
   (:import
    [java.util
     Locale]
@@ -25,13 +26,11 @@
    [io.netty.handler.codec.http
     DefaultHttpContent
     DefaultHttpRequest
-    FullHttpRequest
     HttpConstants]
    [io.netty.handler.codec.http.multipart
     Attribute
     MemoryAttribute
     FileUpload
-    HttpDataFactory
     DefaultHttpDataFactory
     HttpPostRequestDecoder
     HttpPostRequestEncoder
@@ -289,13 +288,20 @@
 
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
-   input stream coercion."
+   input stream coercion.
+
+   The decoder is destroyed when the `body` stream is closed after a delay of
+   `destroy-delay` (60 seconds by default). All the elements from the result
+   stream have to be consumed within that configurable timeframe otherwise some
+   temporary files (if any) might be removed from the filesystem."
   ([req] (decode-request req {}))
   ([{:keys [body] :as req}
     {:keys [body-buffer-size
-            memory-limit]
+            memory-limit
+            destroy-delay]
      :or {body-buffer-size 65536
-          memory-limit DefaultHttpDataFactory/MINSIZE}}]
+          memory-limit DefaultHttpDataFactory/MINSIZE
+          destroy-delay 60000}}]
    (let [body (if (s/stream? body)
                 body
                 (netty/to-byte-buf-stream body body-buffer-size))
@@ -323,15 +329,19 @@
      (s/on-closed
       parts
       (fn []
-        (when (compare-and-set! destroyed? false true)
-          (try
-            ;; we're removing each received http data chunk
-            ;; from cleanup queue before pushing to `parts` stream,
-            ;; meaning that this `destroy` call would only cleanup
-            ;; those chunck that were not consumed for some reasons
-            ;; (i.e. the user closes the stream given earlier)
-            (.destroy decoder)
-            (catch Exception e
-              (log/warn e "exception when cleaning up multipart decoder"))))))
-
+        ;; The decoder cannot be destroyed as soon as the parts stream has been
+        ;; closed (triggered downstream by the `body`). We need to wait a bit
+        ;; to let the client consumes all the parts from the result stream.
+        (t/in destroy-delay
+              (fn []
+               (when (compare-and-set! destroyed? false true)
+                 (try
+                   ;; we're removing each received http data chunk
+                   ;; from cleanup queue before pushing to `parts` stream,
+                   ;; meaning that this `destroy` call would only cleanup
+                   ;; those chunck that were not consumed for some reasons
+                   ;; (i.e. the user closes the stream given earlier)
+                   (.destroy decoder)
+                   (catch Exception e
+                     (log/warn e "exception when cleaning up multipart decoder"))))))))
      parts)))
