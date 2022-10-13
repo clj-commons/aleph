@@ -7,7 +7,8 @@
    [aleph.netty :as netty]
    [manifold.stream :as s]
    [clojure.tools.logging :as log]
-   [manifold.deferred :as d])
+   [manifold.deferred :as d]
+   [manifold.time :as t])
   (:import
    [java.util
     Locale]
@@ -332,17 +333,27 @@
 
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
-   input stream coercion."
+   input stream coercion.
+
+  The decoder is destroyed when the `body` stream is closed after a delay of
+  `destroy-delay` (60 seconds by default). All the elements from the result
+  stream have to be consumed within that configurable timeframe otherwise some
+  temporary files (if any) might be removed from the filesystem."
   ([req] (decode-request req {}))
-  ([req opts]
+  ([req {:keys [destroy-delay] :or {destroy-delay 60000} :as opts}]
    (let [destroyed? (atom false)
          [parts destroy-decoder-fn] (decode req opts)]
 
      (s/on-closed
       parts
       (fn []
-        (when (compare-and-set! destroyed? false true)
-          (destroy-decoder-fn))))
+        ;; The decoder cannot be destroyed as soon as the parts stream has been
+        ;; closed (triggered downstream by the `body`). We need to wait a bit
+        ;; to let the client consumes all the parts from the result stream.
+        (t/in destroy-delay
+              (fn []
+                (when (compare-and-set! destroyed? false true)
+                 (destroy-decoder-fn))))))
      parts)))
 
 (defn transduce-request
