@@ -1,5 +1,0 @@
-;; DO NOT EDIT MANUALLY - generated from project.clj via deps/lein-to-deps
-{:javac
- {:src-dirs ["src/aleph/utils/"],
-  :class-dir "target/classes/",
-  :javac-opts ["-target" "1.8" "-source" "1.8"]}}

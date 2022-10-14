@@ -6,10 +6,8 @@ DEPS_DIR="$(dirname -- "${BASH_SOURCE[0]}")"
 
 "${DEPS_DIR}/lein-to-deps"
 
-for f in deps.edn deps/aleph/build.edn; do
-    if ! git diff --exit-code "$f"; then
-        echo >&2
-        echo "ERROR: ${f} needs to be re-generated using the script \"deps/lein-to-deps\"" >&2
-        exit 1
-    fi
-done
+if ! git diff --exit-code "deps.edn"; then
+    echo >&2
+    echo "ERROR: deps.edn needs to be re-generated using the script \"deps/lein-to-deps\"" >&2
+    exit 1
+fi

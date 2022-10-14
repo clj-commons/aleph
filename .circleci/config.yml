@@ -30,6 +30,11 @@ jobs:
             # fallback to using the latest cache if no exact match is found
             - v1-dependencies-
 
+      - run:
+          name: Install bb
+          command: |
+            sudo bash < <(curl -s https://raw.githubusercontent.com/babashka/babashka/master/install)
+
       - run: lein deps
 
       - save_cache:
