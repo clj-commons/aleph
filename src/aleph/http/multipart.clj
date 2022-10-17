@@ -20,7 +20,6 @@
     Charset]
    [java.net
     URLConnection]
-   [io.netty.util ReferenceCounted]
    [io.netty.util.internal
     ThreadLocalRandom]
    [io.netty.handler.codec.http
@@ -170,33 +169,6 @@
     (let [req' (.finalizeRequest encoder)]
       [req' (when (.isChunked encoder) encoder)])))
 
-(defrecord MultipartChunk [part-name
-                           content
-                           name
-                           charset
-                           mime-type
-                           transfer-encoding
-                           memory?
-                           file?
-                           file
-                           size
-                           ^ReferenceCounted raw-http-data]
-  ReferenceCounted
-  (refCnt [_]
-    (.refCnt raw-http-data))
-  (retain [_]
-    (.retain raw-http-data))
-  (retain [_ increment]
-    (.retain raw-http-data increment))
-  (^ReferenceCounted touch [_]
-    (.touch raw-http-data))
-  (^ReferenceCounted touch [_ ^Object hint]
-    (.touch raw-http-data hint))
-  (release [_]
-    (.release raw-http-data))
-  (release [_ decrement]
-    (.release raw-http-data decrement)))
-
 (defmulti http-data->map
   (fn [^InterfaceHttpData data]
     (.getHttpDataType data)))
@@ -204,37 +176,35 @@
 (defmethod http-data->map InterfaceHttpData$HttpDataType/Attribute
   [^Attribute attr]
   (let [content (.getValue attr)]
-    (map->MultipartChunk
-     {:part-name (.getName attr)
-      :content content
-      :name nil
-      :charset (-> attr .getCharset .toString)
-      :mime-type nil
-      :transfer-encoding nil
-      :memory? (.isInMemory attr)
-      :file? false
-      :file nil
-      :size (count content)
-      :raw-http-data attr})))
+    {:part-name (.getName attr)
+     :content content
+     :name nil
+     :charset (-> attr .getCharset .toString)
+     :mime-type nil
+     :transfer-encoding nil
+     :memory? (.isInMemory attr)
+     :file? false
+     :file nil
+     :size (count content)
+     :raw-http-data attr}))
 
 (defmethod http-data->map InterfaceHttpData$HttpDataType/FileUpload
   [^FileUpload data]
   (let [memory? (.isInMemory data)]
-    (map->MultipartChunk
-     {:part-name (.getName data)
-      :content (when memory?
-                 (bs/to-input-stream (netty/acquire (.content data))))
-      :name (.getFilename data)
-      :charset (-> data .getCharset .toString)
-      :mime-type (.getContentType data)
-      :transfer-encoding (.getContentTransferEncoding data)
-      :memory? memory?
-      :file? true
-      :file (when-not memory? (.getFile data))
-      :size (.length data)
-      :raw-http-data data})))
+    {:part-name (.getName data)
+     :content (when memory?
+                (bs/to-input-stream (.content data)))
+     :name (.getFilename data)
+     :charset (-> data .getCharset .toString)
+     :mime-type (.getContentType data)
+     :transfer-encoding (.getContentTransferEncoding data)
+     :memory? memory?
+     :file? true
+     :file (when-not memory? (.getFile data))
+     :size (.length data)
+     :raw-http-data data}))
 
-(defn- read-attributes [^HttpPostRequestDecoder decoder parts]
+(defn- read-http-data [^HttpPostRequestDecoder decoder parts]
   (d/loop []
     (if-not (.hasNext decoder)
       (d/success-deferred true) ;; go for another chunk of body
@@ -247,10 +217,17 @@
            (s/put! parts (http-data->map data))
            (fn [succeed?]
              (if succeed?
-               (do
-                 (.removeHttpDataFromClean decoder data)
-                 (d/recur))
+               (d/recur)
                (d/success-deferred false)))))))))
+
+(defn- destroy-decoder-fn [^HttpPostRequestDecoder decoder]
+  (let [destroyed? (atom false)]
+    (fn []
+      (when (compare-and-set! destroyed? false true)
+        (try
+          (.destroy decoder)
+          (catch Exception e
+            (log/warn e "exception when cleaning up multipart decoder")))))))
 
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
@@ -281,7 +258,6 @@
          (stream/take! chunks)
          (fn [{:keys [file] :as chunk}]
            (io/copy file writer)
-           (netty/release chunk)
            (stream/close! chunks)
            {:status 200 :body \"Succesfull!\"}))))
    ```
@@ -290,58 +266,46 @@
    it's better to set `:raw-stream?` to `true` to avoid additional
    input stream coercion.
 
-   The decoder is destroyed when the `body` stream is closed after a delay of
-   `destroy-delay` (60 seconds by default). All the elements from the result
-   stream have to be consumed within that configurable timeframe otherwise some
-   temporary files (if any) might be removed from the filesystem."
+   The decoder is destroyed when the `body` stream is closed or after a delay of
+   `destroy-delay` milliseconds (1 hour is a common default).
+   All the elements from the result stream have to be consumed within that
+  configurable timeframe otherwise some temporary files (if any) might be removed
+  from the filesystem."
   ([req] (decode-request req {}))
   ([{:keys [body] :as req}
     {:keys [body-buffer-size
             memory-limit
             destroy-delay]
      :or {body-buffer-size 65536
-          memory-limit DefaultHttpDataFactory/MINSIZE
-          destroy-delay 60000}}]
+          memory-limit DefaultHttpDataFactory/MINSIZE}}]
    (let [body (if (s/stream? body)
                 body
                 (netty/to-byte-buf-stream body body-buffer-size))
-         destroyed? (atom false)
          req' (http-core/ring-request->netty-request req)
          factory (DefaultHttpDataFactory. (long memory-limit))
          decoder (HttpPostRequestDecoder. factory req')
-         parts (s/stream)]
+         parts (s/stream)
+         destroy-decoder (destroy-decoder-fn decoder)]
 
      ;; on each HttpContent chunk, put it into the decoder
      ;; and resume our attempts to get the next attribute available
      (s/connect-via
       body
-      (fn [chunk]
-        (let [content (DefaultHttpContent. chunk)]
+      (fn [part]
+        (let [content (DefaultHttpContent. part)]
           (.offer decoder content)
           ;; note, that HttpPostRequestDecoder actually
           ;; makes a copy of the content provided, so we can
           ;; release it here
           ;; https://github.com/netty/netty/blob/d05666ae2d2068da7ee031a8bfc1ca572dbcc3f8/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L329
-          (netty/release chunk)
-          (read-attributes decoder parts)))
+          (netty/release part)
+          (read-http-data decoder parts)))
       parts)
 
      (s/on-closed
       parts
       (fn []
-        ;; The decoder cannot be destroyed as soon as the parts stream has been
-        ;; closed (triggered downstream by the `body`). We need to wait a bit
-        ;; to let the client consumes all the parts from the result stream.
-        (t/in destroy-delay
-              (fn []
-               (when (compare-and-set! destroyed? false true)
-                 (try
-                   ;; we're removing each received http data chunk
-                   ;; from cleanup queue before pushing to `parts` stream,
-                   ;; meaning that this `destroy` call would only cleanup
-                   ;; those chunck that were not consumed for some reasons
-                   ;; (i.e. the user closes the stream given earlier)
-                   (.destroy decoder)
-                   (catch Exception e
-                     (log/warn e "exception when cleaning up multipart decoder"))))))))
+        (if (some? destroy-delay)
+          (t/in destroy-delay destroy-decoder)
+          (destroy-decoder))))
      parts)))

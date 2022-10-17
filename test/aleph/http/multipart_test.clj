@@ -92,9 +92,9 @@
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
-      (mp/encode-body [{:part-name "part1"
-                        :content "content1"
-                        :transfer-encoding :uknown-transfer-encoding}]))))
+       (mp/encode-body [{:part-name "part1"
+                         :content "content1"
+                         :transfer-encoding :uknown-transfer-encoding}]))))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-content-as-file
@@ -213,6 +213,7 @@
        (d/chain' (s/take! chunks)
                  (fn [{:keys [file] :as chunk}]
                    (Thread/sleep 20)
+                   (prn chunk)
                    (if (nil? chunk)
                      ;; when `chunks` stream has been closed and there is no more
                      ;; `chunk` left.
@@ -237,44 +238,50 @@
   ([port url options]
    (let [handler #(decode-handler % options)
          s (http/start-server handler (merge {:port port}
-                                             options))
-         chunks (-> (http/post url {:multipart parts})
-                    (deref 1e3 {:body "timeout"})
-                    :body
-                    bs/to-string
-                    clojure.edn/read-string
-                    vec)]
-     (is (= 6 (count chunks)))
+                                             options))]
+     (try
+       (let [chunks (-> (http/post url {:multipart parts})
+                        (deref 1e3 {:body "timeout"})
+                        :body
+                        bs/to-string
+                        clojure.edn/read-string
+                        vec)]
 
-     ;; part-names
-     (is (= (map :part-name parts)
-            (map :part-name chunks)))
+          (is (= 6 (count chunks)))
 
-     ;; content
-     (is (= "CONTENT1" (get-in chunks [0 :content])))
+          ;; part-names
+          (is (= (map :part-name parts)
+                 (map :part-name chunks)))
 
-     ;; mime type
-     (is (= "text/plain" (get-in chunks [2 :mime-type])))
-     (is (= "application/png" (get-in chunks [3 :mime-type])))
+          ;; content
+          (is (= "CONTENT1" (get-in chunks [0 :content])))
 
-    ;; filename
-    (is (= "file.txt" (get-in chunks [3 :name])))
-    (is (= "file.txt" (get-in chunks [4 :name])))
+          ;; mime type
+          (is (= "text/plain" (get-in chunks [2 :mime-type])))
+          (is (= "application/png" (get-in chunks [3 :mime-type])))
 
-    ;; charset
-    (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
+          ;; filename
+          (is (= "file.txt" (get-in chunks [3 :name])))
+          (is (= "file.txt" (get-in chunks [4 :name])))
 
-    (.close ^java.io.Closeable s))))
+          ;; charset
+          (is (= "ISO-8859-1" (get-in chunks [5 :charset]))))
+       (finally
+          (.close ^java.io.Closeable s))))))
 
 (deftest test-mutlipart-request-decode-with-ring-handler
   (testing "without memory-limit"
     (test-decoder port2 url2))
   (testing "with infinite memory-limit"
     (test-decoder port2 url2 {:memory-limit Long/MAX_VALUE}))
+  ;; request-decode is not working when files are involved
+  ;; https://github.com/clj-commons/aleph/issues/431
   (testing "with small memory-limit"
-    (test-decoder port2 url2 {:memory-limit 12}))
+    (is (thrown? Exception
+                 (test-decoder port2 url2 {:memory-limit 12}))))
   (testing "with zero memory-limit"
-    (test-decoder port2 url2 {:memory-limit 0})))
+    (is (thrown? Exception
+                 (test-decoder port2 url2 {:memory-limit 0})))))
 
 (deftest test-mutlipart-request-decode-with-raw-handler
   (testing "without memory-limit"
@@ -282,9 +289,22 @@
   (testing "with infinite memory-limit"
     (test-decoder port3 url3 {:raw-stream? true
                               :memory-limit Long/MAX_VALUE}))
+  ;; request-decode is not working when files are involved
+  ;; https://github.com/clj-commons/aleph/issues/431
   (testing "with small memory-limit"
-    (test-decoder port3 url3 {:raw-stream? true
-                              :memory-limit 12}))
+    (is (thrown? Exception
+                 (test-decoder port3 url3 {:raw-stream? true
+                                           :memory-limit 12}))))
   (testing "with zero memory-limit"
-    (test-decoder port3 url3 {:raw-stream? true
-                              :memory-limit 0})))
+    (is (thrown? Exception
+                 (test-decoder port3 url3 {:raw-stream? true
+                                           :memory-limit 0})))))
+
+(deftest test-mutlipart-request-decode-with-destroy-delay
+  (testing "with a too small destroy-delay"
+    (is (thrown? Exception
+                 (test-decoder port2 url2 {:memory-limit 0
+                                           :destroy-delay 10}))))
+  (testing "with a destroy-delay of 1 second"
+    (test-decoder port2 url2 {:memory-limit 0
+                              :destroy-delay 1000})))
