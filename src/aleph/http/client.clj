@@ -461,13 +461,13 @@
 ;; includes host into URI for requests that go through proxy
 (defn req->proxy-url [{:keys [uri] :as req}]
   (let [^URI uri' (req->domain req)]
-    (.toString (URI. (.getScheme uri')
-                     nil
-                     (.getHost uri')
-                     (.getPort uri')
-                     uri
-                     nil
-                     nil))))
+    (str (URI. (.getScheme uri')
+               nil
+               (.getHost uri')
+               (.getPort uri')
+               uri
+               nil
+               nil))))
 
 (defn http-connection
   [^InetSocketAddress remote-address

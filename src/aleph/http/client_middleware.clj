@@ -577,8 +577,8 @@
       (-> (client req)
         (d/chain' #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
-(def ^String cookie-header-name (.toString HttpHeaderNames/COOKIE))
-(def ^String set-cookie-header-name (.toString HttpHeaderNames/SET_COOKIE))
+(def ^String cookie-header-name (str HttpHeaderNames/COOKIE))
+(def ^String set-cookie-header-name (str HttpHeaderNames/SET_COOKIE))
 
 ;; That's a pretty liberal domain check.
 ;; Under RFC2965 your domain should contain leading "." to match successors,
@@ -822,7 +822,7 @@
 (defmulti coerce-response-body (fn [req _] (:as req)))
 
 (defmethod coerce-response-body :byte-array [_ resp]
-  (assoc resp :body (bs/to-byte-array (:body resp))))
+  (update resp :body bs/to-byte-array))
 
 (defmethod coerce-response-body :stream [_ resp]
   (update-in resp [:body] bs/to-input-stream))
