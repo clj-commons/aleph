@@ -201,7 +201,7 @@
 
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
-   parts of the mutlipart/form-data encoded body. In case the size of
+   parts of the multipart/form-data encoded body. In case the size of
    a part content exceeds `:memory-limit` limit (16KB by default),
    corresponding payload would be written to a temp file. Check `:memory?`
    flag to know whether content might be read directly from `:content` or

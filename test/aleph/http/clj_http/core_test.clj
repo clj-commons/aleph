@@ -106,7 +106,8 @@
     [:delete "/delete-with-body"]
     {:status 200 :body "delete-with-body"}
     [:post "/multipart"]
-    {:status 200 :body (:body req)}
+    {:status  200 :body (:body req)
+     :headers {"x-original-content-type" (get-in req [:headers "content-type"] "not found")}}
     [:get "/get-with-body"]
     {:status 200 :body (:body req)}
     [:options "/options"]
@@ -335,6 +336,7 @@
                                     :mime-type "application/text"}]})
         resp-body (apply str (map #(try (char %) (catch Exception _ ""))
                                   (util/force-byte-array (:body resp))))]
+    #_(println "clj-http resp-body:\n>>>>>>>>>>>\n" resp-body "\n>>>>>>>>>>\n")
     (is (= 200 (:status resp)))
     (is (re-find #"testFINDMEtest" resp-body))
     (is (re-find #"application/json" resp-body))

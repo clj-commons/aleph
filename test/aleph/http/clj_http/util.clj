@@ -1,6 +1,7 @@
 (ns aleph.http.clj-http.util
   (:require
     [aleph.http :as http]
+    [aleph.http.core :as http.core]
     [aleph.http.client-middleware :as aleph.mid]
     [clj-commons.byte-streams :as bs]
     [clj-http.core :as clj-http]
@@ -13,7 +14,8 @@
     (java.io ByteArrayInputStream
              ByteArrayOutputStream
              FilterInputStream
-             InputStream)))
+             InputStream)
+    (java.util.regex Pattern)))
 
 ;; turn off default middleware for the core tests
 (def no-middleware-pool (http/connection-pool {:middleware identity}))
@@ -24,6 +26,7 @@
    :server-port 18080})
 
 (def ignored-headers ["date" "connection" "server"])
+(def multipart-related-headers ["content-length" "x-original-content-type"])
 
 (defn header-keys
   "Returns a set of headers of interest"
@@ -46,10 +49,24 @@
           aleph-common-headers (select-keys aleph-headers ks-intersection)]
       (is (= clj-http-common-headers aleph-common-headers)))))
 
+(defn- tee-output-stream
+  "Return the byte array contents of a stream, and a new, unconsumed stream"
+  [^InputStream in]
+  (let [baos (ByteArrayOutputStream.)]
+    (.transferTo in baos)                  ; not avail until JDK 9
+
+    (let [in-bytes (.toByteArray baos)]
+      {:bytes  in-bytes
+       :stream (proxy [FilterInputStream]
+                      [^InputStream (ByteArrayInputStream. in-bytes)]
+                 (close []
+                   (.close in)
+                   (proxy-super close)))})))
+
 (defn bodies=
   "Are the two bodies equal? clj-http's client/request fn coerces to strings by default,
    while the core/request leaves the body an InputStream.
-   Aleph, in keeping with it's stream-based nature, leaves as an InputStream by default.
+   Aleph, in keeping with its stream-based nature, leaves it as an InputStream by default.
 
    If an InputStream, returns a new ByteArrayInputStream based on the consumed original"
   [clj-http-body ^InputStream aleph-body]
@@ -84,6 +101,66 @@
     (do
       (is (= clj-http-body aleph-body))
       clj-http-body)))
+
+(defn- parse-multipart-boundary
+  [s]
+  (->> s
+       (re-find #"boundary=([^ ;]*)")
+       (second)))
+
+;;(defn- decode-multipart-body
+;;  [req body]
+;;  (let [req' (http.core/ring-request->netty-request req)
+;;        factory (DefaultHttpDataFactory. (long 1e6))
+;;        decoder (HttpPostRequestDecoder. factory req')
+;;        baos (ByteArrayOutputStream.)]))
+
+(defn multipart-resp=
+  "Compares multipart responses from /multipart, which echoes the orig multipart bodies.
+
+   Splits based on boundaries, and compares the parts. Whole-byte comparison is impossible
+   since the boundary strings are chosen randomly.
+
+   Does not compare part headers for now, since they differ in case and order, and clj-http
+   adds Content-Length headers, which are uncommon, can cause problems, and may be completely
+   unknown for streaming requests."
+  [clj-http-resp aleph-resp]
+  (let [clj-http-headers (:headers clj-http-resp)
+        aleph-headers (:headers aleph-resp)
+        clj-http-boundary (parse-multipart-boundary (get clj-http-headers "x-original-content-type"))
+        aleph-boundary (parse-multipart-boundary (get aleph-headers "x-original-content-type"))
+        {clj-http-bytes :bytes clj-http-stream :stream} (tee-output-stream (:body clj-http-resp))
+        aleph-bytes (-> aleph-resp :body tee-output-stream :bytes)
+
+        ;; unlikely to be a problem, but let's make the regex literal, just to be safe
+        clj-http-boundary-regex (Pattern/compile clj-http-boundary (bit-or Pattern/LITERAL Pattern/MULTILINE))
+        aleph-boundary-regex (Pattern/compile aleph-boundary (bit-or Pattern/LITERAL Pattern/MULTILINE))
+
+        clj-http-contents (-> ^bytes clj-http-bytes
+                              (String.)
+                              (str/split clj-http-boundary-regex))
+        aleph-contents (-> ^bytes aleph-bytes
+                           (String.)
+                           (str/split aleph-boundary-regex))]
+    #_(do
+      (println "aleph bytes")
+      (bs/print-bytes aleph-bytes)
+
+      (println "clj-http bytes")
+      (bs/print-bytes clj-http-bytes))
+
+    (is (= (count clj-http-contents) (count aleph-contents))
+        "Unequal number of parts found!")
+    (doseq [[^String clj-http-part ^String aleph-part] (partition 2 (interleave clj-http-contents aleph-contents))]
+      (let [[clj-http-part-headers clj-http-part-body] (str/split clj-http-part #"\r\n\r\n")
+            [aleph-part-headers aleph-part-body] (str/split aleph-part #"\r\n\r\n")]
+        #_ (println "headers:>>>>>>>>>>>>\n" clj-http-part-headers "\n>>>>>>>>>>>>>>>>\n" aleph-part-headers)
+        #_ (println ">>>>>>>>>>\nbodies:\n" clj-http-part-body "\n>>>>>>>>>>>>>>>>\n" aleph-part-body)
+        (is (or (and (nil? clj-http-part-body) (nil? aleph-part-body))
+                (.equalsIgnoreCase clj-http-part-body aleph-part-body))
+            (str "clj-part:\n>>>>>>>>>>\n" clj-http-part-body "\n>>>>>>>>>>\naleph-part:\n>>>>>>>>>>\n" aleph-part-body "\n>>>>>>>>>>\n"))))
+
+    clj-http-stream))
 
 
 (defn- defined-middleware
@@ -173,11 +250,12 @@
              ;;_ (print-middleware-list clj-http.client/*current-middleware*)
              aleph-ring-map (merge base-req req {:pool (aleph-test-conn-pool clj-http-middleware)})
              ;;_ (prn aleph-ring-map)
+             is-multipart (contains? clj-http-ring-map :multipart)
              clj-http-resp (clj-http-request clj-http-ring-map)
              aleph-resp @(http/request aleph-ring-map)]
          (is (= (:status clj-http-resp) (:status aleph-resp)))
 
-         (prn aleph-resp)
+
 
          #_(when (not= (:status clj-http-resp) (:status aleph-resp))
            (println "clj-http req:")
@@ -193,7 +271,33 @@
            (println "aleph resp:")
            (prn aleph-resp))
 
-         (is-headers= (:headers clj-http-resp) (:headers aleph-resp))
-         (is (instance? InputStream (:body aleph-resp)))
-         (let [new-clj-http-body (bodies= (:body clj-http-resp) (:body aleph-resp))]
-           (assoc clj-http-resp :body new-clj-http-body)))))))
+         (is (instance? InputStream (:body aleph-resp)))    ; non-nil, for now...
+
+         (if is-multipart
+           (do
+             ;;(println "multipart resps")
+             ;;(prn clj-http-resp)
+             ;;(prn aleph-resp)
+             ;;(println)
+
+             (do
+               (println "clj-http req:")
+               (prn clj-http-ring-map)
+               (println)
+               (println "clj-http resp:")
+               (prn clj-http-resp)
+               (println)
+               (println)
+               (println "aleph req:")
+               (prn aleph-ring-map)
+               (println)
+               (println "aleph resp:")
+               (prn aleph-resp))
+
+             (is-headers= (apply dissoc (:headers clj-http-resp) multipart-related-headers)
+                          (apply dissoc (:headers aleph-resp) multipart-related-headers))
+             (assoc clj-http-resp :body (multipart-resp= clj-http-resp aleph-resp)))
+           (do
+             (is-headers= (:headers clj-http-resp) (:headers aleph-resp))
+             (let [new-clj-http-body (bodies= (:body clj-http-resp) (:body aleph-resp) is-multipart)]
+               (assoc clj-http-resp :body new-clj-http-body)))))))))
