@@ -229,6 +229,41 @@
                    symbol))
              middleware-list)))
 
+(defn- bais-clone
+  "Clones a ByteArrayInputStream and resets the original's pos, so it can be read again"
+  [^ByteArrayInputStream bais]
+  (.mark bais 0)
+  (let [new-bais (ByteArrayInputStream. (.readAllBytes bais))]
+    (.reset bais)
+    new-bais))
+
+(defn build-aleph-ring-map
+  "Constructs an aleph ring map, based on the clj-http ring map.
+
+   Adds corresponding middleware, and copies request ByteArrayInputStreams,
+   since they can't be read more than once by default."
+  [clj-http-ring-map clj-http-middleware]
+  (let [clone-bais-val (fn [m k]
+                          (if (= ByteArrayInputStream (-> m k class))
+                            (assoc m k (bais-clone (k m)))
+                            m))
+        middleware-ring-map (merge clj-http-ring-map {:pool (aleph-test-conn-pool clj-http-middleware)})]
+    (cond-> middleware-ring-map
+
+            (contains? clj-http-ring-map :body)
+            (clone-bais-val :body)
+
+            (contains? clj-http-ring-map :multipart)
+            (update-in [:multipart]
+                       (fn [parts]
+                         (into []
+                               (map #(clone-bais-val % :content)
+                                    #_(fn [part]
+                                      (if (= ByteArrayInputStream (-> part :content class))
+                                        (assoc part :content (bais-clone (:content part)))
+                                        part)))
+                               parts))))))
+
 (defn make-request
   "Need to switch between clj-http's core/request and client/request.
 
@@ -248,7 +283,7 @@
              ;;_ (prn clj-http-ring-map)
              clj-http-middleware (if using-middleware? clj-http.client/*current-middleware* [])
              ;;_ (print-middleware-list clj-http.client/*current-middleware*)
-             aleph-ring-map (merge base-req req {:pool (aleph-test-conn-pool clj-http-middleware)})
+             aleph-ring-map (build-aleph-ring-map clj-http-ring-map clj-http-middleware)
              ;;_ (prn aleph-ring-map)
              is-multipart (contains? clj-http-ring-map :multipart)
              clj-http-resp (clj-http-request clj-http-ring-map)
@@ -280,24 +315,24 @@
              ;;(prn aleph-resp)
              ;;(println)
 
-             (do
-               (println "clj-http req:")
-               (prn clj-http-ring-map)
-               (println)
-               (println "clj-http resp:")
-               (prn clj-http-resp)
-               (println)
-               (println)
-               (println "aleph req:")
-               (prn aleph-ring-map)
-               (println)
-               (println "aleph resp:")
-               (prn aleph-resp))
+             ;;(do
+             ;;  (println "clj-http req:")
+             ;;  (prn clj-http-ring-map)
+             ;;  (println)
+             ;;  (println "clj-http resp:")
+             ;;  (prn clj-http-resp)
+             ;;  (println)
+             ;;  (println)
+             ;;  (println "aleph req:")
+             ;;  (prn aleph-ring-map)
+             ;;  (println)
+             ;;  (println "aleph resp:")
+             ;;  (prn aleph-resp))
 
              (is-headers= (apply dissoc (:headers clj-http-resp) multipart-related-headers)
                           (apply dissoc (:headers aleph-resp) multipart-related-headers))
              (assoc clj-http-resp :body (multipart-resp= clj-http-resp aleph-resp)))
            (do
              (is-headers= (:headers clj-http-resp) (:headers aleph-resp))
-             (let [new-clj-http-body (bodies= (:body clj-http-resp) (:body aleph-resp) is-multipart)]
+             (let [new-clj-http-body (bodies= (:body clj-http-resp) (:body aleph-resp))]
                (assoc clj-http-resp :body new-clj-http-body)))))))))
