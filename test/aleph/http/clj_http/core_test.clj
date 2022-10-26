@@ -795,7 +795,7 @@
         (is (= http-context context-for-request))
         (is (= request-config (.getRequestConfig context-for-request)))))))
 
-(deftest ^:integration test-custom-http-builder-fns
+(deftest ^:integration ^:ignore test-custom-http-builder-fns
   (run-server)
   (let [resp (client/get (localhost "/get")
                          {:headers {"add-headers" "true"}
@@ -884,7 +884,7 @@
     (is false "should have thrown a timeout exception")
     (catch TimeoutException te)))
 
-(deftest ^:integration test-reusable-http-client
+(deftest ^:integration ^:ignore test-reusable-http-client
   (run-server)
   (let [cm (conn/make-reuseable-async-conn-manager {})
         hc (core/build-async-http-client {} cm)]
@@ -942,7 +942,7 @@
     (is (= @validated true))))
 
 
-(deftest t-cache-config
+(deftest ^:ignore t-cache-config
   (let [cc (core/build-cache-config
              {:cache-config {:allow-303-caching true
                              :asynchronous-worker-idle-lifetime-secs 10
@@ -971,7 +971,7 @@
     (is (= false (.isSharedCache cc)))
     (is (= true (.isWeakETagOnPutDeleteAllowed cc)))))
 
-(deftest ^:integration t-client-caching
+(deftest ^:integration ^:ignore t-client-caching
   (run-server)
   (let [cm (conn/make-reusable-conn-manager {})
         r1 (client/get (localhost "/get")
