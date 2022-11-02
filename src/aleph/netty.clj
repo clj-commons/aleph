@@ -57,7 +57,7 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     FastThreadLocalThread GenericFutureListener Future]
+     AbstractEventExecutor FastThreadLocalThread GenericFutureListener Future]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [java.nio.channels ClosedChannelException]
@@ -122,6 +122,14 @@
   (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
 ;;;
+
+(def ^:const default-shutdown-quiet-period
+  "Default quiet period in seconds when shutting down an eventloop group"
+  2) ;; As in https://github.com/netty/netty/blob/b61d7d40f40e3a797e8a60cd567f849a9799c771/common/src/main/java/io/netty/util/concurrent/AbstractEventExecutor.java#L40
+
+(def ^:const default-shutdown-timeout
+  "Default timeout in seconds when shutting down an eventloop group"
+  15) ;; As in https://github.com/netty/netty/blob/b61d7d40f40e3a797e8a60cd567f849a9799c771/common/src/main/java/io/netty/util/concurrent/AbstractEventExecutor.java#L41
 
 (def ^:const array-class (class (clojure.core/byte-array 0)))
 
@@ -1045,7 +1053,7 @@
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
 (defn dns-resolver-group-builder
-  "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and 
+  "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and
 initialize an DnsAddressResolverGroup instance.
 
    DNS options are a map of:
@@ -1219,82 +1227,96 @@ initialize an DnsAddressResolverGroup instance.
                 (maybe-ssl-handshake-future ch)))))))))
 
 (defn start-server
-  [pipeline-builder
-   ssl-context
-   bootstrap-transform
-   on-close
-   ^SocketAddress socket-address
-   epoll?]
-  (when epoll?
-    (ensure-epoll-available!))
-  (let [num-cores      (.availableProcessors (Runtime/getRuntime))
-        num-threads    (* 2 num-cores)
-        thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
-        closed?        (atom false)
+  ([pipeline-builder
+    ssl-context
+    bootstrap-transform
+    on-close
+    socket-address
+    epoll?]
+   (start-server {:pipeline-builder pipeline-builder
+                  :ssl-context ssl-context
+                  :bootstrap-transform bootstrap-transform
+                  :on-close on-close
+                  :socket-address socket-address
+                  :transport (if epoll? :epoll :nio)}))
+  ([{:keys [pipeline-builder
+            ssl-context
+            bootstrap-transform
+            on-close
+            ^SocketAddress socket-address
+            transport
+            shutdown-quiet-period
+            shutdown-timeout]}]
+   (when (= transport :epoll)
+     (ensure-epoll-available!))
+   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
+         num-threads    (* 2 num-cores)
+         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
+         closed?        (atom false)
 
-        ^EventLoopGroup group
-        (if epoll?
-          (EpollEventLoopGroup. num-threads thread-factory)
-          (NioEventLoopGroup. num-threads thread-factory))
+         ^EventLoopGroup group
+         (condp = transport
+           :epoll
+           (EpollEventLoopGroup. num-threads thread-factory)
 
-        ^Class channel
-        (if epoll?
-          EpollServerSocketChannel
-          NioServerSocketChannel)
+           :nio
+           (NioEventLoopGroup. num-threads thread-factory))
 
-        ;; todo(kachayev): this one should be reimplemented after
-        ;;                 KQueue transport is merged into master
-        transport
-        (if epoll? :epoll :nio)
+         ^Class channel
+         (condp = transport
+           :epoll EpollServerSocketChannel
+           :nio NioServerSocketChannel)
 
-        ^SslContext
-        ssl-context (when (some? ssl-context)
-                      (coerce-ssl-server-context ssl-context))
+         ^SslContext
+         ssl-context (when (some? ssl-context)
+                       (coerce-ssl-server-context ssl-context))
 
-        pipeline-builder
-        (if ssl-context
-          (fn [^ChannelPipeline p]
-            (.addLast p "ssl-handler"
-              (.newHandler ssl-context
-                (-> p .channel .alloc)))
-            (pipeline-builder p))
-          pipeline-builder)]
+         pipeline-builder
+         (if ssl-context
+           (fn [^ChannelPipeline p]
+             (.addLast p "ssl-handler"
+                       (.newHandler ssl-context
+                                    (-> p .channel .alloc)))
+             (pipeline-builder p))
+           pipeline-builder)]
 
-    (try
-      (let [b (doto (ServerBootstrap.)
-                (.option ChannelOption/SO_BACKLOG (int 1024))
-                (.option ChannelOption/SO_REUSEADDR true)
-                (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                (.group group)
-                (.channel channel)
-                (.childHandler (pipeline-initializer pipeline-builder))
-                (.childOption ChannelOption/SO_REUSEADDR true)
-                (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                bootstrap-transform)
+     (try
+       (let [b (doto (ServerBootstrap.)
+                 (.option ChannelOption/SO_BACKLOG (int 1024))
+                 (.option ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group group)
+                 (.channel channel)
+                 (.childHandler (pipeline-initializer pipeline-builder))
+                 (.childOption ChannelOption/SO_REUSEADDR true)
+                 (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 bootstrap-transform)
 
-            ^ServerSocketChannel
-            ch (-> b (.bind socket-address) .sync .channel)]
-        (reify
-          java.io.Closeable
-          (close [_]
-            (when (compare-and-set! closed? false true)
-              (-> ch .close .sync)
-              (-> group .shutdownGracefully)
-              (when on-close
-                (d/chain'
-                 (wrap-future (.terminationFuture group))
-                 (fn [_] (on-close))))))
-          Object
-          (toString [_]
-            (format "AlephServer[channel:%s, transport:%s]" ch transport))
-          AlephServer
-          (port [_]
-            (-> ch .localAddress .getPort))
-          (wait-for-close [_]
-            (-> ch .closeFuture .await)
-            (-> group .terminationFuture .await)
-            nil)))
+             ^ServerSocketChannel
+             ch (-> b (.bind socket-address) .sync .channel)]
+         (reify
+           java.io.Closeable
+           (close [_]
+             (when (compare-and-set! closed? false true)
+               (-> ch .close .sync)
+               (-> group (.shutdownGracefully (long shutdown-quiet-period)
+                                              (long shutdown-timeout)
+                                              TimeUnit/SECONDS))
+               (when on-close
+                 (d/chain'
+                  (wrap-future (.terminationFuture group))
+                  (fn [_] (on-close))))))
+           Object
+           (toString [_]
+             (format "AlephServer[channel:%s, transport:%s]" ch transport))
+           AlephServer
+           (port [_]
+             (-> ch .localAddress .getPort))
+           (wait-for-close [_]
+             (-> ch .closeFuture .await)
+             (-> group .terminationFuture .await)
+             nil)))
 
-      (catch Exception e
-        @(.shutdownGracefully group)
-        (throw e)))))
+       (catch Exception e
+         @(.shutdownGracefully group)
+         (throw e))))))

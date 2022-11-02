@@ -79,24 +79,32 @@
    | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details). If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `shutdown-quiet-period` | optional period in seconds for which new connections will still be serviced after a scheduled shutdown via `java.io.Closeable::close`. Defaults to 2 seconds.
+   | `shutdown-timeout` | optional grace period in seconds on which to wait for the event loop group to empty during a scheduled shutdown. Defaults to 15 seconds.  "
   [handler
-   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?]
+   {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?
+           shutdown-quiet-period shutdown-timeout]
     :or {bootstrap-transform identity
          pipeline-transform identity
-         epoll? false}
+         epoll? false
+         shutdown-quiet-period netty/default-shutdown-quiet-period
+         shutdown-timeout netty/default-shutdown-timeout}
     :as options}]
   (netty/start-server
-    (fn [^ChannelPipeline pipeline]
-      (.addLast pipeline "handler" (server-channel-handler handler options))
-      (pipeline-transform pipeline))
-    ssl-context
-    bootstrap-transform
-    nil
-    (if socket-address
-      socket-address
-      (InetSocketAddress. port))
-    epoll?))
+   {:pipeline-builder (fn [^ChannelPipeline pipeline]
+                        (.addLast pipeline
+                                  "handler"
+                                  (server-channel-handler handler options))
+                        (pipeline-transform pipeline))
+    :ssl-context ssl-context
+    :bootstrap-transform bootstrap-transform
+    :socket-address (if socket-address
+                      socket-address
+                      (InetSocketAddress. port))
+    :transport (if epoll? :epoll :nio)
+    :shutdown-quiet-period shutdown-quiet-period
+    :shutdown-timeout shutdown-timeout}))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
