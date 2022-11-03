@@ -33,7 +33,7 @@ jobs:
       - run:
           name: Install bb
           command: |
-            sudo bash < <(curl -s https://raw.githubusercontent.com/babashka/babashka/master/install)
+            sudo bash < <(curl -s https://raw.githubusercontent.com/babashka/babashka/3d916df4a0c1e00df94100860b8eb5577e59c56a/install)
 
       - run: lein deps
 
