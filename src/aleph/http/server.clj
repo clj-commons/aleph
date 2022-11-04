@@ -7,7 +7,7 @@
     [clojure.tools.logging :as log]
     [clojure.string :as str]
     [manifold.deferred :as d]
-    [manifold.stream :as s]) 
+    [manifold.stream :as s])
   (:import
     [java.util
      EnumSet
@@ -577,12 +577,16 @@
            epoll?
            compression?
            continue-handler
-           continue-executor]
+           continue-executor
+           shutdown-quiet-period
+           shutdown-timeout]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
          epoll? false
-         compression? false}
+         compression? false
+         shutdown-quiet-period netty/default-shutdown-quiet-period
+         shutdown-timeout netty/default-shutdown-timeout}
     :as options}]
   (let [executor (cond
                    (instance? Executor executor)
@@ -617,21 +621,29 @@
                                (str "invalid continue-executor specification: "
                                     (pr-str continue-executor)))))]
     (netty/start-server
-      (pipeline-builder
-        handler
-        pipeline-transform
-        (assoc options :executor executor :ssl? (or manual-ssl? (boolean ssl-context)) :continue-executor continue-executor'))
-      ssl-context
-      bootstrap-transform
-      (when (and shutdown-executor? (or (instance? ExecutorService executor)
-                                        (instance? ExecutorService continue-executor)))
-        #(do
-           (when (instance? ExecutorService executor)
-             (.shutdown ^ExecutorService executor))
-           (when (instance? ExecutorService continue-executor)
-             (.shutdown ^ExecutorService continue-executor))))
-      (if socket-address socket-address (InetSocketAddress. port))
-      epoll?)))
+     {:pipeline-builder (pipeline-builder
+                         handler
+                         pipeline-transform
+                         (assoc options
+                                :executor executor
+                                :ssl? (or manual-ssl? (boolean ssl-context))
+                                :continue-executor continue-executor'))
+      :ssl-context ssl-context
+
+      :bootstrap-transform bootstrap-transform
+      :socket-address (if socket-address
+                        socket-address
+                        (InetSocketAddress. port))
+      :on-close (when (and shutdown-executor? (or (instance? ExecutorService executor)
+                                       (instance? ExecutorService continue-executor)))
+                  #(do
+                     (when (instance? ExecutorService executor)
+                       (.shutdown ^ExecutorService executor))
+                     (when (instance? ExecutorService continue-executor)
+                       (.shutdown ^ExecutorService continue-executor))))
+      :transport (if epoll? :epoll :nio)
+      :shutdown-quiet-period shutdown-quiet-period
+      :shutdown-timeout shutdown-timeout})))
 
 ;;;
 
