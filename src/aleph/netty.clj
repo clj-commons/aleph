@@ -6,6 +6,7 @@
     [manifold.deferred :as d]
     [manifold.executor :as e]
     [manifold.stream :as s]
+    [manifold.time :as t]
     [manifold.stream.core :as manifold]
     [clj-commons.primitive-math :as p]
     [potemkin :as potemkin :refer [doit doary]])
@@ -27,6 +28,9 @@
      EpollSocketChannel
      EpollDatagramChannel]
     [io.netty.util Attribute AttributeKey]
+    [io.netty.channel.group
+     ChannelGroup
+     DefaultChannelGroup]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
     [io.netty.channel.socket.nio
@@ -55,6 +59,8 @@
      SequentialDnsServerAddressStreamProvider]
     [io.netty.util ResourceLeakDetector
      ResourceLeakDetector$Level]
+    [io.netty.util.concurrent
+     GlobalEventExecutor]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
      AbstractEventExecutor FastThreadLocalThread GenericFutureListener Future]
@@ -1139,6 +1145,11 @@ initialize an DnsAddressResolverGroup instance.
   [dns-options]
   (DnsAddressResolverGroup. (dns-resolver-group-builder dns-options)))
 
+(defn channel-group
+  "Creates an instance of ChannelGroup with the GlobalEventExecutor instance."
+  []
+  (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
+
 (defn ^:nodoc maybe-ssl-handshake-future
   "Returns a deferred which resolves to the channel after a potential
   SSL handshake has completed successfully. If no `SslHandler` is
@@ -1226,6 +1237,40 @@ initialize an DnsAddressResolverGroup instance.
               (let [ch (.channel ^ChannelFuture f)]
                 (maybe-ssl-handshake-future ch)))))))))
 
+(defn- wait-channel-group
+  "Waits for all the channels to be closed on the `ChannelGroup` up to the
+  `timeout` in seconds. A `Channel` is automatically removed from the
+  `ChannelGroup` when it closes.
+  Returns the elasped time in seconds (rounded down to the nearest whole number)
+  until the `ChannelGroup` is empty or whether the timeout is reached."
+  [channel-group timeout]
+  (if (or (empty? channel-group) ;; no active connections (or channel-group is nil)
+          (zero? timeout))       ;; don't wait for active connections to be terminated
+    0
+    (let [timeout-ms (* timeout 1000)
+          delay-ms 100]
+      (-> (d/loop [elapsed-ms 0]
+            (t/in delay-ms
+                  (fn []
+                    (let [elapsed-ms' (+ elapsed-ms delay-ms)]
+                      (if (and (seq channel-group) (< elapsed-ms' timeout-ms))
+                        (d/recur elapsed-ms')
+                        elapsed-ms')))))
+          (d/chain' (fn [elapsed-ms]
+                      (/ elapsed-ms 1000)))))))
+
+(defn- shutdown-group
+  "Shutdowns the `EventLoopGroup` by taking into account the time already
+  `elasped` waiting for active connections on the `ChannelGroup`."
+  [^EventLoopGroup group shutdown-timeout elasped]
+  (if shutdown-timeout
+    (let [timeout (- shutdown-timeout elasped)]
+      (.shutdownGracefully group 0 (long timeout) TimeUnit/SECONDS))
+    (.shutdownGracefully group
+                         (long default-shutdown-quiet-period)
+                         (long default-shutdown-timeout)
+                         TimeUnit/SECONDS)))
+
 (defn start-server
   ([pipeline-builder
     ssl-context
@@ -1245,8 +1290,8 @@ initialize an DnsAddressResolverGroup instance.
             on-close
             ^SocketAddress socket-address
             transport
-            shutdown-quiet-period
-            shutdown-timeout]}]
+            shutdown-timeout
+            ^ChannelGroup channel-group]}]
    (when (= transport :epoll)
      (ensure-epoll-available!))
    (let [num-cores      (.availableProcessors (Runtime/getRuntime))
@@ -1299,13 +1344,10 @@ initialize an DnsAddressResolverGroup instance.
            (close [_]
              (when (compare-and-set! closed? false true)
                (-> ch .close .sync)
-               (-> group (.shutdownGracefully (long shutdown-quiet-period)
-                                              (long shutdown-timeout)
-                                              TimeUnit/SECONDS))
-               (when on-close
-                 (d/chain'
-                  (wrap-future (.terminationFuture group))
-                  (fn [_] (on-close))))))
+               (-> (wait-channel-group channel-group shutdown-timeout)
+                   (d/chain' (partial shutdown-group group shutdown-timeout)
+                             (wrap-future (.terminationFuture group))
+                             (fn [_] (on-close))))))
            Object
            (toString [_]
              (format "AlephServer[channel:%s, transport:%s]" ch transport))

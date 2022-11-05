@@ -30,6 +30,7 @@
      ChannelHandlerContext
      ChannelHandler
      ChannelPipeline]
+    [io.netty.channel.group ChannelGroup]
     [io.netty.handler.stream ChunkedWriteHandler]
     [io.netty.handler.timeout
      IdleState
@@ -249,213 +250,251 @@
      (fn [_] (netty/close ctx)))))
 
 (defn ring-handler
-  [ssl? handler rejected-handler error-handler executor buffer-capacity]
-  (let [buffer-capacity (long buffer-capacity)
-        request (atom nil)
-        buffer (atom [])
-        buffer-size (AtomicInteger. 0)
-        stream (atom nil)
-        previous-response (atom nil)
+  ([ssl? handler rejected-handler error-handler executor buffer-capacity]
+   (ring-handler {:ssl? ssl?
+                  :handler handler
+                  :rejected-handler rejected-handler
+                  :error-handler error-handler
+                  :executor executor
+                  :buffer-capacity buffer-capacity}))
+  ([{:keys [ssl?
+            handler
+            rejected-handler
+            error-handler
+            executor
+            buffer-capacity
+            ^ChannelGroup channel-group]}]
+   (let [buffer-capacity (long buffer-capacity)
+         request (atom nil)
+         buffer (atom [])
+         buffer-size (AtomicInteger. 0)
+         stream (atom nil)
+         previous-response (atom nil)
 
-        handle-request
-        (fn [^ChannelHandlerContext ctx req body]
-          (reset! previous-response
-            (handle-request
-              ctx
-              ssl?
-              handler
-              rejected-handler
-              error-handler
-              executor
-              req
-              @previous-response
-              (when body (bs/to-input-stream body))
-              (HttpHeaders/isKeepAlive req))))
+         handle-request
+         (fn [^ChannelHandlerContext ctx req body]
+           (reset! previous-response
+                   (handle-request
+                    ctx
+                    ssl?
+                    handler
+                    rejected-handler
+                    error-handler
+                    executor
+                    req
+                    @previous-response
+                    (when body (bs/to-input-stream body))
+                    (HttpHeaders/isKeepAlive req))))
 
-        process-request
-        (fn [ctx req]
-          (if (HttpHeaders/isTransferEncodingChunked req)
-            (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
-              (reset! stream s)
-              (handle-request ctx req s))
-            (reset! request req)))
+         process-request
+         (fn [ctx req]
+           (if (HttpHeaders/isTransferEncodingChunked req)
+             (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
+               (reset! stream s)
+               (handle-request ctx req s))
+             (reset! request req)))
 
-        process-full-request
-        (fn [ctx ^FullHttpRequest req]
-          ;; HttpObjectAggregator disables chunked encoding, no need to check for it.
-          (let [content (.content req)
-                body (when (pos? (.readableBytes content))
-                       (netty/buf->array content))]
-            ;; Don't release content as it will happen automatically once whole
-            ;; request is released.
-            (handle-request ctx req body)))
+         process-full-request
+         (fn [ctx ^FullHttpRequest req]
+           ;; HttpObjectAggregator disables chunked encoding, no need to check for it.
+           (let [content (.content req)
+                 body (when (pos? (.readableBytes content))
+                        (netty/buf->array content))]
+             ;; Don't release content as it will happen automatically once whole
+             ;; request is released.
+             (handle-request ctx req body)))
 
-        process-last-content
-        (fn [ctx ^HttpContent msg]
-          (let [content (.content msg)]
-            (if-let [s @stream]
+         process-last-content
+         (fn [ctx ^HttpContent msg]
+           (let [content (.content msg)]
+             (if-let [s @stream]
 
-              (do
-                (s/put! s (netty/buf->array content))
-                (netty/release content)
-                (s/close! s))
+               (do
+                 (s/put! s (netty/buf->array content))
+                 (netty/release content)
+                 (s/close! s))
 
-              (if (and (zero? (.get buffer-size))
-                    (zero? (.readableBytes content)))
+               (if (and (zero? (.get buffer-size))
+                        (zero? (.readableBytes content)))
 
-                ;; there was never any body
-                (do
-                  (netty/release content)
-                  (handle-request ctx @request nil))
+                 ;; there was never any body
+                 (do
+                   (netty/release content)
+                   (handle-request ctx @request nil))
 
-                (let [bufs (conj @buffer content)
-                      bytes (netty/bufs->array bufs)]
-                  (doseq [b bufs]
-                    (netty/release b))
-                  (handle-request ctx @request bytes))))
+                 (let [bufs (conj @buffer content)
+                       bytes (netty/bufs->array bufs)]
+                   (doseq [b bufs]
+                     (netty/release b))
+                   (handle-request ctx @request bytes))))
 
-            (.set buffer-size 0)
-            (reset! stream nil)
-            (reset! buffer [])
-            (reset! request nil)))
+             (.set buffer-size 0)
+             (reset! stream nil)
+             (reset! buffer [])
+             (reset! request nil)))
 
-        process-content
-        (fn [ctx ^HttpContent msg]
-          (let [content (.content msg)]
-            (if-let [s @stream]
+         process-content
+         (fn [ctx ^HttpContent msg]
+           (let [content (.content msg)]
+             (if-let [s @stream]
 
-              ;; already have a stream going
-              (do
-                (netty/put! (netty/channel ctx) s (netty/buf->array content))
-                (netty/release content))
+               ;; already have a stream going
+               (do
+                 (netty/put! (netty/channel ctx) s (netty/buf->array content))
+                 (netty/release content))
 
-              (let [len (.readableBytes ^ByteBuf content)]
+               (let [len (.readableBytes ^ByteBuf content)]
 
-                (when-not (zero? len)
-                  (swap! buffer conj content))
+                 (when-not (zero? len)
+                   (swap! buffer conj content))
 
-                (let [size (.addAndGet buffer-size len)]
+                 (let [size (.addAndGet buffer-size len)]
 
-                  ;; buffer size exceeded, flush it as a stream
-                  (when (< buffer-capacity size)
-                    (let [bufs @buffer
-                          s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
-                              (s/put! (netty/bufs->array bufs)))]
+                   ;; buffer size exceeded, flush it as a stream
+                   (when (< buffer-capacity size)
+                     (let [bufs @buffer
+                           s (doto (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
+                               (s/put! (netty/bufs->array bufs)))]
 
-                      (doseq [b bufs]
-                        (netty/release b))
+                       (doseq [b bufs]
+                         (netty/release b))
 
-                      (reset! buffer [])
-                      (reset! stream s)
+                       (reset! buffer [])
+                       (reset! stream s)
 
-                      (handle-request ctx @request s))))))))]
+                       (handle-request ctx @request s))))))))]
 
-    (netty/channel-inbound-handler
+     (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex))
+       (exception-handler ctx ex))
+
+      :channel-active
+      ([_ ctx]
+       (when (some? channel-group)
+         (.add channel-group (.channel ctx)))
+       (.fireChannelActive ctx))
 
       :channel-inactive
       ([_ ctx]
-        (when-let [s @stream]
-          (s/close! s))
-        (doseq [b @buffer]
-          (netty/release b))
-        (.fireChannelInactive ctx))
+       (when-let [s @stream]
+         (s/close! s))
+       (doseq [b @buffer]
+         (netty/release b))
+       (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
-        (cond
+       (cond
 
-          ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
-          (instance? FullHttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (process-full-request ctx msg))
+         ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
+         (instance? FullHttpRequest msg)
+         (if (invalid-request? msg)
+           (reject-invalid-request ctx msg)
+           (process-full-request ctx msg))
 
-          (instance? HttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (process-request ctx msg))
+         (instance? HttpRequest msg)
+         (if (invalid-request? msg)
+           (reject-invalid-request ctx msg)
+           (process-request ctx msg))
 
-          (instance? HttpContent msg)
-          (if (instance? LastHttpContent msg)
-            (process-last-content ctx msg)
-            (process-content ctx msg))
+         (instance? HttpContent msg)
+         (if (instance? LastHttpContent msg)
+           (process-last-content ctx msg)
+           (process-content ctx msg))
 
-          :else
-          (.fireChannelRead ctx msg))))))
+         :else
+         (.fireChannelRead ctx msg)))))))
 
 (defn raw-ring-handler
-  [ssl? handler rejected-handler error-handler executor buffer-capacity]
-  (let [buffer-capacity (long buffer-capacity)
-        stream (atom nil)
-        previous-response (atom nil)
+  ([ssl? handler rejected-handler error-handler executor buffer-capacity]
+   {:ssl? ssl?
+    :handler handler
+    :rejected-handler rejected-handler
+    :error-handler error-handler
+    :executor executor
+    :buffer-capacity buffer-capacity})
+  ([{:keys [ssl?
+            handler
+            rejected-handler
+            error-handler
+            executor
+            buffer-capacity
+            ^ChannelGroup channel-group]}]
+   (let [buffer-capacity (long buffer-capacity)
+         stream (atom nil)
+         previous-response (atom nil)
 
-        handle-request
-        (fn [^ChannelHandlerContext ctx req body]
-          (reset! previous-response
-            (handle-request
-              ctx
-              ssl?
-              handler
-              rejected-handler
-              error-handler
-              executor
-              req
-              @previous-response
-              body
-              (HttpUtil/isKeepAlive req))))]
-    (netty/channel-inbound-handler
+         handle-request
+         (fn [^ChannelHandlerContext ctx req body]
+           (reset! previous-response
+                   (handle-request
+                    ctx
+                    ssl?
+                    handler
+                    rejected-handler
+                    error-handler
+                    executor
+                    req
+                    @previous-response
+                    body
+                    (HttpUtil/isKeepAlive req))))]
+     (netty/channel-inbound-handler
 
       :exception-caught
       ([_ ctx ex]
-        (exception-handler ctx ex))
+       (exception-handler ctx ex))
+
+      :channel-active
+      ([_ ctx]
+       (when (some? channel-group)
+         (.add channel-group (.channel ctx)))
+       (.fireChannelActive ctx))
 
       :channel-inactive
       ([_ ctx]
-        (when-let [s @stream]
-          (s/close! s))
-        (.fireChannelInactive ctx))
+       (when-let [s @stream]
+         (s/close! s))
+       (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
-        (cond
+       (cond
 
-          ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
-          (instance? FullHttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (let [^FullHttpRequest req msg
-                  content (.content req)
-                  ch (netty/channel ctx)
-                  s (netty/source ch)]
-              (when-not (zero? (.readableBytes content))
-                ;; Retain the content of FullHttpRequest one extra time to
-                ;; compensate for it being released together with the request.
-                (netty/put! ch s (netty/acquire content)))
-              (s/close! s)
-              (handle-request ctx req s)))
+         ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
+         (instance? FullHttpRequest msg)
+         (if (invalid-request? msg)
+           (reject-invalid-request ctx msg)
+           (let [^FullHttpRequest req msg
+                 content (.content req)
+                 ch (netty/channel ctx)
+                 s (netty/source ch)]
+             (when-not (zero? (.readableBytes content))
+               ;; Retain the content of FullHttpRequest one extra time to
+               ;; compensate for it being released together with the request.
+               (netty/put! ch s (netty/acquire content)))
+             (s/close! s)
+             (handle-request ctx req s)))
 
-          (instance? HttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (let [req msg]
-              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
-                (reset! stream s)
-                (handle-request ctx req s))))
+         (instance? HttpRequest msg)
+         (if (invalid-request? msg)
+           (reject-invalid-request ctx msg)
+           (let [req msg]
+             (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
+               (reset! stream s)
+               (handle-request ctx req s))))
 
-          (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
-            ;; content might empty most probably in case of EmptyLastHttpContent
-            (when-not (zero? (.readableBytes content))
-              (netty/put! (.channel ctx) @stream content))
-            (when (instance? LastHttpContent msg)
-              (s/close! @stream)))
+         (instance? HttpContent msg)
+         (let [content (.content ^HttpContent msg)]
+           ;; content might empty most probably in case of EmptyLastHttpContent
+           (when-not (zero? (.readableBytes content))
+             (netty/put! (.channel ctx) @stream content))
+           (when (instance? LastHttpContent msg)
+             (s/close! @stream)))
 
-          :else
-          (.fireChannelRead ctx msg))))))
+         :else
+         (.fireChannelRead ctx msg)))))))
 
 (def ^HttpResponse default-accept-response
   (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
@@ -526,7 +565,8 @@
      compression-level
      idle-timeout
      continue-handler
-     continue-executor]
+     continue-executor
+     channel-group]
     :or
     {request-buffer-size 16384
      max-initial-line-length 8192
@@ -536,9 +576,16 @@
      idle-timeout 0
      error-handler error-response}}]
   (fn [^ChannelPipeline pipeline]
-    (let [handler (if raw-stream?
-                    (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size))
+    (let [handler-opts {:ssl? ssl?
+                        :handler handler
+                        :rejected-handler rejected-handler
+                        :error-handler error-handler
+                        :executor executor
+                        :buffer-capacity request-buffer-size
+                        :channel-group channel-group}
+          handler (if raw-stream?
+                    (raw-ring-handler handler-opts)
+                    (ring-handler handler-opts))
           ^ChannelHandler
           continue-handler (if (nil? continue-handler)
                              (HttpServerExpectContinueHandler.)
@@ -578,15 +625,12 @@
            compression?
            continue-handler
            continue-executor
-           shutdown-quiet-period
            shutdown-timeout]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
          epoll? false
-         compression? false
-         shutdown-quiet-period netty/default-shutdown-quiet-period
-         shutdown-timeout netty/default-shutdown-timeout}
+         compression? false}
     :as options}]
   (let [executor (cond
                    (instance? Executor executor)
@@ -619,7 +663,8 @@
                              (throw
                               (IllegalArgumentException.
                                (str "invalid continue-executor specification: "
-                                    (pr-str continue-executor)))))]
+                                    (pr-str continue-executor)))))
+        channel-group (when (some? shutdown-timeout) (netty/channel-group))]
     (netty/start-server
      {:pipeline-builder (pipeline-builder
                          handler
@@ -627,7 +672,8 @@
                          (assoc options
                                 :executor executor
                                 :ssl? (or manual-ssl? (boolean ssl-context))
-                                :continue-executor continue-executor'))
+                                :continue-executor continue-executor'
+                                :channel-group channel-group))
       :ssl-context ssl-context
 
       :bootstrap-transform bootstrap-transform
@@ -642,8 +688,8 @@
                      (when (instance? ExecutorService continue-executor)
                        (.shutdown ^ExecutorService continue-executor))))
       :transport (if epoll? :epoll :nio)
-      :shutdown-quiet-period shutdown-quiet-period
-      :shutdown-timeout shutdown-timeout})))
+      :shutdown-timeout shutdown-timeout
+      :channel-group channel-group})))
 
 ;;;
 

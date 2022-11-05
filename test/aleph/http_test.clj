@@ -18,6 +18,7 @@
    (io.netty.channel ChannelHandlerContext ChannelOutboundHandlerAdapter ChannelPipeline ChannelPromise)
    (io.netty.handler.codec.http HttpMessage HttpObjectAggregator)
    (java.io File)
+   (java.lang AutoCloseable)
    (java.util.concurrent TimeoutException)
    (java.util.zip GZIPInputStream ZipException)
    (javax.net.ssl SSLSession)))
@@ -668,3 +669,42 @@
                          {:body "hello, world!"})]
       (is (= 413 (:status rsp)))
       (is (empty? (bs/to-string (:body rsp)))))))
+
+(deftest test-shutdown
+  (letfn [(start-server-fn [timeout]
+            (http/start-server
+             (fn [_]
+               (Thread/sleep 2000)
+               {:body "After 2 seconds"})
+             {:port port
+              :shutdown-timeout timeout}))
+          (req-fn [] (http-put (str "http://localhost:" port)
+                                {:body "hello, world!"}))]
+    (binding [*pool* (http/connection-pool {:connection-options {:insecure? true}})]
+      (testing "shutdown with a timeout of 0 second"
+        (let [server (start-server-fn 0)]
+          (try
+            (let [req (req-fn)]
+              (Thread/sleep 200) ;; wait a bit for the request to be initiated
+              (.close ^AutoCloseable server)
+              (is (thrown-with-msg? Exception #"connection was closed after 0\.2" @req)))
+            (finally
+              (.close ^AutoCloseable server)))))
+      (testing "shutdown with a timeout of 1 second"
+        (let [server (start-server-fn 1)]
+          (try
+            (let [req (req-fn)]
+              (Thread/sleep 200) ;; wait a bit for the request to be initiated
+              (.close ^AutoCloseable server)
+              (is (thrown-with-msg? Exception #"connection was closed after 1\.2" @req)))
+            (finally
+              (.close ^AutoCloseable server)))))
+      (testing "shutdown with a timeout of 3 seconds"
+        (let [server (start-server-fn 3)]
+          (try
+            (let [req (req-fn)]
+              (Thread/sleep 200) ;; wait a bit for the request to be initiated
+              (.close ^AutoCloseable server)
+              (is (= 200 (:status @req))))
+            (finally
+              (.close ^AutoCloseable server))))))))

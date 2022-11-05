@@ -15,6 +15,7 @@
      ChannelHandler
      ChannelHandlerContext
      ChannelPipeline]
+    [io.netty.channel.group ChannelGroup]
     [io.netty.handler.ssl
      SslHandler]))
 
@@ -27,7 +28,7 @@
 (alter-meta! #'->TcpConnection assoc :private true)
 
 (defn- ^ChannelHandler server-channel-handler
-  [handler {:keys [raw-stream?] :as options}]
+  [handler {:keys [raw-stream? ^ChannelGroup channel-group] :as options}]
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 
@@ -49,6 +50,8 @@
 
       :channel-active
       ([_ ctx]
+       (when (some? channel-group)
+         (.add channel-group (.channel ctx)))
        (-> (.channel ctx)
            netty/maybe-ssl-handshake-future
            (d/on-realized (fn [ch]
@@ -80,31 +83,30 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `shutdown-quiet-period` | optional period in seconds for which new connections will still be serviced after a scheduled shutdown via `java.io.Closeable::close`. Defaults to 2 seconds.
-   | `shutdown-timeout` | optional grace period in seconds on which to wait for the event loop group to empty during a scheduled shutdown. Defaults to 15 seconds.  "
+   | `shutdown-timeout` | optional grace period in seconds on which to wait for the active connections to be terminated."
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?
-           shutdown-quiet-period shutdown-timeout]
+           shutdown-timeout]
     :or {bootstrap-transform identity
          pipeline-transform identity
-         epoll? false
-         shutdown-quiet-period netty/default-shutdown-quiet-period
-         shutdown-timeout netty/default-shutdown-timeout}
+         epoll? false}
     :as options}]
-  (netty/start-server
-   {:pipeline-builder (fn [^ChannelPipeline pipeline]
-                        (.addLast pipeline
-                                  "handler"
-                                  (server-channel-handler handler options))
-                        (pipeline-transform pipeline))
-    :ssl-context ssl-context
-    :bootstrap-transform bootstrap-transform
-    :socket-address (if socket-address
-                      socket-address
-                      (InetSocketAddress. port))
-    :transport (if epoll? :epoll :nio)
-    :shutdown-quiet-period shutdown-quiet-period
-    :shutdown-timeout shutdown-timeout}))
+  (let [channel-group (when (some? shutdown-timeout) (netty/channel-group))]
+    (netty/start-server
+     {:pipeline-builder (fn [^ChannelPipeline pipeline]
+                          (.addLast pipeline
+                                    "handler"
+                                    (server-channel-handler handler
+                                                            (assoc options
+                                                                   :channel-group channel-group)))
+                          (pipeline-transform pipeline))
+      :ssl-context ssl-context
+      :bootstrap-transform bootstrap-transform
+      :socket-address (if socket-address
+                        socket-address
+                        (InetSocketAddress. port))
+      :transport (if epoll? :epoll :nio)
+      :shutdown-timeout shutdown-timeout})))
 
 (defn- ^ChannelHandler client-channel-handler
   [{:keys [raw-stream?]}]
