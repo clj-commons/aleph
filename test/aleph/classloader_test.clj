@@ -44,7 +44,7 @@
       (with-dynamic-redefs [netty/operation-complete (partial operation-complete result)]
         (let [server (http/start-server
                       (constantly {:body "ok"})
-                      {:port 9999})]
+                      {:port 9999 :shutdown-timeout 0})]
           (on-signal :int
                      (bound-fn [_] (.close ^java.io.Closeable server)))
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))

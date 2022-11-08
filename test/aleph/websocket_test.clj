@@ -22,15 +22,15 @@
          (netty/wait-for-close server#)))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080})
+  `(with-server (http/start-server ~handler {:port 8080 :shutdown-timeout 0})
      ~@body))
 
 (defmacro with-raw-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8081, :raw-stream? true})
+  `(with-server (http/start-server ~handler {:port 8081, :raw-stream? true :shutdown-timeout 0})
      ~@body))
 
 (defmacro with-compressing-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port 8080, :compression? true})
+  `(with-server (http/start-server ~handler {:port 8080, :compression? true :shutdown-timeout 0})
      ~@body))
 
 (defn connection-handler

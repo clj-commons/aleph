@@ -46,7 +46,7 @@
      :body (prn-str (get-request-value request keys))}))
 
 (defmacro with-server [keys & body]
-  `(let [server# (http/start-server (request-callback ~keys) {:port 8080})]
+  `(let [server# (http/start-server (request-callback ~keys) {:port 8080 :shutdown-timeout 0})]
      (try
        ~@body
        (finally

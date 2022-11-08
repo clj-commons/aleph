@@ -19,7 +19,7 @@
          (.close ^java.io.Closeable server#)))))
 
 (deftest test-echo
-  (with-server (tcp/start-server echo-handler {:port 10001})
+  (with-server (tcp/start-server echo-handler {:port 10001 :shutdown-timeout 0})
     (let [c @(tcp/client {:host "localhost", :port 10001})]
       (s/put! c "foo")
       (is (= "foo" (bs/to-string @(s/take! c)))))))

@@ -180,25 +180,25 @@
            (.shutdown *pool*))))))
 
 (defmacro with-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port port})
+  `(with-server (http/start-server ~handler {:port port :shutdown-timeout 0})
      ~@body))
 
 (defmacro with-compressed-handler [handler & body]
   `(do
-     (with-server (http/start-server ~handler {:port port :compression? true})
+     (with-server (http/start-server ~handler {:port port :compression? true :shutdown-timeout 0})
        ~@body)
-     (with-server (http/start-server ~handler {:port port :compression-level 3})
+     (with-server (http/start-server ~handler {:port port :compression-level 3 :shutdown-timeout 0})
        ~@body)))
 
 (def default-ssl-options {:port port, :ssl-context (netty/self-signed-ssl-context)})
 
 (defmacro with-handler-options
-   [handler options & body]
-   `(with-server (http/start-server ~handler ~options)
-      ~@body))
+  [handler options & body]
+  `(with-server (http/start-server ~handler (assoc ~options :shutdown-timeout 0))
+     ~@body))
 
 (defmacro with-raw-handler [handler & body]
-  `(with-server (http/start-server ~handler {:port port, :raw-stream? true})
+  `(with-server (http/start-server ~handler {:port port, :raw-stream? true :shutdown-timeout 0})
      ~@body))
 
 (defmacro with-both-handlers [handler & body]
@@ -474,6 +474,7 @@
   (testing "custom error handler"
     (with-server (http/start-server invalid-handler
                                     {:port port
+                                     :shutdown-timeout 0
                                      :error-handler (fn [_]
                                                       {:status 500
                                                        :body "Internal error"})})
@@ -589,7 +590,7 @@
 (deftest ^:benchmark benchmark-http
   (println "starting HTTP benchmark server on 8080")
   (netty/leak-detector-level! :disabled)
-  (let [server (http/start-server hello-handler {:port 8080})]
+  (let [server (http/start-server hello-handler {:port 8080 :shutdown-timeout 0})]
     (Thread/sleep (* 1000 60))
     (println "stopping server")
     (.close ^java.io.Closeable server)))
@@ -601,7 +602,8 @@
                  (fn [req]
                    (d/let-flow [s (http/websocket-connection req)]
                      (s/consume #(s/put! s %) s)))
-                 {:port 8080})]
+                 {:port 8080
+                  :shutdown-timeout 0})]
     (Thread/sleep (* 1000 60))
     (println "stopping server")
     (.close ^java.io.Closeable server)))
@@ -613,6 +615,7 @@
     (with-server (http/start-server
                    basic-handler
                    {:port port
+                    :shutdown-timeout 0
                     :pipeline-transform
                     (fn [^ChannelPipeline pipeline]
                       (.addBefore pipeline
@@ -642,6 +645,7 @@
   (with-server (http/start-server
                 basic-handler
                 {:port port
+                 :shutdown-timeout 0
                  :pipeline-transform add-http-object-aggregator})
     (let [rsp @(http-put (str "http://localhost:" port "/echo")
                          {:body "hello"})]
@@ -657,6 +661,7 @@
   (with-server (http/start-server
                 basic-handler
                 {:port port
+                 :shutdown-timeout 0
                  :raw-stream? true
                  :pipeline-transform add-http-object-aggregator})
     (let [rsp @(http-put (str "http://localhost:" port "/echo")

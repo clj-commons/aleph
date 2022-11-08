@@ -578,14 +578,12 @@
            compression?
            continue-handler
            continue-executor
-           shutdown-quiet-period
            shutdown-timeout]
     :or {bootstrap-transform identity
          pipeline-transform identity
          shutdown-executor? true
          epoll? false
          compression? false
-         shutdown-quiet-period netty/default-shutdown-quiet-period
          shutdown-timeout netty/default-shutdown-timeout}
     :as options}]
   (let [executor (cond
@@ -642,7 +640,6 @@
                      (when (instance? ExecutorService continue-executor)
                        (.shutdown ^ExecutorService continue-executor))))
       :transport (if epoll? :epoll :nio)
-      :shutdown-quiet-period shutdown-quiet-period
       :shutdown-timeout shutdown-timeout})))
 
 ;;;
