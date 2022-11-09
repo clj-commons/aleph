@@ -161,7 +161,7 @@
    | `port` | the port of the server.
    | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
    | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
-   | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) to use. Defers to `ssl?` and `insecure?` configuration if omitted.
+   | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details) to use. Defers to `ssl?` and `insecure?` configuration if omitted.
    | `ssl?` | if true, the client attempts to establish a secure connection with the server.
    | `insecure?` | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
