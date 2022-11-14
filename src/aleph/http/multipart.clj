@@ -26,11 +26,13 @@
     DefaultHttpContent
     DefaultHttpRequest
     FullHttpRequest
+    LastHttpContent
     HttpConstants]
    [io.netty.handler.codec.http.multipart
     Attribute
     MemoryAttribute
     FileUpload
+    HttpData
     HttpDataFactory
     DefaultHttpDataFactory
     HttpPostRequestDecoder
@@ -325,11 +327,27 @@
       (fn []
         (when (compare-and-set! destroyed? false true)
           (try
-            ;; we're removing each received http data chunk
-            ;; from cleanup queue before pushing to `parts` stream,
-            ;; meaning that this `destroy` call would only cleanup
-            ;; those chunck that were not consumed for some reasons
-            ;; (i.e. the user closes the stream given earlier)
+            ;; The `decoder` expects to receive a `LastHttpContent` to make use
+            ;; of `getBodyHttpDatas` and to actually complete the decoding
+            ;; operation.
+            ;; https://github.com/netty/netty/blob/839eda075531ec4bbdb247c6db2cf286e34a130b/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L266
+            (.offer decoder (LastHttpContent/EMPTY_LAST_CONTENT))
+
+            ;; The call to `destroy` on the `decoder` will also delete some
+            ;; files that are supposed to be stored on memory while actually
+            ;; on the filesystem. Those are removed from the clean up process.
+            ;; https://github.com/netty/netty/blob/ee9bb63aa5382bf9930eb0df4b690286173f126a/codec-http/src/main/java/io/netty/handler/codec/http/multipart/HttpPostMultipartRequestDecoder.java#L969-L970
+            (let [iter (.iterator (.getBodyHttpDatas decoder))]
+              (while (.hasNext iter)
+                (let [http-data ^HttpData (.next iter)]
+                  (when-not (.isInMemory http-data)
+                    (.remove iter)))))
+
+            ;; Since all the files have been removed from the automatic clean up
+            ;; process (through the lines just above and with `removeHttpDataFromClean`),
+            ;; we can finally call `destroy` on the `decoder`.
+            ;; We rely on the user to actually delete the files while handled
+            ;; by calling `netty/release` on each part.
             (.destroy decoder)
             (catch Exception e
               (log/warn e "exception when cleaning up multipart decoder"))))))
