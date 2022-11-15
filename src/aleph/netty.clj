@@ -22,6 +22,8 @@
      ChannelOutboundHandler
      ChannelHandlerContext
      ChannelInitializer]
+    [io.netty.channel.group
+     ChannelGroup DefaultChannelGroup]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
      EpollServerSocketChannel
      EpollSocketChannel
@@ -57,7 +59,8 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     AbstractEventExecutor FastThreadLocalThread GenericFutureListener Future]
+     AbstractEventExecutor FastThreadLocalThread GenericFutureListener Future
+     GlobalEventExecutor]
     [java.io InputStream File]
     [java.nio ByteBuffer]
     [java.nio.channels ClosedChannelException]
@@ -121,15 +124,11 @@
 (defn channel-remote-address [^Channel ch]
   (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
-;;;
-
-(def ^:const default-shutdown-quiet-period
-  "Default quiet period in seconds when shutting down an eventloop group"
-  2) ;; As in https://github.com/netty/netty/blob/b61d7d40f40e3a797e8a60cd567f849a9799c771/common/src/main/java/io/netty/util/concurrent/AbstractEventExecutor.java#L40
+;;; Defaults defined here since they are not publically exposed by Netty
 
 (def ^:const default-shutdown-timeout
-  "Default timeout in seconds when shutting down an eventloop group"
-  15) ;; As in https://github.com/netty/netty/blob/b61d7d40f40e3a797e8a60cd567f849a9799c771/common/src/main/java/io/netty/util/concurrent/AbstractEventExecutor.java#L41
+  "Default timeout in seconds to wait for graceful shutdown complete"
+  15)
 
 (def ^:const array-class (class (clojure.core/byte-array 0)))
 
@@ -294,6 +293,12 @@
     x
     (.channel ^ChannelHandlerContext x)))
 
+(defn ^ChannelGroup make-channel-group
+  "Create a channel group which can be used to perform channel operations on
+   several channels at once."
+  []
+  (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
+
 (defmacro safe-execute
   "Executes the body on the event-loop (an executor service) associated with the Netty channel.
 
@@ -433,8 +438,6 @@
           d))))
   (put [this msg blocking? timeout timeout-value]
     (.put this msg blocking?)))
-
-
 
 (defn sink
   ([ch]
@@ -693,6 +696,17 @@
             (.readableBytes ^ByteBuf msg)))
         (.write ctx msg promise)))))
 
+(defn ^ChannelHandler channel-tracking-handler
+  "Yields an inbound handler, ready to be added to a pipeline,
+   which keeps track of requests in a provided channel group.
+   The channel-group can be created via `make-channel-group`."
+  [^ChannelGroup group]
+  (channel-inbound-handler
+   :channel-active
+   ([_ ctx]
+    (.add group (channel ctx))
+    (.fireChannelActive ctx))))
+
 (defn pipeline-initializer [pipeline-builder]
   (proxy [ChannelInitializer] []
     (initChannel [^Channel ch]
@@ -702,6 +716,16 @@
   (when (some? (.get pipeline handler))
     (.remove pipeline handler))
   pipeline)
+
+(defn append-handler-to-pipeline
+  "Convenience function to add a handler to the tail of a netty pipeline"
+  [^ChannelPipeline pipeline handler-id ^ChannelHandler handler]
+  (.addLast pipeline (str handler-id) handler))
+
+(defn prepend-handler-to-pipeline
+  "Convenience function to add a handler to the head of a netty pipeline"
+  [^ChannelPipeline pipeline handler-id ^ChannelHandler handler]
+  (.addFirst pipeline (str handler-id) handler))
 
 (defn instrument!
   [stream]
@@ -1226,6 +1250,21 @@ initialize an DnsAddressResolverGroup instance.
               (let [ch (.channel ^ChannelFuture f)]
                 (maybe-ssl-handshake-future ch)))))))))
 
+(defn- add-ssl-handler
+  [pipeline-builder ssl-ctx]
+  (fn [^ChannelPipeline pipeline]
+    (append-handler-to-pipeline
+     pipeline "ssl-handler"
+     (.newHandler ^SslContext ssl-ctx (-> pipeline .channel .alloc)))
+    (pipeline-builder pipeline)))
+
+(defn- add-channel-tracker-handler
+  [pipeline-builder chan-group]
+  (fn [pipeline]
+    (prepend-handler-to-pipeline pipeline "channel-tracker"
+                                (channel-tracking-handler chan-group))
+    (pipeline-builder pipeline)))
+
 (defn start-server
   ([pipeline-builder
     ssl-context
@@ -1233,26 +1272,27 @@ initialize an DnsAddressResolverGroup instance.
     on-close
     socket-address
     epoll?]
-   (start-server {:pipeline-builder pipeline-builder
-                  :ssl-context ssl-context
+   (start-server {:pipeline-builder    pipeline-builder
+                  :ssl-context         ssl-context
                   :bootstrap-transform bootstrap-transform
-                  :on-close on-close
-                  :socket-address socket-address
-                  :transport (if epoll? :epoll :nio)}))
+                  :on-close            on-close
+                  :socket-address      socket-address
+                  :transport           (if epoll? :epoll :nio)}))
   ([{:keys [pipeline-builder
             ssl-context
             bootstrap-transform
             on-close
             ^SocketAddress socket-address
             transport
-            shutdown-quiet-period
-            shutdown-timeout]}]
+            shutdown-timeout]
+     :or {shutdown-timeout default-shutdown-timeout}}]
    (when (= transport :epoll)
      (ensure-epoll-available!))
    (let [num-cores      (.availableProcessors (Runtime/getRuntime))
          num-threads    (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
          closed?        (atom false)
+         chan-group     (make-channel-group)
 
          ^EventLoopGroup group
          (condp = transport
@@ -1272,13 +1312,8 @@ initialize an DnsAddressResolverGroup instance.
                        (coerce-ssl-server-context ssl-context))
 
          pipeline-builder
-         (if ssl-context
-           (fn [^ChannelPipeline p]
-             (.addLast p "ssl-handler"
-                       (.newHandler ssl-context
-                                    (-> p .channel .alloc)))
-             (pipeline-builder p))
-           pipeline-builder)]
+         (cond-> (add-channel-tracker-handler pipeline-builder chan-group)
+           (some? ssl-context) (add-ssl-handler ssl-context))]
 
      (try
        (let [b (doto (ServerBootstrap.)
@@ -1298,10 +1333,25 @@ initialize an DnsAddressResolverGroup instance.
            java.io.Closeable
            (close [_]
              (when (compare-and-set! closed? false true)
+               ;; This is the three step closing sequence:
+               ;; 1. Stop listening to incoming requests
                (-> ch .close .sync)
-               (-> group (.shutdownGracefully (long shutdown-quiet-period)
-                                              (long shutdown-timeout)
-                                              TimeUnit/SECONDS))
+               (-> (if (pos? shutdown-timeout)
+                     ;; 2. Wait for in-flight requests to stop processing within the supplied timeout
+                     ;;    interval.
+                     (-> (wrap-future (.newCloseFuture chan-group))
+                         (d/timeout! (* shutdown-timeout 1000) ::timeout))
+                     (d/success-deferred ::noop))
+                   (d/chain'
+                    (fn [shutdown-output]
+                      (when (= shutdown-output ::timeout)
+                        (log/error
+                         (format "Timeout while waiting for requests to close (exceeded: %ss)"
+                                 shutdown-timeout)))))
+                   (d/finally'
+                    ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
+                    ;;    in flight pending requests.
+                    #(.shutdownGracefully group 0 0 TimeUnit/SECONDS)))
                (when on-close
                  (d/chain'
                   (wrap-future (.terminationFuture group))

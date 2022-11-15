@@ -36,7 +36,7 @@
 (defn- test-accept [server-options]
   (with-server (http/start-server ok-handler (merge
                                               server-options
-                                              {:port port}))
+                                              {:port port :shutdown-timeout 0}))
     (let [c @(tcp/client {:host "localhost" :port port})]
       @(s/put! c (pack-lines ["PUT /file HTTP/1.1"
                               "Host: localhost"
@@ -69,7 +69,7 @@
   (let [resp (or resp "417 Expectation Failed")]
     (with-server (http/start-server ok-handler (merge
                                                 server-options
-                                                {:port port}))
+                                                {:port port :shutdown-timeout 0}))
       (let [c @(tcp/client {:host "localhost" :port port})]
         @(s/put! c (pack-lines ["PUT /file HTTP/1.1"
                                 "Host: localhost"

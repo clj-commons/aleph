@@ -25,6 +25,7 @@
   (let [ssl-session (atom nil)]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
                                    {:port 10001
+                                    :shutdown-timeout 0
                                     :ssl-context ssl/server-ssl-context})
       (let [c @(tcp/client {:host "localhost"
                             :port 10001
@@ -39,6 +40,7 @@
   (let [ssl-session (atom nil)]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
                                    {:port 10001
+                                    :shutdown-timeout 0
                                     :ssl-context ssl/server-ssl-context-opts})
       (let [c @(tcp/client {:host "localhost"
                             :port 10001
@@ -53,6 +55,7 @@
   (let [ssl-session (atom nil)]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
                                    {:port 10001
+                                    :shutdown-timeout 0
                                     :ssl-context ssl/server-ssl-context})
       (let [c @(tcp/client {:host "localhost"
                             :port 10001
@@ -74,6 +77,7 @@
                                                        (.fireChannelInactive ctx)))]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
                                    {:port 10001
+                                    :shutdown-timeout 0
                                     :ssl-context ssl/server-ssl-context
                                     :pipeline-transform (fn [p]
                                                           (.addLast p notify-connection-closed))})
@@ -95,6 +99,7 @@
                                                        (.fireChannelActive ctx)))]
     (with-server (tcp/start-server (fn [s _])
                                    {:port 10001
+                                    :shutdown-timeout 0
                                     :ssl-context ssl/server-ssl-context})
       (let [c (tcp/client {:host "localhost"
                            :port 10001

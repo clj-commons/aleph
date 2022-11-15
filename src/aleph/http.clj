@@ -52,8 +52,7 @@
    | `idle-timeout` | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
    | `continue-handler` | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
    | `continue-executor` | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `shutdown-quiet-period` | optional period in seconds for which new connections will still be serviced after a scheduled shutdown via `java.io.Closeable#close`. Defaults to 2 seconds.
-   | `shutdown-timeout` | optional grace period in seconds on which to wait for the event loop group to empty during a scheduled shutdown. Defaults to 15 seconds."
+   | `shutdown-timeout` | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
   [handler options]
   (server/start-server handler options))
 

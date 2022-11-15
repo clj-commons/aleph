@@ -163,7 +163,7 @@
    :body body})
 
 (deftest test-send-multipart-request
-  (let [s (http/start-server echo-handler {:port port1})
+  (let [s (http/start-server echo-handler {:port port1 :shutdown-timeout 0})
         ^String resp @(d/chain'
                        (http/post url1 {:multipart parts})
                        :body
@@ -202,6 +202,7 @@
 
 (defn- test-decoder [port url raw-stream?]
   (let [s (http/start-server decode-handler {:port port
+                                             :shutdown-timeout 0
                                              :raw-stream? raw-stream?})
         chunks (-> (http/post url {:multipart parts})
                    (deref 1e3 {:body "timeout"})
