@@ -14,7 +14,7 @@
 * Support custom error handlers
 * Support HttpObjectAggregator on the Netty pipeline
 * Log less info on SSL/TLS handshake failure
-* BREAKING: If epoll is missing, setting `epoll? true` will now be an error instead of automatically downgrading. To get the old behavior, pass `:epoll? (aleph.netty/epoll-available?)`.
+* BREAKING: If epoll is missing, setting `:epoll? true` will now be an error instead of automatically downgrading. To get the old behavior, pass `:epoll? (aleph.netty/epoll-available?)`.
 * Make TCP+SSL server call handler only after successful SSL handshake, and improve SSL errors
 * Clarified `idle-timeout` docstring
 
