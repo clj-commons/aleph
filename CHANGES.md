@@ -8,7 +8,7 @@
 * Add support for deps.edn/tools.deps
 * Improve `wrap-future` short-circuiting behavior of realized error futures
 * Fix bug treating a `ClosedChannelException` during an SSL/TLS handshake as a success deferred
-* Bump Netty to 4.1.79.Final
+* Bump Netty to 4.1.82.Final
 * Support replacing Dirigiste connection pools with custom pools
 * Improve options for setting up SSL/TLS. Now accepts a map for options, and `javax.net.ssl.TrustManager`. See `ssl-server-context`.
 * Support custom error handlers
