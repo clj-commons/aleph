@@ -115,7 +115,7 @@
       (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
 
       [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newEntity %) ["Aleph/0.5.0" "Keep-Alive" "Close"])]
+      (map #(HttpHeaders/newEntity %) ["Aleph/0.6.0" "Keep-Alive" "Close"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? ssl? error-handler rsp]
     (let [[^HttpResponse rsp body]

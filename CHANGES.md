@@ -1,18 +1,27 @@
-### 0.5.1
+### 0.6.0
 
+* Add options to configure graceful shutdown timeout
+* Switch from custom deps.edn script to `lein2deps`
+* Upgrade CircleCI Docker images
+* Move bouncycastle to dev profile for REPL testing
+* Add CONTRIBUTING doc for newcomers
+* Add support for deps.edn/tools.deps
+* Improve `wrap-future` short-circuiting behavior of realized error futures
 * Fix bug treating a `ClosedChannelException` during an SSL/TLS handshake as a success deferred
 * Bump Netty to 4.1.79.Final
-* Support replacing Dirigiste with custom pools
-* Improve options for setting up SSL/TLS. Now accepts a map. See `ssl-server-context`.
+* Support replacing Dirigiste connection pools with custom pools
+* Improve options for setting up SSL/TLS. Now accepts a map for options, and `javax.net.ssl.TrustManager`. See `ssl-server-context`.
 * Support custom error handlers
-* Support HttpObjectAggregator on the pipeline
+* Support HttpObjectAggregator on the Netty pipeline
 * Log less info on SSL/TLS handshake failure
 * If epoll is missing, setting `epoll? true` will now be an error instead of automatically downgrading
-* Make TCP+SSL server call handler only after successful SSL handshake
+* Make TCP+SSL server call handler only after successful SSL handshake, and improve SSL errors
 * Clarified `idle-timeout` docstring
 
-Contributions by Arnaud Geiser, Moritz Heidkamp, Anthony Bondarenko, Alexey Kachayev, 
-Alexander Yakushev, Andrew Rudenko, and Matthew Davidson
+Contributions by (in alphabetical order):
+
+Anthony Bondarenko, Matthew Davidson, Balint Erdos, Arnaud Geiser, Moritz Heidkamp, 
+Alexey Kachayev, Pierre-Yves Ritschard, Andrew Rudenko, saguywalker, and Alexander Yakushev 
 
 ### 0.5.0
 
