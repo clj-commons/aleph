@@ -20,8 +20,10 @@
 
 Contributions by (in alphabetical order):
 
-Anthony Bondarenko, Matthew Davidson, Balint Erdos, Arnaud Geiser, Moritz Heidkamp, 
-Alexey Kachayev, Pierre-Yves Ritschard, Andrew Rudenko, saguywalker, and Alexander Yakushev 
+Anthony Bondarenko, Michiel Borkent, Matthew Davidson, 
+Balint Erdos, Arnaud Geiser, Moritz Heidkamp, Alexey Kachayev, 
+Pierre-Yves Ritschard, Andrew Rudenko, saguywalker, 
+and Alexander Yakushev 
 
 ### 0.5.0
 
