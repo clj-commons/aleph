@@ -62,6 +62,8 @@
                             :ssl-context (netty/ssl-client-context
                                           ;; Note the intentionally wrong private key here
                                           {:private-key ssl/server-key
+                                           ;; See https://github.com/clj-commons/aleph/issues/647
+                                           :protocols ["TLSv1.3"]
                                            :certificate-chain (into-array X509Certificate [ssl/client-cert])
                                            :trust-store (into-array X509Certificate [ssl/ca-cert])})})]
         (is (nil? @(s/take! c)))
