@@ -91,9 +91,9 @@
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
-      (mp/encode-body [{:part-name "part1"
-                        :content "content1"
-                        :transfer-encoding :uknown-transfer-encoding}]))))
+       (mp/encode-body [{:part-name "part1"
+                         :content "content1"
+                         :transfer-encoding :uknown-transfer-encoding}]))))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-content-as-file
@@ -156,7 +156,10 @@
              :content file-to-send}
             {:part-name "#5-file-with-charset"
              :content file-to-send
-             :charset "ISO-8859-1"}])
+             :charset "ISO-8859-1"}
+            {:part-name "#6-bytes-with-mime-type"
+             :mime-type "text/plain"
+             :content (.getBytes "CONTENT3" "UTF-8")}])
 
 (defn echo-handler [{:keys [body]}]
   {:status 200
@@ -210,7 +213,7 @@
                    bs/to-string
                    clojure.edn/read-string
                    vec)]
-    (is (= 6 (count chunks)))
+    (is (= 7 (count chunks)))
 
     ;; part-names
     (is (= (map :part-name parts)
@@ -230,10 +233,13 @@
     ;; charset
     (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
 
+    ;; mime-type
+    (is (= "text/plain" (get-in chunks [6 :mime-type])))
+
     (.close ^java.io.Closeable s)))
 
-(deftest test-mutlipart-request-decode-with-ring-handler
+(deftest test-multipart-request-decode-with-ring-handler
   (test-decoder port2 url2 false))
 
-(deftest test-mutlipart-request-decode-with-raw-handler
+(deftest test-multipart-request-decode-with-raw-handler
   (test-decoder port3 url3 true))
