@@ -45,6 +45,8 @@
 
 (def server-ssl-context-opts
   {:private-key server-key
+   ;; See https://github.com/clj-commons/aleph/issues/647
+   :protocols ["TLSv1.2" "TLSv1.3"]
    :certificate-chain [server-cert]
    :trust-store [ca-cert]
    :client-auth :optional})
