@@ -1,12 +1,12 @@
-(ns aleph.http.client
+(ns ^:no-doc aleph.http.client
   (:require
-    [clojure.tools.logging :as log]
-    [clj-commons.byte-streams :as bs]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
     [aleph.http.core :as http]
     [aleph.http.multipart :as multipart]
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [clj-commons.byte-streams :as bs]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
     [java.io
      IOException]
@@ -20,7 +20,6 @@
     [io.netty.handler.codec.http
      HttpClientCodec
      DefaultHttpHeaders
-     HttpHeaders
      HttpRequest
      HttpResponse
      HttpContent
@@ -40,8 +39,6 @@
      IdleStateEvent]
     [io.netty.handler.stream
      ChunkedWriteHandler]
-    [io.netty.handler.codec.http
-     FullHttpRequest]
     [io.netty.handler.codec.http.websocketx
      CloseWebSocketFrame
      PingWebSocketFrame

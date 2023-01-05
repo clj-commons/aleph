@@ -72,7 +72,7 @@ Aleph attempts to mimic the clj-http API and capabilities fully. It supports mul
 
 Aleph client also supports fully async and [highly customizable](https://github.com/clj-commons/aleph/blob/d33c76d6c7d1bf9788369fe6fd9d0e56434c8244/src/aleph/netty.clj#L783-L796) DNS resolver.
 
-To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.http).
+To learn more, [read the example code](https://github.com/clj-commons/aleph/blob/master/examples/src/aleph/examples/http.clj).
 
 ### WebSockets
 
@@ -90,7 +90,7 @@ This takes all messages from the client, and feeds them back into the duplex soc
 
 WebSocket clients can be created via `(aleph.http/websocket-client url)`, which returns a deferred which yields a duplex stream that can send and receive messages from the server.
 
-To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.websocket).
+To learn more, [read the example code](https://github.com/clj-commons/aleph/blob/master/examples/src/aleph/examples/websocket.clj).
 
 ### TCP
 
@@ -109,7 +109,7 @@ An echo TCP server is very similar to the above WebSocket example:
 
 A TCP client can be created via `(aleph.tcp/client {:host "example.com", :port 10001})`, which returns a deferred which yields a duplex stream.
 
-To learn more, [read the example code](http://aleph.io/examples/literate.html#aleph.examples.tcp).
+To learn more, [read the example code](https://github.com/clj-commons/aleph/blob/master/examples/src/aleph/examples/tcp.clj).
 
 ### UDP
 
@@ -123,7 +123,7 @@ A UDP socket can be generated using `(aleph.udp/socket {:port 10001, :broadcast?
 
 Where incoming packets will have a `:message` that is a byte-array, which can be coerced using `byte-streams`, and outgoing packets can be any data which can be coerced to a binary representation.  If no `:port` is specified, the socket can only be used to send messages.
 
-To learn more, [read the documentation](http://aleph.io/examples/literate.html).
+To learn more, [read the example code](https://github.com/clj-commons/aleph/blob/master/examples/src/aleph/examples/udp.clj).
 
 ### Development
 
@@ -133,6 +133,6 @@ Minimal [`tools.deps`](https://github.com/clojure/tools.deps.alpha) support is a
 
 ### License
 
-Copyright © 2010-2020 Zachary Tellman
+Copyright © 2010-2023 Zachary Tellman
 
 Distributed under the MIT License

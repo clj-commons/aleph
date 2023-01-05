@@ -2,16 +2,16 @@
   "This middleware is adapted from clj-http, whose license is amenable to this sort of
    copy/pastery"
   (:require
-    [potemkin :as p]
+    ;; leave this dependency to make sure that HeaderMap is already compiled
+    [aleph.http.core :as http]
+    [clj-commons.byte-streams :as bs]
+    [clojure.edn :as edn]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
-    [manifold.stream :as s]
     [manifold.executor :as ex]
-    [clj-commons.byte-streams :as bs]
-    [clojure.edn :as edn]
-    ;; leave this dependency to make sure that HeaderMap is already compiled
-    [aleph.http.core :as http])
+    [manifold.stream :as s]
+    [potemkin :as p])
   (:import
     [io.netty.buffer ByteBuf Unpooled]
     [io.netty.handler.codec.base64 Base64]
@@ -27,14 +27,14 @@
     [java.net IDN URL URLEncoder URLDecoder]))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
-(def json-enabled?
+(def ^:no-doc json-enabled?
   (try
     (require 'cheshire.core)
     true
     (catch Throwable _ false)))
 
 ;; Transit is an optional dependency, so check at compile time.
-(def transit-enabled?
+(def ^:no-doc transit-enabled?
   (try
     (require 'cognitect.transit)
     true
@@ -70,7 +70,7 @@
   {:pre [transit-enabled?]}
   (transit-opts-by-type opts :encode "com.cognitect.transit.WriteHandler"))
 
-(defn ^:dynamic parse-transit
+(defn ^:no-doc ^:dynamic parse-transit
   "Resolve and apply Transit's JSON/MessagePack decoding."
   [^InputStream in type & [opts]]
   {:pre [transit-enabled?]}
@@ -78,7 +78,7 @@
         read (ns-resolve 'cognitect.transit 'read)]
     (read (reader in type (transit-read-opts opts)))))
 
-(defn ^:dynamic transit-encode
+(defn ^:no-doc ^:dynamic transit-encode
   "Resolve and apply Transit's JSON/MessagePack encoding."
   [out type & [opts]]
   {:pre [transit-enabled?]}
@@ -88,19 +88,19 @@
     (write (writer output type (transit-write-opts opts)) out)
     (.toByteArray output)))
 
-(defn ^:dynamic json-encode
+(defn ^:no-doc ^:dynamic json-encode
   "Resolve and apply cheshire's json encoding dynamically."
   [& args]
   {:pre [json-enabled?]}
   (apply (ns-resolve (symbol "cheshire.core") (symbol "encode")) args))
 
-(defn ^:dynamic json-decode
+(defn ^:no-doc ^:dynamic json-decode
   "Resolve and apply cheshire's json decoding dynamically."
   [& args]
   {:pre [json-enabled?]}
   (apply (ns-resolve (symbol "cheshire.core") (symbol "decode")) args))
 
-(defn ^:dynamic json-decode-strict
+(defn ^:no-doc ^:dynamic json-decode-strict
   "Resolve and apply cheshire's json decoding dynamically (with lazy parsing
   disabled)."
   [& args]
@@ -109,17 +109,17 @@
 
 ;;;
 
-(defn when-pos [v]
+(defn ^:no-doc when-pos [v]
   (when (and v (pos? v)) v))
 
-(defn url-encode
+(defn ^:no-doc url-encode
   ([^String s]
     (url-encode s "UTF-8"))
   ([^String s ^String encoding]
     (URLEncoder/encode s encoding)))
 
 (let [param-? (memoize #(keyword (str (name %) "?")))]
-  (defn opt
+  (defn ^:no-doc opt
     "Check the request parameters for a keyword  boolean option, with or without
      the ?
 
@@ -137,7 +137,7 @@
 
 ;;;
 
-(defn url-encode-illegal-characters
+(defn ^:no-doc url-encode-illegal-characters
   "Takes a raw url path or query and url-encodes any illegal characters.
   Minimizes ambiguity by encoding space to %20."
   [path-or-query]
@@ -148,7 +148,7 @@
         #"[^a-zA-Z0-9\.\-\_\~\!\$\&\'\(\)\*\+\,\;\=\:\@\/\%\?]"
         url-encode))))
 
-(defn parse-url
+(defn ^:no-doc parse-url
   "Parse a URL string into a map of interesting parts."
   [url]
   (let [url-parsed (URL. url)]
@@ -200,35 +200,35 @@
     (reduce nest-params req nested-keys)))
 
 ;; Statuses for which clj-http will not throw an exception
-(def unexceptional-status?
+(def ^:no-doc unexceptional-status?
   #{200 201 202 203 204 205 206 207 300 301 302 303 304 307 308})
 
 ;; helper methods to determine realm of a response
-(defn success?
+(defn ^:no-doc success?
   [{:keys [status]}]
   (<= 200 status 299))
 
-(defn missing?
+(defn ^:no-doc missing?
   [{:keys [status]}]
   (= status 404))
 
-(defn conflict?
+(defn ^:no-doc conflict?
   [{:keys [status]}]
   (= status 409))
 
-(defn redirect?
+(defn ^:no-doc redirect?
   [{:keys [status]}]
   (<= 300 status 399))
 
-(defn client-error?
+(defn ^:no-doc client-error?
   [{:keys [status]}]
   (<= 400 status 499))
 
-(defn server-error?
+(defn ^:no-doc server-error?
   [{:keys [status]}]
   (<= 500 status 599))
 
-(defn content-type-value [type]
+(defn ^:no-doc content-type-value [type]
   (if (keyword? type)
     (str "application/" (name type))
     type))
@@ -273,7 +273,7 @@
         (assoc :request-method m))
     req))
 
-(defn follow-redirect
+(defn ^:no-doc follow-redirect
   "Attempts to follow the redirects from the \"location\" header, if no such
   header exists (bad server!), returns the response without following the
   request."
@@ -387,7 +387,7 @@
         (content-type-value accept)))
     req))
 
-(defn accept-encoding-value [accept-encoding]
+(defn ^:no-doc accept-encoding-value [accept-encoding]
   (str/join ", " (map name accept-encoding)))
 
 (defn wrap-accept-encoding
@@ -400,7 +400,7 @@
         (accept-encoding-value accept-encoding)))
     req))
 
-(defn detect-charset
+(defn ^:no-doc detect-charset
   "Given a charset header, detect the charset, returns UTF-8 if not found."
   [content-type]
   (or
@@ -409,13 +409,13 @@
       (second found))
     "UTF-8"))
 
-(defn multi-param-suffix [index multi-param-style]
+(defn ^:no-doc multi-param-suffix [index multi-param-style]
   (case multi-param-style
     :indexed (str "[" index "]")
     :array "[]"
     :default ""))
 
-(defn generate-query-string-with-encoding
+(defn ^:no-doc generate-query-string-with-encoding
   ([params encoding]
     (generate-query-string-with-encoding params encoding :default))
   ([params encoding multi-param-style]
@@ -433,7 +433,7 @@
                      (url-encode (str v) encoding))]))
         params))))
 
-(defn generate-query-string [params & [content-type multi-param-style]]
+(defn ^:no-doc generate-query-string [params & [content-type multi-param-style]]
   (let [encoding (detect-charset content-type)]
     (generate-query-string-with-encoding params encoding (or multi-param-style :default))))
 
@@ -458,7 +458,7 @@
           (content-type-value content-type)
           multi-param-style)))))
 
-(defn basic-auth-value
+(defn ^:no-doc basic-auth-value
   "Accept a String of the form \"username:password\" or a vector of 2 strings [username password], return a String with the basic auth header (see https://tools.ietf.org/html/rfc2617#page-5)"
   [basic-auth]
   (let [basic-auth (if (string? basic-auth)
@@ -490,7 +490,7 @@
         (str "Bearer " oauth-token)))
     req))
 
-(defn parse-user-info [user-info]
+(defn ^:no-doc parse-user-info [user-info]
   (when user-info
     (str/split user-info #":")))
 
@@ -501,7 +501,7 @@
     (assoc req :basic-auth [user password])
     req))
 
-(defmulti coerce-form-params
+(defmulti ^:no-doc coerce-form-params
   (fn [req] (keyword (content-type-value (:content-type req)))))
 
 (defmethod coerce-form-params :application/edn
@@ -577,21 +577,21 @@
       (-> (client req)
         (d/chain' #(assoc % :request-time (- (System/currentTimeMillis) start)))))))
 
-(def ^String cookie-header-name (str HttpHeaderNames/COOKIE))
-(def ^String set-cookie-header-name (str HttpHeaderNames/SET_COOKIE))
+(def ^:no-doc ^String cookie-header-name (str HttpHeaderNames/COOKIE))
+(def ^:no-doc ^String set-cookie-header-name (str HttpHeaderNames/SET_COOKIE))
 
 ;; That's a pretty liberal domain check.
 ;; Under RFC2965 your domain should contain leading "." to match successors,
 ;; but this extra dot is ignored by more recent specifications.
 ;; So, if you need obsolete RFC2965 compatible behavior, feel free to
 ;; plug your one `CookieSpec` with redefined `match-cookie` impl.
-(defn match-cookie-domain? [origin domain]
+(defn ^:no-doc match-cookie-domain? [origin domain]
   (let [origin' (if (str/starts-with? origin ".") origin (str "." origin))
         domain' (if (str/starts-with? domain ".") domain (str "." domain))]
     (str/ends-with? origin' domain')))
 
 ;; Reimplementation of org.apache.http.impl.cookie.BasicPathHandler path match logic
-(defn match-cookie-path? [origin-path cookie-path]
+(defn ^:no-doc match-cookie-path? [origin-path cookie-path]
   (let [norm-path (if (and (not= "/" cookie-path) (= \/ (last cookie-path)))
                     (subs cookie-path 0 (dec (count cookie-path)))
                     cookie-path)]
@@ -607,7 +607,7 @@
                     (str/starts-with? uri "/") uri
                     :else (str "/" uri)))]
 
-  (defn req->cookie-origin [{:keys [url] :as req}]
+  (defn ^:no-doc req->cookie-origin [{:keys [url] :as req}]
     (if (some? url)
       (let [{:keys [server-name server-port uri scheme]} (parse-url url)]
         {:host    server-name
@@ -619,7 +619,7 @@
        :secure? (= :https (or (:scheme req) :http))
        :path    (uri->path (:uri req))})))
 
-(defn cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
+(defn ^:no-doc cookie->netty-cookie [{:keys [domain http-only? secure? max-age name path value]}]
   (doto (DefaultCookie. name value)
     (.setDomain domain)
     (.setPath path)
@@ -627,7 +627,7 @@
     (.setSecure (or secure? false))
     (.setMaxAge (or max-age io.netty.handler.codec.http.cookie.Cookie/UNDEFINED_MAX_AGE))))
 
-(p/def-derived-map Cookie
+(p/def-derived-map ^:no-doc Cookie
   [^DefaultCookie cookie]
   :domain (.domain cookie)
   :http-only? (.isHttpOnly cookie)
@@ -639,27 +639,27 @@
   :path (.path cookie)
   :value (.value cookie))
 
-(defn netty-cookie->cookie [^DefaultCookie cookie]
+(defn ^:no-doc netty-cookie->cookie [^DefaultCookie cookie]
   (->Cookie cookie))
 
-(defn cookie-expired? [{:keys [created max-age]}]
+(defn ^:no-doc cookie-expired? [{:keys [created max-age]}]
   (cond
     (nil? max-age) false
     (>= 0 max-age) true
     (nil? created) false
     :else (>= (System/currentTimeMillis) (+ created max-age))))
 
-(defprotocol CookieSpec
+(defprotocol ^:no-doc CookieSpec
   "Implement rules for accepting and returning cookies"
   (parse-cookie [this cookie-str])
   (write-cookies [this cookies])
   (match-cookie-origin? [this origin cookie]))
 
-(defprotocol CookieStore
+(defprotocol ^:no-doc CookieStore
   (get-cookies [this])
   (add-cookies! [this cookies]))
 
-(def default-cookie-spec
+(def ^:no-doc default-cookie-spec
   "Default cookie spec implementation providing RFC6265 compliant behavior
    with no validation for cookie names and values. In case you need strict validation
    feel free to create impl. using {ClientCookieDecoder,ClientCookiEncoder}/STRICT
@@ -688,17 +688,17 @@
         :else
         true))))
 
-(defn merge-cookies [stored-cookies new-cookies]
+(defn ^:no-doc merge-cookies [stored-cookies new-cookies]
   (reduce (fn [cookies {:keys [domain path name] :as cookie}]
             (assoc-in cookies [domain path name] cookie))
     stored-cookies
     new-cookies))
 
-(defn enrich-with-current-time [cookies]
+(defn ^:no-doc enrich-with-current-time [cookies]
   (let [now (System/currentTimeMillis)]
     (map #(assoc % :created now) cookies)))
 
-(defn in-memory-cookie-store
+(defn ^:no-doc in-memory-cookie-store
   "In-memory storage to maintain cookies across requests"
   ([] (in-memory-cookie-store []))
   ([seed-cookies]
@@ -713,7 +713,7 @@
         (add-cookies! [_ cookies]
           (swap! store merge-cookies (enrich-with-current-time cookies)))))))
 
-(defn decode-set-cookie-header
+(defn ^:no-doc decode-set-cookie-header
   ([header]
     (decode-set-cookie-header default-cookie-spec header))
   ([cookie-spec header]
@@ -723,7 +723,7 @@
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
-(defn extract-cookies-from-response-headers
+(defn ^:no-doc extract-cookies-from-response-headers
   ([headers]
     (extract-cookies-from-response-headers default-cookie-spec headers))
   ([cookie-spec ^aleph.http.core.HeaderMap headers]
@@ -731,7 +731,7 @@
       (->> (.getAll raw-headers set-cookie-header-name)
         (map (partial decode-set-cookie-header cookie-spec))))))
 
-(defn handle-cookies [{:keys [cookie-store cookie-spec]
+(defn ^:no-doc handle-cookies [{:keys [cookie-store cookie-spec]
                        :or {cookie-spec default-cookie-spec}}
                       {:keys [headers] :as rsp}]
   (if (nil? cookie-store)
@@ -745,14 +745,14 @@
       ;; to parse header twice otherwise)
       (assoc rsp :cookies cookies))))
 
-(defn reduce-to-unique-cookie-names [cookies]
+(defn ^:no-doc reduce-to-unique-cookie-names [cookies]
   (when-not (empty? cookies)
     (->> cookies
       (map (juxt :name identity))
       (into {})
       vals)))
 
-(defn write-cookie-header [cookies cookie-spec req]
+(defn ^:no-doc write-cookie-header [cookies cookie-spec req]
   (if (empty? cookies)
     req
     (let [header (->> cookies
@@ -760,7 +760,7 @@
                    (write-cookies cookie-spec))]
       (assoc-in req [:headers cookie-header-name] header))))
 
-(defn add-cookie-header [cookie-store cookie-spec req]
+(defn ^:no-doc add-cookie-header [cookie-store cookie-spec req]
   (let [origin (req->cookie-origin req)
         cookies (->> (get-cookies cookie-store)
                   (filter (partial match-cookie-origin? cookie-spec origin))
@@ -805,7 +805,7 @@
     :else
     req))
 
-(defn parse-content-type
+(defn ^:no-doc parse-content-type
   "Parse `s` as an RFC 2616 media type."
   [s]
   (if-let [m (re-matches #"\s*(([^/]+)/([^ ;]+))\s*(\s*;.*)?" (str s))]
@@ -819,7 +819,7 @@
        (apply hash-map))}))
 
 ;; Multimethods for coercing body type to the :as key
-(defmulti coerce-response-body (fn [req _] (:as req)))
+(defmulti ^:no-doc coerce-response-body (fn [req _] (:as req)))
 
 (defmethod coerce-response-body :byte-array [_ resp]
   (update resp :body bs/to-byte-array))
@@ -827,7 +827,7 @@
 (defmethod coerce-response-body :stream [_ resp]
   (update-in resp [:body] bs/to-input-stream))
 
-(defn coerce-json-body
+(defn ^:no-doc coerce-json-body
   [{:keys [coerce] :as req} {:keys [body status] :as resp} keyword? strict? & [charset]]
   (let [^String charset (or charset (-> resp :content-type-params :charset)
                           "UTF-8")
@@ -848,13 +848,13 @@
         :else (assoc resp :body (String. ^"[B" body charset)))
       (assoc resp :body (String. ^"[B" body charset)))))
 
-(defn coerce-clojure-body
+(defn ^:no-doc coerce-clojure-body
   [request {:keys [body] :as resp}]
   (let [^String charset (or (-> resp :content-type-params :charset) "UTF-8")
         body (bs/to-byte-array body)]
     (assoc resp :body (edn/read-string (String. ^"[B" body charset)))))
 
-(defn coerce-transit-body
+(defn ^:no-doc coerce-transit-body
   [{:keys [transit-opts] :as request} {:keys [body] :as resp} type]
   (if transit-enabled?
     (assoc resp :body (parse-transit body type transit-opts))
@@ -898,7 +898,7 @@
     (opt req :debug-body)
     (assoc :aleph/save-request-body (atom nil))))
 
-(defn handle-response-debug [req rsp]
+(defn ^:no-doc handle-response-debug [req rsp]
   (let [saved-message (get req :aleph/save-request-message)
         saved-body (get req :aleph/save-request-body)
         req' (dissoc req
@@ -918,7 +918,7 @@
       (opt req :save-request)
       (assoc :aleph/request req'))))
 
-(def default-middleware
+(def ^:no-doc default-middleware
   [wrap-method
    wrap-url
    wrap-nested-params

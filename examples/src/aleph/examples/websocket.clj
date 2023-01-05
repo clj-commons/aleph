@@ -1,12 +1,11 @@
 (ns aleph.examples.websocket
   (:require
-    [compojure.core :as compojure :refer [GET]]
-    [ring.middleware.params :as params]
-    [compojure.route :as route]
     [aleph.http :as http]
-    [manifold.stream :as s]
+    [manifold.bus :as bus]
     [manifold.deferred :as d]
-    [manifold.bus :as bus]))
+    [manifold.stream :as s]
+    [reitit.ring :as ring]
+    [ring.middleware.params :as params]))
 
 (def non-websocket-request
   {:status 400
@@ -83,16 +82,16 @@
             (s/map #(str name ": " %))
             (s/buffer 100)))
 
-        ;; Compojure expects some sort of HTTP response, so just give it `nil`
+        ;; A ring handler expects some sort of HTTP response, so just give it `nil`
         nil))))
 
 (def handler
   (params/wrap-params
-    (compojure/routes
-      (GET "/echo" [] echo-handler)
-      (GET "/chat" [] chat-handler)
-      (route/not-found "No such page."))))
-
+   (ring/ring-handler
+    (ring/router
+     [["/echo" echo-handler]
+      ["/chat" chat-handler]])
+    (ring/create-default-handler))))
 
 (def s (http/start-server handler {:port 10000}))
 

@@ -2,12 +2,12 @@
   (:refer-clojure :exclude [flush])
   (:require
     [clj-commons.byte-streams :as bs]
+    [clj-commons.primitive-math :as p]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.executor :as e]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
-    [clj-commons.primitive-math :as p]
     [potemkin :as potemkin :refer [doit doary]])
   (:import
     [clojure.lang DynamicClassLoader]
@@ -59,11 +59,10 @@
      ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
-     AbstractEventExecutor FastThreadLocalThread GenericFutureListener Future
+     FastThreadLocalThread GenericFutureListener Future
      GlobalEventExecutor]
     [java.io InputStream File]
     [java.nio ByteBuffer]
-    [java.nio.channels ClosedChannelException]
     [io.netty.util.internal SystemPropertyUtil]
     [java.util.concurrent
      ConcurrentHashMap
@@ -91,13 +90,17 @@
 
 ;;;
 
-(definline release [x]
+(definline release
+  "Decreases the reference count by 1 and deallocates this object if the reference count reaches at 0."
+  [x]
   `(io.netty.util.ReferenceCountUtil/release ~x))
 
-(definline acquire [x]
+(definline acquire
+  "Increases the reference count by 1."
+  [x]
   `(io.netty.util.ReferenceCountUtil/retain ~x))
 
-(defn leak-detector-level! [level]
+(defn ^:no-doc leak-detector-level! [level]
   (ResourceLeakDetector/setLevel
     (case level
       :disabled ResourceLeakDetector$Level/DISABLED
@@ -105,7 +108,10 @@
       :advanced ResourceLeakDetector$Level/ADVANCED
       :paranoid ResourceLeakDetector$Level/PARANOID)))
 
-(defn set-logger! [logger]
+(defn set-logger!
+  "Changes the default logger factory.
+  The parameter can be either `:log4j`, `:log4j2`, `:slf4j` or `:jdk`."
+  [logger]
   (InternalLoggerFactory/setDefaultFactory
     (case logger
       :log4j  Log4JLoggerFactory/INSTANCE
@@ -115,36 +121,36 @@
 
 ;;;
 
-(defn channel-server-name [^Channel ch]
+(defn ^:no-doc channel-server-name [^Channel ch]
   (some-> ch ^InetSocketAddress (.localAddress) .getHostName))
 
-(defn channel-server-port [^Channel ch]
+(defn ^:no-doc channel-server-port [^Channel ch]
   (some-> ch ^InetSocketAddress (.localAddress) .getPort))
 
-(defn channel-remote-address [^Channel ch]
+(defn ^:no-doc channel-remote-address [^Channel ch]
   (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
 
 ;;; Defaults defined here since they are not publically exposed by Netty
 
-(def ^:const default-shutdown-timeout
+(def ^:const ^:no-doc default-shutdown-timeout
   "Default timeout in seconds to wait for graceful shutdown complete"
   15)
 
-(def ^:const array-class (class (clojure.core/byte-array 0)))
+(def ^:const ^:no-doc array-class (class (clojure.core/byte-array 0)))
 
-(defn buf->array [^ByteBuf buf]
+(defn ^:no-doc buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
     (doary [^ByteBuffer buf (.nioBuffers buf)]
       (.put dst buf))
     (.array dst)))
 
-(defn release-buf->array [^ByteBuf buf]
+(defn ^:no-doc release-buf->array [^ByteBuf buf]
   (try
     (buf->array buf)
     (finally
       (release buf))))
 
-(defn bufs->array [bufs]
+(defn ^:no-doc bufs->array [bufs]
   (let [bufs' (mapcat #(.nioBuffers ^ByteBuf %) bufs)
         dst (ByteBuffer/allocate
               (loop [cnt 0, s bufs']
@@ -165,10 +171,12 @@
   [buf options]
   (Unpooled/wrappedBuffer buf))
 
-(declare allocate)
+(declare ^:no-doc allocate)
 
 (let [charset (java.nio.charset.Charset/forName "UTF-8")]
-  (defn append-to-buf! [^ByteBuf buf x]
+  (defn append-to-buf!
+    "Appends `x` to an existing `io.netty.buffer.ByteBuf`."
+    [^ByteBuf buf x]
     (cond
       (instance? array-class x)
       (.writeBytes buf ^bytes x)
@@ -185,6 +193,7 @@
       (.writeBytes buf (bs/to-byte-buffer x))))
 
   (defn ^ByteBuf to-byte-buf
+    "Converts `x` into a `io.netty.buffer.ByteBuf`."
     ([x]
      (cond
        (nil? x)
@@ -212,11 +221,13 @@
        (doto (allocate ch)
          (append-to-buf! x))))))
 
-(defn to-byte-buf-stream [x chunk-size]
+(defn to-byte-buf-stream
+  "Converts `x` into a manifold stream of `io.netty.ByteBuf` of `chunk-size`."
+  [x chunk-size]
   (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
     (s/onto nil)))
 
-(defn ensure-dynamic-classloader
+(defn ^:no-doc ensure-dynamic-classloader
   "Ensure the context class loader has a valid loader chain to
    prevent `ClassNotFoundException`.
    https://github.com/clj-commons/aleph/issues/603."
@@ -244,7 +255,7 @@
      :else
      (d/error! d (IllegalStateException. "future in unknown state"))))
 
-(defn wrap-future
+(defn ^:no-doc wrap-future
   [^Future f]
   (when f
     (let [d (d/deferred nil)]
@@ -261,45 +272,45 @@
                             (bound-operation-complete f d))))))
       d)))
 
-(defn allocate [x]
+(defn ^:no-doc allocate [x]
   (if (instance? Channel x)
     (-> ^Channel x .alloc .ioBuffer)
     (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
-(defn write [x msg]
+(defn ^:no-doc write [x msg]
   (if (instance? Channel x)
     (.write ^Channel x msg (.voidPromise ^Channel x))
     (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x)))
   nil)
 
-(defn write-and-flush
+(defn ^:no-doc write-and-flush
   [x msg]
   (if (instance? Channel x)
     (.writeAndFlush ^Channel x msg)
     (.writeAndFlush ^ChannelHandlerContext x msg)))
 
-(defn flush [x]
+(defn ^:no-doc flush [x]
   (if (instance? Channel x)
     (.flush ^Channel x)
     (.flush ^ChannelHandlerContext x)))
 
-(defn close [x]
+(defn ^:no-doc close [x]
   (if (instance? Channel x)
     (.close ^Channel x)
     (.close ^ChannelHandlerContext x)))
 
-(defn ^Channel channel [x]
+(defn ^:no-doc ^Channel channel [x]
   (if (instance? Channel x)
     x
     (.channel ^ChannelHandlerContext x)))
 
-(defn ^ChannelGroup make-channel-group
+(defn ^:no-doc ^ChannelGroup make-channel-group
   "Create a channel group which can be used to perform channel operations on
    several channels at once."
   []
   (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
 
-(defmacro safe-execute
+(defmacro ^:no-doc safe-execute
   "Executes the body on the event-loop (an executor service) associated with the Netty channel.
 
    Executes immediately if current thread is in the event loop. Otherwise, returns a deferred
@@ -318,7 +329,7 @@
                  (d/error! d# e#)))))
          d#))))
 
-(defn put! [^Channel ch s msg]
+(defn ^:no-doc put! [^Channel ch s msg]
   (let [d (s/put! s msg)]
     (d/success-error-unrealized d
 
@@ -353,23 +364,23 @@
 
 ;;;
 
-(defn attribute [s]
+(defn ^:no-doc attribute [s]
   (AttributeKey/valueOf (name s)))
 
-(defn get-attribute [ch attr]
+(defn ^:no-doc get-attribute [ch attr]
   (-> ch channel ^Attribute (.attr attr) .get))
 
-(defn set-attribute [ch attr val]
+(defn ^:no-doc set-attribute [ch attr val]
   (-> ch channel ^Attribute (.attr attr) (.set val)))
 
 ;;;
 
-(def ^ConcurrentHashMap channel-inbound-counter     (ConcurrentHashMap.))
-(def ^ConcurrentHashMap channel-outbound-counter    (ConcurrentHashMap.))
-(def ^ConcurrentHashMap channel-inbound-throughput  (ConcurrentHashMap.))
-(def ^ConcurrentHashMap channel-outbound-throughput (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-inbound-counter     (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-outbound-counter    (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-inbound-throughput  (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-outbound-throughput (ConcurrentHashMap.))
 
-(defn- connection-stats [^Channel ch inbound?]
+(defn- ^:no-doc connection-stats [^Channel ch inbound?]
   (merge
     {:local-address (str (.localAddress ch))
      :remote-address (str (.remoteAddress ch))
@@ -382,7 +393,7 @@
       (when-let [^AtomicLong throughput (.get throughput ch)]
         {:throughput (.get throughput)}))))
 
-(def sink-close-marker ::sink-close)
+(def ^:no-doc sink-close-marker ::sink-close)
 
 (manifold/def-sink ChannelSink
   [coerce-fn
@@ -439,7 +450,7 @@
   (put [this msg blocking? timeout timeout-value]
     (.put this msg blocking?)))
 
-(defn sink
+(defn ^:no-doc sink
   ([ch]
     (sink ch true identity (fn [])))
   ([ch downstream? coerce-fn]
@@ -457,7 +468,7 @@
 
       (doto sink (reset-meta! {:aleph/channel ch})))))
 
-(defn source
+(defn ^:no-doc source
   [^Channel ch]
   (let [src (s/stream*
               {:description
@@ -469,7 +480,7 @@
                                  :direction :inbound)))})]
     (doto src (reset-meta! {:aleph/channel ch}))))
 
-(defn buffered-source
+(defn ^:no-doc buffered-source
   [^Channel ch metric capacity]
   (let [src (s/buffered-stream
               metric
@@ -483,7 +494,7 @@
 
 ;;;
 
-(defmacro channel-handler
+(defmacro ^:no-doc channel-handler
   [& {:as handlers}]
   `(reify
      ChannelHandler
@@ -559,7 +570,7 @@
            `([_# ctx#]
              (.flush ctx#))))))
 
-(defmacro channel-inbound-handler
+(defmacro ^:no-doc channel-inbound-handler
   [& {:as handlers}]
   `(reify
      ChannelHandler
@@ -606,7 +617,7 @@
            `([_# ctx#]
               (.fireChannelWritabilityChanged ctx#))))))
 
-(defmacro channel-outbound-handler
+(defmacro ^:no-doc channel-outbound-handler
   [& {:as handlers}]
   `(reify
      ChannelHandler
@@ -649,7 +660,7 @@
            `([_# ctx#]
               (.flush ctx#))))))
 
-(defn ^ChannelHandler bandwidth-tracker [^Channel ch]
+(defn ^:no-doc ^ChannelHandler bandwidth-tracker [^Channel ch]
   (let [inbound-counter (AtomicLong. 0)
         outbound-counter (AtomicLong. 0)
         inbound-throughput (AtomicLong. 0)
@@ -696,7 +707,7 @@
             (.readableBytes ^ByteBuf msg)))
         (.write ctx msg promise)))))
 
-(defn ^ChannelHandler channel-tracking-handler
+(defn ^:no-doc ^ChannelHandler channel-tracking-handler
   "Yields an inbound handler, ready to be added to a pipeline,
    which keeps track of requests in a provided channel group.
    The channel-group can be created via `make-channel-group`."
@@ -712,22 +723,24 @@
     (initChannel [^Channel ch]
       (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
 
-(defn remove-if-present [^ChannelPipeline pipeline ^Class handler]
+(defn remove-if-present
+  "Convenience function to remove a handler from a netty pipeline."
+  [^ChannelPipeline pipeline ^Class handler]
   (when (some? (.get pipeline handler))
     (.remove pipeline handler))
   pipeline)
 
 (defn append-handler-to-pipeline
-  "Convenience function to add a handler to the tail of a netty pipeline"
+  "Convenience function to add a handler to the tail of a netty pipeline."
   [^ChannelPipeline pipeline handler-id ^ChannelHandler handler]
   (.addLast pipeline (str handler-id) handler))
 
 (defn prepend-handler-to-pipeline
-  "Convenience function to add a handler to the head of a netty pipeline"
+  "Convenience function to add a handler to the head of a netty pipeline."
   [^ChannelPipeline pipeline handler-id ^ChannelHandler handler]
   (.addFirst pipeline (str handler-id) handler))
 
-(defn instrument!
+(defn ^:no-doc instrument!
   [stream]
   (if-let [^Channel ch (->> stream meta :aleph/channel)]
     (do
@@ -740,7 +753,7 @@
       true)
     false))
 
-(defn coerce-log-level [level]
+(defn ^:no-doc coerce-log-level [level]
   (if (instance? LogLevel level)
     level
     (let [netty-level (case level
@@ -755,7 +768,7 @@
                 (str "unknown log level given: " level))))
       netty-level)))
 
-(defn activity-logger
+(defn ^:no-doc activity-logger
   ([level]
    (LoggingHandler. ^LogLevel (coerce-log-level level)))
   ([^String name level]
@@ -763,7 +776,7 @@
 
 ;;;
 
-(defn coerce-ssl-provider ^SslProvider [provider]
+(defn ^:no-doc coerce-ssl-provider ^SslProvider [provider]
   (case provider
     :jdk SslProvider/JDK
     :openssl SslProvider/OPENSSL
@@ -792,16 +805,18 @@
   (defn ssl-client-context
     "Creates a new client SSL context.
      Keyword arguments are:
-     |:---|:----
-     | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
-     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
+
+     Param key                | Description
+     | ---                    | ---
+     | `private-key`          | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
+     | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
      | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store` | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
-     | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
-     | `protocols` | a sequence of strings, the TLS protocol versions to enable.
-     | `session-cache-size` | the size of the cache used for storing SSL session objects.
-     | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
+     | `trust-store`          | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider`         | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size`   | the size of the cache used for storing SSL session objects.
+     | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
     ([] (ssl-client-context {}))
     ([{:keys [private-key
@@ -874,18 +889,21 @@
   (defn ssl-server-context
     "Creates a new server SSL context.
      Keyword arguments are:
-     |:---|:----
-     | `private-key` | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
-     | `certificate-chain` | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
+
+     Param key                | Description
+     | ---                    | ---
+     | `private-key`          | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
+     | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
      | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store` | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider` | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
-     | `ciphers` | a sequence of strings, the cipher suites to enable, in the order of preference.
-     | `protocols` | a sequence of strings, the TLS protocol versions to enable.
-     | `session-cache-size` | the size of the cache used for storing SSL session objects.
-     | `session-timeout` | the timeout for the cached SSL session objects, in seconds.
-     | `start-tls` | if the first write request shouldn't be encrypted.
-     | `client-auth` | the client authentication mode, one of `:none`, `:optional` or `:require`.
+     | `trust-store`          | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider`         | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size`   | the size of the cache used for storing SSL session objects.
+     | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
+     | `start-tls`            | if the first write request shouldn't be encrypted.
+     | `client-auth`          | the client authentication mode, one of `:none`, `:optional` or `:require`.
+
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
     ([] (ssl-server-context {}))
     ([{:keys [private-key
@@ -965,7 +983,9 @@
     (ssl-server-context {:private-key (.privateKey cert)
                          :certificate-chain (.certificate cert)})))
 
-(defn insecure-ssl-client-context []
+(defn insecure-ssl-client-context
+  "An insure SSL context for servers."
+  []
   (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
 
 (defn- coerce-ssl-context [options->context ssl-context]
@@ -988,14 +1008,14 @@
 (def ^:private  coerce-ssl-client-context
   (partial coerce-ssl-context ssl-client-context))
 
-(defn channel-ssl-session [^Channel ch]
+(defn ^:no-doc channel-ssl-session [^Channel ch]
   (some-> ch
           ^ChannelPipeline (.pipeline)
           ^SslHandler (.get SslHandler)
           .engine
           .getSession))
 
-(defn ssl-handshake-error? [^Throwable ex]
+(defn ^:no-doc ssl-handshake-error? [^Throwable ex]
   (and (instance? DecoderException ex)
        (instance? SSLHandshakeException (.getCause ex))))
 
@@ -1005,24 +1025,24 @@
   (port [_] "Returns the port the server is listening on.")
   (wait-for-close [_] "Blocks until the server has been closed."))
 
-(defn epoll-available? []
+(defn ^:no-doc epoll-available? []
   (Epoll/isAvailable))
 
-(defn ensure-epoll-available! []
+(defn ^:no-doc ensure-epoll-available! []
   (when-let [cause (Epoll/unavailabilityCause)]
     (throw (IllegalArgumentException. (str "Epoll transport requested but implementation not available. "
                                            "See https://netty.io/wiki/native-transports.html on how to add the necessary "
                                            "dependency for your platform.")
                                       cause))))
 
-(defn get-default-event-loop-threads
+(defn ^:no-doc get-default-event-loop-threads
   "Determines the default number of threads to use for a Netty EventLoopGroup.
    This mimics the default used by Netty as of version 4.1."
   []
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
-(defn ^ThreadFactory enumerating-thread-factory [prefix daemon?]
+(defn ^:no-doc ^ThreadFactory enumerating-thread-factory [prefix daemon?]
   (let [num-threads (atom 0)]
     (e/thread-factory
      #(str prefix "-" (swap! num-threads inc))
@@ -1031,30 +1051,30 @@
      daemon?
      (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
 
-(def ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
+(def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
-(def epoll-client-group
+(def ^:no-doc epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
-(def nio-client-group
+(def ^:no-doc nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
-(defn convert-address-types [address-types]
+(defn ^:no-doc convert-address-types [address-types]
   (case address-types
     :ipv4-only ResolvedAddressTypes/IPV4_ONLY
     :ipv6-only ResolvedAddressTypes/IPV6_ONLY
     :ipv4-preferred ResolvedAddressTypes/IPV4_PREFERRED
     :ipv6-preferred ResolvedAddressTypes/IPV6_PREFERRED))
 
-(def dns-default-port 53)
+(def ^:no-doc dns-default-port 53)
 
-(defn dns-name-servers-provider [servers]
+(defn ^:no-doc dns-name-servers-provider [servers]
   (let [addresses (->> servers
                     (map (fn [server]
                            (cond
@@ -1082,22 +1102,23 @@ initialize an DnsAddressResolverGroup instance.
 
    DNS options are a map of:
 
-   |:--- |:---
-   | `max-payload-size` | sets capacity of the datagram packet buffer (in bytes), defaults to `4096`
+   Param key                   | Description
+   | ---                       | ---
+   | `max-payload-size`        | sets capacity of the datagram packet buffer (in bytes), defaults to `4096`
    | `max-queries-per-resolve` | sets the maximum allowed number of DNS queries to send when resolving a host name, defaults to `16`
-   | `address-types` | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
-   | `query-timeout` | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to `5000`
-   | `min-ttl` | sets minimum TTL of the cached DNS resource records (in seconds), defaults to `0`
-   | `max-ttl` | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
-   | `negative-ttl` | sets the TTL of the cache for the failed DNS queries (in seconds)
-   | `trace-enabled?` | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
-   | `opt-resources-enabled?` | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
-   | `search-domains` | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
-   | `ndots` | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
-   | `decode-idn?` | set if domain / host names should be decoded to unicode when received, defaults to `true`
-   | `recursion-desired?` | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
-   | `name-servers` | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
-   | `epoll?` | if `true`, uses `epoll`, defaults to `false`"
+   | `address-types`           | sets the list of the protocol families of the address resolved, should be one of `:ipv4-only`, `:ipv4-preferred`, `:ipv6-only`, `:ipv4-preferred`  (calculated automatically based on ipv4/ipv6 support when not set explicitly)
+   | `query-timeout`           | sets the timeout of each DNS query performed by this resolver (in milliseconds), defaults to `5000`
+   | `min-ttl`                 | sets minimum TTL of the cached DNS resource records (in seconds), defaults to `0`
+   | `max-ttl`                 | sets maximum TTL of the cached DNS resource records (in seconds), defaults to `Integer/MAX_VALUE` (the resolver will respect the TTL from the DNS)
+   | `negative-ttl`            | sets the TTL of the cache for the failed DNS queries (in seconds)
+   | `trace-enabled?`          | if set to `true`, the resolver generates the detailed trace information in an exception message, defaults to `false`
+   | `opt-resources-enabled?`  | if set to `true`, enables the automatic inclusion of a optional records that tries to give the remote DNS server a hint about how much data the resolver can read per response, defaults to `true`
+   | `search-domains`          | sets the list of search domains of the resolver, when not given the default list is used (platform dependent)
+   | `ndots`                   | sets the number of dots which must appear in a name before an initial absolute query is made, defaults to `-1`
+   | `decode-idn?`             | set if domain / host names should be decoded to unicode when received, defaults to `true`
+   | `recursion-desired?`      | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
+   | `name-servers`            | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
+   | `epoll?`                  | if `true`, uses `epoll`, defaults to `false`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -1163,7 +1184,7 @@ initialize an DnsAddressResolverGroup instance.
   [dns-options]
   (DnsAddressResolverGroup. (dns-resolver-group-builder dns-options)))
 
-(defn ^:nodoc maybe-ssl-handshake-future
+(defn ^:no-doc maybe-ssl-handshake-future
   "Returns a deferred which resolves to the channel after a potential
   SSL handshake has completed successfully. If no `SslHandler` is
   present on the associated pipeline, resolves immediately."
@@ -1174,7 +1195,7 @@ initialize an DnsAddressResolverGroup instance.
         wrap-future)
     (d/success-deferred ch)))
 
-(defn ^:nodoc ignore-ssl-handshake-errors
+(defn ^:no-doc ignore-ssl-handshake-errors
   "Intended for use as error callback on a `maybe-ssl-handshake-future`
   within a `:channel-active` handler. In this context, SSL handshake
   errors don't need to be handled since the SSL handler will terminate
@@ -1182,7 +1203,7 @@ initialize an DnsAddressResolverGroup instance.
   anyway."
   [_])
 
-(defn create-client
+(defn ^:no-doc create-client
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -1265,7 +1286,7 @@ initialize an DnsAddressResolverGroup instance.
                                 (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
-(defn start-server
+(defn ^:no-doc start-server
   ([pipeline-builder
     ssl-context
     bootstrap-transform

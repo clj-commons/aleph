@@ -1,13 +1,13 @@
 (ns aleph.http.multipart
   (:require
-   [clojure.core :as cc]
-   [clj-commons.byte-streams :as bs]
-   [aleph.http.encoding :refer [encode]]
    [aleph.http.core :as http-core]
+   [aleph.http.encoding :refer [encode]]
    [aleph.netty :as netty]
-   [manifold.stream :as s]
+   [clj-commons.byte-streams :as bs]
+   [clojure.core :as cc]
    [clojure.tools.logging :as log]
-   [manifold.deferred :as d])
+   [manifold.deferred :as d]
+   [manifold.stream :as s])
   (:import
    [java.util
     Locale]
@@ -24,30 +24,28 @@
    [io.netty.handler.codec.http
     DefaultHttpContent
     DefaultHttpRequest
-    FullHttpRequest
     HttpConstants]
    [io.netty.handler.codec.http.multipart
     Attribute
     MemoryAttribute
     FileUpload
-    HttpDataFactory
     DefaultHttpDataFactory
     HttpPostRequestDecoder
     HttpPostRequestEncoder
     InterfaceHttpData
     InterfaceHttpData$HttpDataType]))
 
-(defn boundary []
+(defn ^:no-doc boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
 
-(defn mime-type-descriptor
+(defn ^:no-doc mime-type-descriptor
   [^String mime-type ^String encoding]
   (str
    (-> (or mime-type "application/octet-stream") .trim (.toLowerCase Locale/US))
    (when encoding
      (str "; charset=" encoding))))
 
-(defn populate-part
+(defn ^:no-doc populate-part
   "Generates a part map of the appropriate format"
   [{:keys [part-name content mime-type charset transfer-encoding name]}]
   (let [file? (instance? File content)
@@ -79,7 +77,7 @@
 ;;
 ;; Note, that you can use transfer-encoding=nil or :binary to leave data "as is".
 ;; transfer-encoding=nil omits "Content-Transfer-Encoding" header.
-(defn part-headers [^String part-name ^String mime-type transfer-encoding name]
+(defn ^:no-doc part-headers [^String part-name ^String mime-type transfer-encoding name]
   (let [cd (str "Content-Disposition: form-data; name=\"" part-name "\""
              (when name (str "; filename=\"" name "\""))
              "\r\n")
@@ -89,7 +87,7 @@
               (str "Content-Transfer-Encoding: " (cc/name transfer-encoding) "\r\n"))]
     (bs/to-byte-buffer (str cd ct cte "\r\n"))))
 
-(defn encode-part
+(defn ^:no-doc encode-part
   "Generates the byte representation of a part for the bytebuffer"
   [{:keys [part-name content mime-type charset transfer-encoding name] :as part}]
   (let [headers (part-headers part-name mime-type transfer-encoding name)
@@ -106,7 +104,8 @@
 
 (defn
   ^{:deprecated "0.4.7-alpha2"
-    :superseded-by "encode-request"}
+    :superseded-by "encode-request"
+    :no-doc true}
   encode-body
   ([parts]
     (encode-body (boundary) parts))
@@ -162,7 +161,7 @@
     (let [req' (.finalizeRequest encoder)]
       [req' (when (.isChunked encoder) encoder)])))
 
-(defmulti http-data->map
+(defmulti ^:no-doc http-data->map
   (fn [^InterfaceHttpData data]
     (.getHttpDataType data)))
 

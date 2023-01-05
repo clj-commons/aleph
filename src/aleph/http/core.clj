@@ -1,15 +1,15 @@
-(ns aleph.http.core
+(ns ^:no-doc aleph.http.core
   (:require
-    [manifold.stream :as s]
-    [manifold.deferred :as d]
     [aleph.netty :as netty]
-    [clojure.tools.logging :as log]
-    [clojure.set :as set]
-    [clojure.string :as str]
     [clj-commons.byte-streams :as bs]
     [clj-commons.byte-streams.graph :as g]
-    [potemkin :as p]
-    [clojure.java.io :as io])
+    [clojure.java.io :as io]
+    [clojure.set :as set]
+    [clojure.string :as str]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s]
+    [potemkin :as p])
   (:import
     [io.netty.channel
      Channel
@@ -26,7 +26,6 @@
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
-     FullHttpRequest
      HttpHeaders HttpUtil HttpContent
      HttpMethod HttpRequest HttpMessage
      HttpResponse HttpResponseStatus
@@ -46,8 +45,7 @@
      PingWebSocketFrame
      TextWebSocketFrame
      BinaryWebSocketFrame
-     CloseWebSocketFrame
-     WebSocketChunkedInput]
+     CloseWebSocketFrame]
     [java.io
      File
      RandomAccessFile

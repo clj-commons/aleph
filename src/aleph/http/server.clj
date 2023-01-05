@@ -1,11 +1,11 @@
-(ns aleph.http.server
+(ns ^:no-doc aleph.http.server
   (:require
+    [aleph.flow :as flow]
     [aleph.http.core :as http]
     [aleph.netty :as netty]
-    [aleph.flow :as flow]
     [clj-commons.byte-streams :as bs]
-    [clojure.tools.logging :as log]
     [clojure.string :as str]
+    [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import

@@ -1,10 +1,10 @@
 (ns aleph.tcp
   (:require
-    [potemkin :as p]
-    [manifold.stream :as s]
-    [manifold.deferred :as d]
     [aleph.netty :as netty]
-    [clojure.tools.logging :as log])
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s]
+    [potemkin :as p])
   (:import
     [java.io
      IOException]
@@ -13,10 +13,7 @@
     [io.netty.channel
      Channel
      ChannelHandler
-     ChannelHandlerContext
-     ChannelPipeline]
-    [io.netty.handler.ssl
-     SslHandler]))
+     ChannelPipeline]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -73,14 +70,15 @@
    stream and a map containing information about the client.  Returns a server object that can
    be shutdown via `java.io.Closeable.close()`, and whose port can be discovered via `aleph.netty.port`.
 
-   |:---|:-----
-   | `port` | the port the server will bind to.  If `0`, the server will bind to a random port.
-   | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `ssl-context` | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details). If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
+   Param key               | Description
+   | ---                   | ---
+   | `port`                | the port the server will bind to.  If `0`, the server will bind to a random port.
+   | `socket-address`      | a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `ssl-context`         | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details). If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `shutdown-timeout` | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
+   | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `shutdown-timeout`    | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?
            shutdown-timeout]
@@ -153,17 +151,18 @@
   "Given a host and port, returns a deferred which yields a duplex stream that can be used
    to communicate with the server.
 
-   |:---|:----
-   | `host` | the hostname of the server.
-   | `port` | the port of the server.
-   | `remote-address` | a `java.net.SocketAddress` specifying the server's address.
-   | `local-address` | a `java.net.SocketAddress` specifying the local network interface to use.
-   | `ssl-context` | an explicit `io.netty.handler.ssl.SslHandler` or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details) to use. Defers to `ssl?` and `insecure?` configuration if omitted.
-   | `ssl?` | if true, the client attempts to establish a secure connection with the server.
-   | `insecure?` | if true, the client will ignore the server's certificate.
+   Param key               | Description
+   | ---                   | ---
+   | `host`                | the hostname of the server.
+   | `port`                | the port of the server.
+   | `remote-address`      | a `java.net.SocketAddress` specifying the server's address.
+   | `local-address`       | a `java.net.SocketAddress` specifying the local network interface to use.
+   | `ssl-context`         | an explicit `io.netty.handler.ssl.SslHandler` or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details) to use. Defers to `ssl?` and `insecure?` configuration if omitted.
+   | `ssl?`                | if true, the client attempts to establish a secure connection with the server.
+   | `insecure?`           | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
-   | `pipeline-transform` | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `raw-stream?` | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
+   | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
   [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll?]
     :or {bootstrap-transform identity
          epoll? false}

@@ -1,17 +1,15 @@
 (ns aleph.examples.http
   (:import
-    [io.netty.handler.ssl SslContextBuilder])
+   [io.netty.handler.ssl SslContextBuilder])
   (:require
-    [compojure.core :as compojure :refer [GET]]
-    [ring.middleware.params :as params]
-    [compojure.route :as route]
-    [compojure.response :refer [Renderable]]
-    [aleph.http :as http]
-    [clj-commons.byte-streams :as bs]
-    [manifold.stream :as s]
-    [manifold.deferred :as d]
-    [clojure.core.async :as a]
-    [clojure.java.io :refer [file]]))
+   [aleph.http :as http]
+   [clj-commons.byte-streams :as bs]
+   [clojure.core.async :as a]
+   [clojure.java.io :refer [file]]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [reitit.ring :as ring]
+   [ring.middleware.params :as params]))
 
 ;; For HTTP, Aleph implements a superset of the
 ;; [Ring spec](https://github.com/ring-clojure/ring/blob/master/SPEC), which means it can be
@@ -20,7 +18,7 @@
 ;; [Manifold](https://github.com/clj-commons/manifold) deferreds and streams.  Uses of both
 ;; will be illustrated below.
 
-;; Complete documentation for the `aleph.http` namespace can be found [here](http://aleph.io/codox/aleph/aleph.http.html).
+;; Complete documentation for the `aleph.http` namespace can be found [here](https://cljdoc.org/d/aleph/aleph/CURRENT/api/aleph.http).
 
 ;; ## building servers
 
@@ -43,17 +41,9 @@
    1000 milliseconds."
   [req]
   (d/timeout!
-    (d/deferred)
-    1000
-    (hello-world-handler req)))
-
-;; Compojure will normally dereference deferreds and return the realized value.
-;; Unfortunately, this blocks the thread. Since Aleph can accept the unrealized
-;; deferred, we extend Compojure's `Renderable` protocol to pass the deferred
-;; through unchanged so it can be handled asynchronously.
-(extend-protocol Renderable
-  clojure.lang.IDeref
-  (render [d _] (d/->deferred d)))
+   (d/deferred)
+   1000
+   (hello-world-handler req)))
 
 (defn delayed-hello-world-handler
   "Alternately, we can use a [core.async](https://github.com/clojure/core.async) goroutine to
@@ -62,10 +52,10 @@
    to the previous implementation."
   [req]
   (s/take!
-    (s/->source
-      (a/go
-        (let [_ (a/<! (a/timeout 1000))]
-          (hello-world-handler req))))))
+   (s/->source
+    (a/go
+      (let [_ (a/<! (a/timeout 1000))]
+        (hello-world-handler req))))))
 
 (defn streaming-numbers-handler
   "Returns a streamed HTTP response, consisting of newline-delimited numbers every 100
@@ -86,7 +76,7 @@
      :headers {"content-type" "text/plain"}
      :body (let [sent (atom 0)]
              (->> (s/periodically 100 #(str (swap! sent inc) "\n"))
-               (s/transform (take cnt))))}))
+                  (s/transform (take cnt))))}))
 
 (defn streaming-numbers-handler
   "However, we can always still use lazy sequences. This is still useful when the upstream
@@ -97,8 +87,8 @@
     {:status 200
      :headers {"content-type" "text/plain"}
      :body (->> (range cnt)
-             (map #(do (Thread/sleep 100) %))
-             (map #(str % "\n")))}))
+                (map #(do (Thread/sleep 100) %))
+                (map #(str % "\n")))}))
 
 (defn streaming-numbers-handler
   "We can also take a core.async channel, coerce it to a Manifold source via
@@ -121,21 +111,21 @@
      :headers {"content-type" "text/plain"}
      :body (s/->source body)}))
 
-;; This handler defines a set of endpoints via Compojure's `routes` macro.  Notice that above
+;; This handler defines a set of endpoints via Reitit.  Notice that above
 ;; we've added the `GET` macro via `:refer` so it doesn't have to be qualified.  We wrap the
 ;; result in `ring.middleware.params/wrap-params` so that we can get the `count` parameter in
 ;; `streaming-numbers-handler`.
 ;;
-;; Notice that at the bottom we define a default `compojure.route/not-found` handler, which
-;; will return a `404` status.  If we don't do this, a call to a URI we don't recognize will
-;; return a `nil` response, which will cause Aleph to log an error.
+;; Notice that we use `ring/create-default-handler` which will return a `404`
+;; status if the route is not found.
 (def handler
   (params/wrap-params
-    (compojure/routes
-      (GET "/hello"         [] hello-world-handler)
-      (GET "/delayed_hello" [] delayed-hello-world-handler)
-      (GET "/numbers"       [] streaming-numbers-handler)
-      (route/not-found "No such page."))))
+   (ring/ring-handler
+    (ring/router
+     [["/hello" {:get hello-world-handler}]
+      ["/delayed_hello" delayed-hello-world-handler]
+      ["/numbers" streaming-numbers-handler]])
+    (ring/create-default-handler))))
 
 (def s (http/start-server handler {:port 10000}))
 
@@ -144,31 +134,31 @@
 ;; Here we immediately dereference the response, get the `:body`, which is an InputStream,
 ;; and coerce it to a string using `byte-strings/to-string`.
 (-> @(http/get "http://localhost:10000/hello")
-  :body
-  bs/to-string)   ;=> "hello world!"
+    :body
+    bs/to-string)   ;=> "hello world!"
 
 ;; And we do the same exact thing for the `delayed_hello` endpoint, which returns an identical
 ;; result after a second's pause.
 (-> @(http/get "http://localhost:10000/delayed_hello")
-  :body
-  bs/to-string)   ;=> (beat) "hello world!"
+    :body
+    bs/to-string)   ;=> (beat) "hello world!"
 
 ;; Instead of dereferencing the response, we can use `manifold.deferred/chain` to compose
 ;; operations over it. Here we dereference the final result so that we don't close the server
 ;; before the response is complete, but we could also perform some side effect further down
 ;; the chain if we want to completely avoid blocking operations.
 @(d/chain (http/get "http://localhost:10000/delayed_hello")
-   :body
-   bs/to-string) ;=> (beat) "hello world!"
+          :body
+          bs/to-string) ;=> (beat) "hello world!"
 
 ;; Here we take a line-delimited streaming response, and coerce it to a lazy sequence of
 ;; strings via `byte-streams/to-line-seq`.
 (->> @(http/get "http://localhost:10000/numbers"
-        {:query-params {:count 10}})
-  :body
-  bs/to-line-seq
-  (map #(Integer/parseInt %))
-  doall)   ;=> (0 1 2 3 4 5 6 7 8 9)
+                {:query-params {:count 10}})
+     :body
+     bs/to-line-seq
+     (map #(Integer/parseInt %))
+     doall)   ;=> (0 1 2 3 4 5 6 7 8 9)
 
 ;; By default, the `:body` of any response is a `java.io.InputStream`.  However, this means
 ;; that our consumption of the body needs to be synchronous, as shown above by coercing it
@@ -177,13 +167,13 @@
 (def raw-stream-connection-pool (http/connection-pool {:connection-options {:raw-stream? true}}))
 
 @(d/chain
-   (http/get "http://localhost:10000/numbers"
-     {:query-params {:count 10}
-      :pool raw-stream-connection-pool})
-   :body
-   #(s/map bs/to-byte-array %)
-   #(s/reduce conj [] %)
-   bs/to-string)
+  (http/get "http://localhost:10000/numbers"
+           {:query-params {:count 10}
+                   :pool raw-stream-connection-pool})
+  :body
+  #(s/map bs/to-byte-array %)
+  #(s/reduce conj [] %)
+  bs/to-string)
 
 ;; In the above example, we coerce a stream of Netty `ByteBuf` objects into a stream of `byte[]`
 ;; before asynchronously accumulating them and coercing the entire collection into a `String`

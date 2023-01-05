@@ -1,4 +1,4 @@
-(ns aleph.http.encoding
+(ns ^:no-doc aleph.http.encoding
   (:require
     [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p])
@@ -17,7 +17,9 @@
     (str "=" (.toUpperCase (Long/toHexString b)))))
 
 (let [^objects encodings (->> (range 256) (map qp-byte) into-array)]
-  (defn encode-qp [val]
+  (defn encode-qp
+    "Encodes `val` as query params."
+    [val]
     (let [sb (StringBuffer.)
           ^bytes ary (bs/to-byte-array val)
           len (alength ary)]
@@ -32,7 +34,9 @@
               (recur (p/inc i) newline)))))
       (str sb))))
 
-(defn encode-base64 [val]
+(defn encode-base64
+  "Encodes `val` in base64."
+  [val]
   (let [cb (-> val bs/to-byte-buffer Unpooled/wrappedBuffer)
         encoded (Base64/encode cb)
         r (byte-array (.capacity ^ByteBuf encoded))
@@ -41,7 +45,10 @@
     (.release ^ByteBuf encoded)
     (bs/to-byte-buffer r)))
 
-(defn encode [val encoding]
+(defn encode
+  "Encodes `val` into the specified `encoding` which can be one of `:base64`,
+  `:quoted-printable`, `:qp` or `:binary`."
+  [val encoding]
   (case encoding
     :base64 (encode-base64 val)
     :quoted-printable (encode-qp val)

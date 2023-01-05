@@ -1,13 +1,13 @@
 (ns aleph.examples.tcp
   (:require
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [clojure.edn :as edn]
-    [aleph.tcp :as tcp]
-    [gloss.core :as gloss]
-    [gloss.io :as io]))
+   [aleph.tcp :as tcp]
+   [clojure.edn :as edn]
+   [gloss.core :as gloss]
+   [gloss.io :as io]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]))
 
-;; Complete documentation for the `aleph.tcp` namespace can be found [here](http://aleph.io/codox/aleph/aleph.tcp.html).
+;; Complete documentation for the `aleph.tcp` namespace can be found [here](https://cljdoc.org/d/aleph/aleph/CURRENT/api/aleph.tcp).
 
 ;; ## the basics
 
@@ -21,10 +21,10 @@
 ;; structure.
 (def protocol
   (gloss/compile-frame
-    (gloss/finite-frame :uint32
-      (gloss/string :utf-8))
-    pr-str
-    edn/read-string))
+   (gloss/finite-frame :uint32
+                       (gloss/string :utf-8))
+   pr-str
+   edn/read-string))
 
 ;; This function takes a raw TCP **duplex stream** which represents bidirectional communication
 ;; via a single stream.  Messages from the remote endpoint can be consumed via `take!`, and
@@ -42,12 +42,12 @@
   [protocol s]
   (let [out (s/stream)]
     (s/connect
-      (s/map #(io/encode protocol %) out)
-      s)
+     (s/map #(io/encode protocol %) out)
+     s)
 
     (s/splice
-      out
-      (io/decode-stream s protocol))))
+     out
+     (io/decode-stream s protocol))))
 
 ;; The call to `aleph.tcp/client` returns a deferred, which will yield a duplex stream that
 ;; can be used to both send and receive bytes. We asynchronously compose over this value using
@@ -57,7 +57,7 @@
 (defn client
   [host port]
   (d/chain (tcp/client {:host host, :port port})
-    #(wrap-duplex-stream protocol %)))
+           #(wrap-duplex-stream protocol %)))
 
 ;; Takes a two-argument `handler` function, which takes a stream and information about the
 ;; connection, and sets up message handling for the stream.  The raw stream is wrapped in the
@@ -65,9 +65,9 @@
 (defn start-server
   [handler port]
   (tcp/start-server
-    (fn [s info]
-      (handler (wrap-duplex-stream protocol s) info))
-    {:port port}))
+   (fn [s info]
+     (handler (wrap-duplex-stream protocol s) info))
+   {:port port}))
 
 ;; ## echo servers
 
@@ -78,16 +78,16 @@
   [f]
   (fn [s info]
     (s/connect
-      (s/map f s)
-      s)))
+     (s/map f s)
+     s)))
 
 ;; ### demonstration
 
 ;; We start a server `s` which will return incremented numbers.
 (def s
   (start-server
-    (fast-echo-handler inc)
-    10000))
+   (fast-echo-handler inc)
+   10000))
 
 ;; We connect a client to the server, dereferencing the deferred value returned such that `c`
 ;; is simply a duplex stream that takes and emits Clojure values.
@@ -124,30 +124,30 @@
       ;; take a message, and define a default value that tells us if the connection is closed
       (-> (s/take! s ::none)
 
-        (d/chain
+          (d/chain
 
-          ;; first, check if there even was a message, and then transform it on another thread
-          (fn [msg]
-            (if (= ::none msg)
-              ::none
-              (d/future (f msg))))
+           ;; first, check if there even was a message, and then transform it on another thread
+           (fn [msg]
+             (if (= ::none msg)
+               ::none
+               (d/future (f msg))))
 
-          ;; once the transformation is complete, write it back to the client
-          (fn [msg']
-            (when-not (= ::none msg')
-              (s/put! s msg')))
+           ;; once the transformation is complete, write it back to the client
+           (fn [msg']
+             (when-not (= ::none msg')
+               (s/put! s msg')))
 
-          ;; if we were successful in our response, recur and repeat
-          (fn [result]
-            (when result
-              (d/recur))))
+           ;; if we were successful in our response, recur and repeat
+           (fn [result]
+             (when result
+               (d/recur))))
 
-        ;; if there were any issues on the far end, send a stringified exception back
-        ;; and close the connection
-        (d/catch
-          (fn [ex]
-            (s/put! s (str "ERROR: " ex))
-            (s/close! s)))))))
+          ;; if there were any issues on the far end, send a stringified exception back
+          ;; and close the connection
+          (d/catch
+              (fn [ex]
+                (s/put! s (str "ERROR: " ex))
+                (s/close! s)))))))
 
 ;; Alternately, we use `manifold.deferred/let-flow` to implement the composition of these
 ;; asynchronous values.  It is certainly more concise, but at the cost of being less explicit.
@@ -156,27 +156,27 @@
   (fn [s info]
     (d/loop []
       (->
-        (d/let-flow [msg (s/take! s ::none)]
-          (when-not (= ::none msg)
-            (d/let-flow [msg'   (d/future (f msg))
-                         result (s/put! s msg')]
-              (when result
-                (d/recur)))))
-        (d/catch
+       (d/let-flow [msg (s/take! s ::none)]
+                  (when-not (= ::none msg
+                             (d/let-flow [msg'   (d/future (f msg)
+                                                   result (s/put! s msg')
+                                                  (when result
+                                                    (d/recur)))]))))
+       (d/catch
           (fn [ex]
-            (s/put! s (str "ERROR: " ex))
-            (s/close! s)))))))
+             (s/put! s (str "ERROR: " ex))
+             (s/close! s)))))))
 
 ;; ### demonstration
 
 ;; We start a server `s` which will return incremented numbers, slowly.
 (def s
   (start-server
-    (slow-echo-handler
-      (fn [x]
-        (Thread/sleep 1000)
-        (inc x)))
-    10000))
+   (slow-echo-handler
+    (fn [x]
+      (Thread/sleep 1000)
+      (inc x)))
+   10000))
 
 (def c @(client "localhost" 10000))
 
