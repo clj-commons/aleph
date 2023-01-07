@@ -45,6 +45,6 @@
                       (constantly {:body "ok"})
                       {:port 9999 :shutdown-timeout 0})]
           (on-signal :int
-                     (bound-fn [_] (.close ^java.io.Closeable server)))
+                     (fn [_] (.close ^java.io.Closeable server)))
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))
           (is (= (deref result 10000 ::timeout) true)))))))
