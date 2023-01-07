@@ -16,6 +16,8 @@
                  [io.netty/netty-transport ~netty-version]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-x86_64"]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-aarch_64"]
+                 [io.netty/netty-transport-native-kqueue ~netty-version :classifier "osx-x86_64"]
+                 [io.netty.incubator/netty-incubator-transport-native-io_uring "0.0.12.Final" :classifier "linux-x86_64"]
                  [io.netty/netty-codec ~netty-version]
                  [io.netty/netty-codec-http ~netty-version]
                  [io.netty/netty-handler ~netty-version]

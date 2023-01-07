@@ -28,6 +28,14 @@
      EpollServerSocketChannel
      EpollSocketChannel
      EpollDatagramChannel]
+    [io.netty.channel.kqueue KQueue KQueueEventLoopGroup
+     KQueueServerSocketChannel
+     KQueueSocketChannel
+     KQueueDatagramChannel]
+    [io.netty.incubator.channel.uring IOUring IOUringEventLoopGroup
+     IOUringServerSocketChannel
+     IOUringSocketChannel
+     IOUringDatagramChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
@@ -1028,12 +1036,33 @@
 (defn ^:no-doc epoll-available? []
   (Epoll/isAvailable))
 
+(defn ^:no-doc kqueue-available? []
+  (KQueue/isAvailable))
+
+(defn ^:no-doc io-uring-available? []
+  (IOUring/isAvailable))
+
+(defn ^:no-doc determine-transport [transport epoll?]
+  (or transport (if epoll? :epoll :nio)))
+
+(defn- unavailability-cause [transport]
+  (case transport
+    :epoll [(Epoll/unavailabilityCause) "Epoll"]
+    :kqueue [(KQueue/unavailabilityCause) "KQueue"]
+    :io-uring [(IOUring/unavailabilityCause) "IO-Uring"]
+    nil))
+
+(defn ^:no-doc ensure-transport-available! [transport]
+  (let [[cause transport-name] (unavailability-cause transport)]
+    (when cause
+      (throw (IllegalArgumentException.
+              (str transport-name " transport requested but implementation not available. "
+                   "See https://netty.io/wiki/native-transports.html on how to add the necessary "
+                   "dependency for your platform.")
+              cause)))))
+
 (defn ^:no-doc ensure-epoll-available! []
-  (when-let [cause (Epoll/unavailabilityCause)]
-    (throw (IllegalArgumentException. (str "Epoll transport requested but implementation not available. "
-                                           "See https://netty.io/wiki/native-transports.html on how to add the necessary "
-                                           "dependency for your platform.")
-                                      cause))))
+  (ensure-transport-available! :epoll))
 
 (defn ^:no-doc get-default-event-loop-threads
   "Determines the default number of threads to use for a Netty EventLoopGroup.
@@ -1053,17 +1082,50 @@
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
-(def ^:no-doc epoll-client-group
+(def ^:private epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:no-doc nio-client-group
+(def ^:private nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
+
+(def ^:private kqueue-client-group
+  (delay
+    (let [thread-count (get-default-event-loop-threads)
+          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
+      (KQueueEventLoopGroup. (long thread-count) thread-factory))))
+
+(def ^:private io-uring-client-group
+  (delay
+    (let [thread-count (get-default-event-loop-threads)
+          thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
+      (IOUringEventLoopGroup. (long thread-count) thread-factory))))
+
+(defn ^:no-doc transport-client-group [transport]
+  (case transport
+    :epoll    epoll-client-group
+    :kqueue   kqueue-client-group
+    :io-uring io-uring-client-group
+    :nio      nio-client-group))
+
+(defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
+  (case transport
+    :epoll    (EpollEventLoopGroup. num-threads thread-factory)
+    :kqueue   (KQueueEventLoopGroup. num-threads thread-factory)
+    :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
+    :nio      (NioEventLoopGroup. num-threads thread-factory)))
+
+(defn ^:no-doc transport-server-channel [transport]
+  (case transport
+    :epoll    EpollServerSocketChannel
+    :kqueue   KQueueServerSocketChannel
+    :io-uring IOUringServerSocketChannel
+    :nio      NioServerSocketChannel))
 
 (defn ^:no-doc convert-address-types [address-types]
   (case address-types
@@ -1096,6 +1158,20 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
+(defn ^:no-doc transport-channel-type [transport]
+  (case transport
+    :epoll    EpollDatagramChannel
+    :kqueue   KQueueDatagramChannel
+    :io-uring IOUringDatagramChannel
+    :nio      NioDatagramChannel))
+
+(defn- transport-channel [transport]
+  (case transport
+    :epoll    EpollSocketChannel
+    :kqueue   KQueueSocketChannel
+    :io-uring IOUringSocketChannel
+    :nio      NioSocketChannel))
+
 (defn dns-resolver-group-builder
   "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and
 initialize an DnsAddressResolverGroup instance.
@@ -1118,7 +1194,7 @@ initialize an DnsAddressResolverGroup instance.
    | `decode-idn?`             | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?`      | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
    | `name-servers`            | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
-   | `epoll?`                  | if `true`, uses `epoll`, defaults to `false`"
+   | `transport`               | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types
@@ -1133,7 +1209,8 @@ initialize an DnsAddressResolverGroup instance.
            decode-idn?
            recursion-desired?
            name-servers
-           epoll?]
+           epoll?
+           transport]
     :or {max-payload-size 4096
          max-queries-per-resolve 16
          query-timeout 5000
@@ -1145,14 +1222,10 @@ initialize an DnsAddressResolverGroup instance.
          decode-idn? true
          recursion-desired? true
          epoll? false}}]
-  (when epoll?
-    (ensure-epoll-available!))
-  (let [^Class
-        channel-type (if epoll?
-                       EpollDatagramChannel
-                       NioDatagramChannel)]
+  (let [transport (determine-transport transport epoll?)]
+    (ensure-transport-available! transport)
     (cond-> (doto (DnsNameResolverBuilder.)
-              (.channelType channel-type)
+              (.channelType (transport-channel-type transport))
               (.maxPayloadSize max-payload-size)
               (.maxQueriesPerResolve max-queries-per-resolve)
               (.queryTimeoutMillis query-timeout)
@@ -1170,11 +1243,11 @@ initialize an DnsAddressResolverGroup instance.
       (.negativeTtl negative-ttl)
 
       (and (some? search-domains)
-           (not (empty? search-domains)))
+           (seq search-domains))
       (.searchDomains search-domains)
 
       (and (some? name-servers)
-           (not (empty? name-servers)))
+           (seq name-servers))
       (.nameServerProvider ^DnsServerAddressStreamProvider
                            (dns-name-servers-provider name-servers)))))
 
@@ -1210,13 +1283,13 @@ initialize an DnsAddressResolverGroup instance.
     remote-address
     local-address
     epoll?]
-    (create-client pipeline-builder
-      ssl-context
-      bootstrap-transform
-      remote-address
-      local-address
-      epoll?
-      nil))
+   (create-client pipeline-builder
+                  ssl-context
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  nil))
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -1224,52 +1297,61 @@ initialize an DnsAddressResolverGroup instance.
     ^SocketAddress local-address
     epoll?
     name-resolver]
-   (when epoll?
-     (ensure-epoll-available!))
-    (let [^Class
-          channel (if epoll?
-                    EpollSocketChannel
-                    NioSocketChannel)
+   (create-client {:pipeline-builder    pipeline-builder
+                   :ssl-context         ssl-context
+                   :bootstrap-transform bootstrap-transform
+                   :remote-address      remote-address
+                   :local-address       local-address
+                   :epoll?              (if epoll? :epoll :nio)
+                   :name-resolver       name-resolver}))
+  ([{:keys [pipeline-builder
+            ssl-context
+            bootstrap-transform
+            ^SocketAddress remote-address
+            ^SocketAddress local-address
+            name-resolver
+            transport]}]
+   (ensure-transport-available! transport)
+   (let [^Class
+         channel (transport-channel transport)
 
-          ^SslContext
-          ssl-context (when (some? ssl-context)
-                        (coerce-ssl-client-context ssl-context))
+         ^SslContext
+         ssl-context (when (some? ssl-context)
+                       (coerce-ssl-client-context ssl-context))
 
-          pipeline-builder (if ssl-context
-                             (fn [^ChannelPipeline p]
-                               (.addLast p "ssl-handler"
-                                 (.newHandler ^SslContext ssl-context
-                                   (-> p .channel .alloc)
-                                   (.getHostName ^InetSocketAddress remote-address)
-                                   (.getPort ^InetSocketAddress remote-address)))
-                               (pipeline-builder p))
-                             pipeline-builder)]
-      (try
-        (let [client-group (if epoll?
-                             @epoll-client-group
-                             @nio-client-group)
-              resolver' (when (some? name-resolver)
-                          (cond
-                            (= :default name-resolver) nil
-                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                            (instance? AddressResolverGroup name-resolver) name-resolver))
-              b (doto (Bootstrap.)
-                  (.option ChannelOption/SO_REUSEADDR true)
-                  (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                  (.group client-group)
-                  (.channel channel)
-                  (.handler (pipeline-initializer pipeline-builder))
-                  (.resolver resolver')
-                  bootstrap-transform)
+         pipeline-builder (if ssl-context
+                            (fn [^ChannelPipeline p]
+                              (.addLast p "ssl-handler"
+                                        (.newHandler ^SslContext ssl-context
+                                                     (-> p .channel .alloc)
+                                                     (.getHostName ^InetSocketAddress remote-address)
+                                                     (.getPort ^InetSocketAddress remote-address)))
+                              (pipeline-builder p))
+                            pipeline-builder)]
+     (try
+       (let [client-group @(transport-client-group transport)
+             resolver' (when (some? name-resolver)
+                         (cond
+                           (= :default name-resolver) nil
+                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                           (instance? AddressResolverGroup name-resolver) name-resolver))
+             b (doto (Bootstrap.)
+                 (.option ChannelOption/SO_REUSEADDR true)
+                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                 (.group client-group)
+                 (.channel channel)
+                 (.handler (pipeline-initializer pipeline-builder))
+                 (.resolver resolver')
+                 bootstrap-transform)
 
-              f (if local-address
-                  (.connect b remote-address local-address)
-                  (.connect b remote-address))]
+             f (if local-address
+                 (.connect b remote-address local-address)
+                 (.connect b remote-address))]
 
-          (d/chain' (wrap-future f)
-            (fn [_]
-              (let [ch (.channel ^ChannelFuture f)]
-                (maybe-ssl-handshake-future ch)))))))))
+         (d/chain' (wrap-future f)
+                   (fn [_]
+                     (let [ch (.channel ^ChannelFuture f)]
+                       (maybe-ssl-handshake-future ch)))))))))
 
 (defn- add-ssl-handler
   [pipeline-builder ssl-ctx]
@@ -1307,26 +1389,16 @@ initialize an DnsAddressResolverGroup instance.
             transport
             shutdown-timeout]
      :or {shutdown-timeout default-shutdown-timeout}}]
-   (when (= transport :epoll)
-     (ensure-epoll-available!))
+   (ensure-transport-available! transport)
    (let [num-cores      (.availableProcessors (Runtime/getRuntime))
          num-threads    (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
          closed?        (atom false)
          chan-group     (make-channel-group)
 
-         ^EventLoopGroup group
-         (condp = transport
-           :epoll
-           (EpollEventLoopGroup. num-threads thread-factory)
+         ^EventLoopGroup group (transport-event-loop-group transport num-threads thread-factory)
 
-           :nio
-           (NioEventLoopGroup. num-threads thread-factory))
-
-         ^Class channel
-         (condp = transport
-           :epoll EpollServerSocketChannel
-           :nio NioServerSocketChannel)
+         ^Class channel (transport-server-channel transport)
 
          ^SslContext
          ssl-context (when (some? ssl-context)

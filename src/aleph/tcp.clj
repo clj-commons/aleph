@@ -78,10 +78,11 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `shutdown-timeout`    | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
+   | `shutdown-timeout`    | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely.
+   | `transport`           | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?
-           shutdown-timeout]
+           shutdown-timeout transport]
     :or {bootstrap-transform identity
          pipeline-transform identity
          epoll? false
@@ -98,7 +99,7 @@
     :socket-address (if socket-address
                       socket-address
                       (InetSocketAddress. port))
-    :transport (if epoll? :epoll :nio)
+    :transport (netty/determine-transport transport epoll?)
     :shutdown-timeout shutdown-timeout}))
 
 (defn- ^ChannelHandler client-channel-handler
@@ -162,27 +163,28 @@
    | `insecure?`           | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users."
-  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll?]
+   | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `transport`               | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
+  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
     :or {bootstrap-transform identity
          epoll? false}
     :as options}]
   (let [[s handler] (client-channel-handler options)]
     (->
-      (netty/create-client
-        (fn [^ChannelPipeline pipeline]
-          (.addLast pipeline "handler" ^ChannelHandler handler)
-          (when pipeline-transform
-            (pipeline-transform pipeline)))
-        (if ssl-context
-          ssl-context
-          (when ssl?
-            (if insecure?
-              (netty/insecure-ssl-client-context)
-              (netty/ssl-client-context))))
-        bootstrap-transform
-        (or remote-address (InetSocketAddress. ^String host (int port)))
-        local-address
-        epoll?)
-      (d/catch' #(d/error! s %)))
+     (netty/create-client
+      {:pipeline-builder    (fn [^ChannelPipeline pipeline]
+                              (.addLast pipeline "handler" ^ChannelHandler handler)
+                              (when pipeline-transform
+                                (pipeline-transform pipeline)))
+       :ssl-context         (if ssl-context
+                              ssl-context
+                              (when ssl?
+                                (if insecure?
+                                  (netty/insecure-ssl-client-context)
+                                  (netty/ssl-client-context))))
+       :bootstrap-transform bootstrap-transform
+       :remote-address      (or remote-address (InetSocketAddress. ^String host (int port)))
+       :local-address       local-address
+       :transport           (netty/determine-transport transport epoll?)})
+     (d/catch' #(d/error! s %)))
     s))
