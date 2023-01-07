@@ -1,11 +1,11 @@
 (ns aleph.examples.udp
   (:require
-    [manifold.stream :as s]
-    [aleph.udp :as udp]
-    [clojure.string :as str]
-    [clj-commons.byte-streams :as bs]))
+   [aleph.udp :as udp]
+   [clj-commons.byte-streams :as bs]
+   [clojure.string :as str]
+   [manifold.stream :as s]))
 
-;; Full documentation for the `aleph.udp` namespace can be found [here](http://aleph.io/codox/aleph/aleph.udp.html).
+;; Full documentation for the `aleph.udp` namespace can be found [here](https://cljdoc.org/d/aleph/aleph/0.6.0/api/aleph.tcp).
 
 ;; This example is a very pared-down version of [statsd](https://github.com/etsy/statsd), which
 ;; takes in UDP packets from the entire system, and does periodic rollups that are typically
@@ -22,12 +22,12 @@
    `value`, delimited by a colon."
   [metric ^long value]
   (s/put! client-socket
-    {:host "localhost"
-     :port server-port
-     ;; The UDP contents can be anything which byte-streams can coerce to a byte-array.  If
-     ;; the combined length of the metric and value were to exceed 65536 bytes, this would
-     ;; fail, and `send-metrics!` would return a deferred value that yields an error.
-     :message (str metric ":" value)}))
+          {:host "localhost"
+           :port server-port
+           ;; The UDP contents can be anything which byte-streams can coerce to a byte-array.  If
+           ;; the combined length of the metric and value were to exceed 65536 bytes, this would
+           ;; fail, and `send-metrics!` would return a deferred value that yields an error.
+           :message (str metric ":" value)}))
 
 (defn parse-statsd-packet
   "This is the inverse operation of `send-metrics!`, taking the message, splitting it on the
@@ -55,10 +55,10 @@
 
     ;; Listens on a socket, parses each incoming message, and increments the appropriate metric.
     (->> server-socket
-      (s/map parse-statsd-packet)
-      (s/consume
-        (fn [[metric value]]
-          (swap! accumulator update metric #(+ (or % 0) value)))))
+         (s/map parse-statsd-packet)
+         (s/consume
+          (fn [[metric value]]
+            (swap! accumulator update metric #(+ (or % 0) value)))))
 
     ;; If `metric-stream` is closed, close the associated socket.
     (s/on-drained metric-stream #(s/close! server-socket))

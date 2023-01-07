@@ -1,42 +1,32 @@
 (ns aleph.flow
   (:require
-    [potemkin :as p]
     [manifold
      [deferred :as d]
-     [executor :as ex]])
+     [executor :as ex]]
+    [potemkin :as p])
   (:import
     [io.aleph.dirigiste
      Pool
      IPool
      IPool$AcquireCallback
      IPool$Controller
-     IPool$Generator
-     Executors
-     Executor
-     Executor$Controller
-     Pools
-     Stats
-     Stats$Metric]
-    [java.util
-     EnumSet]
+     IPool$Generator]
     [java.util.concurrent
-     SynchronousQueue
-     ArrayBlockingQueue
-     ThreadFactory
      TimeUnit]))
 
 (defn instrumented-pool
   "Returns a [Dirigiste](https://github.com/clj-commons/dirigiste) object pool, which can be interacted
    with via `acquire`, `release`, and `dispose`.
 
-   |:---|:----
-   | `generate` | a single-arg funcion which takes a key, and returns an object which should be non-equal to any other generated object |
-   | `destroy` | an optional two-arg function which takes a key and object, and releases any associated resources |
+   Param key          | Description
+   | ---              | ---
+   | `generate`       | a single-arg funcion which takes a key, and returns an object which should be non-equal to any other generated object |
+   | `destroy`        | an optional two-arg function which takes a key and object, and releases any associated resources |
    | `stats-callback` | a function which will be invoked every `control-period` with a map of keys onto associated statistics |
    | `max-queue-size` | the maximum number of pending acquires per key that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`.
-   | `sample-period` | the interval, in milliseconds, between sampling the state of the pool for resizing and gathering statistics, defaults to `10`.
+   | `sample-period`  | the interval, in milliseconds, between sampling the state of the pool for resizing and gathering statistics, defaults to `10`.
    | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `10000`.
-   | `controller` | a Dirigiste controller that is used to gide the pool's size."
+   | `controller`     | a Dirigiste controller that is used to gide the pool's size."
   [{:keys
     [generate
      destroy

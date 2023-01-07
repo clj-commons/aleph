@@ -1,10 +1,10 @@
 (ns aleph.udp
   (:require
-    [potemkin :as p]
     [aleph.netty :as netty]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [potemkin :as p])
   (:import
     [java.net
      SocketAddress
@@ -29,13 +29,14 @@
 (defn socket
   "Returns a deferred which yields a duplex stream that can be used to send and receive UDP datagrams.
 
-   |:---|:---
-   | `port` | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
-   | `socket-address` | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `broadcast?` | if true, all UDP datagrams are broadcast.
+   Param key               | Description
+   | ---                   | ---
+   | `port`                | the port at which UDP packets can be received.  If both this and `:socket-address` are undefined, packets can only be sent.
+   | `socket-address`      | a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `broadcast?`          | if true, all UDP datagrams are broadcast.
    | `bootstrap-transform` | a function which takes the Netty `Bootstrap` object, and makes any desired changes before it's bound to a socket.
-   | `raw-stream?` | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `epoll?` | if `true`, uses `epoll`, defaults to `false`"
+   | `raw-stream?`         | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `epoll?`              | if `true`, uses `epoll`, defaults to `false`"
   [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform epoll?]
     :or {epoll? false
          broadcast? false
