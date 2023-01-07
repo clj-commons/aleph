@@ -4,4 +4,5 @@
                  [metosin/reitit "0.5.18"]
                  [org.clojure/clojure "1.11.1"]
                  [org.clojure/core.async "0.4.474"]]
-  :plugins [[lein-marginalia "0.9.1"]])
+  :plugins [[lein-marginalia "0.9.1"]
+            [lein-cljfmt "0.9.0"]])

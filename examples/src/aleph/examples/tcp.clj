@@ -145,9 +145,9 @@
           ;; if there were any issues on the far end, send a stringified exception back
           ;; and close the connection
           (d/catch
-              (fn [ex]
-                (s/put! s (str "ERROR: " ex))
-                (s/close! s)))))))
+           (fn [ex]
+             (s/put! s (str "ERROR: " ex))
+             (s/close! s)))))))
 
 ;; Alternately, we use `manifold.deferred/let-flow` to implement the composition of these
 ;; asynchronous values.  It is certainly more concise, but at the cost of being less explicit.
@@ -157,15 +157,15 @@
     (d/loop []
       (->
        (d/let-flow [msg (s/take! s ::none)]
-                  (when-not (= ::none msg
-                             (d/let-flow [msg'   (d/future (f msg)
-                                                   result (s/put! s msg')
-                                                  (when result
-                                                    (d/recur)))]))))
+                   (when-not (= ::none msg)
+                     (d/let-flow [msg'   (d/future (f msg))
+                                  result (s/put! s msg')]
+                                 (when result
+                                   (d/recur)))))
        (d/catch
-          (fn [ex]
-             (s/put! s (str "ERROR: " ex))
-             (s/close! s)))))))
+        (fn [ex]
+          (s/put! s (str "ERROR: " ex))
+          (s/close! s)))))))
 
 ;; ### demonstration
 

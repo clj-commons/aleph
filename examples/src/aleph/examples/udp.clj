@@ -57,8 +57,8 @@
     (->> server-socket
          (s/map parse-statsd-packet)
          (s/consume
-             (fn [[metric value]]
-               (swap! accumulator update metric #(+ (or % 0) value)))))
+          (fn [[metric value]]
+            (swap! accumulator update metric #(+ (or % 0) value)))))
 
     ;; If `metric-stream` is closed, close the associated socket.
     (s/on-drained metric-stream #(s/close! server-socket))

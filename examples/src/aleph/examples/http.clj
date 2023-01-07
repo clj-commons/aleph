@@ -168,8 +168,8 @@
 
 @(d/chain
   (http/get "http://localhost:10000/numbers"
-           {:query-params {:count 10}
-                   :pool raw-stream-connection-pool})
+            {:query-params {:count 10}
+             :pool raw-stream-connection-pool})
   :body
   #(s/map bs/to-byte-array %)
   #(s/reduce conj [] %)
