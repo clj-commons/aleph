@@ -5,6 +5,7 @@
    [aleph.http.multipart :as mp]
    [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
+   [clojure.java.io :as io]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
@@ -91,9 +92,9 @@
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
-       (mp/encode-body [{:part-name "part1"
-                         :content "content1"
-                         :transfer-encoding :uknown-transfer-encoding}]))))
+               (mp/encode-body [{:part-name "part1"
+                                 :content "content1"
+                                 :transfer-encoding :uknown-transfer-encoding}]))))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-content-as-file
@@ -191,55 +192,143 @@
 
     (.close ^java.io.Closeable s)))
 
-(defn- decode-handler [req]
-  (let [is     (:body req)
-        data   (bs/to-string is)
-        chunks (-> (assoc req :body (netty/to-byte-buf-stream (.getBytes data) 512))
-                   mp/decode-request
-                   s/stream->seq)]
-    {:status 200
-     :body (pr-str {:chunks (mapv #(update % :content bs/to-string) chunks)
-                    :encoded-data data})}))
+(defn- pack-part [{:keys [content file] :as part}]
+  (cond-> part
+    (some? file)
+    (assoc :file (.getAbsolutePath ^java.io.File file))
+    (some? content)
+    (update :content bs/to-string)))
 
-(defn- test-decoder [port url raw-stream?]
-  (let [s (http/start-server decode-handler {:port port
-                                             :shutdown-timeout 0
-                                             :raw-stream? raw-stream?})]
-    (try
-      (let [req          (http/post url {:multipart parts})
-            resp         (deref req 1e3 {:body "timeout"})
-            body         (-> (:body resp) bs/to-string read-string)
-            encoded-data (:encoded-data body)
-            chunks       (-> body :chunks vec)]
-        (is (= 7 (count chunks)))
+(defn- make-decode-handler [options]
+  (fn [req]
+    (let [body   (:body req)
+          data   (bs/to-string body)
+          parts  (-> (assoc req :body (netty/to-byte-buf-stream (.getBytes data) 512))
+                     (#(mp/decode-request % options))
+                     s/stream->seq)
+          packed-parts (mapv (fn [{:keys [file] :as part}]
+                               (Thread/sleep 20) ;; wait a bit to ensure the files are cleaned when using automatic resource cleanup
+                               (when file
+                                 (is (instance? java.io.File file))
+                                 (is (not (.exists ^java.io.File file)))) ;; demonstrates there is an issue when the stream is closed before accessing the file.
+                               (pack-part part))
+                             parts)]
+      {:status 200
+       :body (pr-str {:parts packed-parts
+                      :encoded-data data})})))
 
-        ;; part-names
-        (is (= (map :part-name parts)
-               (map :part-name chunks)))
+(defn- make-decode-manual-handler [options]
+  (fn [req]
+    (let [body   (:body req)
+          data   (bs/to-string body)
+          [parts cleanup-fn]  (-> (assoc req :body (netty/to-byte-buf-stream (.getBytes data) 512))
+                                  (#(mp/decode-request % options)))
+          packed-parts (mapv (fn [{:keys [file] :as part}]
+                               (Thread/sleep 20) ;; wait a bit to ensure the files are cleaned when using automatic resource cleanup
+                               (when file
+                                 (is (some? (slurp (.getAbsolutePath ^java.io.File file)))))
+                               (pack-part part))
+                             (s/stream->seq parts))]
+      (is (every? #(.exists (io/file %)) (keep :file packed-parts)))
+      (cleanup-fn)
+      (is (every? #(not (.exists (io/file %))) (keep :file packed-parts)))
+      {:status 200
+       :body (pr-str {:parts packed-parts
+                      :encoded-data data})})))
 
-        ;; content
-        (is (= "CONTENT1" (get-in chunks [0 :content])))
+(defn- test-decoder
+  ([port url handler]
+   (test-decoder port url handler {}))
+  ([port url handler options]
+   (let [handler (bound-fn* handler)
+         s (http/start-server handler (merge {:port port
+                                              :shutdown-timeout 0}
+                                             options))]
 
-        ;; mime type
-        (is (= "text/plain" (get-in chunks [2 :mime-type])))
-        (is (= "application/png" (get-in chunks [3 :mime-type])))
+     (try
+       (let [req (http/post url {:multipart parts})
+             resp         (deref req 1e3 {:body "timeout"})
+             body         (-> (:body resp) bs/to-string read-string)
+             encoded-data (:encoded-data body)
+             parts-resp   (-> body :parts vec)]
+         (is (= 7 (count parts-resp)))
 
-        ;; filename
-        (is (= "file.txt" (get-in chunks [3 :name])))
-        (is (= "file.txt" (get-in chunks [4 :name])))
+         ;; part-names
+         (is (= (map :part-name parts)
+                (map :part-name parts-resp)))
 
-        ;; charset
-        (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
+         ;; content
+         (is (= "CONTENT1" (get-in parts-resp [0 :content])))
 
-        ;; mime-type + memory data
-        (is (re-find #"content-disposition: form-data; name=\"#6-bytes-with-mime-type\"; filename=\".*\"\r\ncontent-length: 8\r\ncontent-type: text/plain\r\ncontent-transfer-encoding: binary\r\n\r\nCONTENT3\r\n" encoded-data))
-        (is (= "CONTENT3" (get-in chunks [6 :content])))
-        (is (= "text/plain" (get-in chunks [6 :mime-type]))))
+         ;; mime type
+         (is (= "text/plain" (get-in parts-resp [2 :mime-type])))
+         (is (= "application/png" (get-in parts-resp [3 :mime-type])))
 
-      (finally (.close ^java.io.Closeable s)))))
+         ;; filename
+         (is (= "file.txt" (get-in parts-resp [3 :name])))
+         (is (= "file.txt" (get-in parts-resp [4 :name])))
+
+         ;; charset
+         (is (= "ISO-8859-1" (get-in parts-resp [5 :charset])))
+
+         ;; mime-type + memory data
+         (is (re-find #"content-disposition: form-data; name=\"#6-bytes-with-mime-type\"; filename=\".*\"\r\ncontent-length: 8\r\ncontent-type: text/plain\r\ncontent-transfer-encoding: binary\r\n\r\nCONTENT3\r\n" encoded-data))
+         (is (uuid? (parse-uuid (get-in parts-resp [6 :name]))))
+         (is (= "text/plain" (get-in parts-resp [6 :mime-type]))))
+
+       (finally (.close ^java.io.Closeable s))))))
 
 (deftest test-multipart-request-decode-with-ring-handler
-  (test-decoder port2 url2 false))
+  (testing "automatic cleanup"
+    (testing "without memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {})))
+    (testing "with infinite memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:memory-limit Long/MAX_VALUE})))
+    (testing "with small memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:memory-limit 12})))
+    (testing "with zero memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:memory-limit 0}))))
+
+  (testing "manual cleanup"
+    (testing "without memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:manual-cleanup? true})))
+    (testing "with infinite memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:memory-limit Long/MAX_VALUE
+                                                            :manual-cleanup? true})))
+    (testing "with small memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:memory-limit 12
+                                                            :manual-cleanup? true})))
+    (testing "with zero memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:memory-limit 0
+                                                            :manual-cleanup? true})))))
 
 (deftest test-multipart-request-decode-with-raw-handler
-  (test-decoder port3 url3 true))
+  (testing "automatic cleanup"
+    (testing "without memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:raw-stream? true})))
+    (testing "with infinite memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:raw-stream? true
+                                                     :memory-limit Long/MAX_VALUE})))
+    (testing "with small memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:raw-stream? true
+                                                     :memory-limit 12})))
+    (testing "with zero memory-limit"
+      (test-decoder port2 url2 (make-decode-handler {:raw-stream? true
+                                                     :memory-limit 0}))))
+
+  (testing "manual cleanup"
+    (testing "without memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:raw-stream? true
+                                                            :manual-cleanup? true})))
+    (testing "with infinite memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:raw-stream? true
+                                                            :memory-limit Long/MAX_VALUE
+                                                            :manual-cleanup? true})))
+    (testing "with small memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:raw-stream? true
+                                                            :memory-limit 12
+                                                            :manual-cleanup? true})))
+    (testing "with zero memory-limit"
+      (test-decoder port2 url2 (make-decode-manual-handler {:raw-stream? true
+                                                            :memory-limit 0
+                                                            :manual-cleanup? true})))))
