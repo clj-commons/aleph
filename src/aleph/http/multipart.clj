@@ -227,9 +227,20 @@
      :file (when-not memory? (.getFile data))
      :size (.length data)}))
 
-(defn- read-attributes [^HttpPostRequestDecoder decoder parts]
+(defn- read-attributes [^HttpPostRequestDecoder decoder parts manual-cleanup?]
   (while (.hasNext decoder)
-    (s/put! parts (http-data->map (.next decoder)))))
+    (let [{:keys [file] :as part} (http-data->map (.next decoder))]
+      (when (and (not manual-cleanup?) file)
+        (log/warn (str "Temporary files storage is not working using automatic clean up. consider using manual cleanup.` "
+                       "See: https://cljdoc.org/d/aleph/aleph/CURRENT/doc/http/handling-multipart-requests")))
+      (s/put! parts part))))
+
+(defn- destroy-decoder [^HttpPostRequestDecoder decoder destroyed?]
+  (when (compare-and-set! destroyed? false true)
+    (try
+      (.destroy decoder)
+      (catch Exception e
+        (log/warn e "exception when cleaning up multipart decoder")))))
 
 (defn decode-request
   "Takes a ring request and returns a manifold stream which yields
@@ -239,23 +250,33 @@
    flag to know whether content might be read directly from `:content` or
    should be fetched from the file specified in `:file`.
 
+   If you want to use temporary files storage, you will have to fallback
+   to `:manual-cleanup?` otherwise the files will be removed from the filesystem
+   before you had time to copy them on another location.
+   Instead of returning a manifold stream, it will return vector composed of a
+   manifold stream and a callback to clean the resources.
+   See: https://cljdoc.org/d/aleph/aleph/CURRENT/doc/http/handling-multipart-requests#manual-cleanup
+
    Note, that if your handler works with multipart requests only,
    it's better to set `:raw-stream?` to `true` to avoid additional
    input stream coercion."
   ([req] (decode-request req {}))
   ([{:keys [body] :as req}
     {:keys [body-buffer-size
-            memory-limit]
+            memory-limit
+            manual-cleanup?]
      :or {body-buffer-size 65536
-          memory-limit DefaultHttpDataFactory/MINSIZE}}]
-   (let [body (if (s/stream? body)
-                body
-                (netty/to-byte-buf-stream body body-buffer-size))
-         destroyed? (atom false)
-         req' (http-core/ring-request->netty-request req)
-         factory (DefaultHttpDataFactory. (long memory-limit))
-         decoder (HttpPostRequestDecoder. factory req')
-         parts (s/stream)]
+          memory-limit DefaultHttpDataFactory/MINSIZE
+          manual-cleanup? false}}]
+   (let [body            (if (s/stream? body)
+                           body
+                           (netty/to-byte-buf-stream body body-buffer-size))
+         destroyed?      (atom false)
+         req'            (http-core/ring-request->netty-request req)
+         factory         (DefaultHttpDataFactory. (long memory-limit))
+         decoder         (HttpPostRequestDecoder. factory req')
+         parts           (s/stream)
+         destroy-decoder (partial destroy-decoder decoder destroyed?)]
 
      ;; on each HttpContent chunk, put it into the decoder
      ;; and resume our attempts to get the next attribute available
@@ -264,7 +285,7 @@
       (fn [chunk]
         (let [content (DefaultHttpContent. chunk)]
           (.offer decoder content)
-          (read-attributes decoder parts)
+          (read-attributes decoder parts manual-cleanup?)
           ;; note, that releasing chunk right here relies on
           ;; the internals of the decoder. in case those
           ;; internal are changed in future, this flow of
@@ -273,13 +294,8 @@
           (d/success-deferred true)))
       parts)
 
-     (s/on-closed
-      parts
-      (fn []
-        (when (compare-and-set! destroyed? false true)
-          (try
-            (.destroy decoder)
-            (catch Exception e
-              (log/warn e "exception when cleaning up multipart decoder"))))))
-
-     parts)))
+     (if manual-cleanup?
+       [parts destroy-decoder]
+       (do
+         (s/on-closed parts destroy-decoder)
+         parts)))))
