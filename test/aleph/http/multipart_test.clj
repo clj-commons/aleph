@@ -191,52 +191,49 @@
 
     (.close ^java.io.Closeable s)))
 
-(defn- pack-chunk [{:keys [content] :as chunk}]
-  (cond-> (dissoc chunk :file)
-    (not (string? content))
-    (dissoc :content)))
-
 (defn- decode-handler [req]
   (let [chunks (-> req
                    mp/decode-request
                    s/stream->seq)]
     {:status 200
-     :body (pr-str (map pack-chunk chunks))}))
+     :body (pr-str (mapv #(update % :content bs/to-string) chunks))}))
 
 (defn- test-decoder [port url raw-stream?]
   (let [s (http/start-server decode-handler {:port port
                                              :shutdown-timeout 0
-                                             :raw-stream? raw-stream?})
-        chunks (-> (http/post url {:multipart parts})
-                   (deref 1e3 {:body "timeout"})
-                   :body
-                   bs/to-string
-                   clojure.edn/read-string
-                   vec)]
-    (is (= 7 (count chunks)))
+                                             :raw-stream? raw-stream?})]
+    (try
+      (let [chunks (-> (http/post url {:multipart parts})
+                       (deref 1e3 {:body "timeout"})
+                       :body
+                       bs/to-string
+                       clojure.edn/read-string
+                       vec)]
+        (is (= 7 (count chunks)))
 
-    ;; part-names
-    (is (= (map :part-name parts)
-           (map :part-name chunks)))
+        ;; part-names
+        (is (= (map :part-name parts)
+               (map :part-name chunks)))
 
-    ;; content
-    (is (= "CONTENT1" (get-in chunks [0 :content])))
+        ;; content
+        (is (= "CONTENT1" (get-in chunks [0 :content])))
 
-    ;; mime type
-    (is (= "text/plain" (get-in chunks [2 :mime-type])))
-    (is (= "application/png" (get-in chunks [3 :mime-type])))
+        ;; mime type
+        (is (= "text/plain" (get-in chunks [2 :mime-type])))
+        (is (= "application/png" (get-in chunks [3 :mime-type])))
 
-    ;; filename
-    (is (= "file.txt" (get-in chunks [3 :name])))
-    (is (= "file.txt" (get-in chunks [4 :name])))
+        ;; filename
+        (is (= "file.txt" (get-in chunks [3 :name])))
+        (is (= "file.txt" (get-in chunks [4 :name])))
 
-    ;; charset
-    (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
+        ;; charset
+        (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
 
-    ;; mime-type
-    (is (= "text/plain" (get-in chunks [6 :mime-type])))
+        ;; mime-type + memory data
+        (is (= "CONTENT3" (get-in chunks [6 :content])))
+        (is (= "text/plain" (get-in chunks [6 :mime-type]))))
 
-    (.close ^java.io.Closeable s)))
+      (finally (.close ^java.io.Closeable s)))))
 
 (deftest test-multipart-request-decode-with-ring-handler
   (test-decoder port2 url2 false))
