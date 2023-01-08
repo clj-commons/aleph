@@ -3,8 +3,8 @@
    [aleph.http :as http]
    [aleph.http.core :as core]
    [aleph.http.multipart :as mp]
+   [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
-   [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
@@ -192,23 +192,25 @@
     (.close ^java.io.Closeable s)))
 
 (defn- decode-handler [req]
-  (let [chunks (-> req
+  (let [is     (:body req)
+        data   (bs/to-string is)
+        chunks (-> (assoc req :body (netty/to-byte-buf-stream (.getBytes data) 512))
                    mp/decode-request
                    s/stream->seq)]
     {:status 200
-     :body (pr-str (mapv #(update % :content bs/to-string) chunks))}))
+     :body (pr-str {:chunks (mapv #(update % :content bs/to-string) chunks)
+                    :encoded-data data})}))
 
 (defn- test-decoder [port url raw-stream?]
   (let [s (http/start-server decode-handler {:port port
                                              :shutdown-timeout 0
                                              :raw-stream? raw-stream?})]
     (try
-      (let [chunks (-> (http/post url {:multipart parts})
-                       (deref 1e3 {:body "timeout"})
-                       :body
-                       bs/to-string
-                       clojure.edn/read-string
-                       vec)]
+      (let [req          (http/post url {:multipart parts})
+            resp         (deref req 1e3 {:body "timeout"})
+            body         (-> (:body resp) bs/to-string read-string)
+            encoded-data (:encoded-data body)
+            chunks       (-> body :chunks vec)]
         (is (= 7 (count chunks)))
 
         ;; part-names
@@ -230,6 +232,7 @@
         (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
 
         ;; mime-type + memory data
+        (is (re-find #"content-disposition: form-data; name=\"#6-bytes-with-mime-type\"; filename=\".*\"\r\ncontent-length: 8\r\ncontent-type: text/plain\r\ncontent-transfer-encoding: binary\r\n\r\nCONTENT3\r\n" encoded-data))
         (is (= "CONTENT3" (get-in chunks [6 :content])))
         (is (= "text/plain" (get-in chunks [6 :mime-type]))))
 
