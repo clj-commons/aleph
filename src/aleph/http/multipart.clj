@@ -179,7 +179,7 @@
                       (.addContent (netty/to-byte-buf content) true)))]
     (.addBodyHttpData encoder attr)))
 
-(defn encode-request [^DefaultHttpRequest req parts]
+(defn ^:no-doc encode-request [^DefaultHttpRequest req parts]
   (let [^HttpPostRequestEncoder encoder (HttpPostRequestEncoder. req true)]
     (doseq [{:keys [content mime-type] :as part} parts]
       (cond
