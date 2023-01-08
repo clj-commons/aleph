@@ -5,7 +5,7 @@
    [clojure.string :as str]
    [manifold.stream :as s]))
 
-;; Full documentation for the `aleph.udp` namespace can be found [here](https://cljdoc.org/d/aleph/aleph/0.6.0/api/aleph.tcp).
+;; Full documentation for the `aleph.udp` namespace can be found [here](https://cljdoc.org/d/aleph/aleph/CURRENT/api/aleph.udp).
 
 ;; This example is a very pared-down version of [statsd](https://github.com/etsy/statsd), which
 ;; takes in UDP packets from the entire system, and does periodic rollups that are typically

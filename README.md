@@ -19,7 +19,7 @@ io.github.clj-commons/aleph {:git/sha "..."}
 
 ### HTTP
 
-Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/clj-commons/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/clj-commons/manifold/blob/master/doc/deferred.md#let-flow) operator. The `aleph.http/wrap-ring-async-handler` helper can be used to covert async 3-arity Ring handler to Aleph-compliant one.
+Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/clj-commons/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/clj-commons/manifold/blob/master/doc/deferred.md#let-flow) operator. The `aleph.http/wrap-ring-async-handler` helper can be used to convert async 3-arity Ring handler to Aleph-compliant one.
 
 ```clojure
 (require '[aleph.http :as http])
