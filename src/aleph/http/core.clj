@@ -23,6 +23,9 @@
      ByteBuf]
     [java.nio
      ByteBuffer]
+    [io.netty.handler.codec
+     DecoderResult
+     DecoderResultProvider]
     [io.netty.handler.codec.http
      DefaultHttpRequest DefaultLastHttpContent
      DefaultHttpResponse DefaultFullHttpRequest
@@ -305,15 +308,20 @@
                      (netty/flush ch)
                      body))]
 
-    (let [src (if (or (sequential? body') (s/stream? body'))
+    (let [d (d/deferred)
+          src (if (or (sequential? body') (s/stream? body'))
                 (->> body'
                      s/->source
-                     (s/map (fn [x]
-                              (try
-                                (netty/to-byte-buf x)
-                                (catch Throwable e
-                                  (log/error e "error converting " (.getName (class x)) " to ByteBuf")
-                                  (netty/close ch))))))
+                     (s/transform
+                      (keep
+                       (fn [x]
+                         (try
+                           (netty/to-byte-buf x)
+                           (catch Throwable e
+                             (log/error "error converting" (.getName (class x)) "to ByteBuf")
+                             (d/error! d e)
+                             (netty/close ch)
+                             nil))))))
                 (netty/to-byte-buf-stream body' 8192))
 
           sink (netty/sink ch false #(DefaultHttpContent. %))
@@ -331,16 +339,15 @@
           netty/wrap-future
           (d/chain' (fn [_] (ch-close-handler))))
 
-      (let [d (d/deferred)]
-        (s/on-closed sink
-                     (fn []
-                       (when (instance? Closeable body)
-                         (.close ^Closeable body))
+      (s/on-closed sink
+                   (fn []
+                     (when (instance? Closeable body)
+                       (.close ^Closeable body))
 
-                       (.execute (-> ch aleph.netty/channel .eventLoop)
-                                 #(d/success! d
-                                              (netty/write-and-flush ch empty-last-content)))))
-        d))
+                     (.execute (-> ch aleph.netty/channel .eventLoop)
+                               #(d/success! d
+                                            (netty/write-and-flush ch empty-last-content)))))
+      d)
 
     (netty/write-and-flush ch empty-last-content)))
 
@@ -680,3 +687,9 @@
              (when (and (identical? ::ping-timeout v)
                         (.isOpen ^Channel (.channel ctx)))
                (netty/close ctx))))))))
+
+(defn decoder-failed? [^DecoderResultProvider msg]
+  (.isFailure ^DecoderResult (.decoderResult msg)))
+
+(defn ^Throwable decoder-failure [^DecoderResultProvider msg]
+  (.cause ^DecoderResult (.decoderResult msg)))
