@@ -639,6 +639,8 @@
   :path (.path cookie)
   :value (.value cookie))
 
+(alter-meta! #'->Cookie assoc :private true)
+
 (defn ^:no-doc netty-cookie->cookie [^DefaultCookie cookie]
   (->Cookie cookie))
 
