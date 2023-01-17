@@ -3,7 +3,6 @@
    [aleph.http :as http]
    [aleph.netty :as netty]
    [clojure.test :refer [deftest is testing]]
-   [dynamic-redef.core :refer [with-dynamic-redefs]]
    [manifold.deferred :as d]
    [manifold.utils :refer [when-class]]
    [signal.handler :refer [on-signal]])
@@ -41,11 +40,11 @@
 (deftest test-classloader
   (testing "classloader: ensure the class loader is always a DynamicClassLoader"
     (let [result (CompletableFuture.)]
-      (with-dynamic-redefs [netty/operation-complete (partial operation-complete result)]
+      (with-redefs [netty/operation-complete (partial operation-complete result)]
         (let [server (http/start-server
                       (constantly {:body "ok"})
                       {:port 9999 :shutdown-timeout 0})]
           (on-signal :int
-                     (bound-fn [_] (.close ^java.io.Closeable server)))
+                     (fn [_] (.close ^java.io.Closeable server)))
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))
           (is (= (deref result 10000 ::timeout) true)))))))

@@ -261,15 +261,11 @@
     (let [d (d/deferred nil)]
       (if (.isDone f)
         (operation-complete f d)
-        ;; Ensure the same bindings are installed on the Netty thread (vars,
-        ;; classloader) than the thread registering the
-        ;; `operationComplete` callback.
-        (let [bound-operation-complete (bound-fn* operation-complete)]
-          (.addListener f
-                        (reify GenericFutureListener
-                          (operationComplete [_ _]
-                            (ensure-dynamic-classloader)
-                            (bound-operation-complete f d))))))
+        (.addListener f
+                      (reify GenericFutureListener
+                        (operationComplete [_ _]
+                          (ensure-dynamic-classloader)
+                          (operation-complete f d)))))
       d)))
 
 (defn ^:no-doc allocate [x]
