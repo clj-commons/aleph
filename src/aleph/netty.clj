@@ -1194,7 +1194,7 @@ initialize an DnsAddressResolverGroup instance.
    | `decode-idn?`             | set if domain / host names should be decoded to unicode when received, defaults to `true`
    | `recursion-desired?`      | if set to `true`, the resolver sends a DNS query with the RD (recursion desired) flag set, defaults to `true`
    | `name-servers`            | optional list of DNS server addresses, automatically discovered when not set (platform dependent)
-   | `transport`               | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
+   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)"
   [{:keys [max-payload-size
            max-queries-per-resolve
            address-types

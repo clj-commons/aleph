@@ -32,7 +32,7 @@
    | `broadcast?`          | if true, all UDP datagrams are broadcast.
    | `bootstrap-transform` | a function which takes the Netty `Bootstrap` object, and makes any desired changes before it's bound to a socket.
    | `raw-stream?`         | if true, the `:message` within each packet will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `transport`           | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
+   | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)"
   [{:keys [socket-address port broadcast? raw-stream? bootstrap-transform epoll? transport]
     :or {epoll? false
          broadcast? false

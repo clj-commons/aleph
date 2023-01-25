@@ -79,7 +79,7 @@
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `shutdown-timeout`    | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely.
-   | `transport`           | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
+   | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)"
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?
            shutdown-timeout transport]
@@ -164,7 +164,7 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `transport`               | the transport to use, one of `:epoll`, `:kqueue` or `:io-uring`"
+   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)"
   [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
     :or {bootstrap-transform identity
          epoll? false}
