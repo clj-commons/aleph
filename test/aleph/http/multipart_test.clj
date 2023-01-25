@@ -3,8 +3,8 @@
    [aleph.http :as http]
    [aleph.http.core :as core]
    [aleph.http.multipart :as mp]
+   [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
-   [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
@@ -91,9 +91,9 @@
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest reject-unknown-transfer-encoding
   (is (thrown? IllegalArgumentException
-      (mp/encode-body [{:part-name "part1"
-                        :content "content1"
-                        :transfer-encoding :uknown-transfer-encoding}]))))
+       (mp/encode-body [{:part-name "part1"
+                         :content "content1"
+                         :transfer-encoding :uknown-transfer-encoding}]))))
 
 #_{:clj-kondo/ignore [:deprecated-var]}
 (deftest test-content-as-file
@@ -156,7 +156,10 @@
              :content file-to-send}
             {:part-name "#5-file-with-charset"
              :content file-to-send
-             :charset "ISO-8859-1"}])
+             :charset "ISO-8859-1"}
+            {:part-name "#6-bytes-with-mime-type"
+             :mime-type "text/plain"
+             :content (.getBytes "CONTENT3" "UTF-8")}])
 
 (defn echo-handler [{:keys [body]}]
   {:status 200
@@ -188,52 +191,55 @@
 
     (.close ^java.io.Closeable s)))
 
-(defn- pack-chunk [{:keys [content] :as chunk}]
-  (cond-> (dissoc chunk :file)
-    (not (string? content))
-    (dissoc :content)))
-
 (defn- decode-handler [req]
-  (let [chunks (-> req
+  (let [is     (:body req)
+        data   (bs/to-string is)
+        chunks (-> (assoc req :body (netty/to-byte-buf-stream (.getBytes data) 512))
                    mp/decode-request
                    s/stream->seq)]
     {:status 200
-     :body (pr-str (map pack-chunk chunks))}))
+     :body (pr-str {:chunks (mapv #(update % :content bs/to-string) chunks)
+                    :encoded-data data})}))
 
 (defn- test-decoder [port url raw-stream?]
   (let [s (http/start-server decode-handler {:port port
                                              :shutdown-timeout 0
-                                             :raw-stream? raw-stream?})
-        chunks (-> (http/post url {:multipart parts})
-                   (deref 1e3 {:body "timeout"})
-                   :body
-                   bs/to-string
-                   clojure.edn/read-string
-                   vec)]
-    (is (= 6 (count chunks)))
+                                             :raw-stream? raw-stream?})]
+    (try
+      (let [req          (http/post url {:multipart parts})
+            resp         (deref req 1e3 {:body "timeout"})
+            body         (-> (:body resp) bs/to-string read-string)
+            encoded-data (:encoded-data body)
+            chunks       (-> body :chunks vec)]
+        (is (= 7 (count chunks)))
 
-    ;; part-names
-    (is (= (map :part-name parts)
-           (map :part-name chunks)))
+        ;; part-names
+        (is (= (map :part-name parts)
+               (map :part-name chunks)))
 
-    ;; content
-    (is (= "CONTENT1" (get-in chunks [0 :content])))
+        ;; content
+        (is (= "CONTENT1" (get-in chunks [0 :content])))
 
-    ;; mime type
-    (is (= "text/plain" (get-in chunks [2 :mime-type])))
-    (is (= "application/png" (get-in chunks [3 :mime-type])))
+        ;; mime type
+        (is (= "text/plain" (get-in chunks [2 :mime-type])))
+        (is (= "application/png" (get-in chunks [3 :mime-type])))
 
-    ;; filename
-    (is (= "file.txt" (get-in chunks [3 :name])))
-    (is (= "file.txt" (get-in chunks [4 :name])))
+        ;; filename
+        (is (= "file.txt" (get-in chunks [3 :name])))
+        (is (= "file.txt" (get-in chunks [4 :name])))
 
-    ;; charset
-    (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
+        ;; charset
+        (is (= "ISO-8859-1" (get-in chunks [5 :charset])))
 
-    (.close ^java.io.Closeable s)))
+        ;; mime-type + memory data
+        (is (re-find #"content-disposition: form-data; name=\"#6-bytes-with-mime-type\"; filename=\".*\"\r\ncontent-length: 8\r\ncontent-type: text/plain\r\ncontent-transfer-encoding: binary\r\n\r\nCONTENT3\r\n" encoded-data))
+        (is (= "CONTENT3" (get-in chunks [6 :content])))
+        (is (= "text/plain" (get-in chunks [6 :mime-type]))))
 
-(deftest test-mutlipart-request-decode-with-ring-handler
+      (finally (.close ^java.io.Closeable s)))))
+
+(deftest test-multipart-request-decode-with-ring-handler
   (test-decoder port2 url2 false))
 
-(deftest test-mutlipart-request-decode-with-raw-handler
+(deftest test-multipart-request-decode-with-raw-handler
   (test-decoder port3 url3 true))

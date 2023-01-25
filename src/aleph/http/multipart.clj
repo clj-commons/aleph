@@ -10,7 +10,8 @@
    [manifold.stream :as s])
   (:import
    [java.util
-    Locale]
+    Locale
+    UUID]
    [java.io
     File]
    [java.nio
@@ -28,6 +29,7 @@
    [io.netty.handler.codec.http.multipart
     Attribute
     MemoryAttribute
+    MemoryFileUpload
     FileUpload
     DefaultHttpDataFactory
     HttpPostRequestDecoder
@@ -127,37 +129,68 @@
       (.flip buf)
       (bs/to-byte-array buf))))
 
-(defn encode-request [^DefaultHttpRequest req parts]
+(defn- ensure-charset [charset]
+  (cond
+    (nil? charset)
+    HttpConstants/DEFAULT_CHARSET
+
+    (string? charset)
+    (Charset/forName charset)
+
+    (instance? Charset charset)
+    charset))
+
+(defn- encode-file-upload
+  "Encode the `content` as a `FileUpload`."
+  [^HttpPostRequestEncoder encoder {:keys [part-name name content mime-type charset]}]
+  (let [filename  (.getName ^File content)
+        name      (or name filename)
+        mime-type (or mime-type
+                      (URLConnection/guessContentTypeFromName filename))
+        content-type (mime-type-descriptor mime-type charset)]
+    (.addBodyFileUpload encoder
+                        (or part-name name)
+                        ;; Netty's multipart encoder ignores empty strings here
+                        (or filename "")
+                        content
+                        content-type
+                        false)))
+
+(defn- encode-memory-file-upload
+  "Encode the `content` as a `MemoryFileUpload`."
+  [^HttpPostRequestEncoder encoder {:keys [part-name name content mime-type charset]}]
+  (let [content-type (mime-type-descriptor mime-type charset)
+        charset      (ensure-charset charset)
+        filename     (str (UUID/randomUUID))
+        content      (netty/to-byte-buf content)
+        size         (.readableBytes content)
+        file-upload  (doto (MemoryFileUpload. (or part-name name) filename content-type "binary" charset size)
+                       (.addContent (netty/to-byte-buf content) true))]
+    (.addBodyHttpData encoder file-upload)))
+
+(defn- encode-memory-attribute
+  "Encode the `content` as a `MemoryAttribute`."
+  [^HttpPostRequestEncoder encoder {:keys [part-name name content charset]}]
+  (let [^Charset charset (ensure-charset charset)
+        part-name (or part-name name)
+        attr      (if (string? content)
+                    (MemoryAttribute. ^String part-name ^String content charset)
+                    (doto (MemoryAttribute. ^String part-name charset)
+                      (.addContent (netty/to-byte-buf content) true)))]
+    (.addBodyHttpData encoder attr)))
+
+(defn ^:no-doc encode-request [^DefaultHttpRequest req parts]
   (let [^HttpPostRequestEncoder encoder (HttpPostRequestEncoder. req true)]
-    (doseq [{:keys [part-name content mime-type charset name]} parts]
-      (if (instance? File content)
-        (let [filename (.getName ^File content)
-              name (or name filename)
-              mime-type (or mime-type
-                            (URLConnection/guessContentTypeFromName filename))
-              content-type (mime-type-descriptor mime-type charset)]
-          (.addBodyFileUpload encoder
-                              (or part-name name)
-                              ;; Netty's multipart encoder ignores empty strings here
-                              (or filename "")
-                              content
-                              content-type
-                              false))
-        (let [^Charset charset (cond
-                                 (nil? charset)
-                                 HttpConstants/DEFAULT_CHARSET
+    (doseq [{:keys [content mime-type] :as part} parts]
+      (cond
+        (instance? File content)
+        (encode-file-upload encoder part)
 
-                                 (string? charset)
-                                 (Charset/forName charset)
+        (some? mime-type)
+        (encode-memory-file-upload encoder part)
 
-                                 (instance? Charset charset)
-                                 charset)
-              part-name (or part-name name)
-              attr (if (string? content)
-                     (MemoryAttribute. ^String part-name ^String content charset)
-                     (doto (MemoryAttribute. ^String part-name charset)
-                       (.addContent (netty/to-byte-buf content) true)))]
-          (.addBodyHttpData encoder attr))))
+        :else
+        (encode-memory-attribute encoder part)))
     (let [req' (.finalizeRequest encoder)]
       [req' (when (.isChunked encoder) encoder)])))
 
