@@ -25,6 +25,10 @@
   `(with-server (http/start-server ~handler {:port 8080 :shutdown-timeout 0})
      ~@body))
 
+(defmacro with-transport-handler [transport handler & body]
+  `(with-server (http/start-server ~handler {:port 8080 :shutdown-timeout 0 :transport ~transport})
+     ~@body))
+
 (defmacro with-raw-handler [handler & body]
   `(with-server (http/start-server ~handler {:port 8081, :raw-stream? true :shutdown-timeout 0})
      ~@body))
@@ -296,3 +300,28 @@
                   (-> client s/description :sink)]
               (is (<= 4000  websocket-close-code 4010))
               (is (= "" websocket-close-msg)))))))))
+
+(deftest test-transport
+  (testing "epoll"
+    (try (with-transport-handler :epoll echo-handler
+           (let [c @(http/websocket-client "ws://localhost:8080" {:transport :epoll})]
+             (is @(s/put! c "hello"))
+             (is (= "hello" @(s/try-take! c 5e3)))))
+         (catch Exception _
+           (is (not (netty/epoll-available?))))))
+
+  (testing "kqueue"
+    (try (with-transport-handler :kqueue echo-handler
+           (let [c @(http/websocket-client "ws://localhost:8080" {:transport :kqueue})]
+             (is @(s/put! c "hello"))
+             (is (= "hello" @(s/try-take! c 5e3)))))
+         (catch Exception _
+           (is (not (netty/kqueue-available?))))))
+
+  (testing "io-uring"
+    (try (with-transport-handler :io-uring echo-handler
+           (let [c @(http/websocket-client "ws://localhost:8080" {:transport :io-uring})]
+             (is @(s/put! c "hello"))
+             (is (= "hello" @(s/try-take! c 5e3)))))
+         (catch Exception _
+           (is (not (netty/io-uring-available?)))))))

@@ -673,3 +673,49 @@
                          {:body "hello, world!"})]
       (is (= 413 (:status rsp)))
       (is (empty? (bs/to-string (:body rsp)))))))
+
+(deftest test-transport
+  (testing "epoll"
+    (try
+      (with-server (http/start-server
+                    basic-handler
+                    {:port port
+                     :shutdown-timeout 0
+                     :transport :epoll})
+        (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                             {:body "hello"
+                              :pool (http/connection-pool {:connection-options {:transport :epoll}})})]
+          (is (= 200 (:status rsp)))
+          (is (= "hello" (bs/to-string (:body rsp))))))
+      (catch Exception _
+        (is (not (netty/epoll-available?))))))
+
+  (testing "kqueue"
+    (try
+      (with-server (http/start-server
+                    basic-handler
+                    {:port port
+                     :shutdown-timeout 0
+                     :transport :kqueue})
+        (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                             {:body "hello"
+                              :pool (http/connection-pool {:connection-options {:transport :kqueue}})})]
+          (is (= 200 (:status rsp)))
+          (is (= "hello" (bs/to-string (:body rsp))))))
+      (catch Exception _
+        (is (not (netty/kqueue-available?))))))
+
+  (testing "io-uring"
+    (try
+      (with-server (http/start-server
+                    basic-handler
+                    {:port port
+                     :shutdown-timeout 0
+                     :transport :io-uring})
+        (let [rsp @(http-put (str "http://localhost:" port "/echo")
+                             {:body "hello"
+                              :pool (http/connection-pool {:connection-options {:transport :io-uring}})})]
+          (is (= 200 (:status rsp)))
+          (is (= "hello" (bs/to-string (:body rsp))))))
+      (catch Exception _
+        (is (not (netty/io-uring-available?)))))))

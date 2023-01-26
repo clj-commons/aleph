@@ -575,6 +575,7 @@
            manual-ssl?
            shutdown-executor?
            epoll?
+           transport
            compression?
            continue-handler
            continue-executor
@@ -639,7 +640,7 @@
                        (.shutdown ^ExecutorService executor))
                      (when (instance? ExecutorService continue-executor)
                        (.shutdown ^ExecutorService continue-executor))))
-      :transport (if epoll? :epoll :nio)
+      :transport (netty/determine-transport transport epoll?)
       :shutdown-timeout shutdown-timeout})))
 
 ;;;

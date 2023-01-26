@@ -480,6 +480,7 @@
            on-closed
            response-executor
            epoll?
+           transport
            proxy-options]
     :or {bootstrap-transform identity
          keep-alive? true
@@ -499,17 +500,17 @@
                                                 (get proxy-options :keep-alive? true))))
         host-header-value (str host (when explicit-port? (str ":" port)))
         c (netty/create-client
-            (pipeline-builder responses (assoc options :ssl? ssl?))
-            (when ssl?
-              (or ssl-context
-                (if insecure?
-                  (netty/insecure-ssl-client-context)
-                  (netty/ssl-client-context))))
-            bootstrap-transform
-            remote-address
-            local-address
-            epoll?
-            name-resolver)]
+           {:pipeline-builder    (pipeline-builder responses (assoc options :ssl? ssl?))
+            :ssl-context         (when ssl?
+                                   (or ssl-context
+                                       (if insecure?
+                                         (netty/insecure-ssl-client-context)
+                                         (netty/ssl-client-context))))
+            :bootstrap-transform  bootstrap-transform
+            :remote-address       remote-address
+            :local-address        local-address
+            :transport            (netty/determine-transport transport epoll?)
+            :name-resolver        name-resolver})]
     (d/chain' c
               (fn [^Channel ch]
 
@@ -804,6 +805,7 @@
            bootstrap-transform
            pipeline-transform
            epoll?
+           transport
            sub-protocols
            extensions?
            max-frame-payload
@@ -845,32 +847,31 @@
                       max-frame-payload
                       heartbeats)]
     (d/chain'
-      (netty/create-client
-        (fn [^ChannelPipeline pipeline]
-          (doto pipeline
-            (.addLast "http-client" (HttpClientCodec.))
-            (.addLast "aggregator" (HttpObjectAggregator. 16384))
-            (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-            (#(when compression?
-                (.addLast ^ChannelPipeline %
-                          "websocket-deflater"
-                          WebSocketClientCompressionHandler/INSTANCE)))
-            (http/attach-heartbeats-handler heartbeats)
-            (.addLast "handler" ^ChannelHandler handler)
-            pipeline-transform))
-        (when ssl?
-          (or ssl-context
-            (if insecure?
-              (netty/insecure-ssl-client-context)
-              (netty/ssl-client-context))))
-        bootstrap-transform
-        (InetSocketAddress.
-          (.getHost uri)
-          (int
-            (if (neg? (.getPort uri))
-              (if ssl? 443 80)
-              (.getPort uri))))
-        local-address
-        epoll?)
-      (fn [_]
-        s))))
+     (netty/create-client
+      {:pipeline-builder    (fn [^ChannelPipeline pipeline]
+                              (doto pipeline
+                                (.addLast "http-client" (HttpClientCodec.))
+                                (.addLast "aggregator" (HttpObjectAggregator. 16384))
+                                (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+                                (#(when compression?
+                                    (.addLast ^ChannelPipeline %
+                                              "websocket-deflater"
+                                              WebSocketClientCompressionHandler/INSTANCE)))
+                                (http/attach-heartbeats-handler heartbeats)
+                                (.addLast "handler" ^ChannelHandler handler)
+                                pipeline-transform))
+       :ssl-context         (when ssl?
+                              (or ssl-context
+                                  (if insecure?
+                                    (netty/insecure-ssl-client-context)
+                                    (netty/ssl-client-context))))
+       :bootstrap-transform bootstrap-transform
+       :remote-address      (InetSocketAddress.
+                             (.getHost uri)
+                             (int
+                              (if (neg? (.getPort uri))
+                                (if ssl? 443 80)
+                                (.getPort uri))))
+       :local-address       local-address
+       :transport           (netty/determine-transport transport epoll?)})
+     (fn [_] s))))
