@@ -26,6 +26,12 @@
             this))))))
 
 (deftest reader-backpressure
+  ;; Ensure `autoRead` is disabled as soon as the manifold stream is full to
+  ;; ensure a single pending put.
+  ;; When `autoRead` is enabled, calls to `ChannelHandlerContext#read` are
+  ;; automatically performed, fetching the data from the associated `Channel`. To
+  ;; ensure the backpressure is applied, `autoRead` is disabled as soon as
+  ;; the `manifold.stream/put!` returns an unrealized deferred.
   (let [channel (make-channel)
         config  (.config channel)
         s       (s/stream 3)]
