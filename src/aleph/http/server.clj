@@ -520,6 +520,9 @@
      max-initial-line-length
      max-header-size
      max-chunk-size
+     validate-headers
+     initial-buffer-size
+     allow-duplicate-content-lengths
      raw-stream?
      ssl?
      compression?
@@ -532,6 +535,9 @@
      max-initial-line-length 8192
      max-header-size 8192
      max-chunk-size 16384
+     validate-headers false
+     initial-buffer-size 128
+     allow-duplicate-content-lengths false
      compression? false
      idle-timeout 0
      error-handler error-response}}]
@@ -553,7 +559,9 @@
             max-initial-line-length
             max-header-size
             max-chunk-size
-            false))
+            validate-headers
+            initial-buffer-size
+            allow-duplicate-content-lengths))
         (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))

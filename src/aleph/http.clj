@@ -29,29 +29,32 @@
    via `java.io.Closeable.close()`, and whose port can be discovered with `aleph.netty/port`.
 
 
-   Param key                   | Description
-   | ---                       | ---
-   | `port`                    | the port the server will bind to.  If `0`, the server will bind to a random port.
-   | `socket-address`          |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `bootstrap-transform`     | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `ssl-context`             | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
-   | `manual-ssl?`             | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
-   | `pipeline-transform`      | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `executor`                | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `shutdown-executor?`      | if `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true`.
-   | `request-buffer-size`     | the maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384`.  This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance.
-   | `raw-stream?`             | if `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `rejected-handler`        | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
-   | `max-initial-line-length` | the maximum characters that can be in the initial line of the request, defaults to `8192`
-   | `max-header-size`         | the maximum characters that can be in a single header entry of a request, defaults to `8192`
-   | `max-chunk-size`          | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
-   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
-   | `compression?`            | when `true` enables http compression, defaults to `false`
-   | `compression-level`       | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
-   | `idle-timeout`            | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
-   | `continue-handler`        | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
-   | `continue-executor`       | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `shutdown-timeout`        | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
+   Param key                           | Description
+   | ---                               | ---
+   | `port`                            | the port the server will bind to.  If `0`, the server will bind to a random port.
+   | `socket-address`                  |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
+   | `bootstrap-transform`             | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
+   | `ssl-context`                     | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
+   | `manual-ssl?`                     | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
+   | `pipeline-transform`              | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
+   | `executor`                        | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
+   | `shutdown-executor?`              | if `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true`.
+   | `request-buffer-size`             | the maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384`.  This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance.
+   | `raw-stream?`                     | if `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
+   | `rejected-handler`                | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
+   | `max-initial-line-length`         | the maximum characters that can be in the initial line of the request, defaults to `8192`
+   | `max-header-size`                 | the maximum characters that can be in a single header entry of a request, defaults to `8192`
+   | `max-chunk-size`                  | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
+   | `validate-headers`                | if `true`, validates the headers when decoding the request, defaults to `false`
+   | `initial-buffer-size`             | the initial buffer size of characters when decoding the request, defaults to `128`
+   | `allow-duplicate-content-lengths` | if `true`, allows duplicate `Content-Length` headers, defaults to true
+   | `transport`                       | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
+   | `compression?`                    | when `true` enables http compression, defaults to `false`
+   | `compression-level`               | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
+   | `idle-timeout`                    | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
+   | `continue-handler`                | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
+   | `continue-executor`               | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
+   | `shutdown-timeout`                | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
   [handler options]
   (server/start-server handler options))
 
