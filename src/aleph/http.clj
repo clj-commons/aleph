@@ -46,7 +46,7 @@
    | `max-header-size`                 | the maximum characters that can be in a single header entry of a request, defaults to `8192`
    | `max-chunk-size`                  | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
    | `validate-headers`                | if `true`, validates the headers when decoding the request, defaults to `false`
-   | `initial-buffer-size`             | configures the initial buffer size when decoding the request, defaults to `128`
+   | `initial-buffer-size`             | the initial buffer size of characters when decoding the request, defaults to `128`
    | `allow-duplicate-content-lengths` | if `true`, allows duplicate `Content-Length` headers, defaults to true
    | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
    | `compression?`            | when `true` enables http compression, defaults to `false`
