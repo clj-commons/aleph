@@ -48,13 +48,13 @@
    | `validate-headers`                | if `true`, validates the headers when decoding the request, defaults to `false`
    | `initial-buffer-size`             | the initial buffer size of characters when decoding the request, defaults to `128`
    | `allow-duplicate-content-lengths` | if `true`, allows duplicate `Content-Length` headers, defaults to true
-   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
-   | `compression?`            | when `true` enables http compression, defaults to `false`
-   | `compression-level`       | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
-   | `idle-timeout`            | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
-   | `continue-handler`        | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
-   | `continue-executor`       | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `shutdown-timeout`        | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
+   | `transport`                       | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
+   | `compression?`                    | when `true` enables http compression, defaults to `false`
+   | `compression-level`               | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
+   | `idle-timeout`                    | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
+   | `continue-handler`                | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
+   | `continue-executor`               | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
+   | `shutdown-timeout`                | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
   [handler options]
   (server/start-server handler options))
 
