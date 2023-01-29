@@ -111,8 +111,8 @@
            (.printStackTrace e (java.io.PrintWriter. w))
            (str w))})
 
-(let [[server-name connection-name date-name]
-      (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date"])
+(let [[server-name connection-name date-name content-type]
+      (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date" "Content-Type"])
 
       [server-value keep-alive-value close-value]
       (map #(HttpHeaders/newEntity %) ["Aleph/0.6.0" "Keep-Alive" "Close"])]
@@ -135,6 +135,9 @@
 
           (when-not (.contains headers ^CharSequence date-name)
             (.set headers ^CharSequence date-name (date-header-value ctx)))
+
+          (when (= (.get headers ^CharSequence content-type) "text/plain")
+            (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
           (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 

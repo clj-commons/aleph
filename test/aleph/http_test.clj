@@ -38,15 +38,15 @@
 
 (defn http-get
   ([url]
-    (http-get url nil))
+   (http-get url nil))
   ([url options]
-    (http/get url (merge (default-options) {:pool *pool*} options))))
+   (http/get url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-put
   ([url]
-    (http-put url nil))
+   (http-put url nil))
   ([url options]
-    (http/put url (merge (default-options) {:pool *pool*} options))))
+   (http/put url (merge (default-options) {:pool *pool*} options))))
 
 (def port 8082)
 
@@ -126,6 +126,11 @@
                               "/redirect?count=" (dec count))}
        :body "redirected!"})))
 
+(defn text-plain-handler [_]
+  {:status 200
+   :headers {"content-type" "text/plain"}
+   :body "Hello"})
+
 (def latch (promise))
 (def browser-server (atom nil))
 
@@ -143,6 +148,7 @@
    "/echo" echo-handler
    "/line_echo" line-echo-handler
    "/invalid" invalid-handler
+   "/text_plain" text-plain-handler
    "/stop" (fn [_]
              (try
                (deliver latch true) ;;this can be triggered more than once, sometimes
@@ -744,3 +750,13 @@
       (let [resp @(http-put (str "http://localhost:" port)
                             {:body "hello"})]
         (is (= 200 (:status resp)))))))
+
+(deftest test-text-plain-charset
+  (with-server (http/start-server
+                basic-handler
+                {:port port
+                 :shutdown-timeout 0})
+    (let [resp @(http-get (str "http://localhost:" port "/text_plain"))]
+     (is (= "text/plain; charset=UTF-8" (-> resp :headers (get "Content-Type"))))
+     (is (= 200 (:status resp)))
+     (is (= "Hello" (bs/to-string (:body resp)))))))
