@@ -719,3 +719,28 @@
           (is (= "hello" (bs/to-string (:body rsp))))))
       (catch Exception _
         (is (not (netty/io-uring-available?)))))))
+
+(deftest test-max-request-body-size
+  (testing "max-request-body-size of 0"
+    (with-handler-options (constantly {:body "OK"})
+      {:port 10001
+       :max-request-body-size 0}
+      (let [resp @(http-put (str "http://localhost:" 10001)
+                            {:body "hello"})]
+        (is (= 413 (:status resp))))))
+
+  (testing "max-request-body-size of 1"
+    (with-handler-options (constantly {:body "OK"})
+      {:port 10001
+       :max-request-body-size 1}
+      (let [resp @(http-put (str "http://localhost:" 10001)
+                            {:body "hello"})]
+        (is (= 413 (:status resp))))))
+
+  (testing "max-request-body-size of 6"
+    (with-handler-options (constantly {:body "OK"})
+      {:port 10001
+       :max-request-body-size 6}
+      (let [resp @(http-put (str "http://localhost:" 10001)
+                            {:body "hello"})]
+        (is (= 200 (:status resp)))))))

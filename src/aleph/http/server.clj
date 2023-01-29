@@ -40,8 +40,8 @@
      DefaultFullHttpResponse
      FullHttpRequest
      HttpContent HttpHeaders HttpUtil
-     HttpContentCompressor
-     HttpRequest HttpResponse
+     HttpContentCompressor HttpObjectAggregator
+     HttpRequest HttpRequestDecoder HttpResponse
      HttpResponseStatus DefaultHttpHeaders
      HttpServerCodec HttpVersion HttpMethod
      LastHttpContent HttpServerExpectContinueHandler
@@ -517,6 +517,7 @@
      rejected-handler
      error-handler
      request-buffer-size
+     max-request-body-size
      max-initial-line-length
      max-header-size
      max-chunk-size
@@ -562,6 +563,8 @@
             validate-headers
             initial-buffer-size
             allow-duplicate-content-lengths))
+        (#(when max-request-body-size
+         (.addLast ^ChannelPipeline %1 "aggregator" (HttpObjectAggregator. max-request-body-size))))
         (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
