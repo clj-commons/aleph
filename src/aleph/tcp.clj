@@ -24,7 +24,7 @@
 (alter-meta! #'->TcpConnection assoc :private true)
 
 (defn- ^ChannelHandler server-channel-handler
-  [handler {:keys [raw-stream?] :as options}]
+  [handler {:keys [raw-stream? coerce-fn] :or {coerce-fn netty/to-byte-buf} :as options}]
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 
@@ -51,7 +51,7 @@
            (d/on-realized (fn [ch]
                             (handler
                              (doto (s/splice
-                                    (netty/sink ch true netty/to-byte-buf)
+                                    (netty/sink ch true coerce-fn)
                                     (reset! in (netty/source ch)))
                                (reset-meta! {:aleph/channel ch}))
                              (->TcpConnection ch)))
@@ -79,7 +79,8 @@
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `shutdown-timeout`    | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely.
-   | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)"
+   | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
+   | `coerce-fn`           | coerce each element put to the response stream, defaults to `io.netty.buffer.ByteBuf`"
   [handler
    {:keys [port socket-address ssl-context bootstrap-transform pipeline-transform epoll?
            shutdown-timeout transport]

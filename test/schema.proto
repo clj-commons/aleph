@@ -1,0 +1,9 @@
+// Generated with "protoc schema.proto --java_out ."
+
+syntax = "proto3";
+
+package aleph.protobuf;
+
+message Person {
+  string name = 1;
+}

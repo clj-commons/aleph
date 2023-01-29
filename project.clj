@@ -28,12 +28,14 @@
   :profiles {:dev  {:dependencies [[org.clojure/clojure "1.11.0"]
                                    [criterium "0.4.6"]
                                    [cheshire "5.10.0"]
+                                   [com.google.protobuf/protobuf-java "3.21.12"]
                                    [org.slf4j/slf4j-simple "1.7.30"]
                                    [com.cognitect/transit-clj "1.0.324"]
                                    [spootnik/signal "0.2.4"]
                                    ;; This is for self-generating certs for testing ONLY:
                                    [org.bouncycastle/bcprov-jdk18on "1.72"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.72"]]
+                    :java-source-paths ["test/aleph/protobuf"]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
              :lein-to-deps {:source-paths ["deps"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}}
