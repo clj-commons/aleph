@@ -920,9 +920,17 @@
       (opt req :save-request)
       (assoc :aleph/request req'))))
 
+(defn ^:no-doc wrap-validation [req]
+  (when-not (:request-method req)
+    (throw (IllegalArgumentException. ":request-method must be specified")))
+  (when-not (:request-url req)
+    (throw (IllegalArgumentException. ":request-url must be specified")))
+  req)
+
 (def ^:no-doc default-middleware
   [wrap-method
    wrap-url
+   wrap-validation
    wrap-nested-params
    wrap-query-params
    wrap-form-params
