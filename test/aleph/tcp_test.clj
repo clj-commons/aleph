@@ -2,7 +2,6 @@
   (:require
    [aleph.netty :as netty]
    [aleph.tcp :as tcp]
-   [aleph.utils :refer [rand-port]]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is]]
    [manifold.stream :as s]))
@@ -20,36 +19,39 @@
          (.close ^java.io.Closeable server#)))))
 
 (deftest test-echo
-  (let [port (rand-port)]
-    (with-server (tcp/start-server echo-handler {:port port :shutdown-timeout 0})
-      (let [c @(tcp/client {:host "localhost", :port port})]
+  (let [server (tcp/start-server echo-handler {:port 0 :shutdown-timeout 0})]
+    (with-server server
+      (let [c @(tcp/client {:host "localhost", :port (netty/port server)})]
         (s/put! c "foo")
         (is (= "foo" (bs/to-string @(s/take! c))))))))
 
 (deftest test-transport
   (testing "epoll"
-    (let [port (rand-port)]
-      (try (with-server (tcp/start-server echo-handler {:port port :shutdown-timeout 0 :transport :epoll})
-             (let [c @(tcp/client {:host "localhost", :port port :transport :epoll})]
-               (s/put! c "foo")
-               (is (= "foo" (bs/to-string @(s/take! c))))))
-           (catch Exception _
-             (is (not (netty/epoll-available?)))))))
+    (try
+      (let [server (tcp/start-server echo-handler {:port 0 :shutdown-timeout 0 :transport :epoll})]
+        (with-server server
+          (let [c @(tcp/client {:host "localhost", :port (netty/port server) :transport :epoll})]
+            (s/put! c "foo")
+            (is (= "foo" (bs/to-string @(s/take! c)))))))
+      (catch Exception _
+        (is (not (netty/epoll-available?))))))
 
   (testing "kqueue"
-    (let [port (rand-port)]
-      (try (with-server (tcp/start-server echo-handler {:port port :shutdown-timeout 0 :transport :kqueue})
-             (let [c @(tcp/client {:host "localhost", :port port :transport :kqueue})]
-               (s/put! c "foo")
-               (is (= "foo" (bs/to-string @(s/take! c))))))
-           (catch Exception _
-             (is (not (netty/kqueue-available?)))))))
+    (try
+      (let [server (tcp/start-server echo-handler {:port 0 :shutdown-timeout 0 :transport :kqueue})]
+        (with-server server
+          (let [c @(tcp/client {:host "localhost", :port (netty/port server) :transport :kqueue})]
+            (s/put! c "foo")
+            (is (= "foo" (bs/to-string @(s/take! c)))))))
+      (catch Exception _
+        (is (not (netty/kqueue-available?))))))
 
   (testing "io-uring"
-    (let [port (rand-port)]
-      (try (with-server (tcp/start-server echo-handler {:port port :shutdown-timeout 0 :transport :io-uring})
-             (let [c @(tcp/client {:host "localhost", :port port :transport :io-uring})]
-               (s/put! c "foo")
-               (is (= "foo" (bs/to-string @(s/take! c))))))
-           (catch Exception _
-             (is (not (netty/io-uring-available?))))))))
+    (try
+      (let [server (tcp/start-server echo-handler {:port 0 :shutdown-timeout 0 :transport :io-uring})]
+        (with-server server
+          (let [c @(tcp/client {:host "localhost", :port (netty/port server) :transport :io-uring})]
+            (s/put! c "foo")
+            (is (= "foo" (bs/to-string @(s/take! c)))))))
+      (catch Exception _
+        (is (not (netty/io-uring-available?)))))))
