@@ -2,4 +2,6 @@
                    ["HTTP" {:file "docs/http.md"}
                     ["Handling multipart requests" {:file "docs/http/multipart.md"}]]
                    ["TCP" {:file "docs/tcp.md"}]
-                   ["UDP" {:file "docs/udp.md"}]]}
+                   ["UDP" {:file "docs/udp.md"}]
+                   ["Advanced use cases"
+                    ["Replace internal scheduler" {:file "docs/advanced/replace-internal-scheduler.md"}]]]}
