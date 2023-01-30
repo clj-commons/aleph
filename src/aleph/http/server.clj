@@ -111,11 +111,8 @@
            (.printStackTrace e (java.io.PrintWriter. w))
            (str w))})
 
-(let [[server-name connection-name date-name content-type]
-      (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date" "Content-Type"])
-
-      [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newEntity %) ["Aleph/0.6.0" "Keep-Alive" "Close"])]
+(let [[server-name server-value connection-name keep-alive-value close-value date-name content-type]
+      (map #(HttpHeaders/newEntity %) ["Server" "Aleph/0.6.0" "Connection" "Keep-Alive" "Close" "Date" "Content-Type"])]
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? ssl? error-handler rsp]
     (let [[^HttpResponse rsp body]
