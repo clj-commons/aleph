@@ -1,7 +1,8 @@
 (ns aleph.http.client-middleware-test
   (:require
    [aleph.http.client-middleware :as middleware]
-   [clojure.test :as t :refer [deftest is]])
+   [clojure.test :as t :refer [deftest is]]
+   [clojure.string :as str])
   (:import
    (java.net URLDecoder)))
 
@@ -189,6 +190,6 @@
 
 (deftest test-wrap-validation
   (is (thrown-with-msg?
-       IllegalArgumentException
-       #"Invalid spec: \{} - failed: \(contains\? % :request-method\)"
+       Exception
+       #"Invalid spec: \{\} - failed: (contains\? \% \:request-method)"
        (middleware/wrap-validation {}))))

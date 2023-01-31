@@ -928,7 +928,7 @@
 
 (defn ^:no-doc wrap-validation [req]
   (when-not (spec/valid? ::ring-request req)
-    (throw (IllegalArgumentException. "Invalid spec: %s" (spec/explain-str ::ring-request req))))
+    (throw (IllegalArgumentException. (format "Invalid spec: %s" (spec/explain-str ::ring-request req)))))
   req)
 
 (def ^:no-doc default-middleware
