@@ -6,6 +6,7 @@
     [aleph.http.core :as http]
     [clj-commons.byte-streams :as bs]
     [clojure.edn :as edn]
+    [clojure.spec.alpha :as spec]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
     [manifold.deferred :as d]
@@ -920,11 +921,14 @@
       (opt req :save-request)
       (assoc :aleph/request req'))))
 
+(spec/def ::request-method (spec/or :string string? :keyword keyword?))
+(spec/def ::url string?)
+(spec/def ::ring-request (spec/keys :req-un [::request-method
+                                             ::uri]))
+
 (defn ^:no-doc wrap-validation [req]
-  (when-not (:request-method req)
-    (throw (IllegalArgumentException. ":request-method must be specified")))
-  (when-not (:request-url req)
-    (throw (IllegalArgumentException. ":request-url must be specified")))
+  (when-not (spec/valid? ::ring-request req)
+    (throw (IllegalArgumentException. "Invalid spec: %s" (spec/explain-str ::ring-request req))))
   req)
 
 (def ^:no-doc default-middleware
