@@ -147,11 +147,13 @@
 
 (defn invalid-value-exception [req x]
   (IllegalArgumentException.
-   (str "cannot treat "
-        (pr-str x)
-        " as HTTP response for request to '"
-        (:uri req)
-        "'")))
+   (format "Cannot treat %s of %s as a response to '%s'.
+Ring response expected.
+
+Example: {:status 200
+          :body \"hello world\"
+          :headers \"text/plain\"}"
+           (pr-str x) (type x) (pr-str (select-keys req [:uri :request-method :query-string :headers])))))
 
 (defn handle-request
   [^ChannelHandlerContext ctx
