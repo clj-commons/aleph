@@ -133,33 +133,33 @@
   (URLDecoder/decode (req->body-raw req)))
 
 (deftest test-nested-params
-  (is (= "foo[bar]=baz" (req->query-string {:request-url "http://localhost"
+  (is (= "foo[bar]=baz" (req->query-string {:url "http://localhost"
                                             :request-method :get
                                             :query-params {:foo {:bar "baz"}}})))
-  (is (= "foo[bar]=baz" (req->query-string {:request-url "http://localhost"
+  (is (= "foo[bar]=baz" (req->query-string {:url "http://localhost"
                                             :request-method :get
                                             :query-params {:foo {:bar "baz"}}
                                             :content-type :json})))
-  (is (= "foo[bar]=baz" (req->query-string {:request-url "http://localhost"
+  (is (= "foo[bar]=baz" (req->query-string {:url "http://localhost"
                                             :request-method :get
                                             :query-params {:foo {:bar "baz"}}
                                             :ignore-nested-query-string false})))
-  (is (= "foo={:bar \"baz\"}" (req->query-string {:request-url "http://localhost"
+  (is (= "foo={:bar \"baz\"}" (req->query-string {:url "http://localhost"
                                                   :request-method :get
                                                   :query-params {:foo {:bar "baz"}}
                                                   :ignore-nested-query-string true})))
-  (is (= "foo[bar]=baz" (req->body-decoded {:request-url "http://localhost"
+  (is (= "foo[bar]=baz" (req->body-decoded {:url "http://localhost"
                                             :method :post
                                             :form-params {:foo {:bar "baz"}}})))
-  (is (= "foo[bar]=baz" (req->body-decoded {:request-url "http://localhost"
+  (is (= "foo[bar]=baz" (req->body-decoded {:url "http://localhost"
                                             :method :post
                                             :flatten-nested-form-params true
                                             :form-params {:foo {:bar "baz"}}})))
-  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:request-url "http://localhost"
+  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:url "http://localhost"
                                                   :method :post
                                                   :flatten-nested-form-params false
                                                   :form-params {:foo {:bar "baz"}}})))
-  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:request-url "http://localhost"
+  (is (= "foo={:bar \"baz\"}" (req->body-decoded {:url "http://localhost"
                                                   :method :post
                                                   :flatten-nested-keys []
                                                   :form-params {:foo {:bar "baz"}}})))
