@@ -923,8 +923,8 @@
 
 (spec/def ::request-method (spec/or :string string? :keyword keyword?))
 (spec/def ::url string?)
-(spec/def ::ring-request (spec/keys :req-un [::request-method
-                                             ::uri]))
+(spec/def ::ring-request (spec/keys :req-un [::request-method]
+                                    :opt-un [::uri]))
 
 (defn ^:no-doc wrap-validation [req]
   (when-not (spec/valid? ::ring-request req)
