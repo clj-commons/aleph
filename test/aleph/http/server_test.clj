@@ -1,7 +1,7 @@
 (ns aleph.http.server-test
   (:require [aleph.http.server :as server]
-            [clojure.string :as str]
-            [clojure.test :refer [deftest is]]))
+            [clojure.string    :as str]
+            [clojure.test      :refer [deftest is]]))
 
 (deftest test-invalid-value-exception
   (is (str/starts-with?
