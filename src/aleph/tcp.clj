@@ -60,10 +60,10 @@
 
       :channel-read
       ([_ ctx msg]
-        (netty/put! (.channel ctx) @in
-          (if raw-stream?
-            msg
-            (netty/release-buf->array msg)))))))
+       (netty/put! (.channel ctx) @in
+         (if raw-stream?
+           msg
+           (netty/release-buf->array msg)))))))
 
 (defn start-server
   "Takes a two-arg handler function which for each connection will be called with a duplex
@@ -104,7 +104,7 @@
     :shutdown-timeout shutdown-timeout}))
 
 (defn- ^ChannelHandler client-channel-handler
-  [{:keys [raw-stream?]}]
+  [{:keys [raw-stream? coerce-fn] :or {coerce-fn netty/to-byte-buf}}]
   (let [d (d/deferred)
         in (atom nil)]
     [d
@@ -113,17 +113,17 @@
 
        :exception-caught
        ([_ ctx ex]
-         (when-not (d/error! d ex)
-           (if (netty/ssl-handshake-error? ex)
-             ;; do not need to log an entire stack trace when SSL handshake failed
-             (log/warn "SSL handshake failure:"
-                       (.getMessage ^Throwable (.getCause ^Throwable ex)))
-             (log/warn ex "error in TCP client"))))
+        (when-not (d/error! d ex)
+          (if (netty/ssl-handshake-error? ex)
+            ;; do not need to log an entire stack trace when SSL handshake failed
+            (log/warn "SSL handshake failure:"
+                      (.getMessage ^Throwable (.getCause ^Throwable ex)))
+            (log/warn ex "error in TCP client"))))
 
        :channel-inactive
        ([_ ctx]
-         (some-> @in s/close!)
-         (.fireChannelInactive ctx))
+        (some-> @in s/close!)
+        (.fireChannelInactive ctx))
 
        :channel-active
        ([_ ctx]
@@ -131,7 +131,7 @@
             netty/maybe-ssl-handshake-future
             (d/on-realized (fn [ch]
                              (d/success! d (doto (s/splice
-                                                  (netty/sink ch true netty/to-byte-buf)
+                                                  (netty/sink ch true coerce-fn)
                                                   (reset! in (netty/source ch)))
                                              (reset-meta! {:aleph/channel ch}))))
                            netty/ignore-ssl-handshake-errors))
@@ -139,15 +139,15 @@
 
        :channel-read
        ([_ ctx msg]
-         (netty/put! (.channel ctx) @in
-           (if raw-stream?
-             msg
-             (netty/release-buf->array msg))))
+        (netty/put! (.channel ctx) @in
+          (if raw-stream?
+            msg
+            (netty/release-buf->array msg))))
 
        :close
        ([_ ctx promise]
-         (.close ctx promise)
-         (d/error! d (IllegalStateException. "unable to connect"))))]))
+        (.close ctx promise)
+        (d/error! d (IllegalStateException. "unable to connect"))))]))
 
 (defn client
   "Given a host and port, returns a deferred which yields a duplex stream that can be used
@@ -165,7 +165,8 @@
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)"
+   | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
+   | `coerce-fn`           | coerce each element put to the response stream, defaults to `io.netty.buffer.ByteBuf`"
   [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
     :or {bootstrap-transform identity
          epoll? false}
