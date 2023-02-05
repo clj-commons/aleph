@@ -2,7 +2,7 @@
 
 ## Default scheduler
 
-The default scheduler of Manifold (and thus Aleph) is not efficient for handling high volume scheduling requests (+100k/sec) as it's based on [ScheduledThreadPoolExecutor](https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ScheduledExecutorService.html) which uses blocking queues.
+The default scheduler of Manifold (and thus Aleph) is not efficient for handling high volume scheduling requests (+100k/sec) as it's based on [ScheduledThreadPoolExecutor](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ScheduledExecutorService.html) which uses blocking queues.
 
 For optimized performance, you can provide a custom scheduler by redefining `manifold.time/*clock*`.
 This custom executor must implement the [IClock](https://github.com/clj-commons/manifold/blob/de2f9b4cfc4e8260a1e6ba2c0343206eb07cc750/src/manifold/time.clj#L131-L133) protocol which comprises two functions: `in` and `every`.
