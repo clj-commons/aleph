@@ -312,14 +312,16 @@
           src (if (or (sequential? body') (s/stream? body'))
                 (->> body'
                      s/->source
-                     (s/map
+                     (s/transform
+                      (keep
                        (fn [x]
                          (try
                            (netty/to-byte-buf x)
                            (catch Throwable e
                              (log/error "error converting" (.getName (class x)) "to ByteBuf")
                              (d/error! d e)
-                             (netty/close ch))))))
+                             (netty/close ch)
+                             nil))))))
                 (netty/to-byte-buf-stream body' 8192))
 
           sink (netty/sink ch false #(DefaultHttpContent. %))
