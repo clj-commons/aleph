@@ -2,7 +2,6 @@
   (:require
    [aleph.netty :as netty]
    [aleph.udp :as udp]
-   [aleph.utils :refer [rand-port]]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is]]
    [manifold.stream :as s]))
@@ -10,22 +9,20 @@
 (netty/leak-detector-level! :paranoid)
 
 (deftest test-echo
-  (let [port (rand-port)
-        s @(udp/socket {:port port})]
-    (s/put! s {:host "localhost", :port port, :message "foo"})
+  (let [s @(udp/socket {:port 10001})]
+    (s/put! s {:host "localhost", :port 10001, :message "foo"})
     (is (= "foo"
            (bs/to-string
-            (:message
-             @(s/take! s)))))
+             (:message
+              @(s/take! s)))))
     (s/close! s)))
 
 (deftest test-transport
   (testing "epoll"
     (try
-      (let [port (rand-port)
-            s @(udp/socket {:port port :transport :epoll})]
+      (let [s @(udp/socket {:port 10001 :transport :epoll})]
         (try
-          (s/put! s {:host "localhost", :port port, :message "foo"})
+          (s/put! s {:host "localhost", :port 10001, :message "foo"})
           (is (= "foo"
                  (bs/to-string
                   (:message
@@ -37,10 +34,9 @@
 
   (testing "kqueue"
     (try
-      (let [port (rand-port)
-            s @(udp/socket {:port port :transport :kqueue})]
+      (let [s @(udp/socket {:port 10001 :transport :kqueue})]
         (try
-          (s/put! s {:host "localhost", :port port, :message "foo"})
+          (s/put! s {:host "localhost", :port 10001, :message "foo"})
           (is (= "foo"
                  (bs/to-string
                   (:message
@@ -52,10 +48,9 @@
 
   (testing "io-uring"
     (try
-      (let [port (rand-port)
-            s @(udp/socket {:port port :transport :io-uring})]
+      (let [s @(udp/socket {:port 10001 :transport :io-uring})]
         (try
-          (s/put! s {:host "localhost", :port port, :message "foo"})
+          (s/put! s {:host "localhost", :port 10001, :message "foo"})
           (is (= "foo"
                  (bs/to-string
                   (:message
