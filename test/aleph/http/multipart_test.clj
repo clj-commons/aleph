@@ -160,7 +160,10 @@
              :charset "ISO-8859-1"}
             {:part-name "#6-bytes-with-mime-type"
              :mime-type "text/plain"
-             :content (.getBytes "CONTENT3" "UTF-8")}])
+             :content (.getBytes "CONTENT3" "UTF-8")}
+            {:part-name "#7-bytes-with-file-name"
+             :file-name "data.txt"
+             :content (.getBytes "CONTENT4" "UTF-8")}])
 
 (defn echo-handler [{:keys [body]}]
   {:status 200
@@ -251,7 +254,7 @@
              body         (-> (:body resp) bs/to-string read-string)
              encoded-data (:encoded-data body)
              parts-resp   (-> body :parts vec)]
-         (is (= 7 (count parts-resp)))
+         (is (= 8 (count parts-resp)))
 
          ;; part-names
          (is (= (map :part-name parts)
@@ -274,7 +277,11 @@
          ;; mime-type + memory data
          (is (re-find #"content-disposition: form-data; name=\"#6-bytes-with-mime-type\"; filename=\".*\"\r\ncontent-length: 8\r\ncontent-type: text/plain\r\ncontent-transfer-encoding: binary\r\n\r\nCONTENT3\r\n" encoded-data))
          (is (uuid? (parse-uuid (get-in parts-resp [6 :name]))))
-         (is (= "text/plain" (get-in parts-resp [6 :mime-type]))))
+         (is (= "text/plain" (get-in parts-resp [6 :mime-type])))
+
+         (is (re-find #"content-disposition: form-data; name=\"#7-bytes-with-file-name\"; filename=\"data\.txt\"\r\ncontent-length: 8\r\ncontent-type: application/octet-stream\r\ncontent-transfer-encoding: binary\r\n\r\nCONTENT4\r\n" encoded-data))
+         (is (= "data.txt" (get-in parts-resp [7 :name])))
+         (is (= "application/octet-stream" (get-in parts-resp [7 :mime-type]))))
 
        (finally (.close ^java.io.Closeable s))))))
 
