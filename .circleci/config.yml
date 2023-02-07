@@ -37,6 +37,8 @@ jobs:
 
       - run: lein deps
 
+      - run: lein cljfmt check
+
       - save_cache:
           paths:
             - ~/.m2

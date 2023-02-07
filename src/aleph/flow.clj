@@ -1,18 +1,18 @@
 (ns aleph.flow
   (:require
-    [manifold
-     [deferred :as d]
-     [executor :as ex]]
-    [potemkin :as p])
+   [manifold
+    [deferred :as d]
+    [executor :as ex]]
+   [potemkin :as p])
   (:import
-    [io.aleph.dirigiste
-     Pool
-     IPool
-     IPool$AcquireCallback
-     IPool$Controller
-     IPool$Generator]
-    [java.util.concurrent
-     TimeUnit]))
+   [io.aleph.dirigiste
+    Pool
+    IPool
+    IPool$AcquireCallback
+    IPool$Controller
+    IPool$Generator]
+   [java.util.concurrent
+    TimeUnit]))
 
 (defn instrumented-pool
   "Returns a [Dirigiste](https://github.com/clj-commons/dirigiste) object pool, which can be interacted
@@ -42,28 +42,28 @@
     (assert controller "must specify :controller")
     (assert generate   "must specify :generate")
     (Pool.
-      (reify IPool$Generator
-        (generate [_ k]
-          (generate k))
-        (destroy [_ k v]
-          (when destroy
-            (destroy k v))))
+     (reify IPool$Generator
+       (generate [_ k]
+         (generate k))
+       (destroy [_ k v]
+         (when destroy
+           (destroy k v))))
 
-      (reify IPool$Controller
-        (shouldIncrement [_ key objects-per-key total-objects]
-          (.shouldIncrement c key objects-per-key total-objects))
-        (adjustment [_ key->stats]
-          (when stats-callback
-            (stats-callback
-              (zipmap
-                (map str (keys key->stats))
-                (map ex/stats->map (vals key->stats)))))
-          (.adjustment c key->stats)))
+     (reify IPool$Controller
+       (shouldIncrement [_ key objects-per-key total-objects]
+         (.shouldIncrement c key objects-per-key total-objects))
+       (adjustment [_ key->stats]
+         (when stats-callback
+           (stats-callback
+            (zipmap
+             (map str (keys key->stats))
+             (map ex/stats->map (vals key->stats)))))
+         (.adjustment c key->stats)))
 
-      max-queue-size
-      sample-period
-      control-period
-      TimeUnit/MILLISECONDS)))
+     max-queue-size
+     sample-period
+     control-period
+     TimeUnit/MILLISECONDS)))
 
 (defn acquire
   "Acquires an object from the pool for key `k`, returning a deferred containing the object.  May
@@ -72,10 +72,10 @@
   (let [d (d/deferred nil)]
     (try
       (.acquire p k
-        (reify IPool$AcquireCallback
-          (handleObject [_ obj]
-            (when-not (d/success! d obj)
-              (.release p k obj)))))
+                (reify IPool$AcquireCallback
+                  (handleObject [_ obj]
+                    (when-not (d/success! d obj)
+                      (.release p k obj)))))
       (catch Throwable e
         (d/error! d e)))
     d))
@@ -91,7 +91,7 @@
   (.dispose p k obj))
 
 (p/import-vars
-  [manifold.executor
-   instrumented-executor
-   utilization-executor
-   fixed-thread-executor])
+ [manifold.executor
+  instrumented-executor
+  utilization-executor
+  fixed-thread-executor])

@@ -55,19 +55,19 @@
    (-> (http/websocket-connection req options)
        (d/chain' #(s/connect % %))
        (d/catch'
-           (fn [^Throwable e]
-             (log/error "upgrade to websocket conn failed"
-                        (.getMessage e))
-             {})))))
-
-(defn raw-echo-handler [req]
-  (-> (http/websocket-connection req {:raw-stream? true})
-    (d/chain' #(s/connect % %))
-    (d/catch'
         (fn [^Throwable e]
           (log/error "upgrade to websocket conn failed"
                      (.getMessage e))
-          {}))))
+          {})))))
+
+(defn raw-echo-handler [req]
+  (-> (http/websocket-connection req {:raw-stream? true})
+      (d/chain' #(s/connect % %))
+      (d/catch'
+       (fn [^Throwable e]
+         (log/error "upgrade to websocket conn failed"
+                    (.getMessage e))
+         {}))))
 
 (deftest test-connection-header
   (with-handler connection-handler
@@ -80,8 +80,7 @@
       (is (= "hello" @(s/try-take! c 5e3)))
       (is (= "upgrade" (get-in (s/description c) [:sink :websocket-handshake-headers "connection"]))))
     (is (= 204 (:status @(http/get "http://localhost:8080"
-                                   {:throw-exceptions false})))))
-  )
+                                   {:throw-exceptions false}))))))
 
 (deftest test-echo-handler
   (with-handler echo-handler

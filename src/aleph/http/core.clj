@@ -1,68 +1,68 @@
 (ns ^:no-doc aleph.http.core
   (:require
-    [aleph.netty :as netty]
-    [clj-commons.byte-streams :as bs]
-    [clj-commons.byte-streams.graph :as g]
-    [clojure.java.io :as io]
-    [clojure.set :as set]
-    [clojure.string :as str]
-    [clojure.tools.logging :as log]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [potemkin :as p])
+   [aleph.netty :as netty]
+   [clj-commons.byte-streams :as bs]
+   [clj-commons.byte-streams.graph :as g]
+   [clojure.java.io :as io]
+   [clojure.set :as set]
+   [clojure.string :as str]
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [potemkin :as p])
   (:import
-    [io.netty.channel
-     Channel
-     DefaultFileRegion
-     ChannelFuture
-     ChannelFutureListener
-     ChannelPipeline
-     ChannelHandler
-     ChannelHandlerContext]
-    [io.netty.buffer
-     ByteBuf]
-    [java.nio
-     ByteBuffer]
-    [io.netty.handler.codec
-     DecoderResult
-     DecoderResultProvider]
-    [io.netty.handler.codec.http
-     DefaultHttpRequest DefaultLastHttpContent
-     DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders HttpUtil HttpContent
-     HttpMethod HttpRequest HttpMessage
-     HttpResponse HttpResponseStatus
-     DefaultHttpContent
-     HttpVersion
-     LastHttpContent HttpChunkedInput]
-    [io.netty.handler.timeout
-     IdleState
-     IdleStateEvent
-     IdleStateHandler]
-    [io.netty.handler.stream
-     ChunkedInput
-     ChunkedFile
-     ChunkedWriteHandler]
-    [io.netty.handler.codec.http.websocketx
-     WebSocketFrame
-     PingWebSocketFrame
-     TextWebSocketFrame
-     BinaryWebSocketFrame
-     CloseWebSocketFrame]
-    [java.io
-     File
-     RandomAccessFile
-     Closeable]
-    [java.nio.file Path]
-    [java.nio.channels
-     FileChannel
-     FileChannel$MapMode]
-    [java.util.concurrent
-     ConcurrentHashMap
-     ConcurrentLinkedQueue
-     TimeUnit]
-    [java.util.concurrent.atomic
-     AtomicBoolean]))
+   [io.netty.channel
+    Channel
+    DefaultFileRegion
+    ChannelFuture
+    ChannelFutureListener
+    ChannelPipeline
+    ChannelHandler
+    ChannelHandlerContext]
+   [io.netty.buffer
+    ByteBuf]
+   [java.nio
+    ByteBuffer]
+   [io.netty.handler.codec
+    DecoderResult
+    DecoderResultProvider]
+   [io.netty.handler.codec.http
+    DefaultHttpRequest DefaultLastHttpContent
+    DefaultHttpResponse DefaultFullHttpRequest
+    HttpHeaders HttpUtil HttpContent
+    HttpMethod HttpRequest HttpMessage
+    HttpResponse HttpResponseStatus
+    DefaultHttpContent
+    HttpVersion
+    LastHttpContent HttpChunkedInput]
+   [io.netty.handler.timeout
+    IdleState
+    IdleStateEvent
+    IdleStateHandler]
+   [io.netty.handler.stream
+    ChunkedInput
+    ChunkedFile
+    ChunkedWriteHandler]
+   [io.netty.handler.codec.http.websocketx
+    WebSocketFrame
+    PingWebSocketFrame
+    TextWebSocketFrame
+    BinaryWebSocketFrame
+    CloseWebSocketFrame]
+   [java.io
+    File
+    RandomAccessFile
+    Closeable]
+   [java.nio.file Path]
+   [java.nio.channels
+    FileChannel
+    FileChannel$MapMode]
+   [java.util.concurrent
+    ConcurrentHashMap
+    ConcurrentLinkedQueue
+    TimeUnit]
+   [java.util.concurrent.atomic
+    AtomicBoolean]))
 
 (def non-standard-keys
   (let [ks ["Content-MD5"
@@ -76,8 +76,8 @@
             "P3P"
             "TE"]]
     (zipmap
-      (map str/lower-case ks)
-      (map #(HttpHeaders/newEntity %) ks))))
+     (map str/lower-case ks)
+     (map #(HttpHeaders/newEntity %) ks))))
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 
@@ -88,11 +88,11 @@
     s'
     (let [s' (str/lower-case (name s))
           s' (or
-               (non-standard-keys s')
-               (->> (str/split s' #"-")
-                 (map str/capitalize)
-                 (str/join "-")
-                 HttpHeaders/newEntity))]
+              (non-standard-keys s')
+              (->> (str/split s' #"-")
+                   (map str/capitalize)
+                   (str/join "-")
+                   HttpHeaders/newEntity))]
 
       ;; in practice this should never happen, so we
       ;; can be stupid about cache expiration
@@ -108,43 +108,43 @@
    removed
    mta]
   (meta [_]
-    mta)
+        mta)
   (with-meta [_ m]
     (HeaderMap.
-      headers
-      added
-      removed
-      m))
+     headers
+     added
+     removed
+     m))
   (keys [_]
-    (set/difference
-      (set/union
-        (set (map str/lower-case (.names headers)))
-        (set (keys added)))
-      (set removed)))
+        (set/difference
+         (set/union
+          (set (map str/lower-case (.names headers)))
+          (set (keys added)))
+         (set removed)))
   (assoc [_ k v]
-    (HeaderMap.
-      headers
-      (assoc added k v)
-      (disj removed k)
-      mta))
+         (HeaderMap.
+          headers
+          (assoc added k v)
+          (disj removed k)
+          mta))
   (dissoc [_ k]
-    (HeaderMap.
-      headers
-      (dissoc added k)
-      (conj (or removed #{}) k)
-      mta))
+          (HeaderMap.
+           headers
+           (dissoc added k)
+           (conj (or removed #{}) k)
+           mta))
   (get [_ k default-value]
-    (if (contains? removed k)
-      default-value
-      (if-let [e (find added k)]
-        (val e)
-        (let [k' (str/lower-case (name k))
-              vs (.getAll headers k')]
-          (if (.isEmpty vs)
-            default-value
-            (if (== 1 (.size vs))
-              (.get vs 0)
-              (str/join "," vs))))))))
+       (if (contains? removed k)
+         default-value
+         (if-let [e (find added k)]
+           (val e)
+           (let [k' (str/lower-case (name k))
+                 vs (.getAll headers k')]
+             (if (.isEmpty vs)
+               default-value
+               (if (== 1 (.size vs))
+                 (.get vs 0)
+                 (str/join "," vs))))))))
 
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
@@ -168,9 +168,9 @@
   (let [status (get m :status 200)
         headers (get m :headers)
         rsp (DefaultHttpResponse.
-              HttpVersion/HTTP_1_1
-              (HttpResponseStatus/valueOf status)
-              false)]
+             HttpVersion/HTTP_1_1
+             (HttpResponseStatus/valueOf status)
+             false)]
     (when headers
       (map->headers! (.headers rsp) headers))
     rsp))
@@ -178,11 +178,11 @@
 (defn ring-request->netty-request [m]
   (let [headers (get m :headers)
         req (DefaultHttpRequest.
-              HttpVersion/HTTP_1_1
-              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (str (get m :uri)
-                (when-let [q (get m :query-string)]
-                  (str "?" q))))]
+             HttpVersion/HTTP_1_1
+             (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
+             (str (get m :uri)
+                  (when-let [q (get m :query-string)]
+                    (str "?" q))))]
     (when headers
       (map->headers! (.headers req) headers))
     req))
@@ -190,12 +190,12 @@
 (defn ring-request->full-netty-request [m]
   (let [headers (get m :headers)
         req (DefaultFullHttpRequest.
-              HttpVersion/HTTP_1_1
-              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (str (get m :uri)
-                (when-let [q (get m :query-string)]
-                  (str "?" q)))
-              (netty/to-byte-buf (:body m)))]
+             HttpVersion/HTTP_1_1
+             (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
+             (str (get m :uri)
+                  (when-let [q (get m :query-string)]
+                    (str "?" q)))
+             (netty/to-byte-buf (:body m)))]
     (when headers
       (map->headers! (.headers req) headers))
     req))
@@ -233,14 +233,14 @@
 
 (defn netty-request->ring-request [^HttpRequest req ssl? ch body]
   (assoc
-    (->NettyRequest
-      req
-      ssl?
-      ch
-      (AtomicBoolean. false)
-      (-> req .uri (.indexOf (int 63)))
-      body)
-    :aleph/request-arrived (System/nanoTime)))
+   (->NettyRequest
+    req
+    ssl?
+    ch
+    (AtomicBoolean. false)
+    (-> req .uri (.indexOf (int 63)))
+    body)
+   :aleph/request-arrived (System/nanoTime)))
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
@@ -262,10 +262,10 @@
 (let [ary-class (class (byte-array 0))]
   (defn coerce-element [x]
     (if (or
-          (instance? String x)
-          (instance? ary-class x)
-          (instance? ByteBuffer x)
-          (instance? ByteBuf x))
+         (instance? String x)
+         (instance? ary-class x)
+         (instance? ByteBuffer x)
+         (instance? ByteBuf x))
       x
       (str x))))
 
@@ -508,10 +508,10 @@
       (fn [ch f]
         (-> f
             (d/chain'
-              (fn [^ChannelFuture f]
-                (if f
-                  (.addListener f ChannelFutureListener/CLOSE)
-                  (netty/close ch))))
+             (fn [^ChannelFuture f]
+               (if f
+                 (.addListener f ChannelFutureListener/CLOSE)
+                 (netty/close ch))))
             (d/catch' (fn [_]))))]
 
   (defn send-message
@@ -526,12 +526,12 @@
     (let [f (cond
 
               (or
-                (nil? body)
-                (identical? :aleph/omitted body)
-                (instance? String body)
-                (instance? ary-class body)
-                (instance? ByteBuffer body)
-                (instance? ByteBuf body))
+               (nil? body)
+               (identical? :aleph/omitted body)
+               (instance? String body)
+               (instance? ary-class body)
+               (instance? ByteBuffer body)
+               (instance? ByteBuf body))
               (send-contiguous-body ch msg body)
 
               (instance? ChunkedInput body)

@@ -49,9 +49,8 @@
             [lein-jammin "0.1.1"]
             [lein-marginalia "0.9.1"]
             [lein-pprint "1.3.2"]
-            [ztellman/lein-cljfmt "0.1.10"]]
+            [lein-cljfmt "0.9.2"]]
   :java-source-paths ["src/aleph/utils"]
-  :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default #(not
                                (some #{:benchmark :stress}
                                  (cons (:tag %) (keys %))))

@@ -43,9 +43,9 @@
 
 (defn http-get
   ([url]
-    (http-get url nil))
+   (http-get url nil))
   ([url options]
-    (http/get url (merge (default-options) {:pool *pool*} options))))
+   (http/get url (merge (default-options) {:pool *pool*} options))))
 
 (defn http-post
   ([url]
@@ -55,9 +55,9 @@
 
 (defn http-put
   ([url]
-    (http-put url nil))
+   (http-put url nil))
   ([url options]
-    (http/put url (merge (default-options) {:pool *pool*} options))))
+   (http/put url (merge (default-options) {:pool *pool*} options))))
 
 (def port 8082)
 
@@ -130,11 +130,11 @@
       {:status 200 :body "ok"}
       {:status 302
        :headers {"location" (str "http://"
-                              (if (= "localhost" host)
-                                "127.0.0.1"
-                                "localhost")
-                              ":" port
-                              "/redirect?count=" (dec count))}
+                                 (if (= "localhost" host)
+                                   "127.0.0.1"
+                                   "localhost")
+                                 ":" port
+                                 "/redirect?count=" (dec count))}
        :body "redirected!"})))
 
 (defn text-plain-handler [_]
@@ -175,16 +175,16 @@
 
 (def expected-results
   (->>
-    ["string" string-response
-     "stream" stream-response
-     "manifold" stream-response
-     "file" "this is a file"
-     "httpfile" "this is a file"
-     "httpfileregion" "is a"
-     "seq" (apply str seq-response)]
-    (repeat 10)
-    (apply concat)
-    (partition 2)))
+   ["string" string-response
+    "stream" stream-response
+    "manifold" stream-response
+    "file" "this is a file"
+    "httpfile" "this is a file"
+    "httpfileregion" "is a"
+    "seq" (apply str seq-response)]
+   (repeat 10)
+   (apply concat)
+   (partition 2)))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -245,7 +245,6 @@
       (is (some? unzipped) 'should-be-valid-gzip)
       (is (= result unzipped) 'decompressed-body-is-correct))))
 
-
 (deftest test-ssl-response-formats
   (with-handler-options basic-handler default-ssl-options
     (doseq [[path result] expected-results]
@@ -260,9 +259,9 @@
   (let [client-url (str "http://localhost:" port)]
     (with-handler identity
       (is (str/blank?
-             (bs/to-string
-              (:body @(http-put client-url
-                                {:body (io/file "test/empty.txt")})))))
+           (bs/to-string
+            (:body @(http-put client-url
+                              {:body (io/file "test/empty.txt")})))))
       (is (= (slurp "test/file.txt" :encoding "UTF-8")
              (bs/to-string
               (:body @(http-put client-url
@@ -327,14 +326,14 @@
 (deftest test-bulk-requests
   (with-handler basic-handler
     (->> (range 1e2)
-      (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
-      (apply d/zip)
-      deref)
+         (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
+         (apply d/zip)
+         deref)
     (dotimes [_ 10]
       (->> (range 10)
-        (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
-        (apply d/zip)
-        deref))))
+           (map (fn [_] (http-get (str "http://localhost:" port "/string"))))
+           (apply d/zip)
+           deref))))
 
 (deftest test-overly-long-url
   (let [long-url (apply str "http://localhost:" port  "/" (repeat (long 1e4) "a"))]
@@ -361,8 +360,8 @@
     (doseq [len [1e3 1e4 1e5 1e6 1e7]]
       (let [characters (->> characters (take len) (apply str))
             body (:body
-                   @(http-put (str "http://localhost:" port "/echo")
-                      {:body characters}))
+                  @(http-put (str "http://localhost:" port "/echo")
+                             {:body characters}))
             body' (bs/to-string body)]
         (assert (== (min (count characters) len) (count body')))
         (is (= characters body'))))))
@@ -398,51 +397,51 @@
 (deftest test-middleware
   (with-both-handlers basic-handler
     (is (= "String!"
-          (-> @(http-get (str "http://localhost:" port "/stream")
-                 {:middleware
-                  (fn [client]
-                    (fn [req]
-                      (client (assoc req :url (str "http://localhost:" port "/string")))))})
-            :body
-            bs/to-string)))))
+           (-> @(http-get (str "http://localhost:" port "/stream")
+                          {:middleware
+                           (fn [client]
+                             (fn [req]
+                               (client (assoc req :url (str "http://localhost:" port "/string")))))})
+               :body
+               bs/to-string)))))
 
 (deftest test-line-echo
   (with-handler basic-handler
     (doseq [len [1e3 1e4 1e5]]
       (let [characters (->> characters (take len) (apply str))
             body (:body
-                   @(http-put (str "http://localhost:" port "/line_echo")
-                      {:body characters}))]
+                  @(http-put (str "http://localhost:" port "/line_echo")
+                             {:body characters}))]
         (is (= (.replace ^String characters "\n" "") (bs/to-string body)))))))
 
 (deftest test-illegal-character-in-url
   (with-handler hello-handler
     (is (= "hello"
-          (-> @(http-get (str "http://localhost:" port "/?param=illegal character"))
-            :body
-            bs/to-string)))))
+           (-> @(http-get (str "http://localhost:" port "/?param=illegal character"))
+               :body
+               bs/to-string)))))
 
 (deftest test-connection-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
-          @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
-             {:connection-timeout 2}))))
+                 @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
+                            {:connection-timeout 2}))))
 
   (with-handler basic-handler
     (is (thrown? ConnectionTimeoutException
-          @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
-             {:connection-timeout 2})))))
+                 @(http-get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
+                            {:connection-timeout 2})))))
 
 (deftest test-request-timeout
   (with-handler basic-handler
     (is (thrown? TimeoutException
-          @(http-get (str "http://localhost:" port "/slow")
-             {:request-timeout 5}))))
+                 @(http-get (str "http://localhost:" port "/slow")
+                            {:request-timeout 5}))))
 
   (with-handler basic-handler
     (is (thrown? RequestTimeoutException
-          @(http-get (str "http://localhost:" port "/slow")
-             {:request-timeout 5})))))
+                 @(http-get (str "http://localhost:" port "/slow")
+                            {:request-timeout 5})))))
 
 (deftest test-explicit-url
   (with-handler hello-handler
@@ -451,8 +450,8 @@
                                        :server-name "localhost"
                                        :server-port port
                                        :request-timeout 1e3})
-                     :body
-                     bs/to-string)))))
+                       :body
+                       bs/to-string)))))
 
 (deftest test-debug-middleware
   (with-handler hello-handler
@@ -473,8 +472,8 @@
         ex (flow/fixed-thread-executor 4)]
     (with-handler hello-handler
       @(d/future-with ex
-         (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
-           (is (= http/default-response-executor (.executor rsp))))))))
+                      (let [rsp (http/get (str "http://localhost:" port) {:connection-pool pool})]
+                        (is (= http/default-response-executor (.executor rsp))))))))
 
 (deftest test-trace-request-omitted-body
   (with-handler echo-handler
@@ -504,17 +503,17 @@
 
 (defn get-netty-client-event-threads []
   (->> (Thread/getAllStackTraces)
-    .keySet
-    vec
-    (filter #(.startsWith ^String (.getName ^Thread %) netty/client-event-thread-pool-name))))
+       .keySet
+       vec
+       (filter #(.startsWith ^String (.getName ^Thread %) netty/client-event-thread-pool-name))))
 
 (deftest test-client-events-daemon-thread
   (with-handler basic-handler
     (is
-      (= string-response
+     (= string-response
         (bs/to-string
-          (:body
-            @(http/get (str "http://localhost:" port "/string"))))))
+         (:body
+          @(http/get (str "http://localhost:" port "/string"))))))
     (let [client-threads (get-netty-client-event-threads)]
       (is (> (count client-threads) 0))
       (is (every? #(.isDaemon ^Thread %) client-threads)))))
@@ -570,26 +569,26 @@
   (let [url (str "http://localhost:" port)
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
-   (testing "Server is slow to write"
-     (with-handler-options slow-handler {:idle-timeout 200
-                                         :port port}
-       (is (= "012345" (bs/to-string (:body @(http/get url)))))))
-   (testing "Server is too slow to write"
-     (with-handler-options slow-handler {:idle-timeout 30
-                                         :port port}
-       (is (= ""
-              (bs/to-string (:body @(http/get url)))))))
-   (testing "Client is slow to write"
-     (with-handler-options echo-handler {:idle-timeout 200
-                                         :port port
-                                         :raw-stream? true}
-       (is (= "012345" (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))
-   (testing "Client is too slow to write"
-     (with-handler-options echo-handler {:idle-timeout 30
-                                         :port port
-                                         :raw-stream? true}
-       (is (thrown-with-msg? Exception #"connection was close"
-                             (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))))
+    (testing "Server is slow to write"
+      (with-handler-options slow-handler {:idle-timeout 200
+                                          :port port}
+        (is (= "012345" (bs/to-string (:body @(http/get url)))))))
+    (testing "Server is too slow to write"
+      (with-handler-options slow-handler {:idle-timeout 30
+                                          :port port}
+        (is (= ""
+               (bs/to-string (:body @(http/get url)))))))
+    (testing "Client is slow to write"
+      (with-handler-options echo-handler {:idle-timeout 200
+                                          :port port
+                                          :raw-stream? true}
+        (is (= "012345" (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))
+    (testing "Client is too slow to write"
+      (with-handler-options echo-handler {:idle-timeout 30
+                                          :port port
+                                          :raw-stream? true}
+        (is (thrown-with-msg? Exception #"connection was close"
+                              (bs/to-string (:body @(http/put url {:body (slow-stream)})))))))))
 ;;;
 
 (deftest test-large-responses
@@ -616,38 +615,37 @@
   (println "starting WebSocket benchmark server on 8080")
   (netty/leak-detector-level! :disabled)
   (let [server (http/start-server
-                 (fn [req]
-                   (d/let-flow [s (http/websocket-connection req)]
-                     (s/consume #(s/put! s %) s)))
-                 {:port 8080
-                  :shutdown-timeout 0})]
+                (fn [req]
+                  (d/let-flow [s (http/websocket-connection req)]
+                              (s/consume #(s/put! s %) s)))
+                {:port 8080
+                 :shutdown-timeout 0})]
     (Thread/sleep (* 1000 60))
     (println "stopping server")
     (.close ^java.io.Closeable server)))
-
 
 (deftest test-pipeline-header-alteration
   (let [test-header-name "aleph-test"
         test-header-val "MOOP"]
     (with-server (http/start-server
-                   basic-handler
-                   {:port port
-                    :shutdown-timeout 0
-                    :pipeline-transform
-                    (fn [^ChannelPipeline pipeline]
-                      (.addBefore pipeline
-                                  "request-handler"
-                                  "test-header-inserter"
-                                  (proxy [ChannelOutboundHandlerAdapter] []
-                                    (write [^ChannelHandlerContext ctx
-                                            ^Object msg
-                                            ^ChannelPromise p]
-                                      (when (instance? HttpMessage msg)
-                                        (let [^HttpMessage http-msg msg]
-                                          (-> http-msg
-                                              (.headers)
-                                              (.set test-header-name test-header-val))))
-                                      (.write ctx msg p)))))})
+                  basic-handler
+                  {:port port
+                   :shutdown-timeout 0
+                   :pipeline-transform
+                   (fn [^ChannelPipeline pipeline]
+                     (.addBefore pipeline
+                                 "request-handler"
+                                 "test-header-inserter"
+                                 (proxy [ChannelOutboundHandlerAdapter] []
+                                   (write [^ChannelHandlerContext ctx
+                                           ^Object msg
+                                           ^ChannelPromise p]
+                                     (when (instance? HttpMessage msg)
+                                       (let [^HttpMessage http-msg msg]
+                                         (-> http-msg
+                                             (.headers)
+                                             (.set test-header-name test-header-val))))
+                                     (.write ctx msg p)))))})
       (let [resp @(http-get (str "http://localhost:" port "/string"))]
         (is (= test-header-val (get (:headers resp) test-header-name)))))))
 

@@ -1,19 +1,19 @@
 (ns aleph.tcp
   (:require
-    [aleph.netty :as netty]
-    [clojure.tools.logging :as log]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [potemkin :as p])
+   [aleph.netty :as netty]
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [potemkin :as p])
   (:import
-    [java.io
-     IOException]
-    [java.net
-     InetSocketAddress]
-    [io.netty.channel
-     Channel
-     ChannelHandler
-     ChannelPipeline]))
+   [java.io
+    IOException]
+   [java.net
+    InetSocketAddress]
+   [io.netty.channel
+    Channel
+    ChannelHandler
+    ChannelPipeline]))
 
 (p/def-derived-map TcpConnection [^Channel ch]
   :server-name (netty/channel-server-name ch)
@@ -28,42 +28,42 @@
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 
-      :exception-caught
-      ([_ ctx ex]
-       (cond
+     :exception-caught
+     ([_ ctx ex]
+      (cond
          ;; do not need to log an entire stack trace when SSL handshake failed
-         (netty/ssl-handshake-error? ex)
-         (log/warn "SSL handshake failure:"
-                   (.getMessage ^Throwable (.getCause ^Throwable ex)))
+        (netty/ssl-handshake-error? ex)
+        (log/warn "SSL handshake failure:"
+                  (.getMessage ^Throwable (.getCause ^Throwable ex)))
 
-         (not (instance? IOException ex))
-         (log/warn ex "error in TCP server")))
+        (not (instance? IOException ex))
+        (log/warn ex "error in TCP server")))
 
-      :channel-inactive
-      ([_ ctx]
-       (some-> @in s/close!)
-       (.fireChannelInactive ctx))
+     :channel-inactive
+     ([_ ctx]
+      (some-> @in s/close!)
+      (.fireChannelInactive ctx))
 
-      :channel-active
-      ([_ ctx]
-       (-> (.channel ctx)
-           netty/maybe-ssl-handshake-future
-           (d/on-realized (fn [ch]
-                            (handler
-                             (doto (s/splice
-                                    (netty/sink ch true netty/to-byte-buf)
-                                    (reset! in (netty/source ch)))
-                               (reset-meta! {:aleph/channel ch}))
-                             (->TcpConnection ch)))
-                          netty/ignore-ssl-handshake-errors))
-       (.fireChannelActive ctx))
+     :channel-active
+     ([_ ctx]
+      (-> (.channel ctx)
+          netty/maybe-ssl-handshake-future
+          (d/on-realized (fn [ch]
+                           (handler
+                            (doto (s/splice
+                                   (netty/sink ch true netty/to-byte-buf)
+                                   (reset! in (netty/source ch)))
+                              (reset-meta! {:aleph/channel ch}))
+                            (->TcpConnection ch)))
+                         netty/ignore-ssl-handshake-errors))
+      (.fireChannelActive ctx))
 
-      :channel-read
-      ([_ ctx msg]
-        (netty/put! (.channel ctx) @in
-          (if raw-stream?
-            msg
-            (netty/release-buf->array msg)))))))
+     :channel-read
+     ([_ ctx msg]
+      (netty/put! (.channel ctx) @in
+                  (if raw-stream?
+                    msg
+                    (netty/release-buf->array msg)))))))
 
 (defn start-server
   "Takes a two-arg handler function which for each connection will be called with a duplex
@@ -110,43 +110,43 @@
 
      (netty/channel-inbound-handler
 
-       :exception-caught
-       ([_ ctx ex]
-         (when-not (d/error! d ex)
-           (if (netty/ssl-handshake-error? ex)
+      :exception-caught
+      ([_ ctx ex]
+       (when-not (d/error! d ex)
+         (if (netty/ssl-handshake-error? ex)
              ;; do not need to log an entire stack trace when SSL handshake failed
-             (log/warn "SSL handshake failure:"
-                       (.getMessage ^Throwable (.getCause ^Throwable ex)))
-             (log/warn ex "error in TCP client"))))
+           (log/warn "SSL handshake failure:"
+                     (.getMessage ^Throwable (.getCause ^Throwable ex)))
+           (log/warn ex "error in TCP client"))))
 
-       :channel-inactive
-       ([_ ctx]
-         (some-> @in s/close!)
-         (.fireChannelInactive ctx))
+      :channel-inactive
+      ([_ ctx]
+       (some-> @in s/close!)
+       (.fireChannelInactive ctx))
 
-       :channel-active
-       ([_ ctx]
-        (-> (.channel ctx)
-            netty/maybe-ssl-handshake-future
-            (d/on-realized (fn [ch]
-                             (d/success! d (doto (s/splice
-                                                  (netty/sink ch true netty/to-byte-buf)
-                                                  (reset! in (netty/source ch)))
-                                             (reset-meta! {:aleph/channel ch}))))
-                           netty/ignore-ssl-handshake-errors))
-        (.fireChannelActive ctx))
+      :channel-active
+      ([_ ctx]
+       (-> (.channel ctx)
+           netty/maybe-ssl-handshake-future
+           (d/on-realized (fn [ch]
+                            (d/success! d (doto (s/splice
+                                                 (netty/sink ch true netty/to-byte-buf)
+                                                 (reset! in (netty/source ch)))
+                                            (reset-meta! {:aleph/channel ch}))))
+                          netty/ignore-ssl-handshake-errors))
+       (.fireChannelActive ctx))
 
-       :channel-read
-       ([_ ctx msg]
-         (netty/put! (.channel ctx) @in
-           (if raw-stream?
-             msg
-             (netty/release-buf->array msg))))
+      :channel-read
+      ([_ ctx msg]
+       (netty/put! (.channel ctx) @in
+                   (if raw-stream?
+                     msg
+                     (netty/release-buf->array msg))))
 
-       :close
-       ([_ ctx promise]
-         (.close ctx promise)
-         (d/error! d (IllegalStateException. "unable to connect"))))]))
+      :close
+      ([_ ctx promise]
+       (.close ctx promise)
+       (d/error! d (IllegalStateException. "unable to connect"))))]))
 
 (defn client
   "Given a host and port, returns a deferred which yields a duplex stream that can be used

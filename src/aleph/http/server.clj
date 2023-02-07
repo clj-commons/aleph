@@ -1,78 +1,78 @@
 (ns ^:no-doc aleph.http.server
   (:require
-    [aleph.flow :as flow]
-    [aleph.http.core :as http]
-    [aleph.netty :as netty]
-    [clj-commons.byte-streams :as bs]
-    [clojure.string :as str]
-    [clojure.tools.logging :as log]
-    [manifold.deferred :as d]
-    [manifold.stream :as s])
+   [aleph.flow :as flow]
+   [aleph.http.core :as http]
+   [aleph.netty :as netty]
+   [clj-commons.byte-streams :as bs]
+   [clojure.string :as str]
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d]
+   [manifold.stream :as s])
   (:import
-    [java.util
-     EnumSet
-     TimeZone
-     Date
-     Locale]
-    [java.text
-     DateFormat
-     SimpleDateFormat]
-    [io.aleph.dirigiste
-     Stats$Metric]
-    [aleph.http.core
-     NettyRequest]
-    [io.netty.buffer
-     ByteBuf
-     ByteBufHolder
-     Unpooled]
-    [io.netty.channel
-     Channel
-     ChannelHandlerContext
-     ChannelHandler
-     ChannelPipeline]
-    [io.netty.handler.stream ChunkedWriteHandler]
-    [io.netty.handler.timeout
-     IdleState
-     IdleStateEvent]
-    [io.netty.handler.codec
-     TooLongFrameException]
-    [io.netty.handler.codec.http
-     DefaultFullHttpResponse
-     FullHttpRequest
-     HttpContent HttpHeaders HttpUtil
-     HttpContentCompressor HttpObjectAggregator
-     HttpRequest HttpRequestDecoder HttpResponse
-     HttpResponseStatus DefaultHttpHeaders
-     HttpServerCodec HttpVersion HttpMethod
-     LastHttpContent HttpServerExpectContinueHandler
-     HttpHeaderNames]
-    [io.netty.handler.codec.http.websocketx
-     WebSocketServerHandshakerFactory
-     WebSocketServerHandshaker
-     PingWebSocketFrame
-     PongWebSocketFrame
-     TextWebSocketFrame
-     BinaryWebSocketFrame
-     CloseWebSocketFrame
-     WebSocketFrameAggregator]
-    [io.netty.handler.codec.http.websocketx.extensions.compression
-     WebSocketServerCompressionHandler]
-    [java.io
-     IOException]
-    [java.net
-     InetSocketAddress]
-    [io.netty.util.concurrent
-     FastThreadLocal]
-    [java.util.concurrent
-     TimeUnit
-     Executor
-     ExecutorService
-     RejectedExecutionException
-     ConcurrentLinkedQueue]
-    [java.util.concurrent.atomic
-     AtomicReference
-     AtomicInteger
-     AtomicBoolean]))
+   [java.util
+    EnumSet
+    TimeZone
+    Date
+    Locale]
+   [java.text
+    DateFormat
+    SimpleDateFormat]
+   [io.aleph.dirigiste
+    Stats$Metric]
+   [aleph.http.core
+    NettyRequest]
+   [io.netty.buffer
+    ByteBuf
+    ByteBufHolder
+    Unpooled]
+   [io.netty.channel
+    Channel
+    ChannelHandlerContext
+    ChannelHandler
+    ChannelPipeline]
+   [io.netty.handler.stream ChunkedWriteHandler]
+   [io.netty.handler.timeout
+    IdleState
+    IdleStateEvent]
+   [io.netty.handler.codec
+    TooLongFrameException]
+   [io.netty.handler.codec.http
+    DefaultFullHttpResponse
+    FullHttpRequest
+    HttpContent HttpHeaders HttpUtil
+    HttpContentCompressor HttpObjectAggregator
+    HttpRequest HttpRequestDecoder HttpResponse
+    HttpResponseStatus DefaultHttpHeaders
+    HttpServerCodec HttpVersion HttpMethod
+    LastHttpContent HttpServerExpectContinueHandler
+    HttpHeaderNames]
+   [io.netty.handler.codec.http.websocketx
+    WebSocketServerHandshakerFactory
+    WebSocketServerHandshaker
+    PingWebSocketFrame
+    PongWebSocketFrame
+    TextWebSocketFrame
+    BinaryWebSocketFrame
+    CloseWebSocketFrame
+    WebSocketFrameAggregator]
+   [io.netty.handler.codec.http.websocketx.extensions.compression
+    WebSocketServerCompressionHandler]
+   [java.io
+    IOException]
+   [java.net
+    InetSocketAddress]
+   [io.netty.util.concurrent
+    FastThreadLocal]
+   [java.util.concurrent
+    TimeUnit
+    Executor
+    ExecutorService
+    RejectedExecutionException
+    ConcurrentLinkedQueue]
+   [java.util.concurrent.atomic
+    AtomicReference
+    AtomicInteger
+    AtomicBoolean]))
 
 (set! *unchecked-math* true)
 
@@ -84,11 +84,11 @@
 (defn rfc-1123-date-string []
   (let [^DateFormat format
         (or
-          (.get date-format)
-          (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)]
-            (.setTimeZone format (TimeZone/getTimeZone "GMT"))
-            (.set date-format format)
-            format))]
+         (.get date-format)
+         (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)]
+           (.setTimeZone format (TimeZone/getTimeZone "GMT"))
+           (.set date-format format)
+           format))]
     (.format format (Date.))))
 
 (defn ^CharSequence date-header-value [^ChannelHandlerContext ctx]
@@ -97,10 +97,10 @@
     (let [ref (AtomicReference. (HttpHeaders/newEntity (rfc-1123-date-string)))]
       (.set date-value ref)
       (.scheduleAtFixedRate (.executor ctx)
-        #(.set ref (HttpHeaders/newEntity (rfc-1123-date-string)))
-        1000
-        1000
-        TimeUnit/MILLISECONDS)
+                            #(.set ref (HttpHeaders/newEntity (rfc-1123-date-string)))
+                            1000
+                            1000
+                            TimeUnit/MILLISECONDS)
       (.get ref))))
 
 (defn error-response [^Throwable e]
@@ -126,20 +126,20 @@
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
-        (let [headers (.headers rsp)]
+                          (let [headers (.headers rsp)]
 
-          (when-not (.contains headers ^CharSequence server-name)
-            (.set headers ^CharSequence server-name server-value))
+                            (when-not (.contains headers ^CharSequence server-name)
+                              (.set headers ^CharSequence server-name server-value))
 
-          (when-not (.contains headers ^CharSequence date-name)
-            (.set headers ^CharSequence date-name (date-header-value ctx)))
+                            (when-not (.contains headers ^CharSequence date-name)
+                              (.set headers ^CharSequence date-name (date-header-value ctx)))
 
-          (when (= (.get headers ^CharSequence content-type) "text/plain")
-            (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
+                            (when (= (.get headers ^CharSequence content-type) "text/plain")
+                              (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
-          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+                            (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
-          (http/send-message ctx keep-alive? ssl? rsp body))))))
+                            (http/send-message ctx keep-alive? ssl? rsp body))))))
 
 ;;;
 
@@ -266,17 +266,17 @@ Example: {:status 200
         handle-request
         (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
-            (handle-request
-              ctx
-              ssl?
-              handler
-              rejected-handler
-              error-handler
-              executor
-              req
-              @previous-response
-              (when body (bs/to-input-stream body))
-              (HttpHeaders/isKeepAlive req))))
+                  (handle-request
+                   ctx
+                   ssl?
+                   handler
+                   rejected-handler
+                   error-handler
+                   executor
+                   req
+                   @previous-response
+                   (when body (bs/to-input-stream body))
+                   (HttpHeaders/isKeepAlive req))))
 
         process-request
         (fn [ctx req]
@@ -307,7 +307,7 @@ Example: {:status 200
                 (s/close! s))
 
               (if (and (zero? (.get buffer-size))
-                    (zero? (.readableBytes content)))
+                       (zero? (.readableBytes content)))
 
                 ;; there was never any body
                 (do
@@ -358,40 +358,40 @@ Example: {:status 200
 
     (netty/channel-inbound-handler
 
-      :exception-caught
-      ([_ ctx ex]
-        (exception-handler ctx ex))
+     :exception-caught
+     ([_ ctx ex]
+      (exception-handler ctx ex))
 
-      :channel-inactive
-      ([_ ctx]
-        (when-let [s @stream]
-          (s/close! s))
-        (doseq [b @buffer]
-          (netty/release b))
-        (.fireChannelInactive ctx))
+     :channel-inactive
+     ([_ ctx]
+      (when-let [s @stream]
+        (s/close! s))
+      (doseq [b @buffer]
+        (netty/release b))
+      (.fireChannelInactive ctx))
 
-      :channel-read
-      ([_ ctx msg]
-        (cond
+     :channel-read
+     ([_ ctx msg]
+      (cond
 
           ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
-          (instance? FullHttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (process-full-request ctx msg))
+        (instance? FullHttpRequest msg)
+        (if (invalid-request? msg)
+          (reject-invalid-request ctx msg)
+          (process-full-request ctx msg))
 
-          (instance? HttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (process-request ctx msg))
+        (instance? HttpRequest msg)
+        (if (invalid-request? msg)
+          (reject-invalid-request ctx msg)
+          (process-request ctx msg))
 
-          (instance? HttpContent msg)
-          (if (instance? LastHttpContent msg)
-            (process-last-content ctx msg)
-            (process-content ctx msg))
+        (instance? HttpContent msg)
+        (if (instance? LastHttpContent msg)
+          (process-last-content ctx msg)
+          (process-content ctx msg))
 
-          :else
-          (.fireChannelRead ctx msg))))))
+        :else
+        (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
   [ssl? handler rejected-handler error-handler executor buffer-capacity]
@@ -402,66 +402,66 @@ Example: {:status 200
         handle-request
         (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
-            (handle-request
-              ctx
-              ssl?
-              handler
-              rejected-handler
-              error-handler
-              executor
-              req
-              @previous-response
-              body
-              (HttpUtil/isKeepAlive req))))]
+                  (handle-request
+                   ctx
+                   ssl?
+                   handler
+                   rejected-handler
+                   error-handler
+                   executor
+                   req
+                   @previous-response
+                   body
+                   (HttpUtil/isKeepAlive req))))]
     (netty/channel-inbound-handler
 
-      :exception-caught
-      ([_ ctx ex]
-        (exception-handler ctx ex))
+     :exception-caught
+     ([_ ctx ex]
+      (exception-handler ctx ex))
 
-      :channel-inactive
-      ([_ ctx]
-        (when-let [s @stream]
-          (s/close! s))
-        (.fireChannelInactive ctx))
+     :channel-inactive
+     ([_ ctx]
+      (when-let [s @stream]
+        (s/close! s))
+      (.fireChannelInactive ctx))
 
-      :channel-read
-      ([_ ctx msg]
-        (cond
+     :channel-read
+     ([_ ctx msg]
+      (cond
 
           ;; Happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline.
-          (instance? FullHttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (let [^FullHttpRequest req msg
-                  content (.content req)
-                  ch (netty/channel ctx)
-                  s (netty/source ch)]
-              (when-not (zero? (.readableBytes content))
+        (instance? FullHttpRequest msg)
+        (if (invalid-request? msg)
+          (reject-invalid-request ctx msg)
+          (let [^FullHttpRequest req msg
+                content (.content req)
+                ch (netty/channel ctx)
+                s (netty/source ch)]
+            (when-not (zero? (.readableBytes content))
                 ;; Retain the content of FullHttpRequest one extra time to
                 ;; compensate for it being released together with the request.
-                (netty/put! ch s (netty/acquire content)))
-              (s/close! s)
-              (handle-request ctx req s)))
+              (netty/put! ch s (netty/acquire content)))
+            (s/close! s)
+            (handle-request ctx req s)))
 
-          (instance? HttpRequest msg)
-          (if (invalid-request? msg)
-            (reject-invalid-request ctx msg)
-            (let [req msg]
-              (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
-                (reset! stream s)
-                (handle-request ctx req s))))
+        (instance? HttpRequest msg)
+        (if (invalid-request? msg)
+          (reject-invalid-request ctx msg)
+          (let [req msg]
+            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
+              (reset! stream s)
+              (handle-request ctx req s))))
 
-          (instance? HttpContent msg)
-          (let [content (.content ^HttpContent msg)]
+        (instance? HttpContent msg)
+        (let [content (.content ^HttpContent msg)]
             ;; content might empty most probably in case of EmptyLastHttpContent
-            (when-not (zero? (.readableBytes content))
-              (netty/put! (.channel ctx) @stream content))
-            (when (instance? LastHttpContent msg)
-              (s/close! @stream)))
+          (when-not (zero? (.readableBytes content))
+            (netty/put! (.channel ctx) @stream content))
+          (when (instance? LastHttpContent msg)
+            (s/close! @stream)))
 
-          :else
-          (.fireChannelRead ctx msg))))))
+        :else
+        (.fireChannelRead ctx msg))))))
 
 (def ^HttpResponse default-accept-response
   (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
@@ -492,8 +492,8 @@ Example: {:status 200
                      (if (true? accept?)
                        ;; accepted
                        (let [rsp (.retainedDuplicate
-                                       ^ByteBufHolder
-                                       default-accept-response)]
+                                  ^ByteBufHolder
+                                  default-accept-response)]
                          (netty/write-and-flush ctx rsp)
                          (.remove (.headers req) HttpHeaderNames/EXPECT)
                          (.fireChannelRead ctx req))
@@ -562,15 +562,15 @@ Example: {:status 200
       (doto pipeline
         (http/attach-idle-handlers idle-timeout)
         (.addLast "http-server"
-          (HttpServerCodec.
-            max-initial-line-length
-            max-header-size
-            max-chunk-size
-            validate-headers
-            initial-buffer-size
-            allow-duplicate-content-lengths))
+                  (HttpServerCodec.
+                   max-initial-line-length
+                   max-header-size
+                   max-chunk-size
+                   validate-headers
+                   initial-buffer-size
+                   allow-duplicate-content-lengths))
         (#(when max-request-body-size
-         (.addLast ^ChannelPipeline %1 "aggregator" (HttpObjectAggregator. max-request-body-size))))
+            (.addLast ^ChannelPipeline %1 "aggregator" (HttpObjectAggregator. max-request-body-size))))
         (.addLast "continue-handler" continue-handler)
         (.addLast "request-handler" ^ChannelHandler handler)
         (#(when (or compression? (some? compression-level))
@@ -610,9 +610,9 @@ Example: {:status 200
 
                    (nil? executor)
                    (flow/utilization-executor 0.9 512
-                     {:metrics (EnumSet/of Stats$Metric/UTILIZATION)
+                                              {:metrics (EnumSet/of Stats$Metric/UTILIZATION)
                       ;;:onto? false
-                      })
+                                               })
 
                    (= :none executor)
                    nil
@@ -651,7 +651,7 @@ Example: {:status 200
                         socket-address
                         (InetSocketAddress. port))
       :on-close (when (and shutdown-executor? (or (instance? ExecutorService executor)
-                                       (instance? ExecutorService continue-executor)))
+                                                  (instance? ExecutorService continue-executor)))
                   #(do
                      (when (instance? ExecutorService executor)
                        (.shutdown ^ExecutorService executor))
@@ -697,7 +697,7 @@ Example: {:status 200
          (.close handshaker ch (CloseWebSocketFrame.))))
 
      (let [s (doto
-                 (s/splice out in)
+              (s/splice out in)
                (reset-meta! {:aleph/channel ch}))]
        [s
 
@@ -725,55 +725,54 @@ Example: {:status 200
 
          :channel-read
          ([_ ctx msg]
-         (let [ch (.channel ctx)]
-           (cond
-             (instance? TextWebSocketFrame msg)
-             (if raw-stream?
-               (let [body (.content ^TextWebSocketFrame msg)]
+          (let [ch (.channel ctx)]
+            (cond
+              (instance? TextWebSocketFrame msg)
+              (if raw-stream?
+                (let [body (.content ^TextWebSocketFrame msg)]
                 ;; pass ByteBuf body directly to next level (it's
                 ;; their reponsibility to release)
-                 (netty/put! ch in body))
-               (let [text (.text ^TextWebSocketFrame msg)]
+                  (netty/put! ch in body))
+                (let [text (.text ^TextWebSocketFrame msg)]
                 ;; working with text now, so we do not need
                 ;; ByteBuf inside TextWebSocketFrame
                 ;; note, that all *WebSocketFrame classes are
                 ;; subclasses of DefaultByteBufHolder, meaning
                 ;; there's no difference between releasing
                 ;; frame & frame's content
-                (netty/release msg)
-                (netty/put! ch in text)))
+                  (netty/release msg)
+                  (netty/put! ch in text)))
 
-             (instance? BinaryWebSocketFrame msg)
-             (let [body (.content ^BinaryWebSocketFrame msg)]
-               (netty/put! ch in
-                 (if raw-stream?
-                   body
+              (instance? BinaryWebSocketFrame msg)
+              (let [body (.content ^BinaryWebSocketFrame msg)]
+                (netty/put! ch in
+                            (if raw-stream?
+                              body
                    ;; copied data into byte array, deallocating ByteBuf
-                   (netty/release-buf->array body))))
+                              (netty/release-buf->array body))))
 
-             (instance? PingWebSocketFrame msg)
-             (let [body (.content ^PingWebSocketFrame msg)]
+              (instance? PingWebSocketFrame msg)
+              (let [body (.content ^PingWebSocketFrame msg)]
                ;; reusing the same buffer
                ;; will be deallocated by Netty
-               (netty/write-and-flush ch (PongWebSocketFrame. body)))
+                (netty/write-and-flush ch (PongWebSocketFrame. body)))
 
-             (instance? PongWebSocketFrame msg)
-             (do
-               (netty/release msg)
-               (http/resolve-pings! pending-pings true))
+              (instance? PongWebSocketFrame msg)
+              (do
+                (netty/release msg)
+                (http/resolve-pings! pending-pings true))
 
-             (instance? CloseWebSocketFrame msg)
-             (if-not (.compareAndSet closing? false true)
+              (instance? CloseWebSocketFrame msg)
+              (if-not (.compareAndSet closing? false true)
                ;; closing already, nothing else could be done
-               (netty/release msg)
+                (netty/release msg)
                ;; reusing the same buffer
                ;; will be deallocated by Netty
-               (.close handshaker ch ^CloseWebSocketFrame msg))
+                (.close handshaker ch ^CloseWebSocketFrame msg))
 
-             :else
+              :else
              ;; no need to release buffer when passing to a next handler
-             (.fireChannelRead ctx msg)))))]))))
-
+              (.fireChannelRead ctx msg)))))]))))
 
 ;; note, as we set `keep-alive?` to `false`, `send-message` will close the connection
 ;; after writes are done, which is exactly what we expect to happen
@@ -826,9 +825,9 @@ Example: {:status 200
   (let [^Channel ch (.ch req)
         ssl? (identical? :https (:scheme req))
         url (str
-              (if ssl? "wss://" "ws://")
-              (get-in req [:headers "host"])
-              (:uri req))
+             (if ssl? "wss://" "ws://")
+             (get-in req [:headers "host"])
+             (:uri req))
         req (http/ring-request->full-netty-request req)
         factory (WebSocketServerHandshakerFactory.
                  url
@@ -878,9 +877,9 @@ Example: {:status 200
                      (pipeline-transform (.pipeline ch)))
                    s))
                 (d/catch'
-                    (fn [e]
-                      (send-websocket-request-expected! ch ssl?)
-                      (d/error-deferred e)))))
+                 (fn [e]
+                   (send-websocket-request-expected! ch ssl?)
+                   (d/error-deferred e)))))
           (catch Throwable e
             (d/error-deferred e)))
         (do

@@ -29,7 +29,7 @@
   "Gets this process' PID."
   []
   (if-let [pid (when-class java.lang.ProcessHandle
-                 (.pid (java.lang.ProcessHandle/current)))]
+                           (.pid (java.lang.ProcessHandle/current)))]
     pid
     (let [pid (.getName (ManagementFactory/getRuntimeMXBean))]
       (->> pid

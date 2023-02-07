@@ -1,20 +1,20 @@
 (ns aleph.udp
   (:require
-    [aleph.netty :as netty]
-    [clojure.tools.logging :as log]
-    [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [potemkin :as p])
+   [aleph.netty :as netty]
+   [clojure.tools.logging :as log]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [potemkin :as p])
   (:import
-    [java.net
-     SocketAddress
-     InetSocketAddress]
-    [io.netty.channel
-     ChannelOption]
-    [io.netty.bootstrap
-     Bootstrap]
-    [io.netty.channel.socket
-     DatagramPacket]))
+   [java.net
+    SocketAddress
+    InetSocketAddress]
+   [io.netty.channel
+    ChannelOption]
+   [io.netty.bootstrap
+    Bootstrap]
+   [io.netty.channel.socket
+    DatagramPacket]))
 
 (p/def-derived-map UdpPacket [^DatagramPacket packet content]
   :sender (-> packet ^InetSocketAddress (.sender))
@@ -76,7 +76,7 @@
 
                    (d/success! d
                                (doto
-                                   (s/splice out in)
+                                (s/splice out in)
                                  (reset-meta! {:aleph/channel ch}))))
                  (.fireChannelActive ctx))
 

@@ -13,8 +13,8 @@
     (s/put! s {:host "localhost", :port 10001, :message "foo"})
     (is (= "foo"
            (bs/to-string
-             (:message
-              @(s/take! s)))))
+            (:message
+             @(s/take! s)))))
     (s/close! s)))
 
 (deftest test-transport

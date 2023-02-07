@@ -83,7 +83,6 @@
         (finally
           (.close ^AutoCloseable server))))))
 
-
 (deftest test-shutdown-timeout-4
   (testing "shutdown with a timeout of 1 seconds while waiting for body"
     (let [server (http/start-server waiting-handler (server-options :shutdown-timeout 1))]

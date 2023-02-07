@@ -1,13 +1,13 @@
 (ns ^:no-doc aleph.http.encoding
   (:require
-    [clj-commons.byte-streams :as bs]
-    [clj-commons.primitive-math :as p])
+   [clj-commons.byte-streams :as bs]
+   [clj-commons.primitive-math :as p])
   (:import
-    [io.netty.buffer
-     ByteBuf
-     Unpooled]
-    [io.netty.handler.codec.base64
-     Base64]))
+   [io.netty.buffer
+    ByteBuf
+    Unpooled]
+   [io.netty.handler.codec.base64
+    Base64]))
 
 (set! *unchecked-math* true)
 
@@ -56,4 +56,4 @@
     ;; "binary" effectively means "do nothing"
     :binary val
     (throw (IllegalArgumentException.
-             (str "unsupported encodiing given:" (pr-str encoding))))))
+            (str "unsupported encodiing given:" (pr-str encoding))))))

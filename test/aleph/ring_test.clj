@@ -9,35 +9,35 @@
 
 (defn create-url
   ([path]
-    (create-url 8080 path))
+   (create-url 8080 path))
   ([port path]
-    (create-url "http" "localhost" port path))
+   (create-url "http" "localhost" port path))
   ([scheme host port path]
-    (str scheme "://" host ":" port path)))
+   (str scheme "://" host ":" port path)))
 
 (def pool (http/connection-pool {:connection-options {:aleph/keep-alive? false}}))
 
 (defn request
   ([& {:as options}]
-    (let [options (merge
-                    {:url (create-url "/")
-                     :method :get}
-                    options)]
-      (->> @(http/request
-              {:pool pool
-               :method (:method options)
-               :url (:url options)
-               :headers (:headers options)
-               :body (:body options)})
-        :body
-        bs/to-string
-        read-string))))
+   (let [options (merge
+                  {:url (create-url "/")
+                   :method :get}
+                  options)]
+     (->> @(http/request
+            {:pool pool
+             :method (:method options)
+             :url (:url options)
+             :headers (:headers options)
+             :body (:body options)})
+          :body
+          bs/to-string
+          read-string))))
 
 (defn get-request-value [request keys]
   (reduce
-    #(or (get %1 %2) (get %1 (keyword %2)))
-    request
-    keys))
+   #(or (get %1 %2) (get %1 (keyword %2)))
+   request
+   keys))
 
 (defn request-callback [keys]
   (fn [request]
