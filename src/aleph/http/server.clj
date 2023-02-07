@@ -107,9 +107,7 @@
   (log/error e "error in HTTP handler")
   {:status 500
    :headers {"content-type" "text/plain"}
-   :body (let [w (java.io.StringWriter.)]
-           (.printStackTrace e (java.io.PrintWriter. w))
-           (str w))})
+   :body "Internal Server Error"})
 
 (let [[server-name connection-name date-name content-type]
       (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date" "Content-Type"])

@@ -97,6 +97,23 @@
           nil))
       (no-url req))))
 
+(defn send-response-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
+  (let [^Throwable ex (http/decoder-failure msg)]
+    (s/put! response-stream ex)
+    (netty/close ctx)))
+
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream complete response-stream]
+  (if (instance? HttpContent msg)
+    ;; note that we are most likely to get this when dealing
+    ;; with transfer encoding chunked
+    (if-let [s @stream]
+      (do
+        ;; flag that body was not completed succesfully
+        (d/success! @complete true)
+        (s/close! s))
+      (send-response-decoder-failure ctx msg response-stream))
+    (send-response-decoder-failure ctx msg response-stream)))
+
 (defn exception-handler [ctx ex response-stream]
   (cond
     ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
@@ -141,16 +158,18 @@
       :channel-read
       ([_ ctx msg]
         (cond
+          (http/decoder-failed? msg)
+          (handle-decoder-failure ctx msg stream complete response-stream)
 
           (instance? HttpResponse msg)
-          (let [rsp msg]
+          (let [rsp msg
+                s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
+                c (d/deferred)]
 
-            (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)
-                  c (d/deferred)]
-              (reset! stream s)
-              (reset! complete c)
-              (s/on-closed s #(d/success! c true))
-              (handle-response rsp c s)))
+            (reset! stream s)
+            (reset! complete c)
+            (s/on-closed s #(d/success! c true))
+            (handle-response rsp c s))
 
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
@@ -195,6 +214,8 @@
       ([_ ctx msg]
 
         (cond
+          (http/decoder-failed? msg)
+          (handle-decoder-failure ctx msg stream complete response-stream)
 
           ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
           (instance? FullHttpResponse msg)
@@ -241,7 +262,7 @@
 
               (if-let [s @stream]
 
-                 ;; already have a stream going
+                ;; already have a stream going
                 (do
                   (netty/put! (.channel ctx) s (netty/buf->array content))
                   (netty/release content))
@@ -253,7 +274,7 @@
 
                   (let [size (.addAndGet buffer-size len)]
 
-                     ;; buffer size exceeded, flush it as a stream
+                    ;; buffer size exceeded, flush it as a stream
                     (when (< buffer-capacity size)
                       (let [bufs @buffer
                             c (d/deferred)
