@@ -1,6 +1,8 @@
 (ns aleph.http.client-middleware-test
   (:require
    [aleph.http.client-middleware :as middleware]
+   [clojure.spec.alpha :as spec]
+   [clojure.spec.gen.alpha :as gen]
    [clojure.test :as t :refer [deftest is]])
   (:import
    (java.net URLDecoder)))
@@ -176,7 +178,20 @@
         (middleware/generate-query-string {:name ["John" "Mark"]} nil :indexed))))
 
 (deftest test-wrap-validation
+  (doseq [req (gen/sample (spec/gen ::middleware/ring-request))]
+    (is (middleware/wrap-validation req)))
+
   (is (thrown-with-msg?
        IllegalArgumentException
        #"Invalid spec: \{} - failed: \(contains\? % :request-method\)"
-       (middleware/wrap-validation {}))))
+       (middleware/wrap-validation {})))
+  (is (thrown-with-msg?
+       IllegalArgumentException
+       #"Invalid spec: \"10\" - failed: integer?"
+       (middleware/wrap-validation {:request-method :post
+                                    :content-length "10"})))
+  (is (thrown-with-msg?
+       IllegalArgumentException
+       #"Invalid spec: 10 - failed: string?"
+       (middleware/wrap-validation {:request-method :post
+                                    :content-type 10}))))

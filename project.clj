@@ -26,6 +26,7 @@
                  [io.netty/netty-resolver ~netty-version]
                  [io.netty/netty-resolver-dns ~netty-version]]
   :profiles {:dev  {:dependencies [[org.clojure/clojure "1.11.0"]
+                                   [org.clojure/test.check "1.1.1"]
                                    [criterium "0.4.6"]
                                    [cheshire "5.10.0"]
                                    [org.slf4j/slf4j-simple "1.7.30"]
