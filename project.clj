@@ -1,5 +1,5 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
-(def netty-version "4.1.85.Final")
+(def netty-version "4.1.87.Final")
 
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.6.0")
   :description "A framework for asynchronous communication"
