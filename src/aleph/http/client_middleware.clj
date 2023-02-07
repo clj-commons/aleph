@@ -921,10 +921,28 @@
       (opt req :save-request)
       (assoc :aleph/request req'))))
 
-(spec/def ::request-method (spec/or :string string? :keyword keyword?))
-(spec/def ::url string?)
+;; internal spec
+(spec/def ::server-port        (spec/nilable integer?))
+(spec/def ::server-name        (spec/nilable string?))
+(spec/def ::remote-addr        (spec/nilable string?))
+(spec/def ::uri                (spec/nilable string?))
+(spec/def ::query-string       (spec/nilable string?))
+(spec/def ::scheme             #{:http :https})
+(spec/def ::request-method     keyword?)
+(spec/def ::content-type       (spec/nilable (spec/or ::string string? ::keyword keyword?)))
+(spec/def ::content-length     (spec/nilable integer?))
+(spec/def ::character-encoding (spec/nilable string?))
+
 (spec/def ::ring-request (spec/keys :req-un [::request-method]
-                                    :opt-un [::uri]))
+                                    :opt-un [::server-port
+                                             ::server-name
+                                             ::remote-addr
+                                             ::uri
+                                             ::query-string
+                                             ::scheme
+                                             ::content-type
+                                             ::content-length
+                                             ::character-encoding]))
 
 (defn ^:no-doc wrap-validation [req]
   (when-not (spec/valid? ::ring-request req)
