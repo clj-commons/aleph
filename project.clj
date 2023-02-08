@@ -8,9 +8,9 @@
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
-                 [org.clj-commons/dirigiste "1.0.1"]
-                 [manifold "0.2.4"]
+                 [manifold "0.3.0"]
                  [org.clj-commons/byte-streams "0.3.1"]
+                 [org.clj-commons/dirigiste "1.0.3"]
                  [org.clj-commons/primitive-math "1.0.0"]
                  [potemkin "0.4.5"]
                  [io.netty/netty-transport ~netty-version]
