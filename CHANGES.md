@@ -1,3 +1,31 @@
+### 0.6.1
+
+* Switch back to JDK 8 in CI
+* Fix SSL handshake test for JDK 8
+* Stop linking to old aleph.io site, in favor of examples and cljdoc articles
+* Remove unnecessary use of `bound-fn*` for `operation-complete` 
+* Support MIME types and in-memory files when encoding uploads
+* Support kqueue and io_uring
+* Allow manual cleanup of uploaded files and document it
+* Add `validate-headers`, `initial-buffer-size`, `allow-duplicate-content-lengths`, and `max-request-body-size` server options
+* Add reader backpressure tests
+* Add charset to `text/plain` responses
+* Randomize TCP and UDP test ports
+* Document internal scheduler for high-performance timing
+* Improve error messages on non-compliant Ring maps
+* Handle edge cases with decoder failures and quicker error propagation to caller
+* Support file names with in-memory file uploads
+* Bump Manifold to 0.3.0
+* Bump Dirigiste to 1.0.3
+* Bump Netty to 4.1.87.Final
+
+Contributions by (in alphabetical order):
+
+Matthew Davidson, Arnaud Geiser, Moritz Heidkamp, Eugene Pakhomov, and pbwolf.
+
+Extra big thanks to Arnaud, who tackled the vast majority of these improvements!
+
+
 ### 0.6.0
 
 * Add initial kondo support
