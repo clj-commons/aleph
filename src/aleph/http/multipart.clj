@@ -142,29 +142,23 @@
 
 (defn- encode-file-upload
   "Encode the `content` as a `FileUpload`."
-  [^HttpPostRequestEncoder encoder {:keys [part-name name content mime-type charset]}]
-  (let [filename  (.getName ^File content)
-        name      (or name filename)
-        mime-type (or mime-type
-                      (URLConnection/guessContentTypeFromName filename))
+  [^HttpPostRequestEncoder encoder {:keys [part-name name file-name content mime-type charset]}]
+  (let [file-name    (or file-name (.getName ^File content))
+        name         (or part-name name file-name)
+        mime-type    (or mime-type
+                         (URLConnection/guessContentTypeFromName file-name))
         content-type (mime-type-descriptor mime-type charset)]
-    (.addBodyFileUpload encoder
-                        (or part-name name)
-                        ;; Netty's multipart encoder ignores empty strings here
-                        (or filename "")
-                        content
-                        content-type
-                        false)))
+    (.addBodyFileUpload encoder name file-name content content-type false)))
 
 (defn- encode-memory-file-upload
   "Encode the `content` as a `MemoryFileUpload`."
-  [^HttpPostRequestEncoder encoder {:keys [part-name name content mime-type charset]}]
+  [^HttpPostRequestEncoder encoder {:keys [part-name name file-name content mime-type charset]}]
   (let [content-type (mime-type-descriptor mime-type charset)
         charset      (ensure-charset charset)
-        filename     (str (UUID/randomUUID))
+        file-name    (or file-name (str (UUID/randomUUID)))
         content      (netty/to-byte-buf content)
         size         (.readableBytes content)
-        file-upload  (doto (MemoryFileUpload. (or part-name name) filename content-type "binary" charset size)
+        file-upload  (doto (MemoryFileUpload. (or part-name name) file-name content-type "binary" charset size)
                        (.addContent (netty/to-byte-buf content) true))]
     (.addBodyHttpData encoder file-upload)))
 
@@ -181,12 +175,12 @@
 
 (defn ^:no-doc encode-request [^DefaultHttpRequest req parts]
   (let [^HttpPostRequestEncoder encoder (HttpPostRequestEncoder. req true)]
-    (doseq [{:keys [content mime-type] :as part} parts]
+    (doseq [{:keys [content mime-type file-name] :as part} parts]
       (cond
         (instance? File content)
         (encode-file-upload encoder part)
 
-        (some? mime-type)
+        (or (some? mime-type) (some? file-name))
         (encode-memory-file-upload encoder part)
 
         :else
