@@ -3,6 +3,7 @@
             [aleph.netty :as netty]
             [aleph.tcp :as tcp]
             [clojure.test :refer [deftest testing is]]
+            [manifold.deferred :as d]
             [manifold.stream :as s])
   (:import
    (aleph.protobuf Schema$Person)
@@ -31,30 +32,20 @@
   pipeline)
 
 (defn tcp-handler [s _]
-  (prn "cool")
-  (is (= "John" (.getName (parse-person @(s/take! s)))))
-  (prn "cool2")
-  @(s/put! s (make-person "Doe"))
-  (prn "close!")
-  (s/close! s))
+  (d/chain (s/take! s)
+           (fn [data]
+             (s/put! s (parse-person data)))))
 
 (deftest protobuf
   (testing "TCP server"
-    (prn "what?")
-    (with-open [server ^AutoCloseable (tcp/start-server (bound-fn* tcp-handler) {:port 0
-                                                                                 :coerce-fn identity
-                                                                                 :pipeline-transform (comp add-protobuf-encoder add-protobuf-decoder)})]
-      (prn "youpi!")
+    (with-open [server ^AutoCloseable (tcp/start-server tcp-handler
+                                                        {:port 0
+                                                         :coerce-fn identity
+                                                         :pipeline-transform (comp add-protobuf-encoder add-protobuf-decoder)})]
       (let [s @(tcp/client {:host "localhost"
                             :port (netty/port server)
                             :coerce-fn identity
                             :pipeline-transform (comp add-protobuf-encoder add-protobuf-decoder)})]
-                                                     
-        @(s/put! s (.getBytes "hello"))
-        #_#_#_
-        @(s/put! s (make-person "John"))
-        @(s/put! s (make-person "John"))
-        @(s/put! s (make-person "John"))
-        (prn "done..")
-        (is (= "Doe" (.getName (parse-person @(s/take! s)))))
-        (Thread/sleep 500)))))
+
+        @(s/put! s (make-person "John Doe"))
+        (is (= "John Doe" (.getName (parse-person @(s/take! s)))))))))
