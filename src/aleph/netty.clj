@@ -1305,8 +1305,8 @@ initialize an DnsAddressResolverGroup instance.
             bootstrap-transform
             ^SocketAddress remote-address
             ^SocketAddress local-address
-            name-resolver
-            transport]}]
+            transport
+            name-resolver]}]
    (ensure-transport-available! transport)
    (let [^Class
          channel (transport-channel transport)
