@@ -123,7 +123,7 @@
    | `response-buffer-size`    | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?`             | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
    | `idle-timeout`            | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
-   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
+   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`).
    | `raw-stream?`             | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `max-initial-line-length` | the maximum length of the initial line (e.g. HTTP/1.0 200 OK), defaults to `65536`
    | `max-header-size`         | the maximum characters that can be in a single header entry of a response, defaults to `65536`
@@ -231,7 +231,7 @@
    | `max-frame-payload`   | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size`      | maximum aggregate message size, in bytes, defaults to `1048576`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
-   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
+   | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`).
    | `heartbeats`          | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
   ([url]
    (websocket-client url nil))

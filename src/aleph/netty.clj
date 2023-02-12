@@ -1298,7 +1298,7 @@ initialize an DnsAddressResolverGroup instance.
                    :bootstrap-transform bootstrap-transform
                    :remote-address      remote-address
                    :local-address       local-address
-                   :epoll?              (if epoll? :epoll :nio)
+                   :transport           (if epoll? :epoll :nio)
                    :name-resolver       name-resolver}))
   ([{:keys [pipeline-builder
             ssl-context
