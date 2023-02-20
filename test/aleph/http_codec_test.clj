@@ -2,6 +2,7 @@
   (:require [aleph.http :as http]
             [aleph.netty :as netty]
             [aleph.tcp :as tcp]
+            [aleph.udp :as udp]
             [clojure.test :refer [deftest testing is]]
             [manifold.deferred :as d]
             [manifold.stream :as s])
@@ -48,4 +49,13 @@
                             :pipeline-transform (comp add-protobuf-encoder add-protobuf-decoder)})]
 
         @(s/put! s (make-person "John Doe"))
-        (is (= "John Doe" (.getName (parse-person @(s/take! s)))))))))
+        (is (= "John Doe" (.getName (parse-person @(s/take! s))))))))
+
+  (testing "UDP server"
+    (let [s @(udp/socket {:port 10001 :raw-stream? true :transport :epoll :coerce-fn identity})]
+      (try
+        (s/put! s {:host "localhost", :port 10001, :message (make-person "John Doe")})
+        (is (= "foo"
+               (parse-person @(s/try-take! s 200))))
+        (finally
+          (s/close! s))))))

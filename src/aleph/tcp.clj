@@ -24,7 +24,7 @@
 (alter-meta! #'->TcpConnection assoc :private true)
 
 (defn- ^ChannelHandler server-channel-handler
-  [handler {:keys [raw-stream? coerce-fn] :or {coerce-fn netty/to-byte-buf} :as options}]
+  [handler {:keys [raw-stream? coerce-fn] :or {coerce-fn netty/to-byte-buf}}]
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 
