@@ -138,10 +138,8 @@
 
 (def port1 26023)
 (def port2 26024)
-(def port3 26025)
 (def url1 (str "http://localhost:" port1))
 (def url2 (str "http://localhost:" port2))
-(def url3 (str "http://localhost:" port3))
 
 (def parts [{:part-name "#0-string"
              :content "CONTENT1"}
@@ -169,10 +167,16 @@
   {:status 200
    :body body})
 
+(def pool (http/connection-pool {:connection-options {:keep-alive? false}}))
+
+(defn- http-post [url parts]
+  (http/post url {:pool pool
+                  :multipart parts}))
+
 (deftest test-send-multipart-request
   (let [s (http/start-server echo-handler {:port port1 :shutdown-timeout 0})
         ^String resp @(d/chain'
-                       (http/post url1 {:multipart parts})
+                       (http-post url1 parts)
                        :body
                        bs/to-string)]
     ;; part names
@@ -249,7 +253,7 @@
                                              options))]
 
      (try
-       (let [req (http/post url {:multipart parts})
+       (let [req          (http-post url parts)
              resp         (deref req 1e3 {:body "timeout"})
              body         (-> (:body resp) bs/to-string read-string)
              encoded-data (:encoded-data body)
