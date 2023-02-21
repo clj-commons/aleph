@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 echo ";; DO NOT EDIT MANUALLY - generated from project.clj via deps/lein-to-deps" > deps.edn
-bb -Sdeps '{:deps {io.github.borkdude/lein2deps {:git/sha "2297db9f72e594fc1c623c2a4b1e3868611e314b"}}}' \
+bb -Sdeps '{:deps {io.github.borkdude/lein2deps {:git/tag "v0.1.0" :git/sha "68b23a9"}}}' \
    -m lein2deps.api \
    --eval \
    --print >> deps.edn
