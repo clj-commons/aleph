@@ -3,8 +3,6 @@
 
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.6.1")
   :description "A framework for asynchronous communication"
-  :repositories {"jboss" "https://repository.jboss.org/nexus/content/groups/public/"
-                 "sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
