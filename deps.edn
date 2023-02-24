@@ -36,8 +36,4 @@
     :class-dir "target/classes",
     :javac-opts ["-target" "1.8" "-source" "1.8"]}}},
  :deps/prep-lib
- {:ensure "target/classes", :alias :lein2deps, :fn compile-java},
- :mvn/repos
- {"jboss" "https://repository.jboss.org/nexus/content/groups/public/",
-  "sonatype-oss-public"
-  "https://oss.sonatype.org/content/groups/public/"}}
+ {:ensure "target/classes", :alias :lein2deps, :fn compile-java}}
