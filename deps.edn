@@ -2,7 +2,7 @@
 {:paths ["src" "resources" "target/classes"],
  :deps
  {org.clojure/tools.logging
-  {:mvn/version "1.1.0", :exclusions [org.clojure/clojure]},
+  {:mvn/version "1.2.4", :exclusions [org.clojure/clojure]},
   manifold/manifold {:mvn/version "0.3.0"},
   org.clj-commons/byte-streams {:mvn/version "0.3.1"},
   org.clj-commons/dirigiste {:mvn/version "1.0.3"},
