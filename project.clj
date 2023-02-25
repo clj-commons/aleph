@@ -5,7 +5,7 @@
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
+  :dependencies [[org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
                  [manifold "0.3.0"]
                  [org.clj-commons/byte-streams "0.3.1"]
                  [org.clj-commons/dirigiste "1.0.3"]
