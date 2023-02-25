@@ -110,18 +110,18 @@
 (let [conn1 @(http/websocket-client "ws://localhost:10000/chat")
       conn2 @(http/websocket-client "ws://localhost:10000/chat")]
 
-;; sign our two users in
+  ;; sign our two users in
   (s/put-all! conn1 ["shoes and ships" "Alice"])
   (s/put-all! conn2 ["shoes and ships" "Bob"])
 
   (s/put! conn1 "hello")
 
-  @(s/take! conn1)   ;=> "Alice: hello"
-  @(s/take! conn2)   ;=> "Alice: hello"
+  (println @(s/take! conn1))                                  ;=> "Alice: hello"
+  (println @(s/take! conn2))                                  ;=> "Alice: hello"
 
   (s/put! conn2 "hi!")
 
-  @(s/take! conn1)   ;=> "Bob: hi!"
-  @(s/take! conn2))   ;=> "Bob: hi!"
+  (println @(s/take! conn1))                                  ;=> "Bob: hi!"
+  (println @(s/take! conn2)))                                 ;=> "Bob: hi!"
 
 (.close s)
