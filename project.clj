@@ -5,8 +5,8 @@
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/tools.logging "1.1.0" :exclusions [org.clojure/clojure]]
-                 [manifold "0.3.0"]
+  :dependencies [[org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
+                 [manifold "0.3.0" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.1"]
                  [org.clj-commons/dirigiste "1.0.3"]
                  [org.clj-commons/primitive-math "1.0.0"]
@@ -34,7 +34,8 @@
                                    [org.bouncycastle/bcpkix-jdk18on "1.72"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
              :lein-to-deps {:source-paths ["deps"]}
-             :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}}
+             :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
+             :pedantic {:pedantic? :abort}}
   :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
           :src-linenum-anchor-prefix "L"
           :defaults {:doc/format :markdown}
@@ -43,11 +44,7 @@
                     aleph.http
                     aleph.flow]
           :output-dir "doc"}
-  :plugins [[lein-codox "0.10.7"]
-            [lein-jammin "0.1.1"]
-            [lein-marginalia "0.9.1"]
-            [lein-pprint "1.3.2"]
-            [ztellman/lein-cljfmt "0.1.10"]]
+  :plugins [[lein-pprint "1.3.2"]]
   :java-source-paths ["src/aleph/utils"]
   :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default #(not
