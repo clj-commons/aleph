@@ -33,23 +33,12 @@
                                    [org.bouncycastle/bcprov-jdk18on "1.72"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.72"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
-             :lein-to-deps {:source-paths ["deps"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :pedantic {:pedantic? :abort}}
-  :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
-          :src-linenum-anchor-prefix "L"
-          :defaults {:doc/format :markdown}
-          :include [aleph.tcp
-                    aleph.udp
-                    aleph.http
-                    aleph.flow]
-          :output-dir "doc"}
-  :plugins [[lein-pprint "1.3.2"]]
   :java-source-paths ["src/aleph/utils"]
-  :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default #(not
-                               (some #{:benchmark :stress}
-                                 (cons (:tag %) (keys %))))
+                              (some #{:benchmark :stress}
+                                    (cons (:tag %) (keys %))))
                    :benchmark :benchmark
                    :stress :stress
                    :all (constantly true)}
