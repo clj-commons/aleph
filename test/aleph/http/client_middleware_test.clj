@@ -1,7 +1,10 @@
 (ns aleph.http.client-middleware-test
   (:require
    [aleph.http.client-middleware :as middleware]
-   [clojure.test :as t :refer [deftest is]])
+   [aleph.http.schema :as schema]
+   [clojure.test :as t :refer [deftest is]]
+   [malli.core :as m]
+   [malli.generator :as mg])
   (:import
    (java.net URLDecoder)))
 
@@ -46,7 +49,8 @@
         (middleware/coerce-form-params {:form-params {:foo :bar}}))))
 
 (deftest test-nested-query-params
-  (let [req {:query-params {:foo {:bar "baz"}}}
+  (let [req {:request-method :get
+             :query-params {:foo {:bar "baz"}}}
         {:keys [query-string]} (reduce #(%2 %1) req middleware/default-middleware)]
     (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
 
@@ -131,12 +135,16 @@
   (URLDecoder/decode (req->body-raw req)))
 
 (deftest test-nested-params
-  (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}})))
-  (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}
+  (is (= "foo[bar]=baz" (req->query-string {:request-method :get
+                                            :query-params {:foo {:bar "baz"}}})))
+  (is (= "foo[bar]=baz" (req->query-string {:request-method :get
+                                            :query-params {:foo {:bar "baz"}}
                                             :content-type :json})))
-  (is (= "foo[bar]=baz" (req->query-string {:query-params {:foo {:bar "baz"}}
+  (is (= "foo[bar]=baz" (req->query-string {:request-method :get
+                                            :query-params {:foo {:bar "baz"}}
                                             :ignore-nested-query-string false})))
-  (is (= "foo={:bar \"baz\"}" (req->query-string {:query-params {:foo {:bar "baz"}}
+  (is (= "foo={:bar \"baz\"}" (req->query-string {:request-method :get
+                                                  :query-params {:foo {:bar "baz"}}
                                                   :ignore-nested-query-string true})))
   (is (= "foo[bar]=baz" (req->body-decoded {:method :post
                                             :form-params {:foo {:bar "baz"}}})))
@@ -169,3 +177,23 @@
         (middleware/generate-query-string {:name ["John" "Mark"]} nil :array)))
   (is (= "name[0]=John&name[1]=Mark"
         (middleware/generate-query-string {:name ["John" "Mark"]} nil :indexed))))
+
+
+(deftest test-wrap-validation
+  (doseq [req (mg/sample schema/ring-request)]
+    (is (middleware/wrap-validation req)))
+
+  (is (thrown-with-msg?
+        IllegalArgumentException
+        #"Invalid spec.*:in \[:request-method\].*:type :malli.core/missing-key"
+        (middleware/wrap-validation {})))
+  (is (thrown-with-msg?
+        IllegalArgumentException
+        #"Invalid spec.*:in \[:content-length\].*:value \"10\""
+        (middleware/wrap-validation {:request-method :post
+                                     :content-length "10"})))
+  (is (thrown-with-msg?
+        IllegalArgumentException
+        #"Invalid spec.*:in \[:content-type\].*:value 10"
+        (middleware/wrap-validation {:request-method :post
+                                     :content-type 10}))))
