@@ -1,5 +1,5 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
-(def netty-version "4.1.87.Final")
+(def netty-version "4.1.89.Final")
 
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.6.1")
   :description "A framework for asynchronous communication"
@@ -15,8 +15,8 @@
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-x86_64"]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-aarch_64"]
                  [io.netty/netty-transport-native-kqueue ~netty-version :classifier "osx-x86_64"]
-                 [io.netty.incubator/netty-incubator-transport-native-io_uring "0.0.16.Final" :classifier "linux-x86_64"]
-                 [io.netty.incubator/netty-incubator-transport-native-io_uring "0.0.16.Final" :classifier "linux-aarch_64"]
+                 [io.netty.incubator/netty-incubator-transport-native-io_uring "0.0.18.Final" :classifier "linux-x86_64"]
+                 [io.netty.incubator/netty-incubator-transport-native-io_uring "0.0.18.Final" :classifier "linux-aarch_64"]
                  [io.netty/netty-codec ~netty-version]
                  [io.netty/netty-codec-http ~netty-version]
                  [io.netty/netty-handler ~netty-version]
@@ -33,23 +33,12 @@
                                    [org.bouncycastle/bcprov-jdk18on "1.72"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.72"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
-             :lein-to-deps {:source-paths ["deps"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :pedantic {:pedantic? :abort}}
-  :codox {:src-dir-uri "https://github.com/ztellman/aleph/tree/master/"
-          :src-linenum-anchor-prefix "L"
-          :defaults {:doc/format :markdown}
-          :include [aleph.tcp
-                    aleph.udp
-                    aleph.http
-                    aleph.flow]
-          :output-dir "doc"}
-  :plugins [[lein-pprint "1.3.2"]]
   :java-source-paths ["src/aleph/utils"]
-  :cljfmt {:indents {#".*" [[:inner 0]]}}
   :test-selectors {:default #(not
-                               (some #{:benchmark :stress}
-                                 (cons (:tag %) (keys %))))
+                              (some #{:benchmark :stress}
+                                    (cons (:tag %) (keys %))))
                    :benchmark :benchmark
                    :stress :stress
                    :all (constantly true)}
