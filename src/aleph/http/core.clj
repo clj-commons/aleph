@@ -206,7 +206,8 @@
    ^Channel ch
    ^AtomicBoolean websocket?
    question-mark-index
-   body]
+   body
+   request-arrived]
   :uri (let [idx (long question-mark-index)]
          (if (neg? idx)
            (.getUri req)
@@ -222,7 +223,8 @@
   :aleph/keep-alive? (HttpUtil/isKeepAlive req)
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
-  :remote-addr (netty/channel-remote-address ch))
+  :remote-addr (netty/channel-remote-address ch)
+  :aleph/request-arrived request-arrived)
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
   :status (-> rsp .status .code)
@@ -232,15 +234,12 @@
   :body body)
 
 (defn netty-request->ring-request [^HttpRequest req ssl? ch body]
-  (assoc
-    (->NettyRequest
-      req
-      ssl?
-      ch
-      (AtomicBoolean. false)
-      (-> req .uri (.indexOf (int 63)))
-      body)
-    :aleph/request-arrived (System/nanoTime)))
+  (->NettyRequest req ssl?
+   ch
+   (AtomicBoolean. false)
+   (-> req .uri (.indexOf (int 63)))
+   body
+   (System/nanoTime)))
 
 (defn netty-response->ring-response [rsp complete body]
   (->NettyResponse rsp complete body))
