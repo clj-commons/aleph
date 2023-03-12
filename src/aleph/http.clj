@@ -1,28 +1,28 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
-   [aleph.flow :as flow]
-   [aleph.http
-    [client :as client]
-    [client-middleware :as middleware]
-    [core :as http-core]
-    [server :as server]]
-   [aleph.netty :as netty]
-   [clojure.string :as str]
-   [manifold.deferred :as d]
-   [manifold.executor :as executor])
+    [aleph.flow :as flow]
+    [aleph.http
+     [client :as client]
+     [client-middleware :as middleware]
+     [core :as http-core]
+     [server :as server]]
+    [aleph.netty :as netty]
+    [clojure.string :as str]
+    [manifold.deferred :as d]
+    [manifold.executor :as executor])
   (:import
-   [io.aleph.dirigiste Pools]
-   [aleph.utils
-    PoolTimeoutException
-    ConnectionTimeoutException
-    RequestTimeoutException
-    ReadTimeoutException]
-   [java.net
-    URI
-    InetSocketAddress]
-   [java.util.concurrent
-    TimeoutException]))
+    [io.aleph.dirigiste Pools]
+    [aleph.utils
+     PoolTimeoutException
+     ConnectionTimeoutException
+     RequestTimeoutException
+     ReadTimeoutException]
+    [java.net
+     URI
+     InetSocketAddress]
+    [java.util.concurrent
+     TimeoutException]))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -78,7 +78,7 @@
             (assoc options :on-closed on-closed)
             options))
 
-      (d/chain' middleware))))
+        (d/chain' middleware))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -156,17 +156,17 @@
            max-queue-size
            pool-builder-fn
            pool-controller-builder-fn]
-    :or {connections-per-host 8
-         total-connections 1024
-         target-utilization 0.9
-         control-period 60000
-         middleware middleware/wrap-request
-         max-queue-size 65536}}]
+    :or   {connections-per-host 8
+           total-connections    1024
+           target-utilization   0.9
+           control-period       60000
+           middleware           middleware/wrap-request
+           max-queue-size       65536}}]
   (when (and (false? (:keep-alive? connection-options))
              (pos? (:idle-timeout connection-options 0)))
     (throw
-     (IllegalArgumentException.
-      ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
+      (IllegalArgumentException.
+        ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
   (let [log-activity (:log-activity connection-options)
         dns-options' (if-not (and (some? dns-options)
@@ -177,34 +177,34 @@
                              transport (netty/determine-transport transport epoll?)]
                          (assoc dns-options :transport transport)))
         conn-options' (cond-> connection-options
-                        (some? dns-options')
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options'))
+                              (some? dns-options')
+                              (assoc :name-resolver (netty/dns-resolver-group dns-options'))
 
-                        (some? log-activity)
-                        (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
+                              (some? log-activity)
+                              (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
         p (promise)
-        create-pool-fn      (or pool-builder-fn
-                                flow/instrumented-pool)
+        create-pool-fn (or pool-builder-fn
+                           flow/instrumented-pool)
         create-pool-ctrl-fn (or pool-controller-builder-fn
                                 #(Pools/utilizationController target-utilization connections-per-host total-connections))
         pool (create-pool-fn
-              {:generate (fn [host]
-                           (let [c (promise)
-                                 conn (create-connection
-                                       host
-                                       conn-options'
-                                       middleware
-                                       #(flow/dispose @p host [@c]))]
-                             (deliver c conn)
-                             [conn]))
-               :destroy (fn [_ c]
-                          (d/chain' c
-                                    first
-                                    client/close-connection))
-               :control-period control-period
-               :max-queue-size max-queue-size
-               :controller (create-pool-ctrl-fn)
-               :stats-callback stats-callback})]
+               {:generate       (fn [host]
+                                  (let [c (promise)
+                                        conn (create-connection
+                                               host
+                                               conn-options'
+                                               middleware
+                                               #(flow/dispose @p host [@c]))]
+                                    (deliver c conn)
+                                    [conn]))
+                :destroy        (fn [_ c]
+                                  (d/chain' c
+                                            first
+                                            client/close-connection))
+                :control-period control-period
+                :max-queue-size max-queue-size
+                :controller     (create-pool-ctrl-fn)
+                :stats-callback stats-callback})]
     @(deliver p pool)))
 
 (def ^:no-doc default-connection-pool
@@ -405,22 +405,22 @@
   ([method url options]
    (request
      (assoc options
-       :request-method method
-       :url url))))
+            :request-method method
+            :url url))))
 
 (def ^:private arglists
   '[[url]
     [url
      {:keys [pool middleware headers body multipart]
-      :or {pool default-connection-pool
-           middleware identity}
-      :as options}]])
+      :or   {pool       default-connection-pool
+             middleware identity}
+      :as   options}]])
 
 (defmacro ^:private def-http-method [method]
   `(do
      (def ~method (partial req ~(keyword method)))
      (alter-meta! (resolve '~method) assoc
-       :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
+                  :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
    the response.
 
    Param key      | Description
@@ -430,7 +430,7 @@
    | `headers`    | the HTTP headers for the request
    | `body`       | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
    | `multipart`  | a vector of bodies")
-       :arglists arglists)))
+                  :arglists arglists)))
 
 (def-http-method get)
 (def-http-method post)

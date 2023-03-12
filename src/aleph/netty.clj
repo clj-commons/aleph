@@ -25,17 +25,17 @@
     [io.netty.channel.group
      ChannelGroup DefaultChannelGroup]
     [io.netty.channel.epoll Epoll EpollEventLoopGroup
-     EpollServerSocketChannel
-     EpollSocketChannel
-     EpollDatagramChannel]
+                            EpollServerSocketChannel
+                            EpollSocketChannel
+                            EpollDatagramChannel]
     [io.netty.channel.kqueue KQueue KQueueEventLoopGroup
-     KQueueServerSocketChannel
-     KQueueSocketChannel
-     KQueueDatagramChannel]
+                             KQueueServerSocketChannel
+                             KQueueSocketChannel
+                             KQueueDatagramChannel]
     [io.netty.incubator.channel.uring IOUring IOUringEventLoopGroup
-     IOUringServerSocketChannel
-     IOUringSocketChannel
-     IOUringDatagramChannel]
+                                      IOUringServerSocketChannel
+                                      IOUringSocketChannel
+                                      IOUringDatagramChannel]
     [io.netty.util Attribute AttributeKey]
     [io.netty.channel.nio NioEventLoopGroup]
     [io.netty.channel.socket ServerSocketChannel]
@@ -64,7 +64,7 @@
      SingletonDnsServerAddressStreamProvider
      SequentialDnsServerAddressStreamProvider]
     [io.netty.util ResourceLeakDetector
-     ResourceLeakDetector$Level]
+                   ResourceLeakDetector$Level]
     [java.net URI SocketAddress InetSocketAddress]
     [io.netty.util.concurrent
      FastThreadLocalThread GenericFutureListener Future
@@ -122,10 +122,10 @@
   [logger]
   (InternalLoggerFactory/setDefaultFactory
     (case logger
-      :log4j  Log4JLoggerFactory/INSTANCE
+      :log4j Log4JLoggerFactory/INSTANCE
       :log4j2 Log4J2LoggerFactory/INSTANCE
-      :slf4j  Slf4JLoggerFactory/INSTANCE
-      :jdk    JdkLoggerFactory/INSTANCE)))
+      :slf4j Slf4JLoggerFactory/INSTANCE
+      :jdk JdkLoggerFactory/INSTANCE)))
 
 ;;;
 
@@ -149,7 +149,7 @@
 (defn ^:no-doc buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
     (doary [^ByteBuffer buf (.nioBuffers buf)]
-      (.put dst buf))
+           (.put dst buf))
     (.array dst)))
 
 (defn ^:no-doc release-buf->array [^ByteBuf buf]
@@ -166,7 +166,7 @@
                   cnt
                   (recur (p/+ cnt (.remaining ^ByteBuffer (first s))) (rest s)))))]
     (doit [^ByteBuffer buf bufs']
-      (.put dst buf))
+          (.put dst buf))
     (.array dst)))
 
 (bs/def-conversion ^{:cost 1} [ByteBuf array-class]
@@ -227,13 +227,13 @@
      (if (nil? x)
        Unpooled/EMPTY_BUFFER
        (doto (allocate ch)
-         (append-to-buf! x))))))
+             (append-to-buf! x))))))
 
 (defn to-byte-buf-stream
   "Converts `x` into a manifold stream of `io.netty.ByteBuf` of `chunk-size`."
   [x chunk-size]
   (->> (bs/convert x (bs/stream-of ByteBuf) {:chunk-size chunk-size})
-    (s/onto nil)))
+       (s/onto nil)))
 
 (defn ^:no-doc ensure-dynamic-classloader
   "Ensure the context class loader has a valid loader chain to
@@ -251,17 +251,17 @@
 
 (defn- operation-complete [^Future f d]
   (cond
-     (.isSuccess f)
-     (d/success! d (.getNow f))
+    (.isSuccess f)
+    (d/success! d (.getNow f))
 
-     (.isCancelled f)
-     (d/error! d (CancellationException. "future is cancelled."))
+    (.isCancelled f)
+    (d/error! d (CancellationException. "future is cancelled."))
 
-     (some? (.cause f))
-     (d/error! d (.cause f))
+    (some? (.cause f))
+    (d/error! d (.cause f))
 
-     :else
-     (d/error! d (IllegalStateException. "future in unknown state"))))
+    :else
+    (d/error! d (IllegalStateException. "future in unknown state"))))
 
 (defn ^:no-doc wrap-future
   [^Future f]
@@ -326,11 +326,11 @@
        (f#)
        (let [d# (d/deferred)]
          (.execute event-loop#
-           (fn []
-             (try
-               (d/success! d# (f#))
-               (catch Throwable e#
-                 (d/error! d# e#)))))
+                   (fn []
+                     (try
+                       (d/success! d# (f#))
+                       (catch Throwable e#
+                         (d/error! d# e#)))))
          d#))))
 
 (defn ^:no-doc put! [^Channel ch s msg]
@@ -344,10 +344,10 @@
               (.close ch)
               false))
 
-      err  (do
-             (release msg)
-             (.close ch)
-             false)
+      err (do
+            (release msg)
+            (.close ch)
+            false)
 
       (do
 
@@ -355,15 +355,15 @@
         (-> ch .config (.setAutoRead false))
 
         (-> d
-          (d/finally'
-            (fn []
-              ;; disable backpressure
-              (-> ch .config (.setAutoRead true))))
-          (d/chain'
-            (fn [result]
-              (when-not result
-                (release msg)
-                (.close ch)))))
+            (d/finally'
+              (fn []
+                ;; disable backpressure
+                (-> ch .config (.setAutoRead true))))
+            (d/chain'
+              (fn [result]
+                (when-not result
+                  (release msg)
+                  (.close ch)))))
         d))))
 
 ;;;
@@ -379,18 +379,18 @@
 
 ;;;
 
-(def ^:no-doc ^ConcurrentHashMap channel-inbound-counter     (ConcurrentHashMap.))
-(def ^:no-doc ^ConcurrentHashMap channel-outbound-counter    (ConcurrentHashMap.))
-(def ^:no-doc ^ConcurrentHashMap channel-inbound-throughput  (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-inbound-counter (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-outbound-counter (ConcurrentHashMap.))
+(def ^:no-doc ^ConcurrentHashMap channel-inbound-throughput (ConcurrentHashMap.))
 (def ^:no-doc ^ConcurrentHashMap channel-outbound-throughput (ConcurrentHashMap.))
 
 (defn- ^:no-doc connection-stats [^Channel ch inbound?]
   (merge
-    {:local-address (str (.localAddress ch))
+    {:local-address  (str (.localAddress ch))
      :remote-address (str (.remoteAddress ch))
-     :writable? (.isWritable ch)
-     :readable? (-> ch .config .isAutoRead)
-     :closed? (not (.isActive ch))}
+     :writable?      (.isWritable ch)
+     :readable?      (-> ch .config .isAutoRead)
+     :closed?        (not (.isActive ch))}
     (let [^ConcurrentHashMap throughput (if inbound?
                                           channel-inbound-throughput
                                           channel-outbound-throughput)]
@@ -400,77 +400,77 @@
 (def ^:no-doc sink-close-marker ::sink-close)
 
 (manifold/def-sink ChannelSink
-  [coerce-fn
-   downstream?
-   ^Channel ch
-   additional-description]
-  (close [this]
-    (when downstream?
-      (close ch))
-    (.markClosed this)
-    true)
-  (description [_]
-    (let [ch (channel ch)]
-      (merge
-        {:type       "netty"
-         :closed?    (not (.isActive ch))
-         :sink?      true
-         :connection (assoc (connection-stats ch false)
-                       :direction :outbound)}
-        (additional-description))))
-  (isSynchronous [_]
-    false)
-  (put [this msg blocking?]
-    (if (s/closed? this)
-      (if blocking?
-        false
-        (d/success-deferred false))
-      (let [msg (try
-                  (coerce-fn msg)
-                  (catch Exception e
-                    (log/error e
-                      (str "cannot coerce "
-                        (.getName (class msg))
-                        " into binary representation"))
-                    (close ch)))
-            d (cond
-                (nil? msg)
-                (d/success-deferred true)
+                   [coerce-fn
+                    downstream?
+                    ^Channel ch
+                    additional-description]
+                   (close [this]
+                          (when downstream?
+                            (close ch))
+                          (.markClosed this)
+                          true)
+                   (description [_]
+                                (let [ch (channel ch)]
+                                  (merge
+                                    {:type       "netty"
+                                     :closed?    (not (.isActive ch))
+                                     :sink?      true
+                                     :connection (assoc (connection-stats ch false)
+                                                        :direction :outbound)}
+                                    (additional-description))))
+                   (isSynchronous [_]
+                                  false)
+                   (put [this msg blocking?]
+                        (if (s/closed? this)
+                          (if blocking?
+                            false
+                            (d/success-deferred false))
+                          (let [msg (try
+                                      (coerce-fn msg)
+                                      (catch Exception e
+                                        (log/error e
+                                                   (str "cannot coerce "
+                                                        (.getName (class msg))
+                                                        " into binary representation"))
+                                        (close ch)))
+                                d (cond
+                                    (nil? msg)
+                                    (d/success-deferred true)
 
-                (identical? sink-close-marker msg)
-                (do
-                  (.markClosed this)
-                  (d/success-deferred false))
+                                    (identical? sink-close-marker msg)
+                                    (do
+                                      (.markClosed this)
+                                      (d/success-deferred false))
 
-                :else
-                (let [^ChannelFuture f (write-and-flush ch msg)]
-                  (-> f
-                    wrap-future
-                    (d/chain' (fn [_] true))
-                    (d/catch' IOException (fn [_] false)))))]
-        (if blocking?
-          @d
-          d))))
-  (put [this msg blocking? timeout timeout-value]
-    (.put this msg blocking?)))
+                                    :else
+                                    (let [^ChannelFuture f (write-and-flush ch msg)]
+                                      (-> f
+                                          wrap-future
+                                          (d/chain' (fn [_] true))
+                                          (d/catch' IOException (fn [_] false)))))]
+                            (if blocking?
+                              @d
+                              d))))
+                   (put [this msg blocking? timeout timeout-value]
+                        (.put this msg blocking?)))
 
 (defn ^:no-doc sink
   ([ch]
-    (sink ch true identity (fn [])))
+   (sink ch true identity (fn [])))
   ([ch downstream? coerce-fn]
-    (sink ch downstream? coerce-fn (fn [])))
+   (sink ch downstream? coerce-fn (fn [])))
   ([ch downstream? coerce-fn additional-description]
-    (let [sink (->ChannelSink
-                 coerce-fn
-                 downstream?
-                 ch
-                 additional-description)]
+   (let [sink (->ChannelSink
+                coerce-fn
+                downstream?
+                ch
+                additional-description)]
 
-      (d/chain'
-        (wrap-future (.closeFuture (channel ch)))
-        (fn [_] (s/close! sink)))
+     (d/chain'
+       (wrap-future (.closeFuture (channel ch)))
+       (fn [_] (s/close! sink)))
 
-      (doto sink (reset-meta! {:aleph/channel ch})))))
+     (doto sink (reset-meta! {:aleph/channel ch})))))
 
 (defn ^:no-doc source
   [^Channel ch]
@@ -478,10 +478,10 @@
               {:description
                (fn [m]
                  (assoc m
-                   :type "netty"
-                   :direction :inbound
-                   :connection (assoc (connection-stats ch true)
-                                 :direction :inbound)))})]
+                        :type "netty"
+                        :direction :inbound
+                        :connection (assoc (connection-stats ch true)
+                                           :direction :inbound)))})]
     (doto src (reset-meta! {:aleph/channel ch}))))
 
 (defn ^:no-doc buffered-source
@@ -491,9 +491,9 @@
               capacity
               (fn [m]
                 (assoc m
-                  :type "netty"
-                  :connection (assoc (connection-stats ch true)
-                                :direction :inbound))))]
+                       :type "netty"
+                       :connection (assoc (connection-stats ch true)
+                                          :direction :inbound))))]
     (doto src (reset-meta! {:aleph/channel ch}))))
 
 ;;;
@@ -511,68 +511,68 @@
        ~@(or (:handler-removed handlers) `([_# _#])))
      (exceptionCaught
        ~@(or (:exception-caught handlers)
-           `([_# ctx# cause#]
-              (.fireExceptionCaught ctx# cause#))))
+             `([_# ctx# cause#]
+               (.fireExceptionCaught ctx# cause#))))
      (channelRegistered
        ~@(or (:channel-registered handlers)
-           `([_# ctx#]
-              (.fireChannelRegistered ctx#))))
+             `([_# ctx#]
+               (.fireChannelRegistered ctx#))))
      (channelUnregistered
        ~@(or (:channel-unregistered handlers)
-           `([_# ctx#]
-              (.fireChannelUnregistered ctx#))))
+             `([_# ctx#]
+               (.fireChannelUnregistered ctx#))))
      (channelActive
        ~@(or (:channel-active handlers)
-           `([_# ctx#]
-              (.fireChannelActive ctx#))))
+             `([_# ctx#]
+               (.fireChannelActive ctx#))))
      (channelInactive
        ~@(or (:channel-inactive handlers)
-           `([_# ctx#]
-              (.fireChannelInactive ctx#))))
+             `([_# ctx#]
+               (.fireChannelInactive ctx#))))
      (channelRead
        ~@(or (:channel-read handlers)
-           `([_# ctx# msg#]
-              (.fireChannelRead ctx# msg#))))
+             `([_# ctx# msg#]
+               (.fireChannelRead ctx# msg#))))
      (channelReadComplete
        ~@(or (:channel-read-complete handlers)
-           `([_# ctx#]
-              (.fireChannelReadComplete ctx#))))
+             `([_# ctx#]
+               (.fireChannelReadComplete ctx#))))
      (userEventTriggered
        ~@(or (:user-event-triggered handlers)
-           `([_# ctx# evt#]
-              (.fireUserEventTriggered ctx# evt#))))
+             `([_# ctx# evt#]
+               (.fireUserEventTriggered ctx# evt#))))
      (channelWritabilityChanged
        ~@(or (:channel-writability-changed handlers)
-           `([_# ctx#]
-              (.fireChannelWritabilityChanged ctx#))))
+             `([_# ctx#]
+               (.fireChannelWritabilityChanged ctx#))))
      (bind
        ~@(or (:bind handlers)
-           `([_# ctx# local-address# promise#]
-              (.bind ctx# local-address# promise#))))
+             `([_# ctx# local-address# promise#]
+               (.bind ctx# local-address# promise#))))
      (connect
        ~@(or (:connect handlers)
-           `([_# ctx# remote-address# local-address# promise#]
-              (.connect ctx# remote-address# local-address# promise#))))
+             `([_# ctx# remote-address# local-address# promise#]
+               (.connect ctx# remote-address# local-address# promise#))))
      (disconnect
        ~@(or (:disconnect handlers)
-           `([_# ctx# promise#]
-              (.disconnect ctx# promise#))))
+             `([_# ctx# promise#]
+               (.disconnect ctx# promise#))))
      (close
        ~@(or (:close handlers)
-           `([_# ctx# promise#]
-              (.close ctx# promise#))))
+             `([_# ctx# promise#]
+               (.close ctx# promise#))))
      (read
        ~@(or (:read handlers)
-           `([_# ctx#]
-              (.read ctx#))))
+             `([_# ctx#]
+               (.read ctx#))))
      (write
        ~@(or (:write handlers)
-           `([_# ctx# msg# promise#]
-              (.write ctx# msg# promise#))))
+             `([_# ctx# msg# promise#]
+               (.write ctx# msg# promise#))))
      (flush
        ~@(or (:flush handlers)
-           `([_# ctx#]
-             (.flush ctx#))))))
+             `([_# ctx#]
+               (.flush ctx#))))))
 
 (defmacro ^:no-doc channel-inbound-handler
   [& {:as handlers}]
@@ -586,40 +586,40 @@
        ~@(or (:handler-removed handlers) `([_# _#])))
      (exceptionCaught
        ~@(or (:exception-caught handlers)
-           `([_# ctx# cause#]
-              (.fireExceptionCaught ctx# cause#))))
+             `([_# ctx# cause#]
+               (.fireExceptionCaught ctx# cause#))))
      (channelRegistered
        ~@(or (:channel-registered handlers)
-           `([_# ctx#]
-              (.fireChannelRegistered ctx#))))
+             `([_# ctx#]
+               (.fireChannelRegistered ctx#))))
      (channelUnregistered
        ~@(or (:channel-unregistered handlers)
-           `([_# ctx#]
-              (.fireChannelUnregistered ctx#))))
+             `([_# ctx#]
+               (.fireChannelUnregistered ctx#))))
      (channelActive
        ~@(or (:channel-active handlers)
-           `([_# ctx#]
-              (.fireChannelActive ctx#))))
+             `([_# ctx#]
+               (.fireChannelActive ctx#))))
      (channelInactive
        ~@(or (:channel-inactive handlers)
-           `([_# ctx#]
-              (.fireChannelInactive ctx#))))
+             `([_# ctx#]
+               (.fireChannelInactive ctx#))))
      (channelRead
        ~@(or (:channel-read handlers)
-           `([_# ctx# msg#]
-              (.fireChannelRead ctx# msg#))))
+             `([_# ctx# msg#]
+               (.fireChannelRead ctx# msg#))))
      (channelReadComplete
        ~@(or (:channel-read-complete handlers)
-           `([_# ctx#]
-              (.fireChannelReadComplete ctx#))))
+             `([_# ctx#]
+               (.fireChannelReadComplete ctx#))))
      (userEventTriggered
        ~@(or (:user-event-triggered handlers)
-           `([_# ctx# evt#]
-              (.fireUserEventTriggered ctx# evt#))))
+             `([_# ctx# evt#]
+               (.fireUserEventTriggered ctx# evt#))))
      (channelWritabilityChanged
        ~@(or (:channel-writability-changed handlers)
-           `([_# ctx#]
-              (.fireChannelWritabilityChanged ctx#))))))
+             `([_# ctx#]
+               (.fireChannelWritabilityChanged ctx#))))))
 
 (defmacro ^:no-doc channel-outbound-handler
   [& {:as handlers}]
@@ -633,36 +633,36 @@
        ~@(or (:handler-removed handlers) `([_# _#])))
      (exceptionCaught
        ~@(or (:exception-caught handlers)
-           `([_# ctx# cause#]
-              (.fireExceptionCaught ctx# cause#))))
+             `([_# ctx# cause#]
+               (.fireExceptionCaught ctx# cause#))))
      (bind
        ~@(or (:bind handlers)
-           `([_# ctx# local-address# promise#]
-              (.bind ctx# local-address# promise#))))
+             `([_# ctx# local-address# promise#]
+               (.bind ctx# local-address# promise#))))
      (connect
        ~@(or (:connect handlers)
-           `([_# ctx# remote-address# local-address# promise#]
-              (.connect ctx# remote-address# local-address# promise#))))
+             `([_# ctx# remote-address# local-address# promise#]
+               (.connect ctx# remote-address# local-address# promise#))))
      (disconnect
        ~@(or (:disconnect handlers)
-           `([_# ctx# promise#]
-              (.disconnect ctx# promise#))))
+             `([_# ctx# promise#]
+               (.disconnect ctx# promise#))))
      (close
        ~@(or (:close handlers)
-           `([_# ctx# promise#]
-              (.close ctx# promise#))))
+             `([_# ctx# promise#]
+               (.close ctx# promise#))))
      (read
        ~@(or (:read handlers)
-           `([_# ctx#]
-              (.read ctx#))))
+             `([_# ctx#]
+               (.read ctx#))))
      (write
        ~@(or (:write handlers)
-           `([_# ctx# msg# promise#]
-              (.write ctx# msg# promise#))))
+             `([_# ctx# msg# promise#]
+               (.write ctx# msg# promise#))))
      (flush
        ~@(or (:flush handlers)
-           `([_# ctx#]
-              (.flush ctx#))))))
+             `([_# ctx#]
+               (.flush ctx#))))))
 
 (defn ^:no-doc ^ChannelHandler bandwidth-tracker [^Channel ch]
   (let [inbound-counter (AtomicLong. 0)
@@ -672,12 +672,12 @@
 
         ^ScheduledFuture future
         (.scheduleAtFixedRate (-> ch .eventLoop .parent)
-          (fn []
-            (.set inbound-throughput (.getAndSet inbound-counter 0))
-            (.set outbound-throughput (.getAndSet outbound-counter 0)))
-          1000
-          1000
-          TimeUnit/MILLISECONDS)]
+                              (fn []
+                                (.set inbound-throughput (.getAndSet inbound-counter 0))
+                                (.set outbound-throughput (.getAndSet outbound-counter 0)))
+                              1000
+                              1000
+                              TimeUnit/MILLISECONDS)]
 
     (.put channel-inbound-counter ch inbound-counter)
     (.put channel-outbound-counter ch outbound-counter)
@@ -688,28 +688,28 @@
 
       :channel-inactive
       ([_ ctx]
-        (.cancel future true)
-        (.remove channel-inbound-counter ch)
-        (.remove channel-outbound-counter ch)
-        (.remove channel-inbound-throughput ch)
-        (.remove channel-outbound-throughput ch)
-        (.fireChannelInactive ctx))
+       (.cancel future true)
+       (.remove channel-inbound-counter ch)
+       (.remove channel-outbound-counter ch)
+       (.remove channel-inbound-throughput ch)
+       (.remove channel-outbound-throughput ch)
+       (.fireChannelInactive ctx))
 
       :channel-read
       ([_ ctx msg]
-        (.addAndGet inbound-counter
-          (if (instance? FileRegion msg)
-            (.count ^FileRegion msg)
-            (.readableBytes ^ByteBuf msg)))
-        (.fireChannelRead ctx msg))
+       (.addAndGet inbound-counter
+                   (if (instance? FileRegion msg)
+                     (.count ^FileRegion msg)
+                     (.readableBytes ^ByteBuf msg)))
+       (.fireChannelRead ctx msg))
 
       :write
       ([_ ctx msg promise]
-        (.addAndGet outbound-counter
-          (if (instance? FileRegion msg)
-            (.count ^FileRegion msg)
-            (.readableBytes ^ByteBuf msg)))
-        (.write ctx msg promise)))))
+       (.addAndGet outbound-counter
+                   (if (instance? FileRegion msg)
+                     (.count ^FileRegion msg)
+                     (.readableBytes ^ByteBuf msg)))
+       (.write ctx msg promise)))))
 
 (defn ^:no-doc ^ChannelHandler channel-tracking-handler
   "Yields an inbound handler, ready to be added to a pipeline,
@@ -717,10 +717,10 @@
    The channel-group can be created via `make-channel-group`."
   [^ChannelGroup group]
   (channel-inbound-handler
-   :channel-active
-   ([_ ctx]
-    (.add group (channel ctx))
-    (.fireChannelActive ctx))))
+    :channel-active
+    ([_ ctx]
+     (.add group (channel ctx))
+     (.fireChannelActive ctx))))
 
 (defn pipeline-initializer [pipeline-builder]
   (proxy [ChannelInitializer] []
@@ -749,11 +749,11 @@
   (if-let [^Channel ch (->> stream meta :aleph/channel)]
     (do
       (safe-execute ch
-        (let [pipeline (.pipeline ch)]
-          (when (and
-                  (.isActive ch)
-                  (nil? (.get pipeline "bandwidth-tracker")))
-            (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
+                    (let [pipeline (.pipeline ch)]
+                      (when (and
+                              (.isActive ch)
+                              (nil? (.get pipeline "bandwidth-tracker")))
+                        (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
 
@@ -769,7 +769,7 @@
                         nil)]
       (when (nil? netty-level)
         (throw (IllegalArgumentException.
-                (str "unknown log level given: " level))))
+                 (str "unknown log level given: " level))))
       netty-level)))
 
 (defn ^:no-doc activity-logger
@@ -803,8 +803,8 @@
             (.trustManager builder trust-store'))
           :else
           (throw
-           (IllegalArgumentException.
-            "ssl context arguments invalid"))))
+            (IllegalArgumentException.
+              "ssl context arguments invalid"))))
 
   (defn ssl-client-context
     "Creates a new client SSL context.
@@ -864,29 +864,29 @@
                                           certificate-chain'))
                            :else
                            (throw
-                            (IllegalArgumentException.
-                             "ssl context arguments invalid")))
+                             (IllegalArgumentException.
+                               "ssl context arguments invalid")))
                      builder)
 
            ^SslContextBuilder
            builder (cond-> builder
-                     (some? trust-store)
-                     (add-ssl-trust-manager! trust-store)
+                           (some? trust-store)
+                           (add-ssl-trust-manager! trust-store)
 
-                     (some? ssl-provider)
-                     (.sslProvider (coerce-ssl-provider ssl-provider))
+                           (some? ssl-provider)
+                           (.sslProvider (coerce-ssl-provider ssl-provider))
 
-                     (some? ciphers)
-                     (.ciphers ciphers)
+                           (some? ciphers)
+                           (.ciphers ciphers)
 
-                     (some? protocols)
-                     (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
+                           (some? protocols)
+                           (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
 
-                     (some? session-cache-size)
-                     (.sessionCacheSize session-cache-size)
+                           (some? session-cache-size)
+                           (.sessionCacheSize session-cache-size)
 
-                     (some? session-timeout)
-                     (.sessionTimeout session-timeout))]
+                           (some? session-timeout)
+                           (.sessionTimeout session-timeout))]
 
        (.build builder))))
 
@@ -945,46 +945,46 @@
                                                   certificate-chain'))
                    :else
                    (throw
-                    (IllegalArgumentException.
-                     "ssl context arguments invalid")))
+                     (IllegalArgumentException.
+                       "ssl context arguments invalid")))
 
            ^SslContextBuilder
            b (cond-> b
-               (some? trust-store)
-               (add-ssl-trust-manager! trust-store)
+                     (some? trust-store)
+                     (add-ssl-trust-manager! trust-store)
 
-               (some? ssl-provider)
-               (.sslProvider (coerce-ssl-provider ssl-provider))
+                     (some? ssl-provider)
+                     (.sslProvider (coerce-ssl-provider ssl-provider))
 
-               (some? ciphers)
-               (.ciphers ciphers)
-
-
-               (some? protocols)
-               (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
+                     (some? ciphers)
+                     (.ciphers ciphers)
 
 
-               (some? session-cache-size)
-               (.sessionCacheSize session-cache-size)
+                     (some? protocols)
+                     (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
 
-               (some? session-timeout)
-               (.sessionTimeout session-timeout)
 
-               (some? start-tls)
-               (.startTls (boolean start-tls))
+                     (some? session-cache-size)
+                     (.sessionCacheSize session-cache-size)
 
-               (some? client-auth)
-               (.clientAuth (case client-auth
-                              :none ClientAuth/NONE
-                              :optional ClientAuth/OPTIONAL
-                              :require ClientAuth/REQUIRE)))]
+                     (some? session-timeout)
+                     (.sessionTimeout session-timeout)
+
+                     (some? start-tls)
+                     (.startTls (boolean start-tls))
+
+                     (some? client-auth)
+                     (.clientAuth (case client-auth
+                                    :none ClientAuth/NONE
+                                    :optional ClientAuth/OPTIONAL
+                                    :require ClientAuth/REQUIRE)))]
        (.build b)))))
 
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
   []
   (let [cert (SelfSignedCertificate.)]
-    (ssl-server-context {:private-key (.privateKey cert)
+    (ssl-server-context {:private-key       (.privateKey cert)
                          :certificate-chain (.certificate cert)})))
 
 (defn insecure-ssl-client-context
@@ -1006,10 +1006,10 @@
     (map? ssl-context)
     (options->context ssl-context)))
 
-(def ^:private  coerce-ssl-server-context
+(def ^:private coerce-ssl-server-context
   (partial coerce-ssl-context ssl-server-context))
 
-(def ^:private  coerce-ssl-client-context
+(def ^:private coerce-ssl-client-context
   (partial coerce-ssl-context ssl-client-context))
 
 (defn ^:no-doc channel-ssl-session [^Channel ch]
@@ -1052,10 +1052,10 @@
   (let [[cause transport-name] (unavailability-cause transport)]
     (when cause
       (throw (IllegalArgumentException.
-              (str transport-name " transport requested but implementation not available. "
-                   "See https://netty.io/wiki/native-transports.html on how to add the necessary "
-                   "dependency for your platform.")
-              cause)))))
+               (str transport-name " transport requested but implementation not available. "
+                    "See https://netty.io/wiki/native-transports.html on how to add the necessary "
+                    "dependency for your platform.")
+               cause)))))
 
 (defn ^:no-doc ensure-epoll-available! []
   (ensure-transport-available! :epoll))
@@ -1070,11 +1070,11 @@
 (defn ^:no-doc ^ThreadFactory enumerating-thread-factory [prefix daemon?]
   (let [num-threads (atom 0)]
     (e/thread-factory
-     #(str prefix "-" (swap! num-threads inc))
-     (deliver (promise) nil)
-     nil
-     daemon?
-     (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
+      #(str prefix "-" (swap! num-threads inc))
+      (deliver (promise) nil)
+      nil
+      daemon?
+      (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
@@ -1104,24 +1104,24 @@
 
 (defn ^:no-doc transport-client-group [transport]
   (case transport
-    :epoll    epoll-client-group
-    :kqueue   kqueue-client-group
+    :epoll epoll-client-group
+    :kqueue kqueue-client-group
     :io-uring io-uring-client-group
-    :nio      nio-client-group))
+    :nio nio-client-group))
 
 (defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
   (case transport
-    :epoll    (EpollEventLoopGroup. num-threads thread-factory)
-    :kqueue   (KQueueEventLoopGroup. num-threads thread-factory)
+    :epoll (EpollEventLoopGroup. num-threads thread-factory)
+    :kqueue (KQueueEventLoopGroup. num-threads thread-factory)
     :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
-    :nio      (NioEventLoopGroup. num-threads thread-factory)))
+    :nio (NioEventLoopGroup. num-threads thread-factory)))
 
 (defn ^:no-doc transport-server-channel [transport]
   (case transport
-    :epoll    EpollServerSocketChannel
-    :kqueue   KQueueServerSocketChannel
+    :epoll EpollServerSocketChannel
+    :kqueue KQueueServerSocketChannel
     :io-uring IOUringServerSocketChannel
-    :nio      NioServerSocketChannel))
+    :nio NioServerSocketChannel))
 
 (defn ^:no-doc convert-address-types [address-types]
   (case address-types
@@ -1134,39 +1134,39 @@
 
 (defn ^:no-doc dns-name-servers-provider [servers]
   (let [addresses (->> servers
-                    (map (fn [server]
-                           (cond
-                             (instance? InetSocketAddress server)
-                             server
+                       (map (fn [server]
+                              (cond
+                                (instance? InetSocketAddress server)
+                                server
 
-                             (string? server)
-                             (let [^URI uri (URI. (str "dns://" server))
-                                   port (.getPort uri)
-                                   port' (int (if (= -1 port) dns-default-port port))]
-                               (InetSocketAddress. (.getHost uri) port'))
+                                (string? server)
+                                (let [^URI uri (URI. (str "dns://" server))
+                                      port (.getPort uri)
+                                      port' (int (if (= -1 port) dns-default-port port))]
+                                  (InetSocketAddress. (.getHost uri) port'))
 
-                             :else
-                             (throw
-                               (IllegalArgumentException.
-                                 (format "Don't know how to create InetSocketAddress from '%s'"
-                                   server)))))))]
+                                :else
+                                (throw
+                                  (IllegalArgumentException.
+                                    (format "Don't know how to create InetSocketAddress from '%s'"
+                                            server)))))))]
     (if (= 1 (count addresses))
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
 (defn ^:no-doc transport-channel-type [transport]
   (case transport
-    :epoll    EpollDatagramChannel
-    :kqueue   KQueueDatagramChannel
+    :epoll EpollDatagramChannel
+    :kqueue KQueueDatagramChannel
     :io-uring IOUringDatagramChannel
-    :nio      NioDatagramChannel))
+    :nio NioDatagramChannel))
 
 (defn- transport-channel [transport]
   (case transport
-    :epoll    EpollSocketChannel
-    :kqueue   KQueueSocketChannel
+    :epoll EpollSocketChannel
+    :kqueue KQueueSocketChannel
     :io-uring IOUringSocketChannel
-    :nio      NioSocketChannel))
+    :nio NioSocketChannel))
 
 (defn dns-resolver-group-builder
   "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and
@@ -1207,45 +1207,45 @@ initialize an DnsAddressResolverGroup instance.
            name-servers
            epoll?
            transport]
-    :or {max-payload-size 4096
-         max-queries-per-resolve 16
-         query-timeout 5000
-         min-ttl 0
-         max-ttl Integer/MAX_VALUE
-         trace-enabled? false
-         opt-resources-enabled? true
-         ndots -1
-         decode-idn? true
-         recursion-desired? true
-         epoll? false}}]
+    :or   {max-payload-size        4096
+           max-queries-per-resolve 16
+           query-timeout           5000
+           min-ttl                 0
+           max-ttl                 Integer/MAX_VALUE
+           trace-enabled?          false
+           opt-resources-enabled?  true
+           ndots                   -1
+           decode-idn?             true
+           recursion-desired?      true
+           epoll?                  false}}]
   (let [transport (determine-transport transport epoll?)]
     (ensure-transport-available! transport)
     (cond-> (doto (DnsNameResolverBuilder.)
-              (.channelType (transport-channel-type transport))
-              (.maxPayloadSize max-payload-size)
-              (.maxQueriesPerResolve max-queries-per-resolve)
-              (.queryTimeoutMillis query-timeout)
-              (.ttl min-ttl max-ttl)
-              (.traceEnabled trace-enabled?)
-              (.optResourceEnabled opt-resources-enabled?)
-              (.ndots ndots)
-              (.decodeIdn decode-idn?)
-              (.recursionDesired recursion-desired?))
+                  (.channelType (transport-channel-type transport))
+                  (.maxPayloadSize max-payload-size)
+                  (.maxQueriesPerResolve max-queries-per-resolve)
+                  (.queryTimeoutMillis query-timeout)
+                  (.ttl min-ttl max-ttl)
+                  (.traceEnabled trace-enabled?)
+                  (.optResourceEnabled opt-resources-enabled?)
+                  (.ndots ndots)
+                  (.decodeIdn decode-idn?)
+                  (.recursionDesired recursion-desired?))
 
-      (some? address-types)
-      (.resolvedAddressTypes (convert-address-types address-types))
+            (some? address-types)
+            (.resolvedAddressTypes (convert-address-types address-types))
 
-      (some? negative-ttl)
-      (.negativeTtl negative-ttl)
+            (some? negative-ttl)
+            (.negativeTtl negative-ttl)
 
-      (and (some? search-domains)
-           (seq search-domains))
-      (.searchDomains search-domains)
+            (and (some? search-domains)
+                 (seq search-domains))
+            (.searchDomains search-domains)
 
-      (and (some? name-servers)
-           (seq name-servers))
-      (.nameServerProvider ^DnsServerAddressStreamProvider
-                           (dns-name-servers-provider name-servers)))))
+            (and (some? name-servers)
+                 (seq name-servers))
+            (.nameServerProvider ^DnsServerAddressStreamProvider
+                                 (dns-name-servers-provider name-servers)))))
 
 (defn dns-resolver-group
   "Creates an instance of DnsAddressResolverGroup that might be set as a resolver to
@@ -1332,13 +1332,13 @@ initialize an DnsAddressResolverGroup instance.
                            (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
                            (instance? AddressResolverGroup name-resolver) name-resolver))
              b (doto (Bootstrap.)
-                 (.option ChannelOption/SO_REUSEADDR true)
-                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                 (.group client-group)
-                 (.channel channel)
-                 (.handler (pipeline-initializer pipeline-builder))
-                 (.resolver resolver')
-                 bootstrap-transform)
+                     (.option ChannelOption/SO_REUSEADDR true)
+                     (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                     (.group client-group)
+                     (.channel channel)
+                     (.handler (pipeline-initializer pipeline-builder))
+                     (.resolver resolver')
+                     bootstrap-transform)
 
              f (if local-address
                  (.connect b remote-address local-address)
@@ -1353,15 +1353,15 @@ initialize an DnsAddressResolverGroup instance.
   [pipeline-builder ssl-ctx]
   (fn [^ChannelPipeline pipeline]
     (append-handler-to-pipeline
-     pipeline "ssl-handler"
-     (.newHandler ^SslContext ssl-ctx (-> pipeline .channel .alloc)))
+      pipeline "ssl-handler"
+      (.newHandler ^SslContext ssl-ctx (-> pipeline .channel .alloc)))
     (pipeline-builder pipeline)))
 
 (defn- add-channel-tracker-handler
   [pipeline-builder chan-group]
   (fn [pipeline]
     (prepend-handler-to-pipeline pipeline "channel-tracker"
-                                (channel-tracking-handler chan-group))
+                                 (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
 (defn ^:no-doc start-server
@@ -1384,13 +1384,13 @@ initialize an DnsAddressResolverGroup instance.
             ^SocketAddress socket-address
             transport
             shutdown-timeout]
-     :or {shutdown-timeout default-shutdown-timeout}}]
+     :or   {shutdown-timeout default-shutdown-timeout}}]
    (ensure-transport-available! transport)
-   (let [num-cores      (.availableProcessors (Runtime/getRuntime))
-         num-threads    (* 2 num-cores)
+   (let [num-cores (.availableProcessors (Runtime/getRuntime))
+         num-threads (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
-         closed?        (atom false)
-         chan-group     (make-channel-group)
+         closed? (atom false)
+         chan-group (make-channel-group)
 
          ^EventLoopGroup group (transport-event-loop-group transport num-threads thread-factory)
 
@@ -1402,19 +1402,19 @@ initialize an DnsAddressResolverGroup instance.
 
          pipeline-builder
          (cond-> (add-channel-tracker-handler pipeline-builder chan-group)
-           (some? ssl-context) (add-ssl-handler ssl-context))]
+                 (some? ssl-context) (add-ssl-handler ssl-context))]
 
      (try
        (let [b (doto (ServerBootstrap.)
-                 (.option ChannelOption/SO_BACKLOG (int 1024))
-                 (.option ChannelOption/SO_REUSEADDR true)
-                 (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                 (.group group)
-                 (.channel channel)
-                 (.childHandler (pipeline-initializer pipeline-builder))
-                 (.childOption ChannelOption/SO_REUSEADDR true)
-                 (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
-                 bootstrap-transform)
+                     (.option ChannelOption/SO_BACKLOG (int 1024))
+                     (.option ChannelOption/SO_REUSEADDR true)
+                     (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                     (.group group)
+                     (.channel channel)
+                     (.childHandler (pipeline-initializer pipeline-builder))
+                     (.childOption ChannelOption/SO_REUSEADDR true)
+                     (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
+                     bootstrap-transform)
 
              ^ServerSocketChannel
              ch (-> b (.bind socket-address) .sync .channel)]
@@ -1432,19 +1432,19 @@ initialize an DnsAddressResolverGroup instance.
                          (d/timeout! (* shutdown-timeout 1000) ::timeout))
                      (d/success-deferred ::noop))
                    (d/chain'
-                    (fn [shutdown-output]
-                      (when (= shutdown-output ::timeout)
-                        (log/error
-                         (format "Timeout while waiting for requests to close (exceeded: %ss)"
-                                 shutdown-timeout)))))
+                     (fn [shutdown-output]
+                       (when (= shutdown-output ::timeout)
+                         (log/error
+                           (format "Timeout while waiting for requests to close (exceeded: %ss)"
+                                   shutdown-timeout)))))
                    (d/finally'
-                    ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
-                    ;;    in flight pending requests.
-                    #(.shutdownGracefully group 0 0 TimeUnit/SECONDS)))
+                     ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
+                     ;;    in flight pending requests.
+                     #(.shutdownGracefully group 0 0 TimeUnit/SECONDS)))
                (when on-close
                  (d/chain'
-                  (wrap-future (.terminationFuture group))
-                  (fn [_] (on-close))))))
+                   (wrap-future (.terminationFuture group))
+                   (fn [_] (on-close))))))
            Object
            (toString [_]
              (format "AlephServer[channel:%s, transport:%s]" ch transport))
