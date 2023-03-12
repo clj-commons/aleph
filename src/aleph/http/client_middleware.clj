@@ -671,7 +671,7 @@
     (parse-cookie [_ cookie-str]
       (.decode ClientCookieDecoder/LAX cookie-str))
     (write-cookies [_ cookies]
-      (.encode ClientCookieEncoder/LAX ^java.lang.Iterable cookies))
+      (.encode ClientCookieEncoder/LAX ^Iterable cookies))
     (match-cookie-origin? [_ origin {:keys [domain path secure?] :as cookie}]
       (cond
         (and secure? (not (:secure? origin)))
@@ -799,7 +799,7 @@
     (some? (get-in req [:headers cookie-header-name]))
     req
 
-    (not (empty? cookies))
+    (seq cookies)
     (write-cookie-header cookies cookie-spec req)
 
     (some? cookie-store)

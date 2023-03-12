@@ -84,7 +84,7 @@
                  nil
                  nil))]
 
-  (defn ^java.net.URI req->domain [req]
+  (defn req->domain ^URI [req]
     (if-let [url (:url req)]
       (let [^URL uri (URL. url)]
         (URI.
@@ -717,7 +717,7 @@
 
         :channel-read
         ([_ ctx msg]
-         (let [ch (.channel ctx)]
+         (let [ch ^Channel (.channel ctx)]
            (cond
 
              (not (.isHandshakeComplete handshaker))

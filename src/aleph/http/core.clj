@@ -460,7 +460,7 @@
 (defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
-        fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
+        fr (DefaultFileRegion. fc ^long (.-offset file) ^long (.-length file))]
     (try-set-content-length! msg (.-length file))
     (netty/write ch msg)
     (netty/write ch fr)
@@ -643,7 +643,7 @@
 
 (defn websocket-ping [conn d' data]
   (d/chain'
-   (s/put! conn (aleph.http.core.WebsocketPing. d' data))
+   (s/put! conn (WebsocketPing. d' data))
    #(when (and (false? %) (not (d/realized? d')))
       ;; meaning connection is already closed
       (d/success! d' false)))
@@ -655,7 +655,7 @@
     (throw (IllegalArgumentException.
             "websocket status code should be in range 1000-4999")))
 
-  (let [payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
+  (let [payload (WebsocketClose. d' status-code reason-text)]
     (d/chain'
      (s/put! conn payload)
      (fn [put?]

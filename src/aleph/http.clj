@@ -18,6 +18,7 @@
       ConnectionTimeoutException
       RequestTimeoutException
       ReadTimeoutException)
+    (io.netty.handler.codec.http HttpHeaders)
     (java.net
       URI
       InetSocketAddress)
@@ -446,7 +447,7 @@
   "Given a header map from an HTTP request or response, returns a collection of values associated with the key,
    rather than a comma-delimited string."
   [^aleph.http.core.HeaderMap headers ^String k]
-  (-> headers ^io.netty.handler.codec.http.HttpHeaders (.headers) (.getAll k)))
+  (-> headers ^HttpHeaders (.headers) (.getAll k)))
 
 (defn wrap-ring-async-handler
   "Converts given asynchronous Ring handler to Aleph-compliant handler.
