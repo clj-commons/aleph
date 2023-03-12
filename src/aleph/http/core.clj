@@ -11,58 +11,58 @@
     [manifold.stream :as s]
     [potemkin :as p])
   (:import
-    [io.netty.channel
-     Channel
-     DefaultFileRegion
-     ChannelFuture
-     ChannelFutureListener
-     ChannelPipeline
-     ChannelHandler
-     ChannelHandlerContext]
-    [io.netty.buffer
-     ByteBuf]
-    [java.nio
-     ByteBuffer]
-    [io.netty.handler.codec
-     DecoderResult
-     DecoderResultProvider]
-    [io.netty.handler.codec.http
-     DefaultHttpRequest DefaultLastHttpContent
-     DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders HttpUtil HttpContent
-     HttpMethod HttpRequest HttpMessage
-     HttpResponse HttpResponseStatus
-     DefaultHttpContent
-     HttpVersion
-     LastHttpContent HttpChunkedInput]
-    [io.netty.handler.timeout
-     IdleState
-     IdleStateEvent
-     IdleStateHandler]
-    [io.netty.handler.stream
-     ChunkedInput
-     ChunkedFile
-     ChunkedWriteHandler]
-    [io.netty.handler.codec.http.websocketx
-     WebSocketFrame
-     PingWebSocketFrame
-     TextWebSocketFrame
-     BinaryWebSocketFrame
-     CloseWebSocketFrame]
-    [java.io
-     File
-     RandomAccessFile
-     Closeable]
-    [java.nio.file Path]
-    [java.nio.channels
-     FileChannel
-     FileChannel$MapMode]
-    [java.util.concurrent
-     ConcurrentHashMap
-     ConcurrentLinkedQueue
-     TimeUnit]
-    [java.util.concurrent.atomic
-     AtomicBoolean]))
+    (io.netty.channel
+      Channel
+      DefaultFileRegion
+      ChannelFuture
+      ChannelFutureListener
+      ChannelPipeline
+      ChannelHandler
+      ChannelHandlerContext)
+    (io.netty.buffer
+      ByteBuf)
+    (java.nio
+      ByteBuffer)
+    (io.netty.handler.codec
+      DecoderResult
+      DecoderResultProvider)
+    (io.netty.handler.codec.http
+      DefaultHttpRequest DefaultLastHttpContent
+      DefaultHttpResponse DefaultFullHttpRequest
+      HttpHeaders HttpUtil HttpContent
+      HttpMethod HttpRequest HttpMessage
+      HttpResponse HttpResponseStatus
+      DefaultHttpContent
+      HttpVersion
+      LastHttpContent HttpChunkedInput)
+    (io.netty.handler.timeout
+      IdleState
+      IdleStateEvent
+      IdleStateHandler)
+    (io.netty.handler.stream
+      ChunkedInput
+      ChunkedFile
+      ChunkedWriteHandler)
+    (io.netty.handler.codec.http.websocketx
+      WebSocketFrame
+      PingWebSocketFrame
+      TextWebSocketFrame
+      BinaryWebSocketFrame
+      CloseWebSocketFrame)
+    (java.io
+      File
+      RandomAccessFile
+      Closeable)
+    (java.nio.file Path)
+    (java.nio.channels
+      FileChannel
+      FileChannel$MapMode)
+    (java.util.concurrent
+      ConcurrentHashMap
+      ConcurrentLinkedQueue
+      TimeUnit)
+    (java.util.concurrent.atomic
+      AtomicBoolean)))
 
 (def non-standard-keys
   (let [ks ["Content-MD5"

@@ -14,18 +14,18 @@
     [manifold.stream :as s]
     [potemkin :as p])
   (:import
-    [io.netty.buffer ByteBuf Unpooled]
-    [io.netty.handler.codec.base64 Base64]
-    [io.netty.handler.codec.http
-     HttpHeaders
-     HttpHeaderNames]
-    [io.netty.handler.codec.http.cookie
-     ClientCookieDecoder
-     ClientCookieEncoder
-     DefaultCookie]
-    [java.io InputStream ByteArrayOutputStream ByteArrayInputStream]
-    [java.nio.charset StandardCharsets]
-    [java.net IDN URL URLEncoder URLDecoder]))
+    (io.netty.buffer ByteBuf Unpooled)
+    (io.netty.handler.codec.base64 Base64)
+    (io.netty.handler.codec.http
+      HttpHeaders
+      HttpHeaderNames)
+    (io.netty.handler.codec.http.cookie
+      ClientCookieDecoder
+      ClientCookieEncoder
+      DefaultCookie)
+    (java.io InputStream ByteArrayOutputStream ByteArrayInputStream)
+    (java.nio.charset StandardCharsets)
+    (java.net IDN URL URLEncoder URLDecoder)))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def ^:no-doc json-enabled?

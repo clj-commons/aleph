@@ -12,17 +12,17 @@
     [manifold.deferred :as d]
     [manifold.executor :as executor])
   (:import
-    [io.aleph.dirigiste Pools]
-    [aleph.utils
-     PoolTimeoutException
-     ConnectionTimeoutException
-     RequestTimeoutException
-     ReadTimeoutException]
-    [java.net
-     URI
-     InetSocketAddress]
-    [java.util.concurrent
-     TimeoutException]))
+    (io.aleph.dirigiste Pools)
+    (aleph.utils
+      PoolTimeoutException
+      ConnectionTimeoutException
+      RequestTimeoutException
+      ReadTimeoutException)
+    (java.net
+      URI
+      InetSocketAddress)
+    (java.util.concurrent
+      TimeoutException)))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
