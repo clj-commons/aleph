@@ -22,9 +22,10 @@
                    [:scheme {:optional true} scheme]
                    [:content-type {:optional true} content-type]
                    [:content-length {:optional true} content-length]
-                   [:character-encoding {:optional true} character-encoding]])
+                   [:character-encoding {:optional true} character-encoding]
+                   [:body {:optional true} :any]])
 
-(def validate-request (m/validator ring-request))
+(def valid-request? (m/validator ring-request))
 (def explain-request (m/explainer ring-request))
 
 

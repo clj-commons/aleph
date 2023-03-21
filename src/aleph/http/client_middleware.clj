@@ -9,7 +9,6 @@
     [clojure.edn :as edn]
     [clojure.string :as str]
     [clojure.walk :refer [prewalk]]
-    [malli.core :as m]
     [manifold.deferred :as d]
     [manifold.executor :as ex]
     [manifold.stream :as s]
@@ -923,7 +922,7 @@
       (assoc :aleph/request req'))))
 
 (defn ^:no-doc wrap-validation [req]
-  (when-not (schema/validate-request req)
+  (when-not (schema/valid-request? req)
     (throw (IllegalArgumentException. (format "Invalid spec: %s" (schema/explain-request req)))))
   req)
 
