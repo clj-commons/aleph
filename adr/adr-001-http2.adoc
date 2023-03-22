@@ -1,0 +1,92 @@
+= ADR 001: HTTP/2 API
+
+Date: 2023-03-22
+
+
+== Status
+
+#Proposed#
+
+A decision may be "proposed" if the project stakeholders haven't agreed with it
+yet, or "accepted" once it is agreed. If a later ADR changes or reverses a
+decision, it may be marked as "deprecated" or "superseded" with a reference to
+its replacement.
+
+== Context
+
+- https://httpwg.org/specs/rfc7540.html
+- https://web.dev/performance-http2/
+
+HTTP/2 is eight years old now, and quite popular. It adds numerous advantages,
+some invisible, some requiring user coding. Adding support in both the client and
+server is obvious, but the installed base of Aleph is quite large (1.8m downloads),
+so we have a duty to maintain backwards compatibility while also exposing HTTP/2
+capabilities to those who want/need it.
+
+The default API Aleph presents is a handler fn that receives a single Ring map
+with an `InputStream` body (potentially transformed by middleware), and returns
+a Ring response map, with a static or streamable body.
+
+HTTP/2 offers new features that users may want to take advantage of: flow control
+and prioritization, in particular. Another feature, server push  (the ability to
+send "responses" before receiving a request), has been criticized as difficult
+to use correctly, and effectively https://chromestatus.com/feature/6302414934114304[disabled by Chrome].
+
+Since the Aleph team is small, we have to carefully consider what to support.
+Full HTTP/2 suport may not be advisable.
+
+== Decision
+
+==== Backwards-compatibility mode
+
+We will maintain a backwards-compatible API for the majority of users, where
+their existing handlers will work as is. All streams will have equal priority,
+and flow control will ...
+
+NOTE: What should the default flow control strategy be? An infinitely large
+window? The default 64kb window, that auto-replenishes as soon as bytes are read
+off? Netty offers both of the previous as default strategies available for use.
+
+NOTE: What should a raw stream look like? A sequence of ByteBufs? Or a sequence
+of Frames, which is Netty's "raw" level for HTTP/2?
+
+==== HTTP/2 connection mode
+We will NOT support server push, as our resources are too limited relative to
+the potential benefit. Outside PRs may be considered.
+
+We will expose a connection-level handler API, where the handler can access the
+entire connection, all streams in the connection, and all frames in the streams.
+We will expose APIs to change connection and stream settings.
+
+We will add APIs to get/set stream priorities and dependencies. We will NOT do
+anything with that knowledge. It will be up to the users to decide what to do
+with the priority/dependencies.
+
+NOTE: Is there an obvious priority/dependency win we can offer? Maybe from Netty?
+
+NOTE: Is there a way to assist in things like pausing or throttling other streams?
+Manifold's `throttle` doesn't support a function to change throttling behavior.
+And nothing supports pausing a stream at the moment.
+
+We will add APIs to expose flow control for getting/setting both stream-level
+and connection-level window sizes.
+
+NOTE: Do we need to do anything special to incorporate Manifold backpressure
+into this somehow?
+
+== Consequences
+
+This will improve web support for Clojure. I believe http-kit doesn't support
+HTTP/2, and Pedestal, if it supports it, only does so through Jetty, which is
+not very performant.
+
+This will give us a chance to improve the clarity of the code.
+
+As with any major change, this will add to the maintenance burden, and run the
+risk of breaking things, not just in HTTP/2 code, but also in pre-existing,
+overlapping HTTP/1.1 code.
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+See https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions[Documenting architecture decisions - Michael Nygard]
+for the format and rationale of this document.
