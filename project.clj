@@ -35,6 +35,7 @@
                                    [org.bouncycastle/bcpkix-jdk18on "1.72"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
+             :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
              :pedantic {:pedantic? :abort}}
   :java-source-paths ["src/aleph/utils"]
   :test-selectors {:default #(not
