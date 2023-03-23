@@ -2,7 +2,7 @@
   (:require
    [aleph.http :as http]
    [aleph.http.core :as http-core]
-   [aleph.http.server :as http-server]
+   [aleph.http.websocket.server :as ws.server]
    [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest is testing]]
@@ -40,7 +40,7 @@
 (defn connection-handler
   ([req] (connection-handler {} req))
   ([options req]
-   (when (http-server/websocket-upgrade-request? req)
+   (when (ws.server/websocket-upgrade-request? req)
      (-> (http/websocket-connection req options)
          (d/chain' #(s/connect % %))
          (d/catch'

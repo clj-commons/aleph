@@ -2,11 +2,12 @@
   (:refer-clojure :exclude [get])
   (:require
     [aleph.flow :as flow]
-    [aleph.http
-     [client :as client]
-     [client-middleware :as middleware]
-     [core :as http-core]
-     [server :as server]]
+    [aleph.http.client :as client]
+    [aleph.http.client-middleware :as middleware]
+    [aleph.http.core :as http-core]
+    [aleph.http.server :as server]
+    [aleph.http.websocket.client :as ws.client]
+    [aleph.http.websocket.server :as ws.server]
     [aleph.netty :as netty]
     [clojure.string :as str]
     [manifold.deferred :as d]
@@ -237,7 +238,7 @@
   ([url]
    (websocket-client url nil))
   ([url options]
-   (client/websocket-connection url options)))
+   (ws.client/websocket-connection url options)))
 
 (defn websocket-connection
   "Given an HTTP request that can be upgraded to a WebSocket connection, returns a
@@ -257,7 +258,7 @@
   ([req]
    (websocket-connection req nil))
   ([req options]
-   (server/initialize-websocket-handler req options)))
+   (ws.server/initialize-websocket-handler req options)))
 
 (defn websocket-ping
   "Takes a websocket endpoint (either client or server) and returns a deferred that will

@@ -499,6 +499,7 @@
 ;;;
 
 (defmacro ^:no-doc channel-handler
+  "Mimics the ChannelDuplexHandler in providing simple defaults or passing along all events"
   [& {:as handlers}]
   `(reify
      ChannelHandler
