@@ -11,15 +11,15 @@
     ;; Do not remove
     (aleph.utils
       ProxyConnectionTimeoutException)
-    (java.io
-      IOException)
-    (java.net
-      URI
-      InetSocketAddress
-      IDN
-      URL)
     (io.netty.buffer
       ByteBuf)
+    (io.netty.channel
+      Channel
+      ChannelHandler
+      ChannelHandlerContext
+      ChannelPipeline)
+    (io.netty.handler.codec
+      TooLongFrameException)
     (io.netty.handler.codec.http
       DefaultHttpHeaders
       HttpClientCodec
@@ -30,15 +30,10 @@
       HttpHeaderNames
       LastHttpContent
       FullHttpResponse)
-    (io.netty.channel
-      Channel
-      ChannelHandler
-      ChannelHandlerContext
-      ChannelPipeline)
-    (io.netty.handler.codec
-      TooLongFrameException)
-    (io.netty.handler.stream
-      ChunkedWriteHandler)
+    (io.netty.handler.codec.http2
+      Http2ClientUpgradeCodec)
+    (io.netty.handler.logging
+      LoggingHandler)
     (io.netty.handler.proxy
       ProxyConnectionEvent
       ProxyConnectException
@@ -47,8 +42,15 @@
       HttpProxyHandler$HttpProxyConnectException
       Socks4ProxyHandler
       Socks5ProxyHandler)
-    (io.netty.handler.logging
-      LoggingHandler)
+    (io.netty.handler.stream
+      ChunkedWriteHandler)
+    (java.io
+      IOException)
+    (java.net
+      URI
+      InetSocketAddress
+      IDN
+      URL)
     (java.util.concurrent.atomic
       AtomicInteger)))
 
@@ -394,7 +396,7 @@
        (.remove (.pipeline ctx) this))
      (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
-(defn pipeline-builder
+(defn make-pipeline-builder
   [response-stream
    {:keys
     [pipeline-transform
@@ -414,7 +416,8 @@
      max-header-size         65536
      max-chunk-size          65536
      idle-timeout            0}}]
-  (fn [^ChannelPipeline pipeline]
+  (fn pipeline-builder
+    [^ChannelPipeline pipeline]
     (let [handler (if raw-stream?
                     (raw-client-handler response-stream response-buffer-size)
                     (client-handler response-stream response-buffer-size))
@@ -505,7 +508,7 @@
                                                 (get proxy-options :keep-alive? true))))
         host-header-value (str host (when explicit-port? (str ":" port)))
         c (netty/create-client
-            {:pipeline-builder    (pipeline-builder responses (assoc options :ssl? ssl?))
+            {:pipeline-builder    (make-pipeline-builder responses (assoc options :ssl? ssl?))
              :ssl-context         (when ssl?
                                     (or ssl-context
                                         (if insecure?
