@@ -14,7 +14,7 @@ its replacement.
 
 == Context
 
-- https://httpwg.org/specs/rfc7540.html
+- https://www.rfc-editor.org/rfc/rfc9113.html
 - https://web.dev/performance-http2/
 
 HTTP/2 is eight years old now, and quite popular. It adds numerous advantages,
