@@ -728,7 +728,8 @@
   [pipeline-builder]
   (proxy [ChannelInitializer] []
     (initChannel [^Channel ch]
-      (pipeline-builder ^ChannelPipeline (.pipeline ch)))))
+      (let [p (pipeline-builder ^ChannelPipeline (.pipeline ch))]
+        (log/debug (prn-str (.pipeline ch)))))))
 
 (def ^:deprecated ^:no-doc pipeline-initializer
   "Please switch to channel-initializer"
