@@ -14,8 +14,11 @@ its replacement.
 
 == Context
 
-- https://www.rfc-editor.org/rfc/rfc9113.html
+- https://datatracker.ietf.org/doc/html/rfc9113
 - https://web.dev/performance-http2/
+- https://www.rfc-editor.org/rfc/rfc8441
+
+==== HTTP/2
 
 HTTP/2 is eight years old now, and quite popular. It adds numerous advantages,
 some invisible, some requiring user coding. Adding support in both the client and
@@ -33,7 +36,36 @@ send "responses" before receiving a request), has been criticized as difficult
 to use correctly, and effectively https://chromestatus.com/feature/6302414934114304[disabled by Chrome].
 
 Since the Aleph team is small, we have to carefully consider what to support.
-Full HTTP/2 suport may not be advisable.
+Full HTTP/2 support may not be advisable.
+
+==== Prioritization
+
+- https://datatracker.ietf.org/doc/html/rfc9218
+- https://calendar.perfplanet.com/2022/http-3-prioritization-demystified/
+- https://blog.cloudflare.com/better-http-2-prioritization-for-a-faster-web/
+- https://calendar.perfplanet.com/2018/http2-prioritization/
+
+Prioritization in HTTP/2 is considered overly-complicated and was partially
+deprecated in RFC 9113. The browsers have different interpretations of how to
+arrange the priority tree, and Safari/Edge do not utilize it much at all. Many
+HTTP servers have broken or nonresponsive implementations. Many Linux servers
+have TCP buffers too large too effectively handle preempting lower-priority
+resources or change existing priorities.
+
+Because of this RFC 9218 (Extensible Prioritization) was introduced. For HTTP/2,
+RFC 9218 is suggested as a backwards-compatible alternative, since it depends
+only on standard HTTP headers; it was adopted for HTTP/3 as the primary
+prioritization cheme.
+
+==== Websockets
+
+Websockets were built on top of HTTP/1.1-only fields, like the Upgrade and
+Connection headers and the 101 status code. RFC 8441 describes an HTTP/2 extension
+that allows websockets to be tunneled over an HTTP/2 stream. This allows efficient
+sharing of a single TCP connection for both HTTP/2 and websocket traffic, at the
+cost of a more complicated implementation. Netty does not have built-in support
+for it, though https://github.com/jauntsdn/netty-websocket-http2[user implementations]
+exist.
 
 == Decision
 
@@ -73,6 +105,12 @@ and connection-level window sizes.
 
 NOTE: Do we need to do anything special to incorporate Manifold backpressure
 into this somehow?
+
+==== Websockets
+
+We will NOT add support for HTTP/2 websocket tunneling at this time. The
+cost/benefit ratio is too low. PRs will be considered, though.
+
 
 == Consequences
 
