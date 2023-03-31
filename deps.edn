@@ -25,7 +25,9 @@
   io.netty/netty-handler {:mvn/version "4.1.89.Final"},
   io.netty/netty-handler-proxy {:mvn/version "4.1.89.Final"},
   io.netty/netty-resolver {:mvn/version "4.1.89.Final"},
-  io.netty/netty-resolver-dns {:mvn/version "4.1.89.Final"}},
+  io.netty/netty-resolver-dns {:mvn/version "4.1.89.Final"},
+  metosin/malli
+  {:mvn/version "0.10.4", :exclusions [org.clojure/clojure]}},
  :aliases
  {:lein2deps
   {:deps
