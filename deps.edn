@@ -22,6 +22,7 @@
   {:mvn/version "0.0.18.Final"},
   io.netty/netty-codec {:mvn/version "4.1.89.Final"},
   io.netty/netty-codec-http {:mvn/version "4.1.89.Final"},
+  io.netty/netty-codec-http2 {:mvn/version "4.1.89.Final"},
   io.netty/netty-handler {:mvn/version "4.1.89.Final"},
   io.netty/netty-handler-proxy {:mvn/version "4.1.89.Final"},
   io.netty/netty-resolver {:mvn/version "4.1.89.Final"},
