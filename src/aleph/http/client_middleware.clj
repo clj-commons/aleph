@@ -4,6 +4,7 @@
   (:require
     ;; leave this dependency to make sure that HeaderMap is already compiled
     [aleph.http.core :as http]
+    [aleph.http.schema :as schema]
     [clj-commons.byte-streams :as bs]
     [clojure.edn :as edn]
     [clojure.string :as str]
@@ -920,9 +921,15 @@
       (opt req :save-request)
       (assoc :aleph/request req'))))
 
+(defn ^:no-doc wrap-validation [req]
+  (when-not (schema/valid-request? req)
+    (throw (IllegalArgumentException. (format "Invalid spec: %s" (schema/explain-request req)))))
+  req)
+
 (def ^:no-doc default-middleware
   [wrap-method
    wrap-url
+   wrap-validation
    wrap-nested-params
    wrap-query-params
    wrap-form-params
