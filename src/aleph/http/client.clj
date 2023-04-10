@@ -474,7 +474,132 @@
                nil
                nil))))
 
+
+
+(defn- rsp-handler
+  "Returns a fn that takes a response map and returns the final Ring response map.
+
+   Handles errors, closing, and converts the body if not raw."
+  [{:keys [ch keep-alive? raw-stream? req response-buffer-size t0]}]
+  (fn handle-response [rsp]
+    (cond
+      (instance? Throwable rsp)
+      (d/error-deferred rsp)
+
+      (identical? ::closed rsp)
+      (d/error-deferred
+        (ex-info
+          (format "connection was closed after %.3f seconds" (/ (- (System/nanoTime) t0) 1e9))
+          {:request req}))
+
+      raw-stream?
+      rsp
+
+      :else
+      (d/chain' rsp
+                ;; chain, since getting locks and conversion can be expensive?
+                (fn handle-body-stream [rsp]
+                  (let [body (:body rsp)]
+                    ;; handle connection life-cycle
+                    (when-not keep-alive?
+                      (if (s/stream? body)
+                        (s/on-closed body #(netty/close ch))
+                        (netty/close ch)))
+
+                    ;; If it's not raw, convert the body to an InputStream
+                    (assoc rsp
+                           :body
+                           (bs/to-input-stream body
+                                               {:buffer-size response-buffer-size}))))))))
+
+(defn- req-handler
+  "Returns a fn that takes a Ring request and returns a deferred containing a
+   Ring response.
+
+   If ::close is set in the req, closes the channel and returns a deferred containing
+   the result.
+
+   Otherwise, puts/takes to/from the requests/responses streams."
+  [{:keys [ch keep-alive? raw-stream? requests response-buffer-size responses]}]
+  (let [t0 (System/nanoTime)]
+    (fn [req]
+      (if (contains? req ::close)
+        (netty/wrap-future (netty/close ch))
+        (let [raw-stream? (get req :raw-stream? raw-stream?)
+              rsp (locking ch
+                    (s/put! requests req)
+                    (s/take! responses ::closed))]
+          (d/chain' rsp
+                    (rsp-handler
+                      {:ch                   ch
+                       :keep-alive?          keep-alive?
+                       :raw-stream?          raw-stream?
+                       :req                  req
+                       :response-buffer-size response-buffer-size
+                       :t0                   t0})))))))
+
+(defn- req-preprocesser
+  "Returns a fn that preprocesses Ring reqs off the requests stream, and sends
+   them and their bodies off to Netty.
+
+   Converts a Ring req to a Netty HttpRequest, updates headers, encodes for
+   multipart reqs, and records debug vals."
+  [{:keys [ch host-header-value keep-alive?' non-tun-proxy? responses ssl?]}]
+  (fn [req]
+    (try
+      (let [^HttpRequest req' (http/ring-request->netty-request
+                                (if non-tun-proxy?
+                                  (assoc req :uri (req->proxy-url req))
+                                  req))]
+        (when-not (.get (.headers req') "Host")
+          (.set (.headers req') HttpHeaderNames/HOST host-header-value))
+        (when-not (.get (.headers req') "Connection")
+          (HttpUtil/setKeepAlive req' keep-alive?'))
+
+        (let [body (:body req)
+              parts (:multipart req)
+              multipart? (some? parts)
+              [req' body] (cond
+                            ;; RFC #7231 4.3.8. TRACE
+                            ;; A client MUST NOT send a message body...
+                            (= :trace (:request-method req))
+                            (do
+                              (when (or (some? body) multipart?)
+                                (log/warn "TRACE request body was omitted"))
+                              [req' nil])
+
+                            (not multipart?)
+                            [req' body]
+
+                            :else
+                            (multipart/encode-request req' parts))]
+
+          (when-let [save-message (get req :aleph/save-request-message)]
+            ;; debug purpose only
+            ;; note, that req' is effectively mutable, so
+            ;; it will "capture" all changes made during "send-message"
+            ;; execution
+            (reset! save-message req'))
+
+          (when-let [save-body (get req :aleph/save-request-body)]
+            ;; might be different in case we use :multipart
+            (reset! save-body body))
+
+          (-> (netty/safe-execute ch
+                                  (http/send-message ch true ssl? req' body))
+              (d/catch' (fn [e]
+                          (s/put! responses (d/error-deferred e))
+                          (netty/close ch))))))
+
+      ;; this will usually happen because of a malformed request
+      (catch Throwable e
+        (s/put! responses (d/error-deferred e))
+        (netty/close ch)))))
+
+
 (defn http-connection
+  "Returns a deferred containing a fn that accepts a Ring request and returns
+   a deferred containing a Ring response."
   [^InetSocketAddress remote-address
    ssl?
    {:keys [local-address
@@ -503,119 +628,63 @@
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
         proxy-options' (when (some? proxy-options)
                          (assoc proxy-options :ssl? ssl?))
-        non-tunnel-proxy? (non-tunnel-proxy? proxy-options')
+        non-tun-proxy? (non-tunnel-proxy? proxy-options')
         keep-alive?' (boolean (or keep-alive? (when (some? proxy-options)
                                                 (get proxy-options :keep-alive? true))))
         host-header-value (str host (when explicit-port? (str ":" port)))
+        application-protocol-config (when ssl?
+                                      (ApplicationProtocolConfig.
+                                        ApplicationProtocolConfig$Protocol/ALPN
+                                        ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+                                        ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+                                        ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+                                        ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+                                        ^"[Ljava.lang.String;"
+                                        (into-array String
+                                                    [ApplicationProtocolNames/HTTP_2
+                                                     ApplicationProtocolNames/HTTP_1_1])))
+        ssl-context (when ssl?
+                      (or ssl-context
+                          (if insecure?
+                            (netty/insecure-ssl-client-context)
+                            (netty/ssl-client-context
+                              {:application-protocol-config
+                               application-protocol-config}))))
         c (netty/create-client
             {:pipeline-builder    (make-pipeline-builder responses (assoc options :ssl? ssl?))
-             :ssl-context         (when ssl?
-                                    (or ssl-context
-                                        (if insecure?
-                                          (netty/insecure-ssl-client-context)
-                                          (netty/ssl-client-context))))
+             :ssl-context         ssl-context
              :bootstrap-transform bootstrap-transform
              :remote-address      remote-address
              :local-address       local-address
              :transport           (netty/determine-transport transport epoll?)
              :name-resolver       name-resolver})]
     (d/chain' c
-              (fn [^Channel ch]
+              (fn init-client-channel
+                [^Channel ch]
 
-                (s/consume
-                  (fn [req]
-                    (try
-                      (let [^HttpRequest req' (http/ring-request->netty-request
-                                                (if non-tunnel-proxy?
-                                                  (assoc req :uri (req->proxy-url req))
-                                                  req))]
-                        (when-not (.get (.headers req') "Host")
-                          (.set (.headers req') HttpHeaderNames/HOST host-header-value))
-                        (when-not (.get (.headers req') "Connection")
-                          (HttpUtil/setKeepAlive req' keep-alive?'))
-
-                        (let [body (:body req)
-                              parts (:multipart req)
-                              multipart? (some? parts)
-                              [req' body] (cond
-                                            ;; RFC #7231 4.3.8. TRACE
-                                            ;; A client MUST NOT send a message body...
-                                            (= :trace (:request-method req))
-                                            (do
-                                              (when (or (some? body) multipart?)
-                                                (log/warn "TRACE request body was omitted"))
-                                              [req' nil])
-
-                                            (not multipart?)
-                                            [req' body]
-
-                                            :else
-                                            (multipart/encode-request req' parts))]
-
-                          (when-let [save-message (get req :aleph/save-request-message)]
-                            ;; debug purpose only
-                            ;; note, that req' is effectively mutable, so
-                            ;; it will "capture" all changes made during "send-message"
-                            ;; execution
-                            (reset! save-message req'))
-
-                          (when-let [save-body (get req :aleph/save-request-body)]
-                            ;; might be different in case we use :multipart
-                            (reset! save-body body))
-
-                          (-> (netty/safe-execute ch
-                                                  (http/send-message ch true ssl? req' body))
-                              (d/catch' (fn [e]
-                                          (s/put! responses (d/error-deferred e))
-                                          (netty/close ch))))))
-
-                      ;; this will usually happen because of a malformed request
-                      (catch Throwable e
-                        (s/put! responses (d/error-deferred e))
-                        (netty/close ch))))
-                  requests)
+                ;; Order: req map -> req-handler -> requests stream -> req-preprocesser
+                ;; -> send-message -> Netty -> Internet ->
+                ;; ...
+                ;; -> Netty -> responses stream -> req-handler -> rsp-handler -> rsp
 
                 (s/on-closed responses
                              (fn []
                                (when on-closed (on-closed))
                                (s/close! requests)))
 
-                (let [t0 (System/nanoTime)]
-                  (fn [req]
-                    (if (contains? req ::close)
-                      (netty/wrap-future (netty/close ch))
-                      (let [raw-stream? (get req :raw-stream? raw-stream?)
-                            rsp (locking ch
-                                  (s/put! requests req)
-                                  (s/take! responses ::closed))]
-                        (d/chain' rsp
-                                  (fn [rsp]
-                                    (cond
-                                      (instance? Throwable rsp)
-                                      (d/error-deferred rsp)
+                (s/consume
+                  (req-preprocesser {:ch                ch
+                                     :host-header-value host-header-value
+                                     :keep-alive?'      keep-alive?'
+                                     :non-tun-proxy?    non-tun-proxy?
+                                     :responses         responses
+                                     :ssl?              ssl?})
+                  requests)
 
-                                      (identical? ::closed rsp)
-                                      (d/error-deferred
-                                        (ex-info
-                                          (format "connection was closed after %.3f seconds" (/ (- (System/nanoTime) t0) 1e9))
-                                          {:request req}))
-
-                                      raw-stream?
-                                      rsp
-
-                                      :else
-                                      (d/chain' rsp
-                                                (fn [rsp]
-                                                  (let [body (:body rsp)]
-
-                                                    ;; handle connection life-cycle
-                                                    (when-not keep-alive?
-                                                      (if (s/stream? body)
-                                                        (s/on-closed body #(netty/close ch))
-                                                        (netty/close ch)))
-
-                                                    (assoc rsp
-                                                           :body
-                                                           (bs/to-input-stream body
-                                                                               {:buffer-size response-buffer-size}))))))))))))))))
+                (req-handler {:ch                   ch
+                              :keep-alive?          keep-alive? ; why not keep-alive?'
+                              :raw-stream?          raw-stream?
+                              :requests             requests
+                              :response-buffer-size response-buffer-size
+                              :responses            responses})))))
 

@@ -430,7 +430,7 @@
    | `pool`       | the `connection-pool` that should be used, defaults to the `default-connection-pool`
    | `middleware` | any additional middleware that should be used for handling requests and responses
    | `headers`    | the HTTP headers for the request
-   | `body`       | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
+   | `body`       | an optional body, which should be coerce-able to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
    | `multipart`  | a vector of bodies")
                   :arglists arglists)))
 
