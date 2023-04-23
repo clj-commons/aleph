@@ -111,20 +111,20 @@
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
-        (let [headers (.headers rsp)]
+                          (let [headers (.headers rsp)]
 
-          (when-not (.contains headers ^CharSequence server-name)
+                            (when-not (.contains headers ^CharSequence server-name)
             (.set headers ^CharSequence server-name server-value))
 
-          (when-not (.contains headers ^CharSequence date-name)
+                            (when-not (.contains headers ^CharSequence date-name)
             (.set headers ^CharSequence date-name (date-header-value ctx)))
 
-          (when (= (.get headers ^CharSequence content-type) "text/plain")
+                            (when (= (.get headers ^CharSequence content-type) "text/plain")
             (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
-          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+                            (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
-          (http/send-message ctx keep-alive? ssl? rsp body))))))
+                            (http/send-message ctx keep-alive? ssl? rsp body))))))
 
 ;;;
 
@@ -142,6 +142,9 @@ Example: {:status 200
                 (pr-str (select-keys req [:uri :request-method :query-string :headers]))))))
 
 (defn handle-request
+  "Converts to a Ring request, dispatches user handler on the appropriate
+   executor if necessary, then sets up the chain to clean up, and convert
+   the Ring response for netty"
   [^ChannelHandlerContext ctx
    ssl?
    handler
@@ -384,7 +387,7 @@ Example: {:status 200
         stream (atom nil)
         previous-response (atom nil)
 
-        handle-request
+        handle-raw-request
         (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
             (handle-request
@@ -398,8 +401,8 @@ Example: {:status 200
               @previous-response
               body
               (HttpUtil/isKeepAlive req))))]
-    (netty/channel-inbound-handler
 
+    (netty/channel-inbound-handler
       :exception-caught
       ([_ ctx ex]
         (exception-handler ctx ex))
@@ -427,16 +430,18 @@ Example: {:status 200
                 ;; compensate for it being released together with the request.
                 (netty/put! ch s (netty/acquire content)))
               (s/close! s)
-              (handle-request ctx req s)))
+              (handle-raw-request ctx req s)))
 
+          ;; A new request with no body has come in, start a new stream
           (instance? HttpRequest msg)
           (if (invalid-request? msg)
             (reject-invalid-request ctx msg)
             (let [req msg]
               (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
                 (reset! stream s)
-                (handle-request ctx req s))))
+                (handle-raw-request ctx req s))))
 
+          ;; More body content has arrived, put the bytes on the stream
           (instance? HttpContent msg)
           (let [content (.content ^HttpContent msg)]
             ;; content might empty most probably in case of EmptyLastHttpContent

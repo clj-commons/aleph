@@ -1,4 +1,5 @@
 (ns ^:no-doc aleph.http.core
+  "HTTP/1.1 functionality"
   (:require
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
@@ -82,7 +83,9 @@
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
 
 (defn normalize-header-key
-  "Normalizes a header key to `Ab-Cd` format."
+  "Normalizes a header key to `Ab-Cd` format.
+
+   NB: This is illegal for HTTP/2, which requires all header names be lower-case."
   [s]
   (if-let [s' (.get cached-header-keys s)]
     s'
@@ -164,41 +167,48 @@
         :else
         (.add h ^CharSequence k ^Object v)))))
 
-(defn ring-response->netty-response [m]
-  (let [status (get m :status 200)
-        headers (get m :headers)
-        rsp (DefaultHttpResponse.
-              HttpVersion/HTTP_1_1
-              (HttpResponseStatus/valueOf status)
-              false)]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; HTTP/1.1 request/response handling
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn ring-response->netty-response [rsp]
+  (let [status (get rsp :status 200)
+        headers (get rsp :headers)
+        netty-rsp (DefaultHttpResponse.
+                    HttpVersion/HTTP_1_1
+                    (HttpResponseStatus/valueOf status)
+                    false)]
     (when headers
-      (map->headers! (.headers rsp) headers))
-    rsp))
+      (map->headers! (.headers netty-rsp) headers))
+    netty-rsp))
 
-(defn ring-request->netty-request [m]
-  (let [headers (get m :headers)
-        req (DefaultHttpRequest.
-              HttpVersion/HTTP_1_1
-              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (str (get m :uri)
-                (when-let [q (get m :query-string)]
-                  (str "?" q))))]
+(defn ring-request->netty-request
+  "Turns a Ring request into a Netty HTTP/1.1 DefaultHttpRequest"
+  ^DefaultHttpRequest [req]
+  (let [headers (get req :headers)
+        netty-req (DefaultHttpRequest.
+                    HttpVersion/HTTP_1_1
+                    (-> req (get :request-method) name str/upper-case HttpMethod/valueOf)
+                    (str (get req :uri)
+                         (when-let [q (get req :query-string)]
+                           (str "?" q))))]
     (when headers
-      (map->headers! (.headers req) headers))
-    req))
+      (map->headers! (.headers netty-req) headers))
+    netty-req))
 
-(defn ring-request->full-netty-request [m]
-  (let [headers (get m :headers)
-        req (DefaultFullHttpRequest.
-              HttpVersion/HTTP_1_1
-              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (str (get m :uri)
-                (when-let [q (get m :query-string)]
-                  (str "?" q)))
-              (netty/to-byte-buf (:body m)))]
+(defn ring-request->full-netty-request
+  "Turns a Ring request into a Netty HTTP/1.1 DefaultFullHttpRequest"
+  ^DefaultFullHttpRequest [req]
+  (let [headers (get req :headers)
+        netty-req (DefaultFullHttpRequest.
+                    HttpVersion/HTTP_1_1
+                    (-> req (get :request-method) name str/upper-case HttpMethod/valueOf)
+                    (str (get req :uri)
+                         (when-let [q (get req :query-string)]
+                           (str "?" q)))
+                    (netty/to-byte-buf (:body req)))]
     (when headers
-      (map->headers! (.headers req) headers))
-    req))
+      (map->headers! (.headers netty-req) headers))
+    netty-req))
 
 (p/def-derived-map NettyRequest
   [^HttpRequest req
@@ -233,7 +243,10 @@
   :aleph/complete complete
   :body body)
 
-(defn netty-request->ring-request [^HttpRequest req ssl? ch body]
+(defn netty-request->ring-request
+  "Confusingly named, this converts a Netty HttpRequest object to a NettyRequest
+   object, which looks like a Ring map."
+  [^HttpRequest req ssl? ch body]
   (->NettyRequest req ssl?
    ch
    (AtomicBoolean. false)
@@ -514,7 +527,8 @@
             (d/catch' (fn [_]))))]
 
   (defn send-message
-    "Write an HttpMessage and body to a Netty channel.
+    "Write an HttpMessage and body to a Netty channel. Returns a ChannelFuture
+     for the status of the write/flush operations.
 
      Accepts Strings, ByteBuffers, ByteBufs, byte[], ChunkedInputs,
      Files, Paths, HttpFiles, seqs and streams for bodies.
@@ -522,11 +536,10 @@
      Seqs and streams must be, or be coercible to, a stream of ByteBufs."
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
-    (let [f (cond
-
-              (or
-                (nil? body)
-                (identical? :aleph/omitted body)
+    (let [fut (cond
+                (or
+                  (nil? body)
+                  (identical? :aleph/omitted body)
                 (instance? String body)
                 (instance? ary-class body)
                 (instance? ByteBuffer body)
@@ -551,12 +564,12 @@
                   (send-streaming-body ch msg body)
                   (catch Throwable e
                     (log/error e "error sending body of type " class-name)
-                    (throw e)))))]
+                      (throw e)))))]
 
       (when-not keep-alive?
-        (handle-cleanup ch f))
+        (handle-cleanup ch fut))
 
-      f)))
+      fut)))
 
 (deftype WebsocketPing [deferred payload])
 
