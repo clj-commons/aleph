@@ -8,94 +8,100 @@
     [manifold.executor :as e]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
-    [potemkin :as potemkin :refer [doit doary]])
+    [potemkin :refer [doit doary]])
   (:import
-    [clojure.lang DynamicClassLoader]
-    [java.io IOException]
-    [io.netty.bootstrap Bootstrap ServerBootstrap]
-    [io.netty.buffer ByteBuf Unpooled]
-    [io.netty.channel
-     Channel ChannelFuture ChannelOption
-     ChannelPipeline EventLoopGroup
-     ChannelHandler FileRegion
-     ChannelInboundHandler
-     ChannelOutboundHandler
-     ChannelHandlerContext
-     ChannelInitializer]
-    [io.netty.channel.group
-     ChannelGroup DefaultChannelGroup]
-    [io.netty.channel.epoll Epoll EpollEventLoopGroup
-                            EpollServerSocketChannel
-                            EpollSocketChannel
-                            EpollDatagramChannel]
-    [io.netty.channel.kqueue KQueue KQueueEventLoopGroup
-                             KQueueServerSocketChannel
-                             KQueueSocketChannel
-                             KQueueDatagramChannel]
-    [io.netty.incubator.channel.uring IOUring IOUringEventLoopGroup
-                                      IOUringServerSocketChannel
-                                      IOUringSocketChannel
-                                      IOUringDatagramChannel]
-    [io.netty.util Attribute AttributeKey]
-    [io.netty.channel.nio NioEventLoopGroup]
-    [io.netty.channel.socket ServerSocketChannel]
-    [io.netty.channel.socket.nio
-     NioServerSocketChannel
-     NioSocketChannel
-     NioDatagramChannel]
-    [io.netty.handler.ssl
-     ApplicationProtocolConfig
-     ApplicationProtocolNegotiationHandler ClientAuth
-     SslContext
-     SslContextBuilder
-     SslHandler
-     SslProvider]
-    [io.netty.handler.codec DecoderException]
-    [io.netty.handler.ssl.util
-     SelfSignedCertificate
-     InsecureTrustManagerFactory]
-    [io.netty.resolver
-     AddressResolverGroup
-     NoopAddressResolverGroup
-     ResolvedAddressTypes]
-    [io.netty.resolver.dns
-     DnsNameResolverBuilder
-     DnsAddressResolverGroup
-     DnsServerAddressStreamProvider
-     SingletonDnsServerAddressStreamProvider
-     SequentialDnsServerAddressStreamProvider]
-    [io.netty.util ResourceLeakDetector
-                   ResourceLeakDetector$Level]
-    [java.net URI SocketAddress InetSocketAddress]
-    [io.netty.util.concurrent
-     FastThreadLocalThread GenericFutureListener Future
-     GlobalEventExecutor]
-    [java.io InputStream File]
-    [java.nio ByteBuffer]
-    [io.netty.util.internal StringUtil SystemPropertyUtil]
-    [java.util.concurrent
-     ConcurrentHashMap
-     CancellationException
-     ScheduledFuture
-     TimeUnit
-     ThreadFactory]
-    [java.util.concurrent.atomic
-     AtomicLong]
-    [io.netty.util.internal.logging
-     InternalLoggerFactory
-     Log4JLoggerFactory
-     Slf4JLoggerFactory
-     JdkLoggerFactory
-     Log4J2LoggerFactory]
-    [io.netty.handler.logging
-     LoggingHandler
-     LogLevel]
-    [java.security.cert X509Certificate]
-    [java.security PrivateKey]
-    [javax.net.ssl
-     SSLHandshakeException
-     TrustManager
-     TrustManagerFactory]))
+    (clojure.lang DynamicClassLoader)
+    (io.netty.bootstrap Bootstrap ServerBootstrap)
+    (io.netty.buffer ByteBuf Unpooled)
+    (io.netty.channel
+      Channel ChannelFuture ChannelOption
+      ChannelPipeline EventLoopGroup
+      ChannelHandler FileRegion
+      ChannelInboundHandler
+      ChannelOutboundHandler
+      ChannelHandlerContext
+      ChannelInitializer)
+    (io.netty.channel.epoll
+      Epoll
+      EpollEventLoopGroup
+      EpollServerSocketChannel
+      EpollSocketChannel
+      EpollDatagramChannel)
+    (io.netty.channel.group
+      ChannelGroup DefaultChannelGroup)
+    (io.netty.channel.kqueue
+      KQueue
+      KQueueEventLoopGroup
+      KQueueServerSocketChannel
+      KQueueSocketChannel
+      KQueueDatagramChannel)
+    (io.netty.channel.nio NioEventLoopGroup)
+    (io.netty.channel.socket ServerSocketChannel)
+    (io.netty.channel.socket.nio
+      NioServerSocketChannel
+      NioSocketChannel
+      NioDatagramChannel)
+    (io.netty.handler.codec DecoderException)
+    (io.netty.handler.logging
+      LoggingHandler
+      LogLevel)
+    (io.netty.handler.ssl
+      ApplicationProtocolConfig
+      ApplicationProtocolNegotiationHandler ClientAuth
+      SslContext
+      SslContextBuilder
+      SslHandler
+      SslProvider)
+    (io.netty.handler.ssl.util
+      SelfSignedCertificate
+      InsecureTrustManagerFactory)
+    (io.netty.incubator.channel.uring
+      IOUring IOUringEventLoopGroup
+      IOUringServerSocketChannel
+      IOUringSocketChannel
+      IOUringDatagramChannel)
+    (io.netty.resolver
+      AddressResolverGroup
+      NoopAddressResolverGroup
+      ResolvedAddressTypes)
+    (io.netty.resolver.dns
+      DnsNameResolverBuilder
+      DnsAddressResolverGroup
+      DnsServerAddressStreamProvider
+      SingletonDnsServerAddressStreamProvider
+      SequentialDnsServerAddressStreamProvider)
+    (io.netty.util
+      Attribute
+      AttributeKey
+      ResourceLeakDetector
+      ResourceLeakDetector$Level)
+    (io.netty.util.concurrent
+      FastThreadLocalThread GenericFutureListener Future
+      GlobalEventExecutor)
+    (io.netty.util.internal StringUtil SystemPropertyUtil)
+    (io.netty.util.internal.logging
+      InternalLoggerFactory
+      Log4JLoggerFactory
+      Slf4JLoggerFactory
+      JdkLoggerFactory
+      Log4J2LoggerFactory)
+    (java.io InputStream IOException File)
+    (java.net URI SocketAddress InetSocketAddress)
+    (java.nio ByteBuffer)
+    (java.security PrivateKey)
+    (java.security.cert X509Certificate)
+    (java.util.concurrent
+      ConcurrentHashMap
+      CancellationException
+      ScheduledFuture
+      TimeUnit
+      ThreadFactory)
+    (java.util.concurrent.atomic
+      AtomicLong)
+    (javax.net.ssl
+      SSLHandshakeException
+      TrustManager
+      TrustManagerFactory)))
 
 ;;;
 
@@ -665,6 +671,33 @@
        ~@(or (:flush handlers)
              `([_# ctx#]
                (.flush ctx#))))))
+
+#_#_
+(defn- channel-initializer-caught-exception
+  [^ChannelHandlerContext ctx ^Throwable t]
+  (log/warn t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
+  (-> ctx (.channel) (.close)))
+
+(defmacro ^:no-doc channel-initializer
+  "Returns a ChannelInboundHandler that's the equivalent of ChannelInitializer.
+
+   Takes a single `init-channel` fn that will be called with the new Channel"
+  [init-channel]
+  `(let [init-channel# ~init-channel]
+     (channel-inbound-handler
+       {:handler-added    ([this# ^ChannelHandlerContext ctx#]
+                           (when (-> ctx# (.channel) (.isRegistered))
+                             (try
+                               (init-channel# (.channel ctx#))
+                               (catch Throwable t#
+                                 (channel-initializer-caught-exception ctx# t#))
+                               (finally
+                                 (when-not (.isRemoved ctx#)
+                                   (-> ctx#
+                                       (.pipeline)
+                                       (.remove this#)))))))
+        :exception-caught ([_# ctx# cause#]
+                           (channel-initializer-caught-exception ctx# cause#))})))
 
 (defn ^:no-doc ^ChannelHandler bandwidth-tracker [^Channel ch]
   (let [inbound-counter (AtomicLong. 0)
@@ -1332,6 +1365,7 @@ initialize an DnsAddressResolverGroup instance.
      (pipeline-builder p))))
 
 (defn ^:no-doc create-client
+  "Returns a deferred containing a new Channel"
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -1367,6 +1401,7 @@ initialize an DnsAddressResolverGroup instance.
             transport
             name-resolver]}]
    (ensure-transport-available! transport)
+   #_(println "passed-in ssl-context: " ssl-context)
    (let [^Class
          chan-class (transport-channel-class transport)
 
@@ -1555,3 +1590,19 @@ initialize an DnsAddressResolverGroup instance.
 
 
 
+
+
+(comment
+  (import '(io.netty.handler.codec.http2 Http2FrameCodecBuilder Http2Settings Http2FrameLogger)
+          '(io.netty.handler.logging LogLevel))
+
+  (let [chan (io.netty.channel.embedded.EmbeddedChannel.)
+        p (.pipeline chan)]
+    (.addLast p
+              "test-handler"
+              (-> (io.netty.handler.codec.http2.Http2FrameCodecBuilder/forClient)
+                  (.initialSettings (Http2Settings/defaultSettings))
+                  (.build)))
+    (prn p))
+
+  )
