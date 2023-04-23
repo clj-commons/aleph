@@ -71,7 +71,7 @@
      GlobalEventExecutor]
     [java.io InputStream File]
     [java.nio ByteBuffer]
-    [io.netty.util.internal SystemPropertyUtil]
+    [io.netty.util.internal StringUtil SystemPropertyUtil]
     [java.util.concurrent
      ConcurrentHashMap
      CancellationException
@@ -1484,3 +1484,51 @@ initialize an DnsAddressResolverGroup instance.
        (catch Exception e
          @(.shutdownGracefully group)
          (throw e))))))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; prn support for Netty for debugging
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- ^:no-doc append-pipeline*
+  [^StringBuilder sb ^ChannelPipeline pipeline]
+  (.append sb "\tHandlers:\n")
+  (run! (fn [[hname handler]]
+          (-> sb
+              (.append "\t\t")
+              (.append hname)
+              (.append ": ")
+              (.append (StringUtil/simpleClassName (class handler)))
+              (.append "\n")))
+        (.toMap pipeline))
+  sb)
+
+(defmethod print-method ChannelPipeline
+  [^ChannelPipeline pipeline ^java.io.Writer writer]
+  (let [sb (StringBuilder.)]
+    (-> sb
+        (.append (StringUtil/simpleClassName (class pipeline)))
+        (.append "\n")
+        (append-pipeline* pipeline))
+    (.write writer (.toString sb))))
+
+(defmethod print-method Channel
+  [^Channel chan ^java.io.Writer writer]
+  (let [sb (StringBuilder.)]
+    (.append sb (StringUtil/simpleClassName (class chan)))
+    (when (or (.isRegistered chan) (.isOpen chan) (.isActive chan))
+      (.append sb " (")
+      (when (.isRegistered chan)
+        (.append sb "REGISTERED,"))
+      (when (.isOpen chan)
+        (.append sb "OPEN,"))
+      (when (.isActive chan)
+        (.append sb "ACTIVE,"))
+      (.setCharAt sb (dec (.length sb)) \)))
+    (.append sb ":\n")
+    (append-pipeline* sb (.pipeline chan))
+    (.write writer (.toString sb))))
+
+
+
