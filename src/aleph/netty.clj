@@ -44,7 +44,8 @@
      NioSocketChannel
      NioDatagramChannel]
     [io.netty.handler.ssl
-     ClientAuth
+     ApplicationProtocolConfig
+     ApplicationProtocolNegotiationHandler ClientAuth
      SslContext
      SslContextBuilder
      SslHandler
@@ -747,6 +748,16 @@
        (let [^ChannelInitializer this this]                 ; stupid proxy reflection warning
          (proxy-super handlerAdded ctx))))))
 
+(defn ^:no-doc application-protocol-negotiation-handler
+  "Returns an ApplicationProtocolNegotiationHandler that will be
+   called when the TLS handshake is complete. The handler will finish
+   setting up the pipeline for the negotiated protocol"
+  ^ApplicationProtocolNegotiationHandler
+  [configure-pipeline fallback-protocol]
+  (proxy [ApplicationProtocolNegotiationHandler] [fallback-protocol]
+    (configurePipeline [^ChannelHandlerContext ctx ^String protocol]
+      (configure-pipeline ctx protocol))))
+
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
   [^ChannelPipeline pipeline ^Class handler]
@@ -836,14 +847,18 @@
      | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
      | `private-key-password` | a string, the private key's password (optional).
      | `trust-store`          | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider`         | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ssl-provider`         | `SslContext` implementation to use, one of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL-based implementations, the library should be installed and linked properly.
      | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
      | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
      | `session-cache-size`   | the size of the cache used for storing SSL session objects.
      | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
+     | `application-protocol-config` | an `ApplicationProtocolConfig` instance to configure ALPN.
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
-    ([] (ssl-client-context {}))
-    ([{:keys [private-key
+    (^SslContext
+     []
+     (ssl-client-context {}))
+    (^SslContext
+     [{:keys [private-key
               ^String private-key-password
               certificate-chain
               trust-store
@@ -851,62 +866,66 @@
               ^Iterable ciphers
               protocols
               ^long session-cache-size
-              ^long session-timeout]}]
-     (let [^SslContextBuilder
-           builder (SslContextBuilder/forClient)
+              ^long session-timeout
+              ^ApplicationProtocolConfig application-protocol-config]}]
 
-           ^SslContextBuilder
-           builder (if (or private-key certificate-chain)
-                     (cond (and (instance? File private-key)
-                                (instance? File certificate-chain))
-                           (.keyManager builder
-                                        ^File certificate-chain
-                                        ^File private-key
-                                        private-key-password)
-                           (and (instance? InputStream private-key)
-                                (instance? InputStream certificate-chain))
-                           (.keyManager builder
-                                        ^InputStream certificate-chain
-                                        ^InputStream private-key
-                                        private-key-password)
-                           (and (instance? PrivateKey private-key)
-                                (instance? cert-array-class certificate-chain))
-                           (.keyManager builder
-                                        ^PrivateKey private-key
-                                        private-key-password
-                                        ^"[Ljava.security.cert.X509Certificate;" certificate-chain)
-                           (and (instance? PrivateKey private-key)
-                                (sequential? certificate-chain))
-                           (let [^"[Ljava.security.cert.X509Certificate;" certificate-chain' (into-array X509Certificate certificate-chain)]
-                             (.keyManager builder
-                                          ^PrivateKey private-key
-                                          private-key-password
-                                          certificate-chain'))
-                           :else
-                           (throw
-                             (IllegalArgumentException.
-                               "ssl context arguments invalid")))
-                     builder)
+     (let [^SslContextBuilder builder (SslContextBuilder/forClient)]
+       (when (or private-key certificate-chain)
+         (cond
+           (and (instance? File private-key)
+                (instance? File certificate-chain))
+           (.keyManager builder
+                        ^File certificate-chain
+                        ^File private-key
+                        private-key-password)
 
-           ^SslContextBuilder
-           builder (cond-> builder
-                           (some? trust-store)
-                           (add-ssl-trust-manager! trust-store)
+           (and (instance? InputStream private-key)
+                (instance? InputStream certificate-chain))
+           (.keyManager builder
+                        ^InputStream certificate-chain
+                        ^InputStream private-key
+                        private-key-password)
 
-                           (some? ssl-provider)
-                           (.sslProvider (coerce-ssl-provider ssl-provider))
+           (and (instance? PrivateKey private-key)
+                (instance? cert-array-class certificate-chain))
+           (.keyManager builder
+                        ^PrivateKey private-key
+                        private-key-password
+                        ^"[Ljava.security.cert.X509Certificate;" certificate-chain)
 
-                           (some? ciphers)
-                           (.ciphers ciphers)
+           (and (instance? PrivateKey private-key)
+                (sequential? certificate-chain))
+           (let [^"[Ljava.security.cert.X509Certificate;" certificate-chain' (into-array X509Certificate certificate-chain)]
+             (.keyManager builder
+                          ^PrivateKey private-key
+                          private-key-password
+                          certificate-chain'))
 
-                           (some? protocols)
-                           (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
+           :else
+           (throw
+             (IllegalArgumentException. "ssl context arguments invalid"))))
 
-                           (some? session-cache-size)
-                           (.sessionCacheSize session-cache-size)
+       (cond-> builder
+               (some? trust-store)
+               (add-ssl-trust-manager! trust-store)
 
-                           (some? session-timeout)
-                           (.sessionTimeout session-timeout))]
+               (some? ssl-provider)
+               (.sslProvider (coerce-ssl-provider ssl-provider))
+
+               (some? ciphers)
+               (.ciphers ciphers)
+
+               (some? protocols)
+               (.protocols ^"[Ljava.lang.String;" (into-array String protocols))
+
+               (some? session-cache-size)
+               (.sessionCacheSize session-cache-size)
+
+               (some? session-timeout)
+               (.sessionTimeout session-timeout)
+
+               (some? application-protocol-config)
+               (.applicationProtocolConfig application-protocol-config))
 
        (.build builder))))
 
@@ -1279,9 +1298,13 @@ initialize an DnsAddressResolverGroup instance.
   present on the associated pipeline, resolves immediately."
   [^Channel ch]
   (if-let [^SslHandler ssl-handler (-> ch .pipeline (.get SslHandler))]
-    (-> ssl-handler
-        .handshakeFuture
-        wrap-future)
+    (do
+      (log/debug "Waiting on SSL handshake...")
+      (doto (-> ssl-handler
+                (.handshakeFuture)
+                wrap-future)
+            (d/on-realized #(println "SSL handshake completed")
+                           #(println "SSL handshake failed"))))
     (d/success-deferred ch)))
 
 (defn ^:no-doc ignore-ssl-handshake-errors
@@ -1305,7 +1328,7 @@ initialize an DnsAddressResolverGroup instance.
                                       (.getPort ^InetSocketAddress remote-address))
                          (.newHandler ^SslContext ssl-ctx
                                       (-> p .channel .alloc)))]
-       (append-handler-to-pipeline p "ssl-handler" ssl-handler))
+       (prepend-handler-to-pipeline p "ssl-handler" ssl-handler))
      (pipeline-builder p))))
 
 (defn ^:no-doc create-client
