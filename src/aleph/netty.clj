@@ -723,18 +723,29 @@
      (.add group (channel ctx))
      (.fireChannelActive ctx))))
 
-(defn channel-initializer
+(defn pipeline-initializer
   "Returns a ChannelInitializer which builds the pipeline."
-  [pipeline-builder]
-  (proxy [ChannelInitializer] []
-    (initChannel [^Channel ch]
-      (let [p (pipeline-builder ^ChannelPipeline (.pipeline ch))]
-        (log/debug (prn-str (.pipeline ch)))))))
-
-(def ^:deprecated ^:no-doc pipeline-initializer
-  "Please switch to channel-initializer"
-  channel-initializer)
-
+  (^ChannelInitializer
+   [pipeline-builder]
+   (pipeline-initializer pipeline-builder nil))
+  (^ChannelInitializer
+   [pipeline-builder handler-added]
+   (proxy [ChannelInitializer] []
+     (initChannel [^Channel ch]
+       (let [p ^ChannelPipeline (.pipeline ch)]
+         (pipeline-builder p)
+         (log/debug (prn-str p))
+         (prn p)))
+     (exceptionCaught [^ChannelHandlerContext ctx ^Throwable t]
+       (log/warn t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
+       (println t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
+       (.close ctx))
+     (handlerAdded [^ChannelHandlerContext ctx]
+       (log/warn "ChannelInitializer added to pipeline")
+       (println "ChannelInitializer added to pipeline")
+       (when handler-added (handler-added))
+       (let [^ChannelInitializer this this]                 ; stupid proxy reflection warning
+         (proxy-super handlerAdded ctx))))))
 
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
@@ -1344,7 +1355,7 @@ initialize an DnsAddressResolverGroup instance.
                             (add-ssl-handler pipeline-builder ssl-context remote-address)
                             pipeline-builder)
 
-         initializer (channel-initializer pipeline-builder)]
+         initializer (pipeline-initializer pipeline-builder)]
      (try
        (let [client-event-loop-group @(transport-client-group transport)
              resolver' (when (some? name-resolver)
@@ -1425,7 +1436,7 @@ initialize an DnsAddressResolverGroup instance.
                      (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
                      (.channel channel)
-                     (.childHandler (channel-initializer pipeline-builder))
+                     (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
                      (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      bootstrap-transform)
