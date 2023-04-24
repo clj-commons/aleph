@@ -497,6 +497,7 @@
     (send-file-region ch msg file)))
 
 (defn send-contiguous-body [ch ^HttpMessage msg body]
+  (println "send-contiguous-body headers:" (.headers msg))
   (let [omitted? (identical? :aleph/omitted body)
         body (if (or (nil? body) omitted?)
                empty-last-content
@@ -540,30 +541,30 @@
                 (or
                   (nil? body)
                   (identical? :aleph/omitted body)
-                (instance? String body)
-                (instance? ary-class body)
-                (instance? ByteBuffer body)
-                (instance? ByteBuf body))
-              (send-contiguous-body ch msg body)
+                  (instance? String body)
+                  (instance? ary-class body)
+                  (instance? ByteBuffer body)
+                  (instance? ByteBuf body))
+                (send-contiguous-body ch msg body)
 
-              (instance? ChunkedInput body)
-              (send-chunked-body ch msg body)
+                (instance? ChunkedInput body)
+                (send-chunked-body ch msg body)
 
-              (instance? File body)
-              (send-file-body ch ssl? msg (http-file body))
+                (instance? File body)
+                (send-file-body ch ssl? msg (http-file body))
 
-              (instance? Path body)
-              (send-file-body ch ssl? msg (http-file body))
+                (instance? Path body)
+                (send-file-body ch ssl? msg (http-file body))
 
-              (instance? HttpFile body)
-              (send-file-body ch ssl? msg body)
+                (instance? HttpFile body)
+                (send-file-body ch ssl? msg body)
 
-              :else
-              (let [class-name (.getName (class body))]
-                (try
-                  (send-streaming-body ch msg body)
-                  (catch Throwable e
-                    (log/error e "error sending body of type " class-name)
+                :else
+                (let [class-name (.getName (class body))]
+                  (try
+                    (send-streaming-body ch msg body)
+                    (catch Throwable e
+                      (log/error e "error sending body of type " class-name)
                       (throw e)))))]
 
       (when-not keep-alive?
@@ -647,7 +648,9 @@
       (netty/close ctx)
       (.fireUserEventTriggered ctx evt)))))
 
-(defn attach-idle-handlers [^ChannelPipeline pipeline idle-timeout]
+(defn attach-idle-handlers
+  ^ChannelPipeline
+  [^ChannelPipeline pipeline idle-timeout]
   (if (pos? idle-timeout)
     (doto pipeline
       (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))

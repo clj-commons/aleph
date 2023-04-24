@@ -294,7 +294,10 @@
                        (handle-response @response c s))))))))
 
          :else
-         (.fireChannelRead ctx msg))))))
+         (do
+           (log/debug "Unknown msg class:" (class msg))
+           (println "Unknown msg class:" (class msg))
+           (.fireChannelRead ctx msg)))))))
 
 (defn non-tunnel-proxy? [{:keys [tunnel? user http-headers ssl?]
                           :as   proxy-options}]
@@ -433,16 +436,18 @@
       (println "Adding activity logger")
       (.addFirst p "activity-logger" ^ChannelHandler logger))
 
-    (pipeline-transform p)))
+    (pipeline-transform p)
+    p))
 
 (let [stream-frame->http-object-codec (delay (Http2StreamFrameToHttpObjectCodec. false))]
   (defn- h2-stream-chan-initializer
     "The multiplex handler creates a channel per HTTP2 stream, this
      sets up each new stream channel"
     [response-stream proxy-options ssl? logger pipeline-transform handler]
+    (println "h2-stream-chan-initializer called") (flush)
     (netty/pipeline-initializer
       (fn [^ChannelPipeline p]
-        (println "h2-stream-chan-initializer called")
+        (println "h2-stream-chan-initializer initChannel called") (flush)
 
         (.addLast p
                   "stream-frame-to-http-object"
@@ -451,6 +456,8 @@
                   "handler"
                   ^ChannelHandler handler)
 
+        (println "added handler") (flush)
+
         (add-non-http-handlers
           p
           response-stream
@@ -458,6 +465,7 @@
           ssl?
           logger
           pipeline-transform)
+        (println "added non-http handlers") (flush)
 
         (log/debug (str "Stream chan pipeline:" (prn-str p)))
         (println "Stream chan pipeline:" (prn-str p)))
@@ -497,6 +505,7 @@
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
     (-> pipeline
+        (http/attach-idle-handlers idle-timeout)
         (.addLast "http-client"
                   (HttpClientCodec.
                     max-initial-line-length
@@ -506,7 +515,12 @@
                     false))
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
         (.addLast "handler" ^ChannelHandler handler)
-        (http/attach-idle-handlers idle-timeout))
+        (add-non-http-handlers
+          response-stream
+          proxy-options
+          ssl?
+          logger
+          pipeline-transform))
 
     (.equals ApplicationProtocolNames/HTTP_2 protocol)
     (let [http2-frame-codec (-> (Http2FrameCodecBuilder/forClient) ; TODO: share betw pipelines
@@ -514,16 +528,22 @@
                                 (.frameLogger (Http2FrameLogger. LogLevel/DEBUG))
                                 (.build))
 
+          ;; For the client, this may never get used, since the server will rarely
+          ;; initiate streams, and PUSH_PROMISE is deprecated. Responses to client-
+          ;; initiated streams use a separate handler, though we *also* set that using
+          ;; h2-stream-chan-initializer. Regardless, Http2MultiplexHandler must be on
+          ;; the pipeline to get new outbound channels.
+          server-initiated-stream-chan-initializer
+          (h2-stream-chan-initializer
+            response-stream proxy-options ssl? logger pipeline-transform handler)
 
-          stream-chan-initializer (h2-stream-chan-initializer
-                                    response-stream proxy-options ssl? logger pipeline-transform handler)
-
-          multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)
+          multiplex-handler (Http2MultiplexHandler. server-initiated-stream-chan-initializer)
           #_(Http2MultiplexHandler. (netty/channel-inbound-handler
                                       {:channel-read ([_ ctx msg]
                                                       (println "Read class" (class msg))
                                                       (.fireChannelRead ctx msg))}))]
       (-> pipeline
+          (http/attach-idle-handlers idle-timeout)
           (.addLast "http2-frame-codec" http2-frame-codec)
           (.addLast "multiplex" multiplex-handler))
 
@@ -533,62 +553,48 @@
     (do
       (log/error (str "Unsupported SSL protocol: " protocol))
       (println (str "Unsupported SSL protocol: " protocol))
-      (throw (IllegalStateException. (str "Unsupported SSL protocol: " protocol)))))
+      (throw (IllegalStateException. (str "Unsupported SSL protocol: " protocol))))))
 
-  (add-non-http-handlers
-    pipeline
-    response-stream
-    proxy-options
-    ssl?
-    logger
-    pipeline-transform))
-
+;; TODO: add SSL handler in here.
 (defn make-pipeline-builder
   "Returns a function that initializes a new channel's pipeline.
 
-   SSL/TLS is handled elsewhere."
+   For HTTP/2 multiplexing, does not set up child channel pipelines. See
+   `h2-stream-chan-initializer` for that.
+
+   SSL/TLS is handled with `add-ssl-handler`."
   [response-stream
-   {:keys [response-buffer-size raw-stream? ssl? log-activity]
-    :or   {response-buffer-size 65536
-           log-activity         :debug}
+   {:keys [handler ssl? logger apn-handler-removed]
     :as   opts}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
-    (let [handler (if raw-stream?
-                    (raw-client-handler response-stream response-buffer-size)
-                    (client-handler response-stream response-buffer-size))
-          logger (cond
-                   (instance? LoggingHandler log-activity)
-                   log-activity
+    (if ssl?
+      ;; when making an SSL request while supporting multiple HTTP versions,
+      ;; the client and server negotiate which version to use, and we can't
+      ;; finish the pipeline until that happens
+      (do
+        (.addLast pipeline
+                  "apn-handler"
+                  (netty/application-protocol-negotiation-handler
+                    (fn configure-pipeline
+                      [^ChannelHandlerContext ctx protocol]
+                      (setup-http-pipeline (assoc opts
+                                                  :response-stream response-stream
+                                                  :pipeline (.pipeline ctx)
+                                                  :protocol protocol
+                                                  :handler handler
+                                                  :logger logger)))
+                    ApplicationProtocolNames/HTTP_1_1
+                    apn-handler-removed))
+        (println "ALPN setup: " (prn-str pipeline)))
 
-                   (some? log-activity)
-                   (netty/activity-logger "aleph-client" log-activity)
-
-                   :else
-                   nil)]
-      (if ssl?
-        ;; when making an SSL request while supporting multiple HTTP versions,
-        ;; the client and server negotiate which version to use, and we can't
-        ;; finish the pipeline until that happens
-        (do
-          (.addLast pipeline
-                    "apn-handler"
-                    (netty/application-protocol-negotiation-handler
-                      (fn configure-pipeline
-                        [^ChannelHandlerContext ctx protocol]
-                        (setup-http-pipeline (assoc opts
-                                                    :response-stream response-stream
-                                                    :pipeline (.pipeline ctx)
-                                                    :protocol protocol
-                                                    :handler handler
-                                                    :logger logger)))
-                      ApplicationProtocolNames/HTTP_1_1))
-          (println "ALPN setup: " (prn-str pipeline)))
+      (do
         (setup-http-pipeline (assoc opts
                                     :response-stream response-stream
                                     :pipeline pipeline
                                     :handler handler
-                                    :logger logger))))))
+                                    :logger logger))
+        (d/success! apn-handler-removed true)))))
 
 (defn close-connection [f]
   (f
@@ -675,85 +681,97 @@
 
 (defn- req-preprocesser
   "Returns a fn that preprocesses Ring reqs off the requests stream, and sends
-   them and their bodies off to `send-message`.
+   them and their bodies off to `send-message` (HTTP/1.1) or `req-preprocess` (HTTP/2).
 
-   Converts a Ring req to a Netty HttpRequest, updates headers, encodes for
+   Converts a Ring req to Netty-friendly objects, updates headers, encodes for
    multipart reqs, and records debug vals."
-  [{:keys [ch authority keep-alive?' non-tun-proxy? protocol responses ssl?]}]
+  [{:keys [ch protocol responses ssl?] :as opts}]
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-    (fn [req]
-      (try
-        (let [^HttpRequest req' (http/ring-request->netty-request
-                                  (if non-tun-proxy?
-                                    (assoc req :uri (req->proxy-url req))
-                                    req))]
-          (when-not (.get (.headers req') "Host")
-            (.set (.headers req') HttpHeaderNames/HOST authority))
-          (when-not (.get (.headers req') "Connection")
-            (HttpUtil/setKeepAlive req' keep-alive?'))
+    (let [{:keys [authority keep-alive?' non-tun-proxy?]} opts]
+      (fn [req]
+        (try
+          (let [^HttpRequest req' (http/ring-request->netty-request
+                                    (if non-tun-proxy?
+                                      (assoc req :uri (req->proxy-url req))
+                                      req))]
+            (when-not (.get (.headers req') "Host")
+              (.set (.headers req') HttpHeaderNames/HOST authority))
+            (when-not (.get (.headers req') "Connection")
+              (HttpUtil/setKeepAlive req' keep-alive?'))
 
-          (let [body (:body req)
-                parts (:multipart req)
-                multipart? (some? parts)
-                [req' body] (cond
-                              ;; RFC #7231 4.3.8. TRACE
-                              ;; A client MUST NOT send a message body...
-                              (= :trace (:request-method req))
-                              (do
-                                (when (or (some? body) multipart?)
-                                  (log/warn "TRACE request body was omitted"))
-                                [req' nil])
+            (let [body (:body req)
+                  parts (:multipart req)
+                  multipart? (some? parts)
+                  [req' body] (cond
+                                ;; RFC #7231 4.3.8. TRACE
+                                ;; A client MUST NOT send a message body...
+                                (= :trace (:request-method req))
+                                (do
+                                  (when (or (some? body) multipart?)
+                                    (log/warn "TRACE request body was omitted"))
+                                  [req' nil])
 
-                              (not multipart?)
-                              [req' body]
+                                (not multipart?)
+                                [req' body]
 
-                              :else
-                              (multipart/encode-request req' parts))]
+                                :else
+                                (multipart/encode-request req' parts))]
 
-            (when-let [save-message (get req :aleph/save-request-message)]
-              ;; debug purpose only
-              ;; note, that req' is effectively mutable, so
-              ;; it will "capture" all changes made during "send-message"
-              ;; execution
-              (reset! save-message req'))
+              (when-let [save-message (get req :aleph/save-request-message)]
+                ;; debug purpose only
+                ;; note, that req' is effectively mutable, so
+                ;; it will "capture" all changes made during "send-message"
+                ;; execution
+                (reset! save-message req'))
 
-            (when-let [save-body (get req :aleph/save-request-body)]
-              ;; might be different in case we use :multipart
-              (reset! save-body body))
+              (when-let [save-body (get req :aleph/save-request-body)]
+                ;; might be different in case we use :multipart
+                (reset! save-body body))
 
-            (-> (netty/safe-execute ch
-                                    (http/send-message ch true ssl? req' body))
-                (d/catch' (fn [e]
-                            (s/put! responses (d/error-deferred e))
-                            (netty/close ch))))))
+              (-> (netty/safe-execute ch
+                                      (http/send-message ch true ssl? req' body))
+                  (d/catch' (fn [e]
+                              (s/put! responses (d/error-deferred e))
+                              (netty/close ch))))))
 
-        ;; this will usually happen because of a malformed request
-        (catch Throwable e
-          (s/put! responses (d/error-deferred e))
-          (netty/close ch))))
+          ;; this will usually happen because of a malformed request
+          (catch Throwable e
+            (s/put! responses (d/error-deferred e))
+            (netty/close ch)))))
 
     (.equals ApplicationProtocolNames/HTTP_2 protocol)
-    (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)]
+    (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)
+          {:keys [proxy-options logger pipeline-transform handler]} opts]
+
+      ;; when you create an HTTP2 outbound stream, you have to supply it with a
+      ;; handler for the response
+      (.handler h2-bootstrap
+                (h2-stream-chan-initializer
+                  responses proxy-options ssl? logger pipeline-transform handler))
+
       (fn [req]
         (println "req-preprocesser h2 fired")
+        #_(println "h2bootstrap: " h2-bootstrap)
         (-> (.open h2-bootstrap)
             netty/wrap-future
             (d/chain' (fn [chan]
-                        ; FIXME
-                        (h2-stream-chan-initializer
-                          responses proxy-options ssl? logger pipeline-transform handler)
+                        (println "Got outbound h2 stream.")
+
                         (-> chan
                             .pipeline
-                            (.addLast (netty/channel-inbound-handler
-                                        :channel-read ([_ ctx msg] (println "received msg of class" (class msg))))))
-                        (http2/req-preprocess chan req responses))))))
-
-    #_
-    (do
-      (println "HTTP/2 not supported yet")
-      (netty/close ch)
-      (s/put! responses (d/error-deferred (SSLHandshakeException. "HTTP/2 not supported yet"))))
+                            (.addLast "debug"
+                                      (netty/channel-inbound-handler
+                                        :channel-read ([_ ctx msg]
+                                                       (println "received msg of class" (class msg))
+                                                       (println "msg:" msg)))))
+                        (http2/req-preprocess chan req responses)))
+            (d/catch' (fn [^Throwable t]
+                        (log/error t "Unable to open outbound HTTP/2 stream channel")
+                        (println "Unable to open outbound HTTP/2 stream channel")
+                        (.printStackTrace t)
+                        (s/put! responses (d/error-deferred t))
+                        (netty/close ch))))))
 
     :else
     (do
@@ -782,12 +800,20 @@
            response-executor
            epoll?
            transport
-           proxy-options]
-    :or   {bootstrap-transform  identity
+           proxy-options
+           pipeline-transform
+           log-activity
+           http-versions]
+    :or   {raw-stream? false
+           bootstrap-transform  identity
+           pipeline-transform   identity
            keep-alive?          true
            response-buffer-size 65536
            epoll?               false
-           name-resolver        :default}
+           name-resolver        :default
+           log-activity         :debug
+           http-versions        [ApplicationProtocolNames/HTTP_2
+                                 ApplicationProtocolNames/HTTP_1_1]}
     :as   options}]
   (let [responses (s/stream 1024 nil response-executor)
         requests (s/stream 1024 nil nil)
@@ -813,16 +839,31 @@
                                     ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
                                     ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
                                     ^"[Ljava.lang.String;"
-                                    (into-array String
-                                                [ApplicationProtocolNames/HTTP_2
-                                                 ApplicationProtocolNames/HTTP_1_1]))]
+                                    (into-array String http-versions))]
                               (netty/ssl-client-context
                                 {:application-protocol-config
                                  application-protocol-config})))))
+        apn-handler-removed (d/deferred)
+
+        logger (cond
+                 (instance? LoggingHandler log-activity) log-activity
+                 (some? log-activity) (netty/activity-logger "aleph-client" log-activity)
+                 :else nil)
+
+        handler (if raw-stream?
+                  (raw-client-handler responses response-buffer-size)
+                  (client-handler responses response-buffer-size))
+
+        pipeline-builder (make-pipeline-builder responses
+                                                (assoc options
+                                                       :ssl? ssl?
+                                                       :handler handler
+                                                       :logger logger
+                                                       :apn-handler-removed apn-handler-removed
+                                                       :pipeline-transform pipeline-transform))
 
         c (netty/create-client
-            {:pipeline-builder    (make-pipeline-builder responses
-                                                         (assoc options :ssl? ssl?))
+            {:pipeline-builder    pipeline-builder
              :ssl-context         ssl-context
              :bootstrap-transform bootstrap-transform
              :remote-address      remote-address
@@ -843,9 +884,10 @@
                                (when on-closed (on-closed))
                                (s/close! requests)))
 
-                ;; We know the SSL handshake is complete because create-client wraps the
+                ;; We know the SSL handshake must be complete because create-client wraps the
                 ;; future with maybe-ssl-handshake-future, so we can get the negotiated
-                ;; protocol, falling back to HTTP/1.1 by default
+                ;; protocol, falling back to HTTP/1.1 by default. However, the ALPN handler
+                ;; may still be present on the pipeline, so we can't start req-preprocessor yet
                 (let [protocol (if ssl?
                                  (or (-> ch
                                          (.pipeline)
@@ -854,16 +896,30 @@
                                      ApplicationProtocolNames/HTTP_1_1)
                                  ApplicationProtocolNames/HTTP_1_1)]
                   (println "HTTP protocol:" protocol)
+                  (println "post-handshake channel?" (prn-str ch))
 
-                  (s/consume
-                    (req-preprocesser {:ch                ch
-                                       :protocol          protocol
-                                       :authority         authority
-                                       :keep-alive?'      keep-alive?'
-                                       :non-tun-proxy?    non-tun-proxy?
-                                       :responses         responses
-                                       :ssl?              ssl?})
-                    requests)
+                  (d/on-realized apn-handler-removed
+                                 (fn [_]
+                                   (println "Beginning request consumption") (flush)
+                                   (s/consume
+                                     (req-preprocesser {:ch                 ch
+                                                        :protocol           protocol
+                                                        :authority          authority
+                                                        :keep-alive?'       keep-alive?'
+                                                        :non-tun-proxy?     non-tun-proxy?
+                                                        :responses          responses
+                                                        :ssl?               ssl?
+                                                        :proxy-options      proxy-options
+                                                        :logger             logger
+                                                        :pipeline-transform pipeline-transform
+                                                        :handler            handler})
+                                     requests))
+                                 (fn [^Throwable t]
+                                   (log/error t "Error removing ALPN handler")
+                                   (println "Error removing ALPN handler" t) (flush)
+                                   (s/close! responses)
+                                   (s/close! requests)
+                                   (.close ch)))
 
                   (req-handler {:ch                   ch
                                 :keep-alive?          keep-alive? ; why not keep-alive?'
