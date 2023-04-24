@@ -775,7 +775,7 @@
        (println t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
        (.close ctx))
      (handlerAdded [^ChannelHandlerContext ctx]
-       (log/warn "ChannelInitializer added to pipeline")
+       (log/debug "ChannelInitializer added to pipeline")
        (println "ChannelInitializer added to pipeline")
        (when handler-added (handler-added))
        (let [^ChannelInitializer this this]                 ; stupid proxy reflection warning
@@ -786,10 +786,24 @@
    called when the TLS handshake is complete. The handler will finish
    setting up the pipeline for the negotiated protocol"
   ^ApplicationProtocolNegotiationHandler
-  [configure-pipeline fallback-protocol]
-  (proxy [ApplicationProtocolNegotiationHandler] [fallback-protocol]
-    (configurePipeline [^ChannelHandlerContext ctx ^String protocol]
-      (configure-pipeline ctx protocol))))
+  ([configure-pipeline fallback-protocol]
+   (application-protocol-negotiation-handler configure-pipeline fallback-protocol nil))
+  ([configure-pipeline fallback-protocol handler-removed-d]
+   (proxy [ApplicationProtocolNegotiationHandler] [fallback-protocol]
+     (configurePipeline [^ChannelHandlerContext ctx ^String protocol]
+       (configure-pipeline ctx protocol))
+     (handlerRemoved [^ChannelHandlerContext ctx]
+       (try
+         (log/debug "ApplicationProtocolNegotiationHandler removed from pipeline")
+         (println "ApplicationProtocolNegotiationHandler removed from pipeline")
+         (when handler-removed-d
+           (println "Setting handler-removed-d to true")
+           (d/success! handler-removed-d true))
+
+         ;; weird behavior when proxy-super isn't last
+         ;; ClassLoader? thread safety issue?
+         (let [^ChannelInitializer this this]               ; stupid proxy reflection warning
+           (proxy-super handlerRemoved ctx)))))))
 
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
@@ -1333,6 +1347,7 @@ initialize an DnsAddressResolverGroup instance.
   (if-let [^SslHandler ssl-handler (-> ch .pipeline (.get SslHandler))]
     (do
       (log/debug "Waiting on SSL handshake...")
+      (println "Waiting on SSL handshake...") (clojure.core/flush)
       (doto (-> ssl-handler
                 (.handshakeFuture)
                 wrap-future)
