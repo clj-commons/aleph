@@ -31,9 +31,15 @@
       LastHttpContent
       FullHttpResponse)
     (io.netty.handler.codec.http2
-      Http2ClientUpgradeCodec)
+      Http2FrameCodecBuilder
+      Http2FrameLogger
+      Http2MultiplexHandler
+      Http2Settings
+      Http2StreamChannelBootstrap
+      Http2StreamFrameToHttpObjectCodec)
     (io.netty.handler.logging
-      LoggingHandler)
+      LoggingHandler
+      LogLevel)
     (io.netty.handler.proxy
       ProxyConnectionEvent
       ProxyConnectException
@@ -42,6 +48,13 @@
       HttpProxyHandler$HttpProxyConnectException
       Socks4ProxyHandler
       Socks5ProxyHandler)
+    (io.netty.handler.ssl
+      ApplicationProtocolConfig
+      ApplicationProtocolConfig$Protocol
+      ApplicationProtocolConfig$SelectorFailureBehavior
+      ApplicationProtocolConfig$SelectedListenerFailureBehavior
+      ApplicationProtocolNames
+      SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
     (java.io
@@ -52,7 +65,8 @@
       IDN
       URL)
     (java.util.concurrent.atomic
-      AtomicInteger)))
+      AtomicInteger)
+    (javax.net.ssl SSLHandshakeException)))
 
 (set! *unchecked-math* true)
 
