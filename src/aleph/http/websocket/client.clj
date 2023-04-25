@@ -1,6 +1,7 @@
 (ns aleph.http.websocket.client
   (:require
     [aleph.http.core :as http]
+    [aleph.http.websocket.common :as ws.common]
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
@@ -104,7 +105,7 @@
          (when (realized? d)
            ;; close only on success
            (d/chain' d s/close!)
-           (http/resolve-pings! pending-pings false))
+           (ws.common/resolve-pings! pending-pings false))
          (.fireChannelInactive ctx))
 
         :channel-active
@@ -122,7 +123,7 @@
          (if (and (instance? IdleStateEvent evt)
                   (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
            (when (d/realized? d)
-             (http/handle-heartbeat ctx @d heartbeats))
+             (ws.common/handle-heartbeat ctx @d heartbeats))
            (.fireUserEventTriggered ctx evt)))
 
         :channel-read
@@ -146,7 +147,7 @@
                                         netty/wrap-future
                                         (d/chain' (fn [_] (netty/close ctx))))
                                     true)))
-                     coerce-fn (http/websocket-message-coerce-fn
+                     coerce-fn (ws.common/websocket-message-coerce-fn
                                  ch
                                  pending-pings
                                  close-fn)
@@ -157,7 +158,7 @@
                               :websocket-selected-subprotocol subprotocol)
                      out (netty/sink ch false coerce-fn (fn [] @desc))]
 
-                 (s/on-closed out #(http/resolve-pings! pending-pings false))
+                 (s/on-closed out #(ws.common/resolve-pings! pending-pings false))
 
                  (d/success! d
                              (doto
@@ -205,7 +206,7 @@
              (instance? PongWebSocketFrame msg)
              (do
                (netty/release msg)
-               (http/resolve-pings! pending-pings true))
+               (ws.common/resolve-pings! pending-pings true))
 
              (instance? PingWebSocketFrame msg)
              (let [frame (.content ^PingWebSocketFrame msg)]
@@ -288,7 +289,7 @@
                                           (.addLast ^ChannelPipeline %
                                                     "websocket-deflater"
                                                     WebSocketClientCompressionHandler/INSTANCE)))
-                                      (http/attach-heartbeats-handler heartbeats)
+                                      (ws.common/attach-heartbeats-handler heartbeats)
                                       (.addLast "handler" ^ChannelHandler handler)
                                       pipeline-transform))
          :ssl-context         (when ssl?

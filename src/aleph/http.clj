@@ -7,6 +7,7 @@
     [aleph.http.core :as http-core]
     [aleph.http.server :as server]
     [aleph.http.websocket.client :as ws.client]
+    [aleph.http.websocket.common :as ws.common]
     [aleph.http.websocket.server :as ws.server]
     [aleph.netty :as netty]
     [clojure.string :as str]
@@ -266,11 +267,11 @@
    yield true whenever the PONG comes back, or false if the connection is closed. Subsequent
    PINGs are supressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
   ([conn]
-   (http-core/websocket-ping conn (d/deferred) nil))
+   (ws.common/websocket-ping conn (d/deferred) nil))
   ([conn d']
-   (http-core/websocket-ping conn d' nil))
+   (ws.common/websocket-ping conn d' nil))
   ([conn d' data]
-   (http-core/websocket-ping conn d' data)))
+   (ws.common/websocket-ping conn d' data)))
 
 (defn websocket-close!
   "Closes given websocket endpoint (either client or server) sending Close frame with provided
@@ -280,14 +281,14 @@
    client waits for the connection to be closed by the server (no longer than close handshake
    timeout, see websocket connection configuration for more details)."
   ([conn]
-   (websocket-close! conn http-core/close-empty-status-code "" nil))
+   (websocket-close! conn ws.common/close-empty-status-code "" nil))
   ([conn status-code]
    (websocket-close! conn status-code "" nil))
   ([conn status-code reason-text]
    (websocket-close! conn status-code reason-text nil))
   ([conn status-code reason-text deferred]
    (let [d' (or deferred (d/deferred))]
-     (http-core/websocket-close! conn status-code reason-text d'))))
+     (ws.common/websocket-close! conn status-code reason-text d'))))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request

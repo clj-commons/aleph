@@ -1,6 +1,7 @@
 (ns aleph.http.websocket.server
   (:require
     [aleph.http.core :as http]
+    [aleph.http.websocket.common :as ws.common]
     [aleph.netty :as netty]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
@@ -52,7 +53,7 @@
    (let [d (d/deferred)
          ^ConcurrentLinkedQueue pending-pings (ConcurrentLinkedQueue.)
          closing? (AtomicBoolean. false)
-         coerce-fn (http/websocket-message-coerce-fn
+         coerce-fn (ws.common/websocket-message-coerce-fn
                      ch
                      pending-pings
                      (fn [^CloseWebSocketFrame frame]
@@ -65,7 +66,7 @@
          out (netty/sink ch false coerce-fn description)
          in (netty/buffered-source ch (constantly 1) 16)]
 
-     (s/on-closed out #(http/resolve-pings! pending-pings false))
+     (s/on-closed out #(ws.common/resolve-pings! pending-pings false))
 
      (s/on-drained
        in
@@ -100,7 +101,7 @@
           ([_ ctx evt]
            (if (and (instance? IdleStateEvent evt)
                     (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-             (http/handle-heartbeat ctx s heartbeats)
+             (ws.common/handle-heartbeat ctx s heartbeats)
              (.fireUserEventTriggered ctx evt)))
 
           :channel-read
@@ -140,7 +141,7 @@
                (instance? PongWebSocketFrame msg)
                (do
                  (netty/release msg)
-                 (http/resolve-pings! pending-pings true))
+                 (ws.common/resolve-pings! pending-pings true))
 
                (instance? CloseWebSocketFrame msg)
                (if-not (.compareAndSet closing? false true)
@@ -233,7 +234,7 @@
                   (netty/remove-if-present HttpContentCompressor)
                   (netty/remove-if-present ChunkedWriteHandler)
                   (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-                  (http/attach-heartbeats-handler heartbeats)
+                  (ws.common/attach-heartbeats-handler heartbeats)
                   (.addLast "websocket-handler" handler))
             (when compression?
               ;; Hack:

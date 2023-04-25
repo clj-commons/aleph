@@ -1,7 +1,7 @@
 (ns aleph.websocket-test
   (:require
    [aleph.http :as http]
-   [aleph.http.core :as http-core]
+   [aleph.http.websocket.common :as ws.common]
    [aleph.http.websocket.server :as ws.server]
    [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
@@ -275,7 +275,7 @@
                 (-> client s/description :sink)]
             ;; `-1` means that no code was provided
             ;; Netty's internal implementation, nothing to do with RFCs
-            (is (= http-core/close-empty-status-code websocket-close-code))
+            (is (= ws.common/close-empty-status-code websocket-close-code))
             (is (= "" websocket-close-msg)))))))
 
   (testing "concurrent close attempts"
