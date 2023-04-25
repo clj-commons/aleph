@@ -38,7 +38,7 @@
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
              :pedantic {:pedantic? :abort}}
-  :java-source-paths ["src/aleph/utils"]
+  :java-source-paths ["src/aleph"]
   :test-selectors {:default #(not
                               (some #{:benchmark :stress}
                                     (cons (:tag %) (keys %))))

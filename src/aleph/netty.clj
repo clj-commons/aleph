@@ -10,6 +10,7 @@
     [manifold.stream.core :as manifold]
     [potemkin :refer [doit doary]])
   (:import
+    (aleph.http PipelineInitializer)
     (clojure.lang DynamicClassLoader)
     (io.netty.bootstrap Bootstrap ServerBootstrap)
     (io.netty.buffer ByteBuf Unpooled)
@@ -583,6 +584,10 @@
                (.flush ctx#))))))
 
 (defmacro ^:no-doc channel-inbound-handler
+  "Effectively a macro version of ChannelInboundHandlerAdapter.
+
+   Default behavior is to pass along all events. Default handler
+   added/removed behavior is NOOP."
   [& {:as handlers}]
   `(reify
      ChannelHandler
@@ -630,6 +635,10 @@
                (.fireChannelWritabilityChanged ctx#))))))
 
 (defmacro ^:no-doc channel-outbound-handler
+  "Effectively a macro version of ChannelOutboundHandlerAdapter.
+
+   Default behavior is to forward calls to the context. Default handler
+   added/removed behavior is NOOP."
   [& {:as handlers}]
   `(reify
      ChannelHandler
@@ -757,6 +766,16 @@
      (.add group (channel ctx))
      (.fireChannelActive ctx))))
 
+(defn pipeline-initializer
+  "Returns a ChannelInitializer which builds the pipeline.
+
+   `pipeline-builder` is a 1-arity fn that takes a ChannelPipeline and
+   configures it."
+  ^ChannelInitializer
+  [pipeline-builder]
+  (PipelineInitializer. pipeline-builder))
+
+#_
 (defn pipeline-initializer
   "Returns a ChannelInitializer which builds the pipeline."
   (^ChannelInitializer
