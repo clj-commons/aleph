@@ -13,6 +13,7 @@
       DefaultHttp2DataFrame
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
+      Http2Error
       Http2Exception
       Http2Headers
       Http2StreamChannel)
@@ -109,7 +110,7 @@
         (instance? ChunkedInput body)
         (do
           (let [emsg (str "ChunkedInput not supported yet")
-                e (Http2Exception. emsg)]
+                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
             (println emsg)
             (log/error e emsg)
             (netty/close ch)))
@@ -117,7 +118,7 @@
         (instance? File body)
         (do
           (let [emsg (str "File not supported yet")
-                e (Http2Exception. emsg)]
+                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
             (println emsg)
             (log/error e emsg)
             (netty/close ch)))
@@ -125,7 +126,7 @@
         (instance? Path body)
         (do
           (let [emsg (str "Path not supported yet")
-                e (Http2Exception. emsg)]
+                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
             (println emsg)
             (log/error e emsg)
             (netty/close ch)))
@@ -133,7 +134,7 @@
         (instance? HttpFile body)
         (do
           (let [emsg (str "HttpFile not supported yet")
-                e (Http2Exception. emsg)]
+                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
             (println emsg)
             (log/error e emsg)
             (netty/close ch)))
@@ -141,7 +142,7 @@
         (instance? FileRegion body)
         (do
           (let [emsg (str "FileRegion not supported yet")
-                e (Http2Exception. emsg)]
+                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
             (println emsg)
             (log/error e emsg)
             (netty/close ch)))
