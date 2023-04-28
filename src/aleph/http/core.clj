@@ -503,6 +503,15 @@
 
       fut)))
 
+(comment
+  (let [ch (EmbeddedChannel.)
+        keep-alive? true
+        ssl? true
+        body (-> ch .alloc (.buffer 100))
+        msg :fixme]
+    (quick-bench
+      (send-message ch keep-alive? ssl? msg body)))
+  )
 
 (defn close-on-idle-handler []
   (netty/channel-handler

@@ -13,6 +13,7 @@
       DefaultHttp2DataFrame
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
+      Http2DataChunkedInput
       Http2Error
       Http2Exception
       Http2Headers
@@ -65,29 +66,35 @@
    Negative length values are ignored."
   ^Http2Headers
   [^Http2Headers headers ^long length]
+
   (when-not (.get headers "content-length")
-    (.setLong headers "content-length" length)))
+    (if (some? (.status headers))
+      (let [code (-> headers (.status) (Long/parseLong))]
+        (when-not (or (<= 100 code 199)
+                      (== 204 code))
+          (.setLong headers "content-length" length)))
+      (.setLong headers "content-length" length))))
 
 
-(defn send-contiguous-body [ch ^Http2Headers headers body]
-  (let [body-bb (netty/to-byte-buf ch body)
-        body-frame (DefaultHttp2DataFrame. body-bb true)
-        length (.readableBytes body-bb)]
-
-    (if-let [code (Long/parseLong (.status headers))]
-      (when-not (or (<= 100 code 199)
-                    (= 204 code))
-        (try-set-content-length! headers length))
-      (try-set-content-length! headers length))
+(defn send-contiguous-body
+  [ch ^Http2Headers headers body]
+  (let [body-bb (netty/to-byte-buf ch body)]
+    (try-set-content-length! headers (.readableBytes body-bb))
 
     (netty/write ch (DefaultHttp2HeadersFrame. headers))
-    (netty/write-and-flush ch body-frame)))
+    (netty/write-and-flush ch (DefaultHttp2DataFrame. body-bb true))))
 
+(defn send-chunked-body
+  "Write out a msg and a body that's already chunked as a ChunkedInput"
+  [^Http2StreamChannel ch ^Http2Headers headers ^ChunkedInput body]
+  (try-set-content-length! headers (.length body))
 
+  (netty/write ch (DefaultHttp2HeadersFrame. headers))
+  (netty/write-and-flush ch (Http2DataChunkedInput. body (.stream ch))))
 
 (defn- send-message
-  [ch msg body]
-  (println "send-message fired")
+  [^Http2StreamChannel ch msg body]
+  (println "http2 send-message fired")
   (try
     (let [headers (ring-map->netty-http2-headers msg)]
       (prn "headers" headers) (flush)
@@ -97,7 +104,9 @@
             (identical? :aleph/omitted body))
         (do
           (println "body nil or omitted") (flush)
+          ;; FIXME: this probably breaks with the Http2 to Http1 codec in the pipeline
           (let [header-frame (DefaultHttp2HeadersFrame. headers true)]
+            (prn header-frame)
             (netty/write-and-flush ch header-frame)))
 
         (or
@@ -108,6 +117,8 @@
         (send-contiguous-body ch headers body)
 
         (instance? ChunkedInput body)
+        (send-chunked-body ch headers body)
+        #_
         (do
           (let [emsg (str "ChunkedInput not supported yet")
                 e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
@@ -160,9 +171,13 @@
       (log/error e "error sending message")
       (throw (ex-info "error sending message" {:msg msg :body body} e)))))
 
-
+;; NOTE: can't be as vague about whether we're working with a channel or context in HTTP/2 code,
+;; because we need access to the .stream method. We have a lot of code in aleph.netty that
+;; branches based on the class (channel vs context), but that's not ideal. It's slower, and
+;; writing to the channel vs the context means different things, anyway, they're not
+;; interchangeable.
 (defn req-preprocess
-  [ch req responses]
+  [^Http2StreamChannel ch req responses]
   (println "req-preprocess fired")
   (println "ch class: " (StringUtil/simpleClassName (class ch)))
   #_(println "ch class reflect: " (clojure.reflect/type-reflect (class ch)))
@@ -207,10 +222,14 @@
       (-> (netty/safe-execute ch
                               (send-message ch req' body))
           (d/catch' (fn [e]
+                      (println "Error in req-preprocess" e) (flush)
+                      (log/error e "Error in req-preprocess")
                       (s/put! responses (d/error-deferred e))
                       (netty/close ch)))))
 
     ;; this will usually happen because of a malformed request
     (catch Throwable e
+      (println "error in req-preprocess" e) (flush)
+      (log/error e "Error in req-preprocess")
       (s/put! responses (d/error-deferred e))
       (netty/close ch))))
