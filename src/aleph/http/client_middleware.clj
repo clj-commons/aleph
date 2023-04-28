@@ -152,11 +152,18 @@
 (defn ^:no-doc parse-url
   "Parse a URL string into a map of interesting parts."
   [url]
-  (let [url-parsed (URL. url)]
+  (let [url-parsed (URL. url)
+        orig-path (.getPath url-parsed)
+        ;; HTTP/2 RFC 9113 requires the :path pseudo-header never be empty.
+        path (if (.isEmpty orig-path)
+               "/"
+               (url-encode-illegal-characters orig-path))]
     {:scheme       (keyword (.getProtocol url-parsed))
      :server-name  (.getHost url-parsed)
      :server-port  (when-pos (.getPort url-parsed))
-     :uri          (url-encode-illegal-characters (.getPath url-parsed))
+     ;; Actually the URI's path, not a full URI. The Ring spec is wrong.
+     :uri          path
+     :path         path
      :user-info    (when-let [user-info (.getUserInfo url-parsed)]
                      (URLDecoder/decode user-info))
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
