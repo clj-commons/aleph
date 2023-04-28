@@ -6,7 +6,7 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
-    (aleph.http.core HttpFile)
+    (aleph.http.file HttpFile)
     (io.netty.buffer ByteBuf)
     (io.netty.channel FileRegion)
     (io.netty.handler.codec.http2
