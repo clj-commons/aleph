@@ -1,10 +1,8 @@
 (ns ^:no-doc aleph.http.core
   "HTTP/1.1 functionality"
   (:require
+    [aleph.file :as file]
     [aleph.netty :as netty]
-    [clj-commons.byte-streams :as bs]
-    [clj-commons.byte-streams.graph :as g]
-    [clojure.java.io :as io]
     [clojure.set :as set]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
@@ -12,54 +10,54 @@
     [manifold.stream :as s]
     [potemkin :as p])
   (:import
-    (io.netty.channel
-      Channel
-      DefaultFileRegion
-      ChannelFuture
-      ChannelFutureListener
-      ChannelPipeline
-      ChannelHandler)
+    (aleph.http.file
+      HttpFile)
     (io.netty.buffer
       ByteBuf)
-    (java.nio
-      ByteBuffer)
+    (io.netty.channel
+      Channel
+      ChannelFuture
+      ChannelFutureListener
+      ChannelHandler
+      ChannelPipeline
+      DefaultFileRegion)
     (io.netty.handler.codec
       DecoderResult
       DecoderResultProvider)
     (io.netty.handler.codec.http
-      DefaultHttpRequest DefaultLastHttpContent
-      DefaultHttpResponse DefaultFullHttpRequest
-      HttpHeaders HttpUtil HttpContent
-      HttpMethod HttpRequest HttpMessage
-      HttpResponse HttpResponseStatus
+      DefaultFullHttpRequest
       DefaultHttpContent
+      DefaultHttpRequest
+      DefaultHttpResponse
+      DefaultLastHttpContent
+      HttpChunkedInput HttpContent
+      HttpHeaders
+      HttpMessage
+      HttpMethod
+      HttpRequest
+      HttpResponse
+      HttpResponseStatus
+      HttpUtil
       HttpVersion
-      LastHttpContent HttpChunkedInput)
+      LastHttpContent)
+    (io.netty.handler.stream
+      ChunkedFile
+      ChunkedInput
+      ChunkedWriteHandler)
     (io.netty.handler.timeout
       IdleState
       IdleStateEvent
       IdleStateHandler)
-    (io.netty.handler.stream
-      ChunkedInput
-      ChunkedFile
-      ChunkedWriteHandler)
-    (io.netty.handler.codec.http.websocketx
-      WebSocketFrame
-      PingWebSocketFrame
-      TextWebSocketFrame
-      BinaryWebSocketFrame
-      CloseWebSocketFrame)
     (java.io
+      Closeable
       File
-      RandomAccessFile
-      Closeable)
-    (java.nio.file Path)
-    (java.nio.channels
-      FileChannel
-      FileChannel$MapMode)
+      RandomAccessFile)
+    (java.nio
+      ByteBuffer)
+    (java.nio.file
+      Path)
     (java.util.concurrent
       ConcurrentHashMap
-      ConcurrentLinkedQueue
       TimeUnit)
     (java.util.concurrent.atomic
       AtomicBoolean)))
@@ -271,7 +269,12 @@
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
 (let [ary-class (class (byte-array 0))]
-  (defn coerce-element [x]
+  (defn coerce-element
+    "Turns an object into something writable to a Netty channel.
+
+     Byte-based data types are untouched, as are strings. Everything else is
+     converted to a string."
+    [x]
     (if (or
           (instance? String x)
           (instance? ary-class x)
@@ -283,28 +286,34 @@
 (defn chunked-writer-enabled? [^Channel ch]
   (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
 
-(defn send-streaming-body [ch ^HttpMessage msg body]
+(defn send-streaming-body
+  "Write out a msg and a body that's streamable"
+  [ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
   (netty/write ch msg)
 
   (if-let [body' (if (sequential? body)
 
+                   ;; write out all the data we have already, and return the rest
                    (let [buf (netty/allocate ch)
                          pending? (instance? clojure.lang.IPending body)]
                      (loop [s (map coerce-element body)]
                        (cond
 
+                         ;; lazy and no data available yet - write out and move on
                          (and pending? (not (realized? s)))
                          (do
                            (netty/write-and-flush ch buf)
                            s)
 
+                         ;; If we're out of data, write out the buf, and return nil
                          (empty? s)
                          (do
                            (netty/write-and-flush ch buf)
                            nil)
 
+                         ;; if some data is ready, append it to the buf and recur
                          (or (not pending?) (realized? s))
                          (let [x (first s)]
                            (netty/append-to-buf! buf x)
@@ -344,6 +353,7 @@
 
       (s/connect src sink)
 
+      ;; set up close handlers
       (-> ch
           netty/channel
           .closeFuture
@@ -454,8 +464,9 @@
      #(do
         (.close raf)
         (.close fc)))))
-
-(defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
+(defn send-chunked-file
+  "Write out a msg and a body that's convertible to a ChunkedInput"
+  [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
                          (.-offset file)
@@ -465,11 +476,15 @@
     (netty/write ch msg)
     (netty/write-and-flush ch (HttpChunkedInput. cf))))
 
-(defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
+(defn send-chunked-body
+  "Write out a msg and a body that's already chunked as a ChunkedInput"
+  [ch ^HttpMessage msg ^ChunkedInput body]
   (netty/write ch msg)
   (netty/write-and-flush ch body))
 
-(defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
+(defn send-file-region
+  "Write out a msg and a body that can be turned into a FileRegion"
+  [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
         fr (DefaultFileRegion. fc ^long (.-offset file) ^long (.-length file))]
@@ -482,8 +497,15 @@
   (-> file
       (bs/to-byte-buffers {:chunk-size (.-chunk-size file)})
       s/->source))
+;; TODO: Try to enable ChunkedInput with SSL; SSL can't use FileRegion,
+;;   which calls .transferTo(), but anything resulting in ByteBufs should be fine
+(defn send-file-body
+  "Writes out a msg and chooses how to write out a body.
 
-(defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
+   If using SSL, sends a streaming body.
+   If the ChunkedWriteHandler is on the pipeline, sends as a ChunkedInput.
+   Otherwise, sends as a FileRegion."
+  [ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
     (let [body (when (pos-int? (.length file)) (file->stream file))]
@@ -495,7 +517,11 @@
     :else
     (send-file-region ch msg file)))
 
-(defn send-contiguous-body [ch ^HttpMessage msg body]
+(defn send-contiguous-body
+  "Writes out a msg and a body that can be turned into a single ByteBuf.
+
+   Sets the content-length header on requests, and non-204/non-1xx responses."
+  [ch ^HttpMessage msg body]
   (println "send-contiguous-body headers:" (.headers msg))
   (let [omitted? (identical? :aleph/omitted body)
         body (if (or (nil? body) omitted?)

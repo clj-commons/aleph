@@ -14,7 +14,8 @@
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
       Http2Exception
-      Http2Headers)
+      Http2Headers
+      Http2StreamChannel)
     (io.netty.handler.stream ChunkedInput)
     (io.netty.util.internal StringUtil)
     (java.io File)
@@ -57,6 +58,10 @@
     h2-headers))
 
 (defn- try-set-content-length!
+  "Attempts to set the content-length header if not already set.
+
+   Will skip if it's a response and the status code is 1xx or 204.
+   Negative length values are ignored."
   ^Http2Headers
   [^Http2Headers headers ^long length]
   (when-not (.get headers "content-length")

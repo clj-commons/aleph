@@ -1,21 +1,29 @@
 (ns aleph.http.websocket.common
-  (:require [aleph.netty :as netty]
-            [clj-commons.byte-streams :as bs]
-            [clojure.tools.logging :as log]
-            [manifold.deferred :as d]
-            [manifold.stream :as s])
-  (:import (io.netty.channel Channel ChannelHandler ChannelHandlerContext ChannelPipeline)
-           (io.netty.handler.codec.http.websocketx
-             BinaryWebSocketFrame
-             CloseWebSocketFrame
-             PingWebSocketFrame
-             TextWebSocketFrame
-             WebSocketFrame)
-           (io.netty.handler.stream ChunkedInput)
-           (io.netty.handler.timeout IdleStateHandler)
-           (java.util.concurrent
-             ConcurrentLinkedQueue
-             TimeUnit)))
+  (:require
+    [aleph.netty :as netty]
+    [clj-commons.byte-streams :as bs]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
+  (:import
+    (io.netty.channel
+      Channel
+      ChannelHandler
+      ChannelHandlerContext
+      ChannelPipeline)
+    (io.netty.handler.codec.http.websocketx
+      BinaryWebSocketFrame
+      CloseWebSocketFrame
+      PingWebSocketFrame
+      TextWebSocketFrame
+      WebSocketFrame)
+    (io.netty.handler.stream
+      ChunkedInput)
+    (io.netty.handler.timeout
+      IdleStateHandler)
+    (java.util.concurrent
+      ConcurrentLinkedQueue
+      TimeUnit)))
 
 (def close-empty-status-code -1)
 
