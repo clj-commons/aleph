@@ -279,7 +279,7 @@
                       max-frame-payload
                       heartbeats)]
     (d/chain'
-      (netty/create-client
+      (netty/create-client-chan
         {:pipeline-builder    (fn [^ChannelPipeline pipeline]
                                 (doto pipeline
                                       (.addLast "http-client" (HttpClientCodec.))

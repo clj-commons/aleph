@@ -10,8 +10,6 @@
     [manifold.stream :as s])
   (:import
     ;; Do not remove
-    (aleph.utils
-      ProxyConnectionTimeoutException)
     (io.netty.buffer
       ByteBuf)
     (io.netty.channel
@@ -23,37 +21,37 @@
       TooLongFrameException)
     (io.netty.handler.codec.http
       DefaultHttpHeaders
+      FullHttpResponse
       HttpClientCodec
+      HttpContent
+      HttpHeaderNames
       HttpRequest
       HttpResponse
-      HttpContent
       HttpUtil
-      HttpHeaderNames
-      LastHttpContent
-      FullHttpResponse)
+      LastHttpContent)
     (io.netty.handler.codec.http2
       Http2FrameCodecBuilder
       Http2FrameLogger
       Http2MultiplexHandler
       Http2Settings
-      Http2StreamChannelBootstrap
+      Http2StreamChannel Http2StreamChannelBootstrap
       Http2StreamFrameToHttpObjectCodec)
     (io.netty.handler.logging
-      LoggingHandler
-      LogLevel)
+      LogLevel
+      LoggingHandler)
     (io.netty.handler.proxy
-      ProxyConnectionEvent
-      ProxyConnectException
-      ProxyHandler
       HttpProxyHandler
       HttpProxyHandler$HttpProxyConnectException
+      ProxyConnectException
+      ProxyConnectionEvent
+      ProxyHandler
       Socks4ProxyHandler
       Socks5ProxyHandler)
     (io.netty.handler.ssl
       ApplicationProtocolConfig
       ApplicationProtocolConfig$Protocol
-      ApplicationProtocolConfig$SelectorFailureBehavior
       ApplicationProtocolConfig$SelectedListenerFailureBehavior
+      ApplicationProtocolConfig$SelectorFailureBehavior
       ApplicationProtocolNames
       SslHandler)
     (io.netty.handler.stream
@@ -61,9 +59,9 @@
     (java.io
       IOException)
     (java.net
-      URI
-      InetSocketAddress
       IDN
+      InetSocketAddress
+      URI
       URL)
     (java.util.concurrent.atomic
       AtomicInteger)
@@ -116,6 +114,7 @@
     (send-response-decoder-failure ctx msg response-stream)))
 
 (defn exception-handler [ctx ex response-stream]
+  (println "exception-handler" ex)
   (cond
     ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
     ;; is part of the pipeline
@@ -468,8 +467,7 @@
         (println "added non-http handlers") (flush)
 
         (log/debug (str "Stream chan pipeline:" (prn-str p)))
-        (println "Stream chan pipeline:" (prn-str p)))
-      #(println "h2-stream-chan-initializer handler added"))))
+        (println "Stream chan pipeline:" (prn-str p))))))
 
 
 (defn- setup-http-pipeline
@@ -685,10 +683,10 @@
 
    Converts a Ring req to Netty-friendly objects, updates headers, encodes for
    multipart reqs, and records debug vals."
-  [{:keys [ch protocol responses ssl?] :as opts}]
+  [{:keys [ch protocol responses ssl? authority] :as opts}]
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-    (let [{:keys [authority keep-alive?' non-tun-proxy?]} opts]
+    (let [{:keys [keep-alive?' non-tun-proxy?]} opts]
       (fn [req]
         (try
           (let [^HttpRequest req' (http/ring-request->netty-request
@@ -752,26 +750,32 @@
 
       (fn [req]
         (println "req-preprocesser h2 fired")
-        #_(println "h2bootstrap: " h2-bootstrap)
-        (-> (.open h2-bootstrap)
-            netty/wrap-future
-            (d/chain' (fn [chan]
-                        (println "Got outbound h2 stream.")
 
-                        (-> chan
-                            .pipeline
-                            (.addLast "debug"
-                                      (netty/channel-inbound-handler
-                                        :channel-read ([_ ctx msg]
-                                                       (println "received msg of class" (class msg))
-                                                       (println "msg:" msg)))))
-                        (http2/req-preprocess chan req responses)))
-            (d/catch' (fn [^Throwable t]
-                        (log/error t "Unable to open outbound HTTP/2 stream channel")
-                        (println "Unable to open outbound HTTP/2 stream channel")
-                        (.printStackTrace t)
-                        (s/put! responses (d/error-deferred t))
-                        (netty/close ch))))))
+        (let [req' (cond-> req
+                           (nil? (:authority req))
+                           (assoc :authority authority)
+
+                           (nil? (:uri req))
+                           (assoc :uri "/"))]
+          (-> (.open h2-bootstrap)
+              netty/wrap-future
+              (d/chain' (fn [^Http2StreamChannel chan]
+                          (println "Got outbound h2 stream.")
+
+                          (-> chan
+                              .pipeline
+                              (.addLast "debug"
+                                        (netty/channel-inbound-handler
+                                          :channel-read ([_ ctx msg]
+                                                         (println "received msg of class" (class msg))
+                                                         (println "msg:" msg)))))
+                          (http2/req-preprocess chan req' responses)))
+              (d/catch' (fn [^Throwable t]
+                          (log/error t "Unable to open outbound HTTP/2 stream channel")
+                          (println "Unable to open outbound HTTP/2 stream channel")
+                          (.printStackTrace t)
+                          (s/put! responses (d/error-deferred t))
+                          (netty/close ch)))))))
 
     :else
     (do
@@ -816,6 +820,7 @@
                                  ApplicationProtocolNames/HTTP_1_1]}
     :as   options}]
   (let [responses (s/stream 1024 nil response-executor)
+        _ (s/on-closed responses #(println "responses closed."))
         requests (s/stream 1024 nil nil)
         host (.getHostName remote-address)
         port (.getPort remote-address)
@@ -862,16 +867,16 @@
                                                        :apn-handler-removed apn-handler-removed
                                                        :pipeline-transform pipeline-transform))
 
-        c (netty/create-client
-            {:pipeline-builder    pipeline-builder
-             :ssl-context         ssl-context
-             :bootstrap-transform bootstrap-transform
-             :remote-address      remote-address
-             :local-address       local-address
-             :transport           (netty/determine-transport transport epoll?)
-             :name-resolver       name-resolver})]
-    (d/chain' c
-              (fn setup-client-channel
+        ch (netty/create-client-chan
+             {:pipeline-builder    pipeline-builder
+              :ssl-context         ssl-context
+              :bootstrap-transform bootstrap-transform
+              :remote-address      remote-address
+              :local-address       local-address
+              :transport           (netty/determine-transport transport epoll?)
+              :name-resolver       name-resolver})]
+    (d/chain' ch
+              (fn setup-client
                 [^Channel ch]
 
                 ;; Order: req map -> req-handler -> requests stream -> req-preprocesser

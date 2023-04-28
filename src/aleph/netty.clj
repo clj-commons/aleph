@@ -1398,7 +1398,7 @@ initialize an DnsAddressResolverGroup instance.
        (prepend-handler-to-pipeline p "ssl-handler" ssl-handler))
      (pipeline-builder p))))
 
-(defn ^:no-doc create-client
+(defn ^:no-doc create-client-chan
   "Returns a deferred containing a new Channel"
   ([pipeline-builder
     ssl-context
@@ -1406,13 +1406,13 @@ initialize an DnsAddressResolverGroup instance.
     remote-address
     local-address
     epoll?]
-   (create-client pipeline-builder
-                  ssl-context
-                  bootstrap-transform
-                  remote-address
-                  local-address
-                  epoll?
-                  nil))
+   (create-client-chan pipeline-builder
+                       ssl-context
+                       bootstrap-transform
+                       remote-address
+                       local-address
+                       epoll?
+                       nil))
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -1420,13 +1420,13 @@ initialize an DnsAddressResolverGroup instance.
     ^SocketAddress local-address
     epoll?
     name-resolver]
-   (create-client {:pipeline-builder    pipeline-builder
-                   :ssl-context         ssl-context
-                   :bootstrap-transform bootstrap-transform
-                   :remote-address      remote-address
-                   :local-address       local-address
-                   :transport           (if epoll? :epoll :nio)
-                   :name-resolver       name-resolver}))
+   (create-client-chan {:pipeline-builder pipeline-builder
+                   :ssl-context           ssl-context
+                   :bootstrap-transform   bootstrap-transform
+                   :remote-address        remote-address
+                   :local-address         local-address
+                   :transport             (if epoll? :epoll :nio)
+                   :name-resolver         name-resolver}))
   ([{:keys [pipeline-builder
             ssl-context
             bootstrap-transform

@@ -171,7 +171,7 @@
     :as options}]
   (let [[s handler] (client-channel-handler options)]
     (->
-     (netty/create-client
+     (netty/create-client-chan
       {:pipeline-builder    (fn [^ChannelPipeline pipeline]
                               (.addLast pipeline "handler" ^ChannelHandler handler)
                               (when pipeline-transform
