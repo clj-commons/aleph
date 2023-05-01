@@ -7,7 +7,7 @@
   :license {:name "MIT License"}
   :dependencies [[org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
                  [manifold "0.3.0" :exclusions [org.clojure/tools.logging]]
-                 [org.clj-commons/byte-streams "0.3.1"]
+                 [org.clj-commons/byte-streams "0.3.2"]
                  [org.clj-commons/dirigiste "1.0.3"]
                  [org.clj-commons/primitive-math "1.0.0"]
                  [potemkin "0.4.5"]
