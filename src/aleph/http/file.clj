@@ -6,8 +6,13 @@
     [manifold.stream :as s])
   (:import
     (java.io
-      File RandomAccessFile)
-    (java.nio.channels FileChannel)
+      File
+      RandomAccessFile)
+    (java.nio
+      ByteBuffer)
+    (java.nio.channels
+      FileChannel
+      FileChannel$MapMode)
     (java.nio.file
       Path)))
 

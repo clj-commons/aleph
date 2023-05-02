@@ -482,10 +482,10 @@
                 (send-chunked-body ch msg body)
 
                 (instance? File body)
-                (send-file-body ch ssl? msg (http-file body))
+                (send-file-body ch ssl? msg (file/http-file body))
 
                 (instance? Path body)
-                (send-file-body ch ssl? msg (http-file body))
+                (send-file-body ch ssl? msg (file/http-file body))
 
                 (instance? HttpFile body)
                 (send-file-body ch ssl? msg body)

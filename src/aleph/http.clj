@@ -4,7 +4,7 @@
     [aleph.flow :as flow]
     [aleph.http.client :as client]
     [aleph.http.client-middleware :as middleware]
-    [aleph.http.core :as http-core]
+    [aleph.http.file :as file]
     [aleph.http.server :as server]
     [aleph.http.websocket.client :as ws.client]
     [aleph.http.websocket.common :as ws.common]
@@ -14,16 +14,16 @@
     [manifold.deferred :as d]
     [manifold.executor :as executor])
   (:import
-    (io.aleph.dirigiste Pools)
     (aleph.utils
-      PoolTimeoutException
       ConnectionTimeoutException
-      RequestTimeoutException
-      ReadTimeoutException)
+      PoolTimeoutException
+      ReadTimeoutException
+      RequestTimeoutException)
+    (io.aleph.dirigiste Pools)
     (io.netty.handler.codec.http HttpHeaders)
     (java.net
-      URI
-      InetSocketAddress)
+      InetSocketAddress
+      URI)
     (java.util.concurrent
       TimeoutException)))
 
@@ -468,8 +468,8 @@
    Accepts string path to the file, instance of `java.io.File` or instance of
    `java.nio.file.Path`."
   ([path]
-   (http-core/http-file path nil nil nil))
+   (file/http-file path nil nil nil))
   ([path offset length]
-   (http-core/http-file path offset length nil))
+   (file/http-file path offset length nil))
   ([path offset length chunk-size]
-   (http-core/http-file path offset length chunk-size)))
+   (file/http-file path offset length chunk-size)))
