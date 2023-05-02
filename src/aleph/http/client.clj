@@ -9,7 +9,8 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
-    ;; Do not remove
+    (aleph.utils
+      ProxyConnectionTimeoutException)
     (io.netty.buffer
       ByteBuf)
     (io.netty.channel
@@ -396,7 +397,7 @@
                        (.headers ^HttpProxyHandler$HttpProxyConnectException cause))
              response (cond
                         (= "timeout" message)
-                        (ProxyConnectionTimeoutException. cause)
+                        (ProxyConnectionTimeoutException. ^Throwable cause)
 
                         (some? headers)
                         (ex-info message {:headers (http/headers->map headers)})

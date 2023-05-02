@@ -600,7 +600,7 @@
      (exceptionCaught
        ~@(or (:exception-caught handlers)
              `([_# ctx# cause#]
-               (.fireExceptionCaught ctx# cause#))))
+               (.fireExceptionCaught ctx# ^Throwable cause#))))
      (channelRegistered
        ~@(or (:channel-registered handlers)
              `([_# ctx#]
