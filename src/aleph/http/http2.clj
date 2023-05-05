@@ -15,7 +15,7 @@
       DefaultHttp2HeadersFrame
       Http2DataChunkedInput
       Http2Error
-      Http2Exception
+      Http2FrameStreamException
       Http2Headers
       Http2StreamChannel)
     (io.netty.handler.stream ChunkedInput)
@@ -26,12 +26,49 @@
 
 (set! *warn-on-reflection* true)
 
-(def ^:private byte-array-class (class (byte-array 0)))
+(def ^:private byte-array-class (Class/forName "[B"))
+
+;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
+(def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
+
+(defn- add-header
+  "Add a single header and value. The value can be a string or a collection of
+   strings.
+
+   Respects HTTP/2 rules. Strips invalid connection-related headers. Throws on
+   nil header values. Throws if `transfer-encoding` is present, but not 'trailers'."
+  [^Http2Headers h2-headers ^String header-name header-value]
+  (println "adding header" header-name header-value)
+  (if (nil? header-name)
+    (throw (IllegalArgumentException. "Header name cannot be nil"))
+    (let [header-name (str/lower-case header-name)]         ; http2 requires lowercase headers
+      (cond
+        (nil? header-value)
+        (throw (IllegalArgumentException. (str "Invalid nil value for header '" header-name "'")))
+
+        (invalid-headers header-name)
+        (do
+          (println (str "Forbidden HTTP/2 header: \"" header-name "\""))
+          (throw
+            (IllegalArgumentException. (str "Forbidden HTTP/2 header: \"" header-name "\""))))
+
+        ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
+        (and (.equals "transfer-encoding" header-name)
+             (not (.equals "trailers" header-value)))
+        (throw
+          (IllegalArgumentException. "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed."))
+
+        (sequential? header-value)
+        (.add h2-headers ^CharSequence header-name ^Iterable header-value)
+
+        :else
+        (.add h2-headers ^CharSequence header-name ^Object header-value)))))
 
 (defn- ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map."
   ^DefaultHttp2Headers
   [req]
+  (prn req)
   (let [headers (get req :headers)
         h2-headers (doto (DefaultHttp2Headers.)
                          (.method (-> req (get :request-method) name str/upper-case))
@@ -44,29 +81,17 @@
       (.status h2-headers (-> req (get :status) str)))
 
     (when headers
-      (run! (fn [entry]
-              (let [k (str/lower-case (key entry))          ; http2 requires lowercase headers
-                    v (val entry)]
-                (cond
-                  (nil? v)
-                  (throw (IllegalArgumentException. (str "nil value for header key '" k "'")))
-
-                  (sequential? v)
-                  (.add h2-headers ^CharSequence k ^Iterable v)
-
-                  :else
-                  (.add h2-headers ^CharSequence k ^Object v))))
+      (run! #(add-header h2-headers (key %) (val %))
             headers))
     h2-headers))
 
 (defn- try-set-content-length!
-  "Attempts to set the content-length header if not already set.
+  "Attempts to set the `content-length` header if not already set.
 
    Will skip if it's a response and the status code is 1xx or 204.
    Negative length values are ignored."
   ^Http2Headers
   [^Http2Headers headers ^long length]
-
   (when-not (.get headers "content-length")
     (if (some? (.status headers))
       (let [code (-> headers (.status) (Long/parseLong))]
@@ -93,83 +118,75 @@
   (netty/write-and-flush ch (Http2DataChunkedInput. body (.stream ch))))
 
 (defn- send-message
-  [^Http2StreamChannel ch msg body]
+  [^Http2StreamChannel ch ^Http2Headers headers body]
   (println "http2 send-message fired")
   (try
-    (let [headers (ring-map->netty-http2-headers msg)]
-      (prn "headers" headers) (flush)
+    (cond
+      (or (nil? body)
+          (identical? :aleph/omitted body))
+      (do
+        (println "body nil or omitted") (flush)
+        ;; FIXME: this probably breaks with the Http2 to Http1 codec in the pipeline
+        (let [header-frame (DefaultHttp2HeadersFrame. headers true)]
+          (prn header-frame)
+          (netty/write-and-flush ch header-frame)))
 
-      (cond
-        (or (nil? body)
-            (identical? :aleph/omitted body))
-        (do
-          (println "body nil or omitted") (flush)
-          ;; FIXME: this probably breaks with the Http2 to Http1 codec in the pipeline
-          (let [header-frame (DefaultHttp2HeadersFrame. headers true)]
-            (prn header-frame)
-            (netty/write-and-flush ch header-frame)))
+      (or
+        (instance? String body)
+        (instance? byte-array-class body)
+        (instance? ByteBuffer body)
+        (instance? ByteBuf body))
+      (send-contiguous-body ch headers body)
 
-        (or
-          (instance? String body)
-          (instance? byte-array-class body)
-          (instance? ByteBuffer body)
-          (instance? ByteBuf body))
-        (send-contiguous-body ch headers body)
+      (instance? ChunkedInput body)
+      (send-chunked-body ch headers body)
 
-        (instance? ChunkedInput body)
-        (send-chunked-body ch headers body)
-        #_
-        (do
-          (let [emsg (str "ChunkedInput not supported yet")
-                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+      (instance? File body)
+      (do
+        (let [emsg (str "File not supported yet")
+              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
+          (println emsg)
+          (log/error e emsg)
+          (netty/close ch)))
 
-        (instance? File body)
-        (do
-          (let [emsg (str "File not supported yet")
-                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+      (instance? Path body)
+      (do
+        (let [emsg (str "Path not supported yet")
+              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
+          (println emsg)
+          (log/error e emsg)
+          (netty/close ch)))
 
-        (instance? Path body)
-        (do
-          (let [emsg (str "Path not supported yet")
-                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+      (instance? HttpFile body)
+      (do
+        (let [emsg (str "HttpFile not supported yet")
+              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
+          (println emsg)
+          (log/error e emsg)
+          (netty/close ch)))
 
-        (instance? HttpFile body)
-        (do
-          (let [emsg (str "HttpFile not supported yet")
-                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+      (instance? FileRegion body)
+      (do
+        (let [emsg (str "FileRegion not supported yet")
+              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
+          (println emsg)
+          (log/error e emsg)
+          (netty/close ch)))
 
-        (instance? FileRegion body)
-        (do
-          (let [emsg (str "FileRegion not supported yet")
-                e (Http2Exception. Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
-
-        #_#_:else
-                (let [class-name (.getName (class body))]
-                  (try
-                    (send-streaming-body ch msg body)
-                    (catch Throwable e
-                      (log/error e "error sending body of type " class-name)
-                      (throw e))))))
+      #_#_:else
+              (let [class-name (.getName (class body))]
+                (try
+                  (send-streaming-body ch msg body)
+                  (catch Throwable e
+                    (log/error e "error sending body of type " class-name)
+                    (throw e)))))
 
     (catch Exception e
-      (println "error sending message" e)
-      (log/error e "error sending message")
-      (throw (ex-info "error sending message" {:msg msg :body body} e)))))
+      (println "Error sending message" e)
+      (log/error e "Error sending message")
+      (throw (Http2FrameStreamException. (.stream ch)
+                                         Http2Error/PROTOCOL_ERROR
+                                         (ex-info "Error sending message" {:headers headers :body body} e))))))
 
 ;; NOTE: can't be as vague about whether we're working with a channel or context in HTTP/2 code,
 ;; because we need access to the .stream method. We have a lot of code in aleph.netty that
@@ -203,19 +220,22 @@
                         :else
                         (do
                           (println "HTTP/2 multipart not supported yet")
-                          (netty/close ch)
-                          (s/put! responses (d/error-deferred (Http2Exception. "HTTP/2 multipart not supported yet"))))
-                        #_(multipart/encode-request req' parts))]
+                          (s/put! responses
+                                  (d/error-deferred (ex-info "HTTP/2 multipart not supported yet"
+                                                             {:req req
+                                                              :stream (.stream ch)})))
+                          (netty/close ch))
+                        #_(multipart/encode-request req' parts))
+          headers (ring-map->netty-http2-headers req')]
 
-      #_#_
-              (when-let [save-message (get req :aleph/save-request-message)]
-                ;; might be different in case we use :multipart
-                (reset! save-body body))
-
-      (-> (netty/safe-execute ch
-                              (send-message ch req' body))
+      ;; Store message and/or original body if requested, for debugging purposes
+      (when-let [save-message (get req :aleph/save-request-message)]
         (reset! save-message req'))
       (when-let [save-body (get req :aleph/save-request-body)]
+        ;; might be different in case we use :multipart
+        (reset! save-body body))
+
+      (-> (netty/safe-execute ch (send-message ch headers body))
           (d/catch' (fn [e]
                       (println "Error in req-preprocess" e) (flush)
                       (log/error e "Error in req-preprocess")
