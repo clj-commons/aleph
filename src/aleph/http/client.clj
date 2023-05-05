@@ -436,14 +436,14 @@
                    "proxy"
                    "pending-proxy-connection"
                    ^ChannelHandler
-                   (pending-proxy-connection-handler response-stream))))
+                   (pending-proxy-connection-handler response-stream)))))
 
-    (when (some? logger)
-      (println "Adding activity logger")
-      (.addFirst p "activity-logger" ^ChannelHandler logger))
+  (when (some? logger)
+    (println "Adding activity logger")
+    (.addFirst p "activity-logger" ^ChannelHandler logger))
 
-    (pipeline-transform p)
-    p))
+  (pipeline-transform p)
+  p)
 
 (let [stream-frame->http-object-codec (delay (Http2StreamFrameToHttpObjectCodec. false))]
   (defn- h2-stream-chan-initializer
@@ -455,7 +455,7 @@
       (fn [^ChannelPipeline p]
         (println "h2-stream-chan-initializer initChannel called") (flush)
 
-        #_(.addLast p
+        (.addLast p
                   "stream-frame-to-http-object"
                   ^Http2StreamFrameToHttpObjectCodec @stream-frame->http-object-codec)
         (.addLast p
@@ -583,7 +583,7 @@
                                                   :response-stream response-stream
                                                   :pipeline (.pipeline ctx)
                                                   :protocol protocol
-                                                  :handler handler
+                                                  #_#_#_#_:handler handler
                                                   :logger logger)))
                     ApplicationProtocolNames/HTTP_1_1
                     apn-handler-removed))
@@ -593,7 +593,7 @@
         (setup-http-pipeline (assoc opts
                                     :response-stream response-stream
                                     :pipeline pipeline
-                                    :handler handler
+                                    #_#_#_#_:handler handler
                                     :logger logger))
         (d/success! apn-handler-removed true)))))
 
