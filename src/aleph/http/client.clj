@@ -301,7 +301,7 @@
 
          :else
          (do
-           (log/debug "Unknown msg class:" (class msg))
+           (log/warn "Unknown msg class:" (class msg))
            (println "Unknown msg class:" (class msg))
            (.fireChannelRead ctx msg)))))))
 
@@ -473,8 +473,7 @@
           pipeline-transform)
         (println "added non-http handlers") (flush)
 
-        (log/debug (str "Stream chan pipeline:" (prn-str p)))
-        (println "Stream chan pipeline:" (prn-str p))))))
+        (log/debug (str "Stream chan pipeline:" (prn-str p)))))))
 
 
 (defn- setup-http-pipeline
@@ -500,11 +499,11 @@
      idle-timeout            0
      protocol                ApplicationProtocolNames/HTTP_1_1}
     :as opts}]
-  (log/debug (str "Negotiated protocol: " protocol))
+  (log/info (str "Negotiated protocol: " protocol))
   (println (str "Negotiated protocol: " protocol))
 
-  (log/debug "Logger:" logger)
-  (println "Logger:" logger)
+  (log/debug "Logger:" logger " - log level: " (some-> logger .level))
+  (println "Logger:" logger " - log level: " (some-> logger .level))
 
   ;; because case doesn't work with Java constants
   (cond
@@ -528,10 +527,14 @@
           pipeline-transform))
 
     (.equals ApplicationProtocolNames/HTTP_2 protocol)
-    (let [http2-frame-codec (-> (Http2FrameCodecBuilder/forClient) ; TODO: share betw pipelines
-                                (.initialSettings (Http2Settings/defaultSettings))
-                                (.frameLogger (Http2FrameLogger. LogLevel/DEBUG))
-                                (.build))
+    (let [log-level (some-> logger (.level))
+          ;; TODO: share betw pipelines
+          http2-frame-codec (let [builder (Http2FrameCodecBuilder/forClient)]
+                              (when log-level
+                                (.frameLogger builder (Http2FrameLogger. log-level)))
+                              (-> builder
+                                  (.initialSettings (Http2Settings/defaultSettings))
+                                  (.build)))
 
           ;; For the client, this may never get used, since the server will rarely
           ;; initiate streams, and PUSH_PROMISE is deprecated. Responses to client-
@@ -543,6 +546,9 @@
             response-stream proxy-options ssl? logger pipeline-transform handler)
 
           multiplex-handler (Http2MultiplexHandler. server-initiated-stream-chan-initializer)]
+
+
+
       (-> pipeline
           (http/attach-idle-handlers idle-timeout)
           (.addLast "http2-frame-codec" http2-frame-codec)
@@ -565,7 +571,7 @@
 
    SSL/TLS is handled with `add-ssl-handler`."
   [response-stream
-   {:keys [handler ssl? logger apn-handler-removed]
+   {:keys [ssl? apn-handler-removed]
     :as   opts}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
@@ -582,9 +588,7 @@
                       (setup-http-pipeline (assoc opts
                                                   :response-stream response-stream
                                                   :pipeline (.pipeline ctx)
-                                                  :protocol protocol
-                                                  #_#_#_#_:handler handler
-                                                  :logger logger)))
+                                                  :protocol protocol)))
                     ApplicationProtocolNames/HTTP_1_1
                     apn-handler-removed))
         (println "ALPN setup: " (prn-str pipeline)))
@@ -592,9 +596,7 @@
       (do
         (setup-http-pipeline (assoc opts
                                     :response-stream response-stream
-                                    :pipeline pipeline
-                                    #_#_#_#_:handler handler
-                                    :logger logger))
+                                    :pipeline pipeline))
         (d/success! apn-handler-removed true)))))
 
 (defn close-connection [f]

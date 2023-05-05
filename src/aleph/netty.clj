@@ -852,7 +852,9 @@
       true)
     false))
 
-(defn ^:no-doc coerce-log-level [level]
+(defn ^:no-doc coerce-log-level
+  "Returns a netty LogLevel. Accepts either a keyword or a LogLevel."
+  [level]
   (if (instance? LogLevel level)
     level
     (let [netty-level (case level
