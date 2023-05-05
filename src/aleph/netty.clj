@@ -814,17 +814,13 @@
      (configurePipeline [^ChannelHandlerContext ctx ^String protocol]
        (configure-pipeline ctx protocol))
      (handlerRemoved [^ChannelHandlerContext ctx]
-       (try
-         (log/debug "ApplicationProtocolNegotiationHandler removed from pipeline")
-         (println "ApplicationProtocolNegotiationHandler removed from pipeline")
-         (when handler-removed-d
-           (println "Setting handler-removed-d to true")
-           (d/success! handler-removed-d true))
+       (let [^ApplicationProtocolNegotiationHandler this this]               ; stupid proxy reflection warning
+         (proxy-super handlerRemoved ctx))
 
-         ;; weird behavior when proxy-super isn't last
-         ;; ClassLoader? thread safety issue?
-         (let [^ChannelInitializer this this]               ; stupid proxy reflection warning
-           (proxy-super handlerRemoved ctx)))))))
+       (log/debug "ApplicationProtocolNegotiationHandler removed from pipeline")
+       (when handler-removed-d
+         (log/debug "Setting handler-removed-d to true")
+         (d/success! handler-removed-d true))))))
 
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
