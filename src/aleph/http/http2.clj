@@ -29,7 +29,7 @@
 (def ^:private byte-array-class (class (byte-array 0)))
 
 (defn- ring-map->netty-http2-headers
-  "Turns a Ring map's headers into a Netty Http2Headers object."
+  "Builds a Netty Http2Headers object from a Ring map."
   ^DefaultHttp2Headers
   [req]
   (let [headers (get req :headers)
@@ -175,7 +175,7 @@
 ;; because we need access to the .stream method. We have a lot of code in aleph.netty that
 ;; branches based on the class (channel vs context), but that's not ideal. It's slower, and
 ;; writing to the channel vs the context means different things, anyway, they're not
-;; interchangeable.
+;; usually interchangeable.
 (defn req-preprocess
   [^Http2StreamChannel ch req responses]
   (println "req-preprocess fired")
@@ -209,18 +209,13 @@
 
       #_#_
               (when-let [save-message (get req :aleph/save-request-message)]
-                ;; debug purpose only
-                ;; note, that req' is effectively mutable, so
-                ;; it will "capture" all changes made during "send-message"
-                ;; execution
-                (reset! save-message req'))
-
-              (when-let [save-body (get req :aleph/save-request-body)]
                 ;; might be different in case we use :multipart
                 (reset! save-body body))
 
       (-> (netty/safe-execute ch
                               (send-message ch req' body))
+        (reset! save-message req'))
+      (when-let [save-body (get req :aleph/save-request-body)]
           (d/catch' (fn [e]
                       (println "Error in req-preprocess" e) (flush)
                       (log/error e "Error in req-preprocess")
@@ -233,3 +228,18 @@
       (log/error e "Error in req-preprocess")
       (s/put! responses (d/error-deferred e))
       (netty/close ch))))
+
+
+(comment
+  (do
+    (require '[aleph.http.client])
+    (import java.net.InetSocketAddress))
+
+  (do
+    (def conn @(aleph.http.client/http-connection
+                 (InetSocketAddress/createUnresolved "www.google.com" (int 443))
+                 true
+                 {:on-closed #(println "http conn closed")}))
+
+    @(conn {:request-method :get}))
+  )

@@ -493,6 +493,8 @@
     (doto src (reset-meta! {:aleph/channel ch}))))
 
 (defn ^:no-doc buffered-source
+  "A buffered Manifold stream with the originating Channel attached to the
+   stream's metadata"
   [^Channel ch metric capacity]
   (let [src (s/buffered-stream
               metric

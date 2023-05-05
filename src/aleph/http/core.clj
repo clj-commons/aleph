@@ -149,7 +149,10 @@
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
-(defn map->headers! [^HttpHeaders h m]
+(defn map->headers!
+  "Despite the name, this doesn't convert; it adds headers from the Ring :headers
+   map to the Netty HttpHeaders param."
+  [^HttpHeaders h m]
   (doseq [e m]
     (let [k (normalize-header-key (key e))
           v (val e)]

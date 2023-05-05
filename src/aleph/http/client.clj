@@ -183,11 +183,13 @@
          (.fireChannelRead ctx msg))))))
 
 (defn client-handler
+  "Given a response-stream, returns a ChannelInboundHandler that processes
+   inbound Netty Http1 objects, converts them, and places them on the stream"
   [response-stream ^long buffer-capacity]
   (let [response (atom nil)
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
-        stream (atom nil)
+        body-stream (atom nil)
         complete (atom nil)
         handle-response (fn [rsp complete body]
                           (s/put! response-stream
@@ -204,7 +206,7 @@
 
       :channel-inactive
       ([_ ctx]
-       (when-let [s @stream]
+       (when-let [s @body-stream]
          (s/close! s))
        (doseq [b @buffer]
          (netty/release b))
@@ -216,9 +218,9 @@
 
        (cond
          (http/decoder-failed? msg)
-         (handle-decoder-failure ctx msg stream complete response-stream)
+         (handle-decoder-failure ctx msg body-stream complete response-stream)
 
-         ; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
+         ;; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
          (instance? FullHttpResponse msg)
          (let [^FullHttpResponse rsp msg
                content (.content rsp)
@@ -226,23 +228,29 @@
            (netty/release content)
            (handle-response rsp (d/success-deferred false) body))
 
+         ;; An incomplete and/or chunked response
+         ;; Sets up a new stream to put the body chunks on as they come in
          (instance? HttpResponse msg)
          (let [rsp msg]
            (if (HttpUtil/isTransferEncodingChunked rsp)
              (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                    c (d/deferred)]
-               (reset! stream s)
+               (reset! body-stream s)
                (reset! complete c)
                (s/on-closed s #(d/success! c true))
                (handle-response rsp c s))
              (reset! response rsp)))
 
+         ;; Http chunk
+         ;; If we have no body stream, make one and put the chunk on it
+         ;; Either clean up if we have the last chunk, or save the body
+         ;; stream for later chunks
          (instance? HttpContent msg)
          (let [content (.content ^HttpContent msg)]
            (if (instance? LastHttpContent msg)
              (do
 
-               (if-let [s @stream]
+               (if-let [s @body-stream]
 
                  (do
                    (s/put! s (netty/buf->array content))
@@ -257,11 +265,11 @@
                    (handle-response @response (d/success-deferred false) bytes)))
 
                (.set buffer-size 0)
-               (reset! stream nil)
+               (reset! body-stream nil)
                (reset! buffer [])
                (reset! response nil))
 
-             (if-let [s @stream]
+             (if-let [s @body-stream]
 
                ;; already have a stream going
                (do
@@ -269,12 +277,10 @@
                  (netty/release content))
 
                (let [len (.readableBytes ^ByteBuf content)]
-
                  (when-not (zero? len)
                    (swap! buffer conj content))
 
                  (let [size (.addAndGet buffer-size len)]
-
                    ;; buffer size exceeded, flush it as a stream
                    (when (< buffer-capacity size)
                      (let [bufs @buffer
@@ -286,7 +292,7 @@
                          (netty/release b))
 
                        (reset! buffer [])
-                       (reset! stream s)
+                       (reset! body-stream s)
                        (reset! complete c)
 
                        (s/on-closed s #(d/success! c true))
@@ -449,7 +455,7 @@
       (fn [^ChannelPipeline p]
         (println "h2-stream-chan-initializer initChannel called") (flush)
 
-        (.addLast p
+        #_(.addLast p
                   "stream-frame-to-http-object"
                   ^Http2StreamFrameToHttpObjectCodec @stream-frame->http-object-codec)
         (.addLast p
@@ -536,11 +542,7 @@
           (h2-stream-chan-initializer
             response-stream proxy-options ssl? logger pipeline-transform handler)
 
-          multiplex-handler (Http2MultiplexHandler. server-initiated-stream-chan-initializer)
-          #_(Http2MultiplexHandler. (netty/channel-inbound-handler
-                                      {:channel-read ([_ ctx msg]
-                                                      (println "Read class" (class msg))
-                                                      (.fireChannelRead ctx msg))}))]
+          multiplex-handler (Http2MultiplexHandler. server-initiated-stream-chan-initializer)]
       (-> pipeline
           (http/attach-idle-handlers idle-timeout)
           (.addLast "http2-frame-codec" http2-frame-codec)
@@ -757,7 +759,10 @@
                            (assoc :authority authority)
 
                            (nil? (:uri req))
-                           (assoc :uri "/"))]
+                           (assoc :uri "/")
+
+                           (nil? (:scheme req))
+                           (assoc :scheme (if ssl? :https :http)))]
           (-> (.open h2-bootstrap)
               netty/wrap-future
               (d/chain' (fn [^Http2StreamChannel chan]
