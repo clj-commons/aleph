@@ -1368,8 +1368,8 @@ initialize an DnsAddressResolverGroup instance.
       (doto (-> ssl-handler
                 (.handshakeFuture)
                 wrap-future)
-            (d/on-realized #(println "SSL handshake completed")
-                           #(println "SSL handshake failed"))))
+            (d/on-realized (fn [_] (println "SSL handshake completed"))
+                           (fn [_] (println "SSL handshake failed")))))
     (d/success-deferred ch)))
 
 (defn ^:no-doc ignore-ssl-handshake-errors
