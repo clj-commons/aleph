@@ -107,9 +107,12 @@
 
 
 (defn send-contiguous-body
-  [^Http2StreamChannel ch ^Http2Headers headers body]
-  (let [body-bb (netty/to-byte-buf ch body)
-        stream (.stream ch)]
+  "Write out a msg and a body that is, or can be turned into a ByteBuf.
+
+   Works with strings, byte arrays, ByteBuffers, ByteBufs, nil, and
+   anything supported by byte-streams' `convert`"
+  [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers body]
+  (let [body-bb (netty/to-byte-buf ch body)]
     (try-set-content-length! headers (.readableBytes body-bb))
 
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
@@ -127,7 +130,7 @@
 
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
-  [^Http2StreamChannel ch ^Http2Headers headers ^ChunkedInput body]
+  [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers ^ChunkedInput body]
   (log/trace "Sending ChunkedInput")
   (let [len (.length body)]
     (when (p/>= len 0)
@@ -135,80 +138,92 @@
 
   (ensure-chunked-writer ch)
 
+  (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
+  (netty/write-and-flush ch (-> body (Http2DataChunkedInput. stream))))
+
+(defn send-file-region
+  "Write out a msg and a FileRegion body.
+
+   WARNING: Netty does not support this with the SslHandler. While there are
+   some OSes/NICs that can support SSL and zero-copy, Netty does not."
+  [^Http2StreamChannel ch ^Http2Headers headers ^FileRegion fr]
   (let [stream (.stream ch)]
+    (try-set-content-length! headers (.count fr))
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
-    (netty/write-and-flush ch (-> body (Http2DataChunkedInput. stream)))))
+    (netty/write-and-flush ch fr)))
 
 (defn- send-message
   [^Http2StreamChannel ch ^Http2Headers headers body]
-  (println "http2 send-message fired")
-  (try
-    (cond
-      (or (nil? body)
-          (identical? :aleph/omitted body))
-      (do
-        (println "body nil or omitted") (flush)
-        ;; FIXME: this probably breaks with the Http2 to Http1 codec in the pipeline
-        (let [header-frame (DefaultHttp2HeadersFrame. headers true)]
-          (prn header-frame)
-          (netty/write-and-flush ch header-frame)))
+  (log/trace "http2 send-message")
+  (let [^Http2FrameStream stream (.stream ch)]
+    (try
+      (cond
+        (or (nil? body)
+            (identical? :aleph/omitted body))
+        (do
+          (log/debug "Body is nil or omitted")
+          (let [header-frame (-> headers (DefaultHttp2HeadersFrame. true) (.stream stream))]
+            (log/debug header-frame)
+            (netty/write-and-flush ch header-frame)))
 
-      (or
-        (instance? String body)
-        (instance? byte-array-class body)
-        (instance? ByteBuffer body)
-        (instance? ByteBuf body))
-      (send-contiguous-body ch headers body)
+        (or
+          (instance? String body)
+          (instance? byte-array-class body)
+          (instance? ByteBuffer body)
+          (instance? ByteBuf body))
+        (send-contiguous-body ch stream headers body)
 
-      (instance? ChunkedInput body)
-      (send-chunked-body ch headers body)
+        (instance? ChunkedInput body)
+        (send-chunked-body ch stream headers body)
 
-      (instance? File body)
-      (do
-        (let [emsg (str "File not supported yet")
-              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
-          (println emsg)
-          (log/error e emsg)
-          (netty/close ch)))
+        (instance? File body)
+        (do
+          (let [emsg (str "File not supported yet")
+                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR emsg)]
+            (println emsg)
+            (log/error e emsg)
+            (netty/close ch)))
 
-      (instance? Path body)
-      (do
-        (let [emsg (str "Path not supported yet")
-              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
-          (println emsg)
-          (log/error e emsg)
-          (netty/close ch)))
+        (instance? Path body)
+        (do
+          (let [emsg (str "Path not supported yet")
+                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR emsg)]
+            (println emsg)
+            (log/error e emsg)
+            (netty/close ch)))
 
-      (instance? HttpFile body)
-      (do
-        (let [emsg (str "HttpFile not supported yet")
-              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
-          (println emsg)
-          (log/error e emsg)
-          (netty/close ch)))
+        (instance? HttpFile body)
+        (do
+          (let [emsg (str "HttpFile not supported yet")
+                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR emsg)]
+            (println emsg)
+            (log/error e emsg)
+            (netty/close ch)))
 
-      (instance? FileRegion body)
-      (do
-        (let [emsg (str "FileRegion not supported yet")
-              e (Http2FrameStreamException. (.stream ch) Http2Error/PROTOCOL_ERROR emsg)]
-          (println emsg)
-          (log/error e emsg)
-          (netty/close ch)))
+        (instance? FileRegion body)
+        (if (or (-> ch (.pipeline) (.get SslHandler))
+                (some-> ch (.parent) (.pipeline) (.get SslHandler)))
+          (let [emsg (str "FileRegion not supported with SSL in Netty")
+                ex (ex-info emsg {:ch ch :headers headers :body body})
+                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR ex)]
+            (log/error e emsg)
+            (netty/close ch))
+          (send-file-region ch headers body))
 
-      #_#_:else
-              (let [class-name (.getName (class body))]
-                (try
-                  (send-streaming-body ch msg body)
-                  (catch Throwable e
-                    (log/error e "error sending body of type " class-name)
-                    (throw e)))))
+        #_#_:else
+                (let [class-name (.getName (class body))]
+                  (try
+                    (send-streaming-body ch msg body)
+                    (catch Throwable e
+                      (log/error e "error sending body of type " class-name)
+                      (throw e)))))
 
-    (catch Exception e
-      (println "Error sending message" e)
-      (log/error e "Error sending message")
-      (throw (Http2FrameStreamException. (.stream ch)
-                                         Http2Error/PROTOCOL_ERROR
-                                         (ex-info "Error sending message" {:headers headers :body body} e))))))
+      (catch Exception e
+        (println "Error sending message" e)
+        (log/error e "Error sending message")
+        (throw (Http2FrameStreamException. (.stream ch)
+                                           Http2Error/PROTOCOL_ERROR
+                                           (ex-info "Error sending message" {:headers headers :body body} e)))))))
 
 ;; NOTE: can't be as vague about whether we're working with a channel or context in HTTP/2 code,
 ;; because we need access to the .stream method. We have a lot of code in aleph.netty that
@@ -259,7 +274,6 @@
 
       (-> (netty/safe-execute ch (send-message ch headers body))
           (d/catch' (fn [e]
-                      (println "Error in req-preprocess" e) (flush)
                       (log/error e "Error in req-preprocess")
                       (s/put! responses (d/error-deferred e))
                       (netty/close ch)))))
@@ -276,7 +290,8 @@
   (do
     (require '[aleph.http.client]
              '[clj-commons.byte-streams :as bs])
-    (import '(io.netty.handler.stream ChunkedFile ChunkedNioFile)
+    (import '(io.netty.channel DefaultFileRegion)
+            '(io.netty.handler.stream ChunkedFile ChunkedNioFile)
             '(java.net InetSocketAddress)
             '(java.nio.channels FileChannel)
             '(java.nio.file Files OpenOption Path Paths)
@@ -304,7 +319,9 @@
 
           body
           #_body-string
-          (ChunkedFile. ffile)
+          #_(ChunkedFile. ffile)
+          (ChunkedNioFile. fchan)
+          #_(DefaultFileRegion. fchan 0 (.size fchan))
           ]
 
       (def result
