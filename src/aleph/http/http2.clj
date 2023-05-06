@@ -113,7 +113,9 @@
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
   [^Http2StreamChannel ch ^Http2Headers headers ^ChunkedInput body]
-  (try-set-content-length! headers (.length body))
+  (let [len (.length body)]
+    (when (p/>= len 0)
+      (try-set-content-length! headers len)))
 
   (netty/write ch (DefaultHttp2HeadersFrame. headers))
   (netty/write-and-flush ch (Http2DataChunkedInput. body (.stream ch))))
