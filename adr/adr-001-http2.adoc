@@ -30,10 +30,13 @@ The default API Aleph presents is a handler fn that receives a single Ring map
 with an `InputStream` body (potentially transformed by middleware), and returns
 a Ring response map, with a static or streamable body.
 
-HTTP/2 offers new features that users may want to take advantage of: flow control
-and prioritization, in particular. Another feature, server push  (the ability to
-send "responses" before receiving a request), has been criticized as difficult
+HTTP/2 offers new features that users may want to take advantage of: flow
+control, in particular. HTTP/2 introduced other features, in particular server
+push and prioritization, but they did not work out. Server push  (the ability to
+send "responses" before receiving a request) has been criticized as difficult
 to use correctly, and effectively https://chromestatus.com/feature/6302414934114304[disabled by Chrome].
+Prioritization hasn't been disabled exactly, but it has various problems, and
+was replaced with a simpler scheme for HTTP/3.
 
 Since the Aleph team is small, we have to carefully consider what to support.
 Full HTTP/2 support may not be advisable.
@@ -44,6 +47,7 @@ Full HTTP/2 support may not be advisable.
 - https://calendar.perfplanet.com/2022/http-3-prioritization-demystified/
 - https://blog.cloudflare.com/better-http-2-prioritization-for-a-faster-web/
 - https://calendar.perfplanet.com/2018/http2-prioritization/
+- https://github.com/andydavies/http2-prioritization-issues
 
 Prioritization in HTTP/2 is considered overly-complicated and was partially
 deprecated in RFC 9113. The browsers have different interpretations of how to
