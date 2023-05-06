@@ -4,7 +4,8 @@
     [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [clj-commons.primitive-math :as p])
   (:import
     (aleph.http.file HttpFile)
     (io.netty.buffer ByteBuf)
@@ -113,12 +114,14 @@
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
   [^Http2StreamChannel ch ^Http2Headers headers ^ChunkedInput body]
+  (log/trace "Sending ChunkedInput")
   (let [len (.length body)]
     (when (p/>= len 0)
       (try-set-content-length! headers len)))
 
-  (netty/write ch (DefaultHttp2HeadersFrame. headers))
-  (netty/write-and-flush ch (Http2DataChunkedInput. body (.stream ch))))
+  (let [stream (.stream ch)]
+    (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
+    (netty/write-and-flush ch (-> body (Http2DataChunkedInput. stream)))))
 
 (defn- send-message
   [^Http2StreamChannel ch ^Http2Headers headers body]
@@ -255,14 +258,46 @@
 
 (comment
   (do
-    (require '[aleph.http.client])
-    (import java.net.InetSocketAddress))
+    (require '[aleph.http.client]
+             '[clj-commons.byte-streams :as bs])
+    (import '(io.netty.handler.stream ChunkedFile ChunkedNioFile)
+            '(java.net InetSocketAddress)
+            '(java.nio.channels FileChannel)
+            '(java.nio.file Files OpenOption Path Paths)
+            '(java.nio.file.attribute FileAttribute)))
 
   (do
     (def conn @(aleph.http.client/http-connection
-                 (InetSocketAddress/createUnresolved "www.google.com" (int 443))
+                 (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(println "http conn closed")}))
 
     @(conn {:request-method :get}))
+
+  (do
+    (def conn @(aleph.http.client/http-connection
+                 (InetSocketAddress. "postman-echo.com" (int 443))
+                 true
+                 {:on-closed #(println "http conn closed")}))
+
+    (let [body-string "Body test"
+          fpath (Files/createTempFile "test" ".txt" (into-array FileAttribute []))
+          ffile (.toFile fpath)
+          _ (spit ffile body-string)
+          fchan (FileChannel/open fpath (into-array OpenOption []))
+
+          body
+          #_body-string
+          (ChunkedFile. ffile)
+          ]
+
+      (def result
+        @(conn {:request-method :post
+                :uri            "/post"
+                :headers        {"content-type" "text/plain"}
+                :body           body}))
+
+      ;;(Files/deleteIfExists fpath)
+
+      (some-> result :body bs/to-string)))
   )

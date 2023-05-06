@@ -453,16 +453,17 @@
     (println "h2-stream-chan-initializer called") (flush)
     (netty/pipeline-initializer
       (fn [^ChannelPipeline p]
-        (println "h2-stream-chan-initializer initChannel called") (flush)
+        (log/trace "h2-stream-chan-initializer initChannel called")
 
         (.addLast p
                   "stream-frame-to-http-object"
                   ^Http2StreamFrameToHttpObjectCodec @stream-frame->http-object-codec)
         (.addLast p
+                  "streamer"
+                  ^ChannelHandler (ChunkedWriteHandler.))
+        (.addLast p
                   "handler"
                   ^ChannelHandler handler)
-
-        (println "added handler") (flush)
 
         (add-non-http-handlers
           p
@@ -471,7 +472,7 @@
           ssl?
           logger
           pipeline-transform)
-        (println "added non-http handlers") (flush)
+        (log/trace "added all stream-chan handlers")
 
         (log/debug (str "Stream chan pipeline:" (prn-str p)))))))
 
