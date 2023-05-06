@@ -16,10 +16,14 @@
       DefaultHttp2HeadersFrame
       Http2DataChunkedInput
       Http2Error
+      Http2FrameStream
       Http2FrameStreamException
       Http2Headers
       Http2StreamChannel)
-    (io.netty.handler.stream ChunkedInput)
+    (io.netty.handler.ssl SslHandler)
+    (io.netty.handler.stream
+      ChunkedInput
+      ChunkedWriteHandler)
     (io.netty.util.internal StringUtil)
     (java.io File)
     (java.nio ByteBuffer)
@@ -111,6 +115,16 @@
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
     (netty/write-and-flush ch (-> body-bb (DefaultHttp2DataFrame. true) (.stream stream)))))
 
+(defn- ensure-chunked-writer
+  "Adds the ChunkedWriteHandler to the pipeline if needed"
+  [^Http2StreamChannel ch]
+  (let [p (.pipeline ch)]
+    (when-not (.get p ChunkedWriteHandler)
+        (.addBefore p
+                    "handler"
+                    "streamer"
+                    (ChunkedWriteHandler.)))))
+
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
   [^Http2StreamChannel ch ^Http2Headers headers ^ChunkedInput body]
@@ -118,6 +132,8 @@
   (let [len (.length body)]
     (when (p/>= len 0)
       (try-set-content-length! headers len)))
+
+  (ensure-chunked-writer ch)
 
   (let [stream (.stream ch)]
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))

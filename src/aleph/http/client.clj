@@ -459,9 +459,6 @@
                   "stream-frame-to-http-object"
                   ^Http2StreamFrameToHttpObjectCodec @stream-frame->http-object-codec)
         (.addLast p
-                  "streamer"
-                  ^ChannelHandler (ChunkedWriteHandler.))
-        (.addLast p
                   "handler"
                   ^ChannelHandler handler)
 
