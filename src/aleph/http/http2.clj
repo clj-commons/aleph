@@ -102,12 +102,13 @@
 
 
 (defn send-contiguous-body
-  [ch ^Http2Headers headers body]
-  (let [body-bb (netty/to-byte-buf ch body)]
+  [^Http2StreamChannel ch ^Http2Headers headers body]
+  (let [body-bb (netty/to-byte-buf ch body)
+        stream (.stream ch)]
     (try-set-content-length! headers (.readableBytes body-bb))
 
-    (netty/write ch (DefaultHttp2HeadersFrame. headers))
-    (netty/write-and-flush ch (DefaultHttp2DataFrame. body-bb true))))
+    (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
+    (netty/write-and-flush ch (-> body-bb (DefaultHttp2DataFrame. true) (.stream stream)))))
 
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
