@@ -1,4 +1,4 @@
-(ns aleph.http.file
+(ns ^:no-doc aleph.http.file
   (:require
     [clj-commons.byte-streams :as bs]
     [clj-commons.byte-streams.graph :as g]
@@ -16,7 +16,7 @@
     (java.nio.file
       Path)))
 
-(def default-chunk-size 8192)
+(def ^:dynamic default-chunk-size 8192)
 
 (deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 

@@ -1,11 +1,12 @@
 (ns ^:no-doc aleph.http.http2
   (:require
+    [aleph.http.file :as file]
     [aleph.netty :as netty]
+    [clj-commons.primitive-math :as p]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [clj-commons.primitive-math :as p])
+    [manifold.stream :as s])
   (:import
     (aleph.http.file HttpFile)
     (io.netty.buffer ByteBuf)
@@ -22,12 +23,20 @@
       Http2StreamChannel)
     (io.netty.handler.ssl SslHandler)
     (io.netty.handler.stream
+      ChunkedFile
       ChunkedInput
+      ChunkedNioFile
       ChunkedWriteHandler)
     (io.netty.util.internal StringUtil)
-    (java.io File)
+    (java.io
+      File
+      RandomAccessFile)
     (java.nio ByteBuffer)
-    (java.nio.file Path)))
+    (java.nio.channels FileChannel)
+    (java.nio.file
+      OpenOption
+      Path
+      StandardOpenOption)))
 
 (set! *warn-on-reflection* true)
 
@@ -152,6 +161,20 @@
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
     (netty/write-and-flush ch fr)))
 
+(defn send-http-file
+  "Send an HttpFile using ChunkedNioFile"
+  [ch stream headers ^HttpFile hf]
+  (let [file-channel (-> hf
+                         ^File (.-fd)
+                         (.toPath)
+                         (FileChannel/open
+                           (into-array OpenOption [StandardOpenOption/READ])))
+        chunked-input (ChunkedNioFile. file-channel
+                                       (.-offset hf)
+                                       (.-length hf)
+                                       (p/int (.-chunk-size hf)))]
+    (send-chunked-body ch stream headers chunked-input)))
+
 (defn- send-message
   [^Http2StreamChannel ch ^Http2Headers headers body]
   (log/trace "http2 send-message")
@@ -176,29 +199,29 @@
         (instance? ChunkedInput body)
         (send-chunked-body ch stream headers body)
 
+        (instance? RandomAccessFile body)
+        (send-chunked-body ch stream headers
+                           (ChunkedFile. ^RandomAccessFile body
+                                         (p/int file/default-chunk-size)))
+
         (instance? File body)
-        (do
-          (let [emsg (str "File not supported yet")
-                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+        (send-chunked-body ch stream headers
+                           (ChunkedNioFile. ^File body (p/int file/default-chunk-size)))
 
         (instance? Path body)
-        (do
-          (let [emsg (str "Path not supported yet")
-                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+        (send-chunked-body ch stream headers
+                           (ChunkedNioFile. ^FileChannel
+                                            (FileChannel/open
+                                              ^Path body
+                                              (into-array OpenOption [StandardOpenOption/READ]))
+                                            (p/int file/default-chunk-size)))
 
         (instance? HttpFile body)
-        (do
-          (let [emsg (str "HttpFile not supported yet")
-                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR emsg)]
-            (println emsg)
-            (log/error e emsg)
-            (netty/close ch)))
+        (send-http-file ch stream headers body)
+
+        (instance? FileChannel body)
+        (send-chunked-body ch stream headers
+                           (ChunkedNioFile. ^FileChannel body (p/int file/default-chunk-size)))
 
         (instance? FileRegion body)
         (if (or (-> ch (.pipeline) (.get SslHandler))
@@ -210,13 +233,13 @@
             (netty/close ch))
           (send-file-region ch headers body))
 
-        #_#_:else
-                (let [class-name (.getName (class body))]
-                  (try
-                    (send-streaming-body ch msg body)
-                    (catch Throwable e
-                      (log/error e "error sending body of type " class-name)
-                      (throw e)))))
+        :else
+        (let [class-name (StringUtil/simpleClassName body)]
+          (try
+            (send-streaming-body ch msg body)
+            (catch Throwable e
+              (log/error e "error sending body of type " class-name)
+              (throw e)))))
 
       (catch Exception e
         (println "Error sending message" e)
@@ -319,8 +342,13 @@
 
           body
           #_body-string
+          #_fpath
+          #_ffile
+          #_(RandomAccessFile. ffile "r")
+          #_fchan
           #_(ChunkedFile. ffile)
-          (ChunkedNioFile. fchan)
+          #_(ChunkedNioFile. fchan)
+          (file/http-file ffile 1 6 4)
           #_(DefaultFileRegion. fchan 0 (.size fchan))
           ]
 

@@ -48,6 +48,7 @@
       IdleState
       IdleStateEvent
       IdleStateHandler)
+    (io.netty.util.internal StringUtil)
     (java.io
       Closeable
       File
@@ -289,10 +290,14 @@
 (defn chunked-writer-enabled? [^Channel ch]
   (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
 
+;;(defn ^:no-doc stream-body)
+
 (defn send-streaming-body
   "Write out a msg and a body that's streamable"
+  ;;HTTP1
   [ch ^HttpMessage msg body]
 
+  ;;HTTP1
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
   (netty/write ch msg)
 
@@ -347,6 +352,7 @@
                              nil))))))
                 (netty/to-byte-buf-stream body' 8192))
 
+          ;;HTTP1
           sink (netty/sink ch false #(DefaultHttpContent. %))
 
           ;; mustn't close over body' if NOT a stream, can hold on to data too long when conns are keep-alive
@@ -370,21 +376,24 @@
 
                      (.execute (-> ch aleph.netty/channel .eventLoop)
                                #(d/success! d
+                                            ;;HTTP1
                                             (netty/write-and-flush ch empty-last-content)))))
       d)
 
+    ;;HTTP1
     (netty/write-and-flush ch empty-last-content)))
 
 
 
 (defn send-chunked-file
-  "Write out a msg and a body that's convertible to a ChunkedInput"
+  "Write out a msg and an HttpFile as a ChunkedInput"
   [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
                          (.-offset file)
                          (.-length file)
                          (.-chunk-size file))]
+
     (try-set-content-length! msg (.-length file))
     (netty/write ch msg)
     (netty/write-and-flush ch (HttpChunkedInput. cf))))
@@ -396,7 +405,9 @@
   (netty/write-and-flush ch body))
 
 (defn send-file-region
-  "Write out a msg and a body that can be turned into a FileRegion"
+  "Write out a msg and an HttpFile as a FileRegion.
+
+   NB: incompatible with SslHandler."
   [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
@@ -407,7 +418,8 @@
     (netty/write-and-flush ch empty-last-content)))
 
 ;; TODO: Try to enable ChunkedInput with SSL; SSL can't use FileRegion,
-;;   which calls .transferTo(), but anything resulting in ByteBufs should be fine
+;;   which calls .transferTo(), but anything resulting in ByteBufs should be fine,
+;;   so ChunkedINputs should work, too.
 (defn send-file-body
   "Writes out a msg and chooses how to write out a body.
 
@@ -494,7 +506,7 @@
                 (send-file-body ch ssl? msg body)
 
                 :else
-                (let [class-name (.getName (class body))]
+                (let [class-name (StringUtil/simpleClassName body)]
                   (try
                     (send-streaming-body ch msg body)
                     (catch Throwable e
