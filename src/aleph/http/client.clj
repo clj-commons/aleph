@@ -1,7 +1,7 @@
 (ns ^:no-doc aleph.http.client
   (:require
-    [aleph.http.core :as http]
     [aleph.http.common :as http.common]
+    [aleph.http.core :as http1]
     [aleph.http.http2 :as http2]
     [aleph.http.multipart :as multipart]
     [aleph.netty :as netty]
@@ -58,6 +58,7 @@
       SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
+    (io.netty.util.internal StringUtil)
     (java.io
       IOException)
     (java.net
@@ -139,7 +140,7 @@
         handle-response
         (fn [response complete body]
           (s/put! response-stream
-                  (http/netty-response->ring-response
+                  (http1/netty-response->ring-response
                     response
                     complete
                     body)))]
@@ -194,7 +195,7 @@
         complete (atom nil)
         handle-response (fn [rsp complete body]
                           (s/put! response-stream
-                                  (http/netty-response->ring-response
+                                  (http1/netty-response->ring-response
                                     rsp
                                     complete
                                     body)))]
@@ -318,7 +319,7 @@
                            :or   {http-headers {}
                                   keep-alive?  true}}]
   (let [headers (DefaultHttpHeaders.)]
-    (http/map->headers! headers http-headers)
+    (http1/map->headers! headers http-headers)
     (when keep-alive?
       (.set headers "Proxy-Connection" "Keep-Alive"))
     headers))
@@ -407,7 +408,7 @@
                         (ProxyConnectionTimeoutException. ^Throwable cause)
 
                         (some? headers)
-                        (ex-info message {:headers (http/headers->map headers)})
+                        (ex-info message {:headers (http1/headers->map headers)})
 
                         :else
                         cause)]

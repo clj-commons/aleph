@@ -171,7 +171,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HTTP/1.1 request/response handling
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defn ring-response->netty-response [rsp]
+(defn ring-response->netty-response
+  "Turns a Ring response into a Netty HTTP/1.1 DefaultHttpResponse"
+  [rsp]
   (let [status (get rsp :status 200)
         headers (get rsp :headers)
         netty-rsp (DefaultHttpResponse.
@@ -255,7 +257,8 @@
    body
    (System/nanoTime)))
 
-(defn netty-response->ring-response [rsp complete body]
+(defn netty-response->ring-response
+  [rsp complete body]
   (->NettyResponse rsp complete body))
 
 (defn ring-request-ssl-session [^NettyRequest req]
@@ -272,20 +275,19 @@
 
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
-(let [ary-class (class (byte-array 0))]
-  (defn coerce-element
-    "Turns an object into something writable to a Netty channel.
+(defn coerce-element
+  "Turns an object into something writable to a Netty channel.
 
-     Byte-based data types are untouched, as are strings. Everything else is
-     converted to a string."
-    [x]
-    (if (or
-          (instance? String x)
-          (instance? ary-class x)
-          (instance? ByteBuffer x)
-          (instance? ByteBuf x))
-      x
-      (str x))))
+   Byte-based data types are untouched, as are strings. Everything else is
+   converted to a string."
+  [x]
+  (if (or
+        (instance? String x)
+        (instance? netty/byte-array-class x)
+        (instance? ByteBuffer x)
+        (instance? ByteBuf x))
+    x
+    (str x)))
 
 
 (defn send-streaming-body
