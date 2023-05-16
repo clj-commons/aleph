@@ -37,6 +37,12 @@
     InterfaceHttpData
     InterfaceHttpData$HttpDataType]))
 
+(defn is-multipart?
+  "Is the Ring map multipart?"
+  [req]
+  (and (contains? req :multipart)
+       (some? (get req :multipart))))
+
 (defn ^:no-doc boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
 

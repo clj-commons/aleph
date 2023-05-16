@@ -1,6 +1,7 @@
 (ns ^:no-doc aleph.http.http2
   (:require
     [aleph.http.file :as file]
+    [aleph.http.multipart :as multipart]
     [aleph.netty :as netty]
     [clj-commons.primitive-math :as p]
     [clojure.string :as str]
@@ -25,8 +26,7 @@
     (io.netty.handler.stream
       ChunkedFile
       ChunkedInput
-      ChunkedNioFile
-      ChunkedWriteHandler)
+      ChunkedNioFile)
     (io.netty.util.internal StringUtil)
     (java.io
       File
@@ -116,7 +116,7 @@
 
 
 (defn send-contiguous-body
-  "Write out a msg and a body that is, or can be turned into a ByteBuf.
+  "Write out a msg and a body that is, or can be turned into, a ByteBuf.
 
    Works with strings, byte arrays, ByteBuffers, ByteBufs, nil, and
    anything supported by byte-streams' `convert`"
@@ -139,10 +139,11 @@
   (netty/write-and-flush ch (-> body (Http2DataChunkedInput. stream))))
 
 (defn send-file-region
-  "Write out a msg and a FileRegion body.
+  "Write out a msg and a FileRegion body. Uses the fast zero-copy .transferTo()
 
-   WARNING: Netty does not support this with the SslHandler. While there are
-   some OSes/NICs that can support SSL and zero-copy, Netty does not."
+   WARNING: Netty does not support this with its SslHandler. While there are
+   some OSes/NICs that can support SSL and zero-copy, Netty does not. This means
+   FileRegions can only be used with non-SSL connections."
   [^Http2StreamChannel ch ^Http2Headers headers ^FileRegion fr]
   (let [stream (.stream ch)]
     (try-set-content-length! headers (.count fr))
@@ -179,9 +180,9 @@
 
         (or
           (instance? String body)
-          (instance? byte-array-class body)
+          (instance? ByteBuf body)
           (instance? ByteBuffer body)
-          (instance? ByteBuf body))
+          (instance? byte-array-class body))
         (send-contiguous-body ch stream headers body)
 
         (instance? ChunkedInput body)
@@ -221,6 +222,7 @@
             (netty/close ch))
           (send-file-region ch headers body))
 
+        #_#_
         :else
         (let [class-name (StringUtil/simpleClassName body)]
           (try
@@ -243,56 +245,43 @@
 ;; usually interchangeable.
 (defn req-preprocess
   [^Http2StreamChannel ch req responses]
-  (println "req-preprocess fired")
-  (println "ch class: " (StringUtil/simpleClassName (class ch)))
-  #_(println "ch class reflect: " (clojure.reflect/type-reflect (class ch)))
-  (println "req" (prn-str req))
-  (flush)
+  (log/trace "http2 req-preprocess fired")
+  (log/debug "ch class: " (StringUtil/simpleClassName (class ch)))
+  (log/debug "req" (prn-str req))
+
+  (when (multipart/is-multipart? req)
+    ;; shouldn't reach at the moment, but just in case
+    (throw (ex-info "HTTP/2 code path multipart not supported"
+                    {:req req
+                     :stream (.stream ch)})))
 
   (try
-    (let [body (:body req)
-          parts (:multipart req)
-          multipart? (some? parts)
-          [req' body] (cond
-                        ;; RFC #7231 4.3.8. TRACE
-                        ;; A client MUST NOT send a message body...
-                        (= :trace (:request-method req))
-                        (do
-                          (when (or (some? body) multipart?)
-                            (log/warn "TRACE request body was omitted"))
-                          [req nil])
-
-                        (not multipart?)
-                        [req body]
-
-                        :else
-                        (do
-                          (println "HTTP/2 multipart not supported yet")
-                          (s/put! responses
-                                  (d/error-deferred (ex-info "HTTP/2 multipart not supported yet"
-                                                             {:req req
-                                                              :stream (.stream ch)})))
-                          (netty/close ch))
-                        #_(multipart/encode-request req' parts))
-          headers (ring-map->netty-http2-headers req')]
+    (let [body (if (= :trace (:request-method req))
+                 ;; RFC #7231 4.3.8. TRACE
+                 ;; A client MUST NOT send a message body...
+                 (do
+                   (when (some? (:body req))
+                     (log/warn "Non-nil TRACE request body was removed"))
+                   nil)
+                 (:body req))
+          headers (ring-map->netty-http2-headers req)]
 
       ;; Store message and/or original body if requested, for debugging purposes
       (when-let [save-message (get req :aleph/save-request-message)]
-        (reset! save-message req'))
+        (reset! save-message req))
       (when-let [save-body (get req :aleph/save-request-body)]
         ;; might be different in case we use :multipart
         (reset! save-body body))
 
       (-> (netty/safe-execute ch (send-message ch headers body))
           (d/catch' (fn [e]
-                      (log/error e "Error in req-preprocess")
+                      (log/error e "Error in http2 req-preprocess")
                       (s/put! responses (d/error-deferred e))
                       (netty/close ch)))))
 
     ;; this will usually happen because of a malformed request
     (catch Throwable e
-      (println "error in req-preprocess" e) (flush)
-      (log/error e "Error in req-preprocess")
+      (log/error e "Error in http2 req-preprocess")
       (s/put! responses (d/error-deferred e))
       (netty/close ch))))
 
@@ -300,6 +289,7 @@
 (comment
   (do
     (require '[aleph.http.client]
+             '[aleph.http.multipart]
              '[clj-commons.byte-streams :as bs])
     (import '(io.netty.channel DefaultFileRegion)
             '(io.netty.handler.stream ChunkedFile ChunkedNioFile)
@@ -336,8 +326,8 @@
           #_fchan
           #_(ChunkedFile. ffile)
           #_(ChunkedNioFile. fchan)
-          (file/http-file ffile 1 6 4)
-          #_(DefaultFileRegion. fchan 0 (.size fchan))
+          #_(file/http-file ffile 1 6 4)
+          (DefaultFileRegion. fchan 0 (.size fchan))
           ]
 
       (def result
@@ -349,4 +339,25 @@
       ;;(Files/deleteIfExists fpath)
 
       (some-> result :body bs/to-string)))
+
+  (do
+    (def conn @(aleph.http.client/http-connection
+                 (InetSocketAddress. "postman-echo.com" (int 443))
+                 true
+                 {:on-closed #(println "http conn closed")
+                  :http-versions  ["h2" "http/1.1"]}))
+
+    (def result
+      @(conn {:request-method :post
+              :uri            "/post"
+              :headers        {"content-type" "text/plain"}
+              :multipart      [{:part-name "part1"
+                                :content   "content1"
+                                :charset   "UTF-8"}
+                               {:part-name "part2"
+                                :content   "content2"}
+                               {:part-name "part3"
+                                :content   "content3"
+                                :mime-type "application/json"}]}))
+    (some-> result :body bs/to-string))
   )

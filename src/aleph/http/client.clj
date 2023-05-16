@@ -447,36 +447,40 @@
   (pipeline-transform p)
   p)
 
-(let [stream-frame->http-object-codec (delay (Http2StreamFrameToHttpObjectCodec. false))]
-  (defn- h2-stream-chan-initializer
-    "The multiplex handler creates a channel per HTTP2 stream, this
-     sets up each new stream channel"
-    [response-stream proxy-options ssl? logger pipeline-transform handler]
-    (println "h2-stream-chan-initializer called") (flush)
-    (netty/pipeline-initializer
-      (fn [^ChannelPipeline p]
-        (log/trace "h2-stream-chan-initializer initChannel called")
+;; TODO: is the delay actually helping? It still creates a Delay and a new fn...
+(def ^:no-doc stream-frame->http-object-codec (delay (Http2StreamFrameToHttpObjectCodec. false)))
 
-        (.addLast p
-                  "stream-frame-to-http-object"
-                  ^Http2StreamFrameToHttpObjectCodec @stream-frame->http-object-codec)
-        (.addLast p
-                  "handler"
-                  ^ChannelHandler handler)
+(defn- h2-stream-chan-initializer
+  "The multiplex handler creates a channel per HTTP2 stream, this
+   sets up each new stream channel"
+  [response-stream proxy-options ssl? logger pipeline-transform handler]
+  (log/trace "h2-stream-chan-initializer")
 
-        (add-non-http-handlers
-          p
-          response-stream
-          proxy-options
-          ssl?
-          logger
-          pipeline-transform)
-        (log/trace "added all stream-chan handlers")
+  (netty/pipeline-initializer
+    (fn [^ChannelPipeline p]
+      (log/trace "h2-stream-chan-initializer initChannel called")
 
-        (log/debug (str "Stream chan pipeline:" (prn-str p)))))))
+      ;; necessary for multipart support in HTTP/2
+      (.addLast p
+                "stream-frame-to-http-object"
+                ^ChannelHandler @stream-frame->http-object-codec)
       (.addLast p
                 "streamer"
                 ^ChannelHandler (ChunkedWriteHandler.))
+      (.addLast p
+                "handler"
+                ^ChannelHandler handler)
+
+      (add-non-http-handlers
+        p
+        response-stream
+        proxy-options
+        ssl?
+        logger
+        pipeline-transform)
+
+      (log/trace "added all stream-chan handlers")
+      (log/debug (str "Stream chan pipeline:" (prn-str p))))))
 
 
 (defn- setup-http-pipeline
@@ -684,6 +688,110 @@
                        :response-buffer-size response-buffer-size
                        :t0                   t0})))))))
 
+(defn- make-http1-req-preprocessor
+  "Returns a fn that handles a Ring req map using the HTTP/1 objects.
+
+   Used for HTTP/1, and for HTTP/2 with multipart requests (Netty HTTP/2
+   code doesn't support multipart)."
+  [{:keys [authority ch keep-alive?' non-tun-proxy? responses ssl?]}]
+  (fn http1-req-preprocess [req]
+    (try
+      (let [out-ch (or (:ch req) ch)                      ; for HTTP/2 multiplex chans
+            ^HttpRequest req' (http1/ring-request->netty-request
+                                (if non-tun-proxy?
+                                  (assoc req :uri (req->proxy-url req))
+                                  req))]
+        (when-not (.get (.headers req') "Host")
+          (.set (.headers req') HttpHeaderNames/HOST authority))
+        (when-not (.get (.headers req') "Connection")
+          (HttpUtil/setKeepAlive req' keep-alive?'))
+
+        (let [body (:body req)
+              parts (:multipart req)
+              multipart? (some? parts)
+              [req' body] (cond
+                            ;; RFC #7231 4.3.8. TRACE
+                            ;; A client MUST NOT send a message body...
+                            (= :trace (:request-method req))
+                            (do
+                              (when (or (some? body) multipart?)
+                                (log/warn "TRACE request body was omitted"))
+                              [req' nil])
+
+                            (not multipart?)
+                            [req' body]
+
+                            :else
+                            (multipart/encode-request req' parts))]
+
+          (when-let [save-message (get req :aleph/save-request-message)]
+            ;; debug purpose only
+            ;; note, that req' is effectively mutable, so
+            ;; it will "capture" all changes made during "send-message"
+            ;; execution
+            (reset! save-message req'))
+
+          (when-let [save-body (get req :aleph/save-request-body)]
+            ;; might be different in case we use :multipart
+            (reset! save-body body))
+
+          (-> (netty/safe-execute out-ch
+                                  (http1/send-message out-ch true ssl? req' body))
+              (d/catch' (fn [e]
+                          (log/error e "Error in http1-req-preprocess")
+                          (s/put! responses (d/error-deferred e))
+                          (netty/close out-ch)
+                          (when-not (= ch out-ch)
+                            (netty/close ch)))))))
+
+      ;; this will usually happen because of a malformed request
+      (catch Throwable e
+        (log/error e "Error in http1-req-preprocess")
+        (s/put! responses (d/error-deferred e))
+        (netty/close ch)))))
+
+(defn- make-http2-req-preprocessor
+  "Returns a fn that handles a Ring req map using the HTTP/2 objects.
+
+   Used for HTTP/2, but falls back to HTTP1 objects for multipart requests
+   (Netty HTTP/2 code doesn't support multipart)."
+  [{:keys [authority ch handler logger pipeline-transform proxy-options responses ssl?] :as opts}]
+  (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)
+        ;; TODO: is the delay actually helping? It still creates a Delay and a new fn...
+        multipart-req-preprocess (delay (make-http1-req-preprocessor opts))]
+
+    ;; when you create an HTTP2 outbound stream, you have to supply it with a
+    ;; handler for the response
+    (.handler h2-bootstrap
+              (h2-stream-chan-initializer
+                responses proxy-options ssl? logger pipeline-transform handler))
+
+    (fn http2-req-preprocess-init [req]
+      (log/trace "http2-req-preprocess-init fired")
+
+      (let [req' (cond-> req
+                         ;; http2 uses :authority, not host
+                         (nil? (:authority req))
+                         (assoc :authority authority)
+
+                         ;; http2 cannot leave the path empty
+                         (nil? (:uri req))
+                         (assoc :uri "/")
+
+                         (nil? (:scheme req))
+                         (assoc :scheme (if ssl? :https :http)))]
+
+        ;; create a new outbound HTTP2 stream/channel
+        (-> (.open h2-bootstrap)
+            netty/wrap-future
+            (d/chain' (fn [^Http2StreamChannel chan]
+                        (if (multipart/is-multipart? req)
+                          (@multipart-req-preprocess (assoc req :ch chan)) ; switch to HTTP1 code for multipart
+                          (http2/req-preprocess chan req' responses))))
+            (d/catch' (fn [^Throwable t]
+                        (log/error t "Unable to open outbound HTTP/2 stream channel")
+                        (s/put! responses (d/error-deferred t))
+                        (netty/close ch))))))))
 
 (defn- req-preprocesser
   "Returns a fn that preprocesses Ring reqs off the requests stream, and sends
@@ -694,106 +802,16 @@
   [{:keys [ch protocol responses ssl? authority] :as opts}]
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-    (let [{:keys [keep-alive?' non-tun-proxy?]} opts]
-      (fn [req]
-        (try
-          (let [^HttpRequest req' (http/ring-request->netty-request
-                                    (if non-tun-proxy?
-                                      (assoc req :uri (req->proxy-url req))
-                                      req))]
-            (when-not (.get (.headers req') "Host")
-              (.set (.headers req') HttpHeaderNames/HOST authority))
-            (when-not (.get (.headers req') "Connection")
-              (HttpUtil/setKeepAlive req' keep-alive?'))
-
-            (let [body (:body req)
-                  parts (:multipart req)
-                  multipart? (some? parts)
-                  [req' body] (cond
-                                ;; RFC #7231 4.3.8. TRACE
-                                ;; A client MUST NOT send a message body...
-                                (= :trace (:request-method req))
-                                (do
-                                  (when (or (some? body) multipart?)
-                                    (log/warn "TRACE request body was omitted"))
-                                  [req' nil])
-
-                                (not multipart?)
-                                [req' body]
-
-                                :else
-                                (multipart/encode-request req' parts))]
-
-              (when-let [save-message (get req :aleph/save-request-message)]
-                ;; debug purpose only
-                ;; note, that req' is effectively mutable, so
-                ;; it will "capture" all changes made during "send-message"
-                ;; execution
-                (reset! save-message req'))
-
-              (when-let [save-body (get req :aleph/save-request-body)]
-                ;; might be different in case we use :multipart
-                (reset! save-body body))
-
-              (-> (netty/safe-execute ch
-                                      (http/send-message ch true ssl? req' body))
-                  (d/catch' (fn [e]
-                              (s/put! responses (d/error-deferred e))
-                              (netty/close ch))))))
-
-          ;; this will usually happen because of a malformed request
-          (catch Throwable e
-            (s/put! responses (d/error-deferred e))
-            (netty/close ch)))))
+    (make-http1-req-preprocessor opts)
 
     (.equals ApplicationProtocolNames/HTTP_2 protocol)
-    (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)
-          {:keys [proxy-options logger pipeline-transform handler]} opts]
-
-      ;; when you create an HTTP2 outbound stream, you have to supply it with a
-      ;; handler for the response
-      (.handler h2-bootstrap
-                (h2-stream-chan-initializer
-                  responses proxy-options ssl? logger pipeline-transform handler))
-
-      (fn [req]
-        (println "req-preprocesser h2 fired")
-
-        (let [req' (cond-> req
-                           (nil? (:authority req))
-                           (assoc :authority authority)
-
-                           (nil? (:uri req))
-                           (assoc :uri "/")
-
-                           (nil? (:scheme req))
-                           (assoc :scheme (if ssl? :https :http)))]
-          (-> (.open h2-bootstrap)
-              netty/wrap-future
-              (d/chain' (fn [^Http2StreamChannel chan]
-                          (println "Got outbound h2 stream.")
-
-                          (-> chan
-                              .pipeline
-                              (.addLast "debug"
-                                        (netty/channel-inbound-handler
-                                          :channel-read ([_ ctx msg]
-                                                         (println "received msg of class" (class msg))
-                                                         (println "msg:" msg)))))
-                          (http2/req-preprocess chan req' responses)))
-              (d/catch' (fn [^Throwable t]
-                          (log/error t "Unable to open outbound HTTP/2 stream channel")
-                          (println "Unable to open outbound HTTP/2 stream channel")
-                          (.printStackTrace t)
-                          (s/put! responses (d/error-deferred t))
-                          (netty/close ch)))))))
+    (make-http2-req-preprocessor opts)
 
     :else
     (do
       (let [msg (str "Unknown protocol: " protocol)
-            e (SSLHandshakeException. msg)]
+            e (IllegalStateException. msg)]
         (log/error e msg)
-        (println msg protocol)
         (netty/close ch)
         (s/put! responses (d/error-deferred e))))))
 
