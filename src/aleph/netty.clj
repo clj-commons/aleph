@@ -792,6 +792,10 @@
          (log/debug "Setting handler-removed-d to true")
          (d/success! handler-removed-d true))))))
 
+(defn chunked-writer-enabled?
+  [^Channel ch]
+  (some? (-> ch channel .pipeline (.get ChunkedWriteHandler))))
+
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
   [^ChannelPipeline pipeline ^Class handler]

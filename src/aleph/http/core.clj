@@ -287,10 +287,6 @@
       x
       (str x))))
 
-(defn chunked-writer-enabled? [^Channel ch]
-  (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
-
-;;(defn ^:no-doc stream-body)
 
 (defn send-streaming-body
   "Write out a msg and a body that's streamable"
@@ -432,7 +428,7 @@
     (let [body (when (pos-int? (.length file)) (file/http-file->stream file))]
       (send-streaming-body ch msg body))
 
-    (chunked-writer-enabled? ch)
+    (netty/chunked-writer-enabled? ch)
     (send-chunked-file ch msg file)
 
     :else
@@ -527,32 +523,3 @@
     (quick-bench
       (send-message ch keep-alive? ssl? msg body)))
   )
-
-(defn close-on-idle-handler []
-  (netty/channel-handler
-   :user-event-triggered
-   ([_ ctx evt]
-    (if (and (instance? IdleStateEvent evt)
-             (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-      (netty/close ctx)
-      (.fireUserEventTriggered ctx evt)))))
-
-
-(defn attach-idle-handlers
-  ^ChannelPipeline
-  [^ChannelPipeline pipeline idle-timeout]
-  (if (pos? idle-timeout)
-    (doto pipeline
-      (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
-      (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
-    pipeline))
-
-
-
-
-(defn decoder-failed? [^DecoderResultProvider msg]
-  (.isFailure ^DecoderResult (.decoderResult msg)))
-
-
-(defn ^Throwable decoder-failure [^DecoderResultProvider msg]
-  (.cause ^DecoderResult (.decoderResult msg)))
