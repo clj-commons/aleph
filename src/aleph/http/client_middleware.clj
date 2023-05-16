@@ -14,7 +14,9 @@
     [manifold.stream :as s]
     [potemkin :as p])
   (:import
-    (io.netty.buffer ByteBuf Unpooled)
+    (io.netty.buffer
+      ByteBuf
+      Unpooled)
     (io.netty.handler.codec.base64 Base64)
     (io.netty.handler.codec.http
       HttpHeaders

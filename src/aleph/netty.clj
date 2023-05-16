@@ -8,95 +8,115 @@
     [manifold.executor :as e]
     [manifold.stream :as s]
     [manifold.stream.core :as manifold]
-    [potemkin :refer [doit doary]])
+    [potemkin :refer [doary doit]])
   (:import
     (aleph.http PipelineInitializer)
     (clojure.lang DynamicClassLoader)
-    (io.netty.bootstrap Bootstrap ServerBootstrap)
+    (io.netty.bootstrap
+      Bootstrap
+      ServerBootstrap)
     (io.netty.buffer ByteBuf Unpooled)
     (io.netty.channel
-      Channel ChannelFuture ChannelOption
-      ChannelPipeline EventLoopGroup
-      ChannelHandler FileRegion
-      ChannelInboundHandler
-      ChannelOutboundHandler
+      Channel
+      ChannelFuture
+      ChannelHandler
       ChannelHandlerContext
-      ChannelInitializer)
+      ChannelInboundHandler
+      ChannelInitializer
+      ChannelOption
+      ChannelOutboundHandler
+      ChannelPipeline
+      EventLoopGroup
+      FileRegion)
     (io.netty.channel.epoll
       Epoll
+      EpollDatagramChannel
       EpollEventLoopGroup
       EpollServerSocketChannel
-      EpollSocketChannel
-      EpollDatagramChannel)
+      EpollSocketChannel)
     (io.netty.channel.group
-      ChannelGroup DefaultChannelGroup)
+      ChannelGroup
+      DefaultChannelGroup)
     (io.netty.channel.kqueue
       KQueue
+      KQueueDatagramChannel
       KQueueEventLoopGroup
       KQueueServerSocketChannel
-      KQueueSocketChannel
-      KQueueDatagramChannel)
+      KQueueSocketChannel)
     (io.netty.channel.nio NioEventLoopGroup)
     (io.netty.channel.socket ServerSocketChannel)
     (io.netty.channel.socket.nio
+      NioDatagramChannel
       NioServerSocketChannel
-      NioSocketChannel
-      NioDatagramChannel)
+      NioSocketChannel)
     (io.netty.handler.codec DecoderException)
     (io.netty.handler.logging
-      LoggingHandler
-      LogLevel)
+      LogLevel
+      LoggingHandler)
     (io.netty.handler.ssl
       ApplicationProtocolConfig
-      ApplicationProtocolNegotiationHandler ClientAuth
+      ApplicationProtocolNegotiationHandler
+      ClientAuth
       SslContext
       SslContextBuilder
       SslHandler
       SslProvider)
     (io.netty.handler.ssl.util
-      SelfSignedCertificate
-      InsecureTrustManagerFactory)
+      InsecureTrustManagerFactory
+      SelfSignedCertificate)
+    (io.netty.handler.stream ChunkedWriteHandler)
     (io.netty.incubator.channel.uring
-      IOUring IOUringEventLoopGroup
+      IOUring
+      IOUringDatagramChannel
+      IOUringEventLoopGroup
       IOUringServerSocketChannel
-      IOUringSocketChannel
-      IOUringDatagramChannel)
+      IOUringSocketChannel)
     (io.netty.resolver
       AddressResolverGroup
       NoopAddressResolverGroup
       ResolvedAddressTypes)
     (io.netty.resolver.dns
-      DnsNameResolverBuilder
       DnsAddressResolverGroup
+      DnsNameResolverBuilder
       DnsServerAddressStreamProvider
-      SingletonDnsServerAddressStreamProvider
-      SequentialDnsServerAddressStreamProvider)
+      SequentialDnsServerAddressStreamProvider
+      SingletonDnsServerAddressStreamProvider)
     (io.netty.util
       Attribute
       AttributeKey
       ResourceLeakDetector
       ResourceLeakDetector$Level)
     (io.netty.util.concurrent
-      FastThreadLocalThread GenericFutureListener Future
+      FastThreadLocalThread
+      Future
+      GenericFutureListener
       GlobalEventExecutor)
-    (io.netty.util.internal StringUtil SystemPropertyUtil)
+    (io.netty.util.internal
+      StringUtil
+      SystemPropertyUtil)
     (io.netty.util.internal.logging
       InternalLoggerFactory
-      Log4JLoggerFactory
-      Slf4JLoggerFactory
       JdkLoggerFactory
-      Log4J2LoggerFactory)
-    (java.io InputStream IOException File)
-    (java.net URI SocketAddress InetSocketAddress)
+      Log4J2LoggerFactory
+      Log4JLoggerFactory
+      Slf4JLoggerFactory)
+    (java.io
+      File
+      IOException
+      InputStream)
+    (java.net
+      InetSocketAddress
+      SocketAddress
+      URI)
     (java.nio ByteBuffer)
     (java.security PrivateKey)
     (java.security.cert X509Certificate)
     (java.util.concurrent
-      ConcurrentHashMap
       CancellationException
+      ConcurrentHashMap
       ScheduledFuture
-      TimeUnit
-      ThreadFactory)
+      ThreadFactory
+      TimeUnit)
     (java.util.concurrent.atomic
       AtomicLong)
     (javax.net.ssl
@@ -152,7 +172,7 @@
   "Default timeout in seconds to wait for graceful shutdown complete"
   15)
 
-(def ^:const ^:no-doc array-class (class (clojure.core/byte-array 0)))
+(def ^:const ^:no-doc byte-array-class (Class/forName "[B"))
 
 (defn ^:no-doc buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
@@ -177,7 +197,7 @@
           (.put dst buf))
     (.array dst)))
 
-(bs/def-conversion ^{:cost 1} [ByteBuf array-class]
+(bs/def-conversion ^{:cost 1} [ByteBuf byte-array-class]
   [buf options]
   (let [ary (buf->array buf)]
     (release buf)
@@ -194,7 +214,7 @@
     "Appends `x` to an existing `io.netty.buffer.ByteBuf`."
     [^ByteBuf buf x]
     (cond
-      (instance? array-class x)
+      (instance? byte-array-class x)
       (.writeBytes buf ^bytes x)
 
       (instance? String x)
@@ -215,7 +235,7 @@
        (nil? x)
        Unpooled/EMPTY_BUFFER
 
-       (instance? array-class x)
+       (instance? byte-array-class x)
        (Unpooled/copiedBuffer ^bytes x)
 
        (instance? String x)
@@ -683,32 +703,6 @@
              `([_# ctx#]
                (.flush ctx#))))))
 
-#_#_
-(defn- channel-initializer-caught-exception
-  [^ChannelHandlerContext ctx ^Throwable t]
-  (log/warn t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
-  (-> ctx (.channel) (.close)))
-
-(defmacro ^:no-doc channel-initializer
-  "Returns a ChannelInboundHandler that's the equivalent of ChannelInitializer.
-
-   Takes a single `init-channel` fn that will be called with the new Channel"
-  [init-channel]
-  `(let [init-channel# ~init-channel]
-     (channel-inbound-handler
-       {:handler-added    ([this# ^ChannelHandlerContext ctx#]
-                           (when (-> ctx# (.channel) (.isRegistered))
-                             (try
-                               (init-channel# (.channel ctx#))
-                               (catch Throwable t#
-                                 (channel-initializer-caught-exception ctx# t#))
-                               (finally
-                                 (when-not (.isRemoved ctx#)
-                                   (-> ctx#
-                                       (.pipeline)
-                                       (.remove this#)))))))
-        :exception-caught ([_# ctx# cause#]
-                           (channel-initializer-caught-exception ctx# cause#))})))
 
 (defn ^:no-doc ^ChannelHandler bandwidth-tracker [^Channel ch]
   (let [inbound-counter (AtomicLong. 0)
@@ -777,30 +771,6 @@
   [pipeline-builder]
   (PipelineInitializer. pipeline-builder))
 
-#_
-(defn pipeline-initializer
-  "Returns a ChannelInitializer which builds the pipeline."
-  (^ChannelInitializer
-   [pipeline-builder]
-   (pipeline-initializer pipeline-builder nil))
-  (^ChannelInitializer
-   [pipeline-builder handler-added]
-   (proxy [ChannelInitializer] []
-     (initChannel [^Channel ch]
-       (let [p ^ChannelPipeline (.pipeline ch)]
-         (pipeline-builder p)
-         (log/debug (prn-str p))
-         (prn p)))
-     (exceptionCaught [^ChannelHandlerContext ctx ^Throwable t]
-       (log/warn t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
-       (println t (str "Failed to initialize a channel. Closing: " (.channel ctx)))
-       (.close ctx))
-     (handlerAdded [^ChannelHandlerContext ctx]
-       (log/debug "ChannelInitializer added to pipeline")
-       (println "ChannelInitializer added to pipeline")
-       (when handler-added (handler-added))
-       (let [^ChannelInitializer this this]                 ; stupid proxy reflection warning
-         (proxy-super handlerAdded ctx))))))
 
 (defn ^:no-doc application-protocol-negotiation-handler
   "Returns an ApplicationProtocolNegotiationHandler that will be
