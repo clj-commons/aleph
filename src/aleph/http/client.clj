@@ -474,6 +474,9 @@
         (log/trace "added all stream-chan handlers")
 
         (log/debug (str "Stream chan pipeline:" (prn-str p)))))))
+      (.addLast p
+                "streamer"
+                ^ChannelHandler (ChunkedWriteHandler.))
 
 
 (defn- setup-http-pipeline

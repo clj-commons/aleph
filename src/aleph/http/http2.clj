@@ -127,16 +127,6 @@
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
     (netty/write-and-flush ch (-> body-bb (DefaultHttp2DataFrame. true) (.stream stream)))))
 
-(defn- ensure-chunked-writer
-  "Adds the ChunkedWriteHandler to the pipeline if needed"
-  [^Http2StreamChannel ch]
-  (let [p (.pipeline ch)]
-    (when-not (.get p ChunkedWriteHandler)
-        (.addBefore p
-                    "handler"
-                    "streamer"
-                    (ChunkedWriteHandler.)))))
-
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
   [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers ^ChunkedInput body]
@@ -144,8 +134,6 @@
   (let [len (.length body)]
     (when (p/>= len 0)
       (try-set-content-length! headers len)))
-
-  (ensure-chunked-writer ch)
 
   (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
   (netty/write-and-flush ch (-> body (Http2DataChunkedInput. stream))))
