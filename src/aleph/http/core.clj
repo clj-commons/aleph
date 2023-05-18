@@ -276,20 +276,6 @@
 
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
-(defn coerce-element
-  "Turns an object into something writable to a Netty channel.
-
-   Byte-based data types are untouched, as are strings. Everything else is
-   converted to a string."
-  [x]
-  (if (or
-        (instance? String x)
-        (instance? netty/byte-array-class x)
-        (instance? ByteBuffer x)
-        (instance? ByteBuf x))
-    x
-    (str x)))
-
 
 (defn send-streaming-body
   "Write out a msg and a body that's streamable"
@@ -305,7 +291,7 @@
                    ;; write out all the data we have already, and return the rest
                    (let [buf (netty/allocate ch)
                          pending? (instance? clojure.lang.IPending body)]
-                     (loop [s (map coerce-element body)]
+                     (loop [s (map common/coerce-element body)]
                        (cond
 
                          ;; lazy and no data available yet - write out and move on

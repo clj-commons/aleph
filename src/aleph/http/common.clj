@@ -3,6 +3,7 @@
   (:require
     [aleph.netty :as netty])
   (:import
+    (io.netty.buffer ByteBuf)
     (io.netty.channel
       ChannelHandler
       ChannelPipeline)
@@ -13,7 +14,22 @@
       IdleState
       IdleStateEvent
       IdleStateHandler)
+    (java.nio ByteBuffer)
     (java.util.concurrent TimeUnit)))
+
+(defn coerce-element
+  "Turns an object into something writable to a Netty channel.
+
+   Byte-based data types are untouched, as are strings. Everything else is
+   converted to a string."
+  [x]
+  (if (or
+        (instance? String x)
+        (instance? netty/byte-array-class x)
+        (instance? ByteBuffer x)
+        (instance? ByteBuf x))
+    x
+    (str x)))
 
 
 (defn close-on-idle-handler []
