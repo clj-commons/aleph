@@ -10,7 +10,7 @@
                  [org.clj-commons/byte-streams "0.3.2"]
                  [org.clj-commons/dirigiste "1.0.3"]
                  [org.clj-commons/primitive-math "1.0.0"]
-                 [potemkin "0.4.5"]
+                 [potemkin "0.4.6"]
                  [io.netty/netty-transport ~netty-version]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-x86_64"]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-aarch_64"]
