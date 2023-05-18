@@ -1,5 +1,6 @@
 (ns ^:no-doc aleph.http.http2
   (:require
+    [aleph.http.common :as common]
     [aleph.http.file :as file]
     [aleph.http.multipart :as multipart]
     [aleph.netty :as netty]
@@ -10,6 +11,7 @@
     [manifold.stream :as s])
   (:import
     (aleph.http.file HttpFile)
+    (clojure.lang IPending)
     (io.netty.buffer ByteBuf)
     (io.netty.channel FileRegion)
     (io.netty.handler.codec.http2
@@ -29,6 +31,7 @@
       ChunkedNioFile)
     (io.netty.util.internal StringUtil)
     (java.io
+      Closeable
       File
       RandomAccessFile)
     (java.nio ByteBuffer)
@@ -41,6 +44,9 @@
 (set! *warn-on-reflection* true)
 
 (def ^:private byte-array-class (Class/forName "[B"))
+
+(def ^:const max-allowed-frame-size 16777215) ; 2^24 - 1, see RFC 9113, SETTINGS_MAX_FRAME_SIZE
+(def ^:dynamic *default-chunk-size* 16384) ; same as default SETTINGS_MAX_FRAME_SIZE
 
 ;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
 (def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
@@ -164,8 +170,96 @@
                                        (p/int (.-chunk-size hf)))]
     (send-chunked-body ch stream headers chunked-input)))
 
+(defn- write-available-sequence-data
+  "Writes out available data from anything sequential, and returns any
+   unrealized remainder (for lazy sequences)."
+  [^Http2StreamChannel ch s]
+  (let [buf (netty/allocate ch)
+        lazy? (instance? IPending s)]
+    (loop [s s]
+      (cond
+        ;; lazy and no data available yet - write out buf and move on
+        (and lazy? (not (realized? s)))
+        (do
+          (netty/write-and-flush ch buf)
+          s)
+
+        ;; If we're out of data, write out the buf, and return nil
+        (empty? s)
+        (do
+          (netty/write-and-flush ch buf)
+          nil)
+
+        ;; if data is ready, append it to the buf and recur
+        (or (not lazy?) (realized? s))
+        (let [x (first s)]
+          (netty/append-to-buf! buf x)
+          (recur (rest s)))
+
+        :else
+        (do
+          (netty/write-and-flush ch buf)
+          s)))))
+
+(defn- end-of-stream-frame
+  "Returns an empty data frame with end-of-stream set to true."
+  [^Http2FrameStream stream]
+  (-> (DefaultHttp2DataFrame. true)
+      (.stream stream)))
+
+(defn send-streaming-body
+  "Write out a msg and a body that's streamable"
+  [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers body chunk-size]
+
+  ;; write out header frame first
+  (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
+
+  (if-let [body' (if (sequential? body)
+                   ;; write out all the data we have already, and return the rest
+                   (->> body
+                        (map common/coerce-element)
+                        (write-available-sequence-data ch))
+                   (do
+                     (netty/flush ch)
+                     body))]
+
+    (let [d (d/deferred)
+          src (common/body-byte-buf-stream d ch body' chunk-size)
+          sink (netty/sink ch
+                           false
+                           (fn [^ByteBuf buf]
+                             (-> buf (DefaultHttp2DataFrame.) (.stream stream))))
+
+          ;; mustn't close over body' if NOT a stream, can hold on to data too long
+          ch-close-handler (if (s/stream? body')
+                             #(s/close! body')
+                             #(s/close! src))]
+
+      (s/connect src sink)
+
+      ;; set up ch close handler
+      (-> ch
+          netty/channel
+          .closeFuture
+          netty/wrap-future
+          (d/chain' (fn [_] (ch-close-handler))))
+
+      ;; set up sink close handler
+      (s/on-closed sink
+                   (fn []
+                     (when (instance? Closeable body)
+                       (.close ^Closeable body))
+
+                     (.execute (-> ch netty/channel .eventLoop)
+                               #(d/success! d
+                                            (netty/write-and-flush ch (end-of-stream-frame stream))))))
+      d)
+
+    ;; otherwise, no data left in body', so just send an empty data frame
+    (netty/write-and-flush ch (end-of-stream-frame stream))))
+
 (defn- send-message
-  [^Http2StreamChannel ch ^Http2Headers headers body]
+  [^Http2StreamChannel ch ^Http2Headers headers body chunk-size file-chunk-size]
   (log/trace "http2 send-message")
   (let [^Http2FrameStream stream (.stream ch)]
     (try
@@ -191,11 +285,11 @@
         (instance? RandomAccessFile body)
         (send-chunked-body ch stream headers
                            (ChunkedFile. ^RandomAccessFile body
-                                         (p/int file/default-chunk-size)))
+                                         ^int file-chunk-size))
 
         (instance? File body)
         (send-chunked-body ch stream headers
-                           (ChunkedNioFile. ^File body (p/int file/default-chunk-size)))
+                           (ChunkedNioFile. ^File body ^int file-chunk-size))
 
         (instance? Path body)
         (send-chunked-body ch stream headers
@@ -203,18 +297,18 @@
                                             (FileChannel/open
                                               ^Path body
                                               (into-array OpenOption [StandardOpenOption/READ]))
-                                            (p/int file/default-chunk-size)))
+                                            ^int file-chunk-size))
 
         (instance? HttpFile body)
         (send-http-file ch stream headers body)
 
         (instance? FileChannel body)
         (send-chunked-body ch stream headers
-                           (ChunkedNioFile. ^FileChannel body (p/int file/default-chunk-size)))
+                           (ChunkedNioFile. ^FileChannel body ^int file-chunk-size))
 
         (instance? FileRegion body)
-        (if (or (-> ch (.pipeline) (.get SslHandler))
-                (some-> ch (.parent) (.pipeline) (.get SslHandler)))
+        (if (or (-> ch (.pipeline) (.get ^Class SslHandler))
+                (some-> ch (.parent) (.pipeline) (.get ^Class SslHandler)))
           (let [emsg (str "FileRegion not supported with SSL in Netty")
                 ex (ex-info emsg {:ch ch :headers headers :body body})
                 e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR ex)]
@@ -222,11 +316,10 @@
             (netty/close ch))
           (send-file-region ch headers body))
 
-        #_#_
         :else
         (let [class-name (StringUtil/simpleClassName body)]
           (try
-            (send-streaming-body ch msg body)
+            (send-streaming-body ch stream headers body chunk-size)
             (catch Throwable e
               (log/error e "error sending body of type " class-name)
               (throw e)))))
@@ -264,7 +357,9 @@
                      (log/warn "Non-nil TRACE request body was removed"))
                    nil)
                  (:body req))
-          headers (ring-map->netty-http2-headers req)]
+          headers (ring-map->netty-http2-headers req)
+          chunk-size (or (:chunk-size req) *default-chunk-size*)
+          file-chunk-size (p/int (or (:chunk-size req) file/*default-file-chunk-size*))]
 
       ;; Store message and/or original body if requested, for debugging purposes
       (when-let [save-message (get req :aleph/save-request-message)]
@@ -273,7 +368,7 @@
         ;; might be different in case we use :multipart
         (reset! save-body body))
 
-      (-> (netty/safe-execute ch (send-message ch headers body))
+      (-> (netty/safe-execute ch (send-message ch headers body chunk-size file-chunk-size))
           (d/catch' (fn [e]
                       (log/error e "Error in http2 req-preprocess")
                       (s/put! responses (d/error-deferred e))
@@ -317,6 +412,9 @@
           ffile (.toFile fpath)
           _ (spit ffile body-string)
           fchan (FileChannel/open fpath (into-array OpenOption []))
+          aleph-1k (repeat 1000 \ℵ)
+          aleph-20k (repeat 20000 \ℵ)
+          aleph-1k-string (apply str aleph-1k)
 
           body
           #_body-string
@@ -327,16 +425,18 @@
           #_(ChunkedFile. ffile)
           #_(ChunkedNioFile. fchan)
           #_(file/http-file ffile 1 6 4)
-          (DefaultFileRegion. fchan 0 (.size fchan))
-          ]
+          #_(DefaultFileRegion. fchan 0 (.size fchan))
+          #_(seq body-string)
+          #_[:foo :bar :moop]
+          #_aleph-20k
+          [aleph-1k-string aleph-1k-string]]
+
 
       (def result
         @(conn {:request-method :post
                 :uri            "/post"
                 :headers        {"content-type" "text/plain"}
                 :body           body}))
-
-      ;;(Files/deleteIfExists fpath)
 
       (some-> result :body bs/to-string)))
 

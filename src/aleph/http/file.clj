@@ -16,7 +16,7 @@
     (java.nio.file
       Path)))
 
-(def ^:dynamic default-chunk-size 8192)
+(def ^:dynamic *default-file-chunk-size* 16384)
 
 (deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 
@@ -28,9 +28,9 @@
 
 (defn http-file
   ([path]
-   (http-file path nil nil default-chunk-size))
+   (http-file path nil nil *default-file-chunk-size*))
   ([path offset length]
-   (http-file path offset length default-chunk-size))
+   (http-file path offset length *default-file-chunk-size*))
   ([path offset length chunk-size]
    (let [^File
          fd (cond
@@ -74,7 +74,7 @@
            [p c] (if region?
                    [offset length]
                    [0 len])
-           chunk-size (or chunk-size default-chunk-size)]
+           chunk-size (or chunk-size *default-file-chunk-size*)]
        (when (and region? (< len (+ offset length)))
          (throw
            (IllegalArgumentException.
@@ -90,7 +90,7 @@
 
 (bs/def-conversion ^{:cost 0} [HttpFile (bs/seq-of ByteBuffer)]
                    [file {:keys [chunk-size writable?]
-                          :or {chunk-size (int default-chunk-size)
+                          :or {chunk-size (int *default-file-chunk-size*)
                                writable? false}}]
                    (let [^RandomAccessFile raf (RandomAccessFile. ^File (.-fd file)
                                                                   (if writable? "rw" "r"))

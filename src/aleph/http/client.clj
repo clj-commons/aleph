@@ -506,11 +506,9 @@
      idle-timeout            0
      protocol                ApplicationProtocolNames/HTTP_1_1}
     :as opts}]
-  (log/info (str "Negotiated protocol: " protocol))
-  (println (str "Negotiated protocol: " protocol))
 
+  (log/info (str "Negotiated protocol: " protocol))
   (log/debug "Logger:" logger " - log level: " (some-> logger .level))
-  (println "Logger:" logger " - log level: " (some-> logger .level))
 
   ;; because case doesn't work with Java constants
   (cond

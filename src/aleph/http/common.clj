@@ -1,7 +1,10 @@
 (ns ^:no-doc aleph.http.common
   "Code shared across both client/server and different HTTP versions"
   (:require
-    [aleph.netty :as netty])
+    [aleph.netty :as netty]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
     (io.netty.buffer ByteBuf)
     (io.netty.channel
@@ -14,8 +17,11 @@
       IdleState
       IdleStateEvent
       IdleStateHandler)
+    (io.netty.util.internal StringUtil)
     (java.nio ByteBuffer)
     (java.util.concurrent TimeUnit)))
+
+(set! *warn-on-reflection* true)
 
 (defn coerce-element
   "Turns an object into something writable to a Netty channel.
@@ -30,6 +36,27 @@
         (instance? ByteBuf x))
     x
     (str x)))
+
+(defn body-byte-buf-stream
+  "Turns the body into a byte-buf stream.
+
+   NB: chunk-size is only used if the body is converted by byte-streams,
+   i.e., not a stream or sequence."
+  [d ch body chunk-size]
+  (if (or (sequential? body) (s/stream? body))
+    (->> body
+         s/->source
+         (s/transform
+           (keep
+             (fn [x]
+               (try
+                 (netty/to-byte-buf x)
+                 (catch Throwable e
+                   (log/error (str "Error converting " (StringUtil/simpleClassName x) " to ByteBuf"))
+                   (d/error! d e)
+                   (netty/close ch)
+                   nil))))))
+    (netty/to-byte-buf-stream body chunk-size)))
 
 
 (defn close-on-idle-handler []
