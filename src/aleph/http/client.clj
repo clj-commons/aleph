@@ -1,6 +1,6 @@
 (ns ^:no-doc aleph.http.client
   (:require
-    [aleph.http.common :as http.common]
+    [aleph.http.common :as common]
     [aleph.http.core :as http1]
     [aleph.http.http2 :as http2]
     [aleph.http.multipart :as multipart]
@@ -100,7 +100,7 @@
       (no-url req))))
 
 (defn send-response-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
-  (let [^Throwable ex (http.common/decoder-failure msg)]
+  (let [^Throwable ex (common/decoder-failure msg)]
     (s/put! response-stream ex)
     (netty/close ctx)))
 
@@ -161,7 +161,7 @@
       :channel-read
       ([_ ctx msg]
        (cond
-         (http.common/decoder-failed? msg)
+         (common/decoder-failed? msg)
          (handle-decoder-failure ctx msg stream complete response-stream)
 
          (instance? HttpResponse msg)
@@ -219,7 +219,7 @@
       ([_ ctx msg]
 
        (cond
-         (http.common/decoder-failed? msg)
+         (common/decoder-failed? msg)
          (handle-decoder-failure ctx msg body-stream complete response-stream)
 
          ;; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
@@ -516,7 +516,7 @@
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
     (-> pipeline
-        (http.common/attach-idle-handlers idle-timeout)
+        (common/attach-idle-handlers idle-timeout)
         (.addLast "http-client"
                   (HttpClientCodec.
                     max-initial-line-length
@@ -557,7 +557,7 @@
 
 
       (-> pipeline
-          (http.common/attach-idle-handlers idle-timeout)
+          (common/attach-idle-handlers idle-timeout)
           (.addLast "http2-frame-codec" http2-frame-codec)
           (.addLast "multiplex" multiplex-handler))
 

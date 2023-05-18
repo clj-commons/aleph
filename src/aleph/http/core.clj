@@ -1,6 +1,7 @@
 (ns ^:no-doc aleph.http.core
   "HTTP/1.1 functionality"
   (:require
+    [aleph.http.common :as common]
     [aleph.http.file :as file]
     [aleph.netty :as netty]
     [clojure.set :as set]

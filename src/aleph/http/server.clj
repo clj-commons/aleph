@@ -1,7 +1,7 @@
 (ns ^:no-doc aleph.http.server
   (:require
     [aleph.flow :as flow]
-    [aleph.http.common :as http.common]
+    [aleph.http.common :as common]
     [aleph.http.core :as http]
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
@@ -552,7 +552,7 @@ Example: {:status 200
                                                    ssl?))]
 
       (doto pipeline
-        (http.common/attach-idle-handlers idle-timeout)
+        (common/attach-idle-handlers idle-timeout)
         (.addLast "http-server"
           (HttpServerCodec.
             max-initial-line-length
