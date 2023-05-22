@@ -967,7 +967,8 @@
     (def conn @(http-connection
                  (InetSocketAddress/createUnresolved "www.google.com" (int 443))
                  true
-                 {:on-closed #(println "http conn closed")}))
+                 {:on-closed #(println "http conn closed")
+                  :http-versions  ["http/1.1"]}))
 
     (conn {:request-method :get}))
   )

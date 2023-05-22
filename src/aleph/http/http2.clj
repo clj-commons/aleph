@@ -391,6 +391,7 @@
             '(java.nio.file Files OpenOption Path Paths)
             '(java.nio.file.attribute FileAttribute)))
 
+  ;; basic test
   (do
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
@@ -399,6 +400,7 @@
 
     @(conn {:request-method :get}))
 
+  ;; different body types test
   (do
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
@@ -415,7 +417,7 @@
           aleph-1k-string (apply str aleph-1k)
 
           body
-          #_body-string
+          body-string
           #_fpath
           #_ffile
           #_(RandomAccessFile. ffile "r")
@@ -427,17 +429,20 @@
           #_(seq body-string)
           #_[:foo :bar :moop]
           #_aleph-20k
-          [aleph-1k-string aleph-1k-string]]
+          #_[aleph-1k-string aleph-1k-string]]
 
 
       (def result
         @(conn {:request-method :post
                 :uri            "/post"
                 :headers        {"content-type" "text/plain"}
-                :body           body}))
+                :body           body
+                :raw-stream?    true
+                }))
 
       (some-> result :body bs/to-string)))
 
+  ;; multipart test
   (do
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
@@ -458,4 +463,20 @@
                                 :content   "content3"
                                 :mime-type "application/json"}]}))
     (some-> result :body bs/to-string))
+
+  ;; multiple simultaneous requests test
+  (do
+    (def conn @(aleph.http.client/http-connection
+                 (InetSocketAddress. "postman-echo.com" (int 443))
+                 true
+                 {:on-closed #(log/debug "http conn closed")}))
+
+    (let [req {:request-method :post
+               :uri            "/post"
+               :headers        {"content-type" "text/plain"}
+               :body           "Body test"
+               ;;:raw-stream?    true
+               }]
+      (def results (map conn (repeat 6 req)))
+      @(nth results 5)))
   )
