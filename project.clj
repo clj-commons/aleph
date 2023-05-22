@@ -34,7 +34,11 @@
                                    ;; This is for self-generating certs for testing ONLY:
                                    [org.bouncycastle/bcprov-jdk18on "1.72"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.72"]]
-                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
+                    :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
+                               "-Dorg.slf4j.simpleLogger.showThreadName=false"
+                               "-Dorg.slf4j.simpleLogger.showThreadId=true"
+                               "-Dorg.slf4j.simpleLogger.showLogName=false"
+                               "-Dorg.slf4j.simpleLogger.showShortLogName=true"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
              :pedantic {:pedantic? :abort}}

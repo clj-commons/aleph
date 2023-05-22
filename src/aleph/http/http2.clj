@@ -58,7 +58,7 @@
    Respects HTTP/2 rules. Strips invalid connection-related headers. Throws on
    nil header values. Throws if `transfer-encoding` is present, but not 'trailers'."
   [^Http2Headers h2-headers ^String header-name header-value]
-  (println "adding header" header-name header-value)
+  (log/debug "adding header" header-name ": " header-value)
   (if (nil? header-name)
     (throw (IllegalArgumentException. "Header name cannot be nil"))
     (let [header-name (str/lower-case header-name)]         ; http2 requires lowercase headers
@@ -317,12 +317,11 @@
           (send-file-region ch headers body))
 
         :else
-        (let [class-name (StringUtil/simpleClassName body)]
-          (try
-            (send-streaming-body ch stream headers body chunk-size)
-            (catch Throwable e
-              (log/error e "error sending body of type " class-name)
-              (throw e)))))
+        (try
+          (send-streaming-body ch stream headers body chunk-size)
+          (catch Throwable e
+            (log/error e "Error sending body of type " (StringUtil/simpleClassName body))
+            (throw e))))
 
       (catch Exception e
         (println "Error sending message" e)
@@ -339,7 +338,6 @@
 (defn req-preprocess
   [^Http2StreamChannel ch req responses]
   (log/trace "http2 req-preprocess fired")
-  (log/debug "ch class: " (StringUtil/simpleClassName (class ch)))
   (log/debug "req" (prn-str req))
 
   (when (multipart/is-multipart? req)
@@ -397,7 +395,7 @@
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
-                 {:on-closed #(println "http conn closed")}))
+                 {:on-closed #(log/debug "http conn closed")}))
 
     @(conn {:request-method :get}))
 
@@ -405,7 +403,7 @@
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
-                 {:on-closed #(println "http conn closed")}))
+                 {:on-closed #(log/debug "http conn closed")}))
 
     (let [body-string "Body test"
           fpath (Files/createTempFile "test" ".txt" (into-array FileAttribute []))
@@ -444,7 +442,7 @@
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
-                 {:on-closed #(println "http conn closed")
+                 {:on-closed #(log/debug "http conn closed")
                   :http-versions  ["h2" "http/1.1"]}))
 
     (def result

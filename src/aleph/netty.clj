@@ -50,6 +50,7 @@
       NioServerSocketChannel
       NioSocketChannel)
     (io.netty.handler.codec DecoderException)
+    (io.netty.handler.codec.http2 Http2StreamChannel)
     (io.netty.handler.logging
       LogLevel
       LoggingHandler)
@@ -1340,12 +1341,11 @@ initialize an DnsAddressResolverGroup instance.
   (if-let [^SslHandler ssl-handler (-> ch .pipeline (.get SslHandler))]
     (do
       (log/debug "Waiting on SSL handshake...")
-      (println "Waiting on SSL handshake...") (clojure.core/flush)
       (doto (-> ssl-handler
                 (.handshakeFuture)
                 wrap-future)
-            (d/on-realized (fn [_] (println "SSL handshake completed"))
-                           (fn [_] (println "SSL handshake failed")))))
+            (d/on-realized (fn [_] (log/info "SSL handshake completed"))
+                           (fn [_] (log/warn "SSL handshake failed")))))
     (d/success-deferred ch)))
 
 (defn ^:no-doc ignore-ssl-handshake-errors
@@ -1394,13 +1394,13 @@ initialize an DnsAddressResolverGroup instance.
     ^SocketAddress local-address
     epoll?
     name-resolver]
-   (create-client-chan {:pipeline-builder pipeline-builder
-                   :ssl-context           ssl-context
-                   :bootstrap-transform   bootstrap-transform
-                   :remote-address        remote-address
-                   :local-address         local-address
-                   :transport             (if epoll? :epoll :nio)
-                   :name-resolver         name-resolver}))
+   (create-client-chan {:pipeline-builder    pipeline-builder
+                        :ssl-context         ssl-context
+                        :bootstrap-transform bootstrap-transform
+                        :remote-address      remote-address
+                        :local-address       local-address
+                        :transport           (if epoll? :epoll :nio)
+                        :name-resolver       name-resolver}))
   ([{:keys [pipeline-builder
             ssl-context
             bootstrap-transform
@@ -1409,7 +1409,7 @@ initialize an DnsAddressResolverGroup instance.
             transport
             name-resolver]}]
    (ensure-transport-available! transport)
-   #_(println "passed-in ssl-context: " ssl-context)
+
    (let [^Class
          chan-class (transport-channel-class transport)
 
@@ -1565,7 +1565,10 @@ initialize an DnsAddressResolverGroup instance.
               (.append "\t\t")
               (.append hname)
               (.append ": ")
-              (.append (StringUtil/simpleClassName (class handler)))
+              (.append (StringUtil/simpleClassName handler))
+              (.append " (#")
+              (.append (.hashCode handler))
+              (.append ")")
               (.append "\n")))
         (.toMap pipeline))
   sb)
@@ -1579,11 +1582,10 @@ initialize an DnsAddressResolverGroup instance.
         (append-pipeline* pipeline))
     (.write writer (.toString sb))))
 
-(defmethod print-method Channel
-  [^Channel chan ^java.io.Writer writer]
-  (let [sb (StringBuilder.)]
-    (.append sb (StringUtil/simpleClassName (class chan)))
-    (when (or (.isRegistered chan) (.isOpen chan) (.isActive chan))
+(defn- ^:no-doc append-chan-status*
+  [^Channel chan ^StringBuilder sb]
+  (if (or (.isRegistered chan) (.isOpen chan) (.isActive chan))
+    (do
       (.append sb " (")
       (when (.isRegistered chan)
         (.append sb "REGISTERED,"))
@@ -1592,10 +1594,29 @@ initialize an DnsAddressResolverGroup instance.
       (when (.isActive chan)
         (.append sb "ACTIVE,"))
       (.setCharAt sb (dec (.length sb)) \)))
+    (.append sb "()")))
+
+(defmethod print-method Http2StreamChannel
+  [^Http2StreamChannel chan ^java.io.Writer writer]
+  (let [sb (StringBuilder.)]
+    (.append sb (StringUtil/simpleClassName (class chan)))
+    (.append sb " - stream ID: ")
+    (.append sb (-> chan .stream .id))
+    (append-chan-status* chan sb)
     (.append sb ":\n")
     (append-pipeline* sb (.pipeline chan))
     (.write writer (.toString sb))))
 
+(defmethod print-method Channel
+  [^Channel chan ^java.io.Writer writer]
+  (let [sb (StringBuilder.)]
+    (.append sb (StringUtil/simpleClassName (class chan)))
+    (append-chan-status* chan sb)
+    (.append sb ":\n")
+    (append-pipeline* sb (.pipeline chan))
+    (.write writer (.toString sb))))
+
+(prefer-method print-method Http2StreamChannel Channel)
 
 
 

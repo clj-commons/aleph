@@ -117,7 +117,7 @@
     (send-response-decoder-failure ctx msg response-stream)))
 
 (defn exception-handler [ctx ex response-stream]
-  (println "exception-handler" ex)
+  (log/warn "exception-handler" ex)
   (cond
     ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
     ;; is part of the pipeline
@@ -207,7 +207,9 @@
        (exception-handler ctx ex response-stream))
 
       :channel-inactive
-      ([_ ctx]
+      ([this ctx]
+       (when (instance? Http2StreamChannel (.channel ctx))
+         (log/debug (str "channel-inactive fired, streamId=" (-> ctx .channel .stream .id) ", hash=" (.hashCode this))))
        (when-let [s @body-stream]
          (s/close! s))
        (doseq [b @buffer]
@@ -216,7 +218,9 @@
        (.fireChannelInactive ctx))
 
       :channel-read
-      ([_ ctx msg]
+      ([this ctx msg]
+       (when (instance? Http2StreamChannel (.channel ctx))
+         (log/debug (str "channel-read fired, streamId=" (-> ctx .channel .stream .id) ", hash=" (.hashCode this))))
 
        (cond
          (common/decoder-failed? msg)
@@ -251,9 +255,7 @@
          (let [content (.content ^HttpContent msg)]
            (if (instance? LastHttpContent msg)
              (do
-
                (if-let [s @body-stream]
-
                  (do
                    (s/put! s (netty/buf->array content))
                    (netty/release content)
@@ -272,7 +274,6 @@
                (reset! response nil))
 
              (if-let [s @body-stream]
-
                ;; already have a stream going
                (do
                  (netty/put! (.channel ctx) s (netty/buf->array content))
@@ -304,7 +305,6 @@
          :else
          (do
            (log/warn "Unknown msg class:" (class msg))
-           (println "Unknown msg class:" (class msg))
            (.fireChannelRead ctx msg)))))))
 
 (defn non-tunnel-proxy? [{:keys [tunnel? user http-headers ssl?]
@@ -441,8 +441,8 @@
                    (pending-proxy-connection-handler response-stream)))))
 
   (when (some? logger)
-    (println "Adding activity logger")
     (.addFirst p "activity-logger" ^ChannelHandler logger))
+    (log/trace "Adding activity logger")
 
   (pipeline-transform p)
   p)
@@ -480,7 +480,7 @@
         pipeline-transform)
 
       (log/trace "added all stream-chan handlers")
-      (log/debug (str "Stream chan pipeline:" (prn-str p))))))
+      (log/debug "Stream chan:" (.channel p)))))
 
 
 (defn- setup-http-pipeline
@@ -559,7 +559,7 @@
           (.addLast "http2-frame-codec" http2-frame-codec)
           (.addLast "multiplex" multiplex-handler))
 
-      (println "Conn chan pipeline:" (prn-str pipeline)))
+      (log/debug "Conn chan pipeline:" pipeline))
 
     :else
     (do
@@ -596,7 +596,7 @@
                                                   :protocol protocol)))
                     ApplicationProtocolNames/HTTP_1_1
                     apn-handler-removed))
-        (println "ALPN setup: " (prn-str pipeline)))
+        (log/debug "ALPN setup: " pipeline))
 
       (do
         (setup-http-pipeline (assoc opts
@@ -670,7 +670,7 @@
   [{:keys [ch keep-alive? raw-stream? requests response-buffer-size responses]}]
   (let [t0 (System/nanoTime)]
     (fn [req]
-      (println "req-handler fired")
+      (log/trace "req-handler fired")
       (if (contains? req ::close)
         (netty/wrap-future (netty/close ch))
         (let [raw-stream? (get req :raw-stream? raw-stream?)
@@ -846,9 +846,10 @@
            http-versions        [ApplicationProtocolNames/HTTP_2
                                  ApplicationProtocolNames/HTTP_1_1]}
     :as   options}]
-  (let [responses (s/stream 1024 nil response-executor)
-        _ (s/on-closed responses #(println "responses closed."))
-        requests (s/stream 1024 nil nil)
+  (let [responses (doto (s/stream 1024 nil response-executor)
+                        (s/on-closed #(log/debug "responses stream closed.")))
+        requests (doto (s/stream 1024 nil nil)
+                       (s/on-closed #(log/debug "requests stream closed.")))
         host (.getHostName remote-address)
         port (.getPort remote-address)
         explicit-port? (and (pos? port) (not= port (if ssl? 443 80)))
@@ -927,12 +928,11 @@
                                          (.applicationProtocol))
                                      ApplicationProtocolNames/HTTP_1_1)
                                  ApplicationProtocolNames/HTTP_1_1)]
-                  (println "HTTP protocol:" protocol)
-                  (println "post-handshake channel?" (prn-str ch))
+                  (log/debug (str "HTTP protocol: " protocol))
 
                   (d/on-realized apn-handler-removed
                                  (fn [_]
-                                   (println "Beginning request consumption") (flush)
+                                   (log/trace "APN handler removed. Beginning request consumption.")
                                    (s/consume
                                      (req-preprocesser {:ch                 ch
                                                         :protocol           protocol
@@ -948,7 +948,6 @@
                                      requests))
                                  (fn [^Throwable t]
                                    (log/error t "Error removing ALPN handler")
-                                   (println "Error removing ALPN handler" t) (flush)
                                    (s/close! responses)
                                    (s/close! requests)
                                    (.close ch)))
