@@ -7,8 +7,8 @@
 * Upgrade CircleCI instance size
 * Switch to pedantic deps for CircleCI
 
-Contributions by Arnaud Geiser, Ertuğrul Çetin, Jeroen van Dijk, Matthew 
-Davidson, and Moritz Heidkamp.
+Contributions by Arnaud Geiser, Ertuğrul Çetin, Jeroen van Dijk, David Ongaro, 
+Matthew Davidson, and Moritz Heidkamp.
 
 ### 0.6.1
 
