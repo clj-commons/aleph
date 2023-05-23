@@ -417,7 +417,7 @@
     (let [body (when (pos-int? (.length file)) (file/http-file->stream file))]
       (send-streaming-body ch msg body))
 
-    (netty/chunked-writer-enabled? ch)
+    (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler)))
     (send-chunked-file ch msg file)
 
     :else
@@ -428,7 +428,7 @@
 
    Sets the content-length header on requests, and non-204/non-1xx responses."
   [ch ^HttpMessage msg body]
-  (println "send-contiguous-body headers:" (.headers msg))
+  (log/debug "send-contiguous-body headers:" (.headers msg))
   (let [omitted? (identical? :aleph/omitted body)
         body (if (or (nil? body) omitted?)
                empty-last-content

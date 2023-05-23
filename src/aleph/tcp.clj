@@ -102,7 +102,10 @@
     :transport (netty/determine-transport transport epoll?)
     :shutdown-timeout shutdown-timeout}))
 
-(defn- ^ChannelHandler client-channel-handler
+(defn- client-channel-handler
+  "Returns a vector of `[d handler]`, where `d` is a deferred containing the
+   channel's manifold stream, and `handler` coordinates moving data from netty
+   to the stream."
   [{:keys [raw-stream?]}]
   (let [d (d/deferred)
         in (atom nil)]
@@ -169,22 +172,28 @@
     :or {bootstrap-transform identity
          epoll? false}
     :as options}]
-  (let [[s handler] (client-channel-handler options)]
-    (->
-     (netty/create-client-chan
-      {:pipeline-builder    (fn [^ChannelPipeline pipeline]
-                              (.addLast pipeline "handler" ^ChannelHandler handler)
-                              (when pipeline-transform
-                                (pipeline-transform pipeline)))
-       :ssl-context         (if ssl-context
-                              ssl-context
-                              (when ssl?
-                                (if insecure?
-                                  (netty/insecure-ssl-client-context)
-                                  (netty/ssl-client-context))))
-       :bootstrap-transform bootstrap-transform
-       :remote-address      (or remote-address (InetSocketAddress. ^String host (int port)))
-       :local-address       local-address
-       :transport           (netty/determine-transport transport epoll?)})
-     (d/catch' #(d/error! s %)))
+  (let [[s ^ChannelHandler handler] (client-channel-handler options)
+        remote-address (or remote-address (InetSocketAddress. ^String host (int port)))
+        ssl? (or ssl? (some? ssl-context))
+        ssl-context (if ssl-context
+                      (netty/coerce-ssl-client-context ssl-context)
+                      (when ssl?
+                        (if insecure?
+                          (netty/insecure-ssl-client-context)
+                          (netty/ssl-client-context))))
+        pipeline-builder (fn [^ChannelPipeline pipeline]
+                           (when ssl?
+                             (.addLast pipeline
+                                       "ssl-handler"
+                                       (netty/ssl-handler (.channel pipeline) ssl-context remote-address)))
+                           (.addLast pipeline "handler" handler)
+                           (when pipeline-transform
+                             (pipeline-transform pipeline)))]
+    (-> (netty/create-client-chan
+          {:pipeline-builder    pipeline-builder
+           :bootstrap-transform bootstrap-transform
+           :remote-address      remote-address
+           :local-address       local-address
+           :transport           (netty/determine-transport transport epoll?)})
+        (d/catch' #(d/error! s %)))
     s))

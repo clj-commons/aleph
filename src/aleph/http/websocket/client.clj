@@ -277,33 +277,38 @@
                       (or extensions? compression?)
                       headers
                       max-frame-payload
-                      heartbeats)]
-    (d/chain'
-      (netty/create-client-chan
-        {:pipeline-builder    (fn [^ChannelPipeline pipeline]
-                                (doto pipeline
-                                      (.addLast "http-client" (HttpClientCodec.))
-                                      (.addLast "aggregator" (HttpObjectAggregator. 16384))
-                                      (.addLast "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
-                                      (#(when compression?
-                                          (.addLast ^ChannelPipeline %
-                                                    "websocket-deflater"
-                                                    WebSocketClientCompressionHandler/INSTANCE)))
-                                      (ws.common/attach-heartbeats-handler heartbeats)
-                                      (.addLast "handler" ^ChannelHandler handler)
-                                      pipeline-transform))
-         :ssl-context         (when ssl?
-                                (or ssl-context
-                                    (if insecure?
-                                      (netty/insecure-ssl-client-context)
-                                      (netty/ssl-client-context))))
-         :bootstrap-transform bootstrap-transform
-         :remote-address      (InetSocketAddress.
-                                (.getHost uri)
-                                (int
-                                  (if (neg? (.getPort uri))
-                                    (if ssl? 443 80)
-                                    (.getPort uri))))
-         :local-address       local-address
-         :transport           (netty/determine-transport transport epoll?)})
-      (fn [_] s))))
+                      heartbeats)
+        remote-address (InetSocketAddress.
+                         (.getHost uri)
+                         (int
+                           (if (neg? (.getPort uri))
+                             (if ssl? 443 80)
+                             (.getPort uri))))
+        ssl-context (when ssl?
+                      (if ssl-context
+                        (netty/coerce-ssl-client-context ssl-context)
+                        (if insecure?
+                          (netty/insecure-ssl-client-context)
+                          (netty/ssl-client-context))))
+        pipeline-builder (fn [^ChannelPipeline p]
+                           (when ssl?
+                             (.addLast p
+                                       "ssl-handler"
+                                       (netty/ssl-handler (.channel p) ssl-context remote-address)))
+                           (.addLast p "http-client" (HttpClientCodec.))
+                           (.addLast p "aggregator" (HttpObjectAggregator. 16384))
+                           (.addLast p "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))
+                           (when compression?
+                             (.addLast p
+                                       "websocket-deflater"
+                                       WebSocketClientCompressionHandler/INSTANCE))
+                           (ws.common/attach-heartbeats-handler p heartbeats)
+                           (.addLast p "handler" ^ChannelHandler handler)
+                           (pipeline-transform p))]
+    (d/chain' (netty/create-client-chan
+                {:pipeline-builder    pipeline-builder
+                 :bootstrap-transform bootstrap-transform
+                 :remote-address      remote-address
+                 :local-address       local-address
+                 :transport           (netty/determine-transport transport epoll?)})
+              (fn [_] s))))

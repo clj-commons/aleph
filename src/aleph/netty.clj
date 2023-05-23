@@ -752,7 +752,7 @@
                      (.readableBytes ^ByteBuf msg)))
        (.write ctx msg promise)))))
 
-(defn ^:no-doc ^ChannelHandler channel-tracking-handler
+(defn ^:no-doc channel-tracking-handler
   "Yields an inbound handler, ready to be added to a pipeline,
    which keeps track of requests in a provided channel group.
    The channel-group can be created via `make-channel-group`."
@@ -777,10 +777,11 @@
   "Returns an ApplicationProtocolNegotiationHandler that will be
    called when the TLS handshake is complete. The handler will finish
    setting up the pipeline for the negotiated protocol"
-  ^ApplicationProtocolNegotiationHandler
-  ([configure-pipeline fallback-protocol]
+  (^ApplicationProtocolNegotiationHandler
+   [configure-pipeline fallback-protocol]
    (application-protocol-negotiation-handler configure-pipeline fallback-protocol nil))
-  ([configure-pipeline fallback-protocol handler-removed-d]
+  (^ApplicationProtocolNegotiationHandler
+   [configure-pipeline fallback-protocol handler-removed-d]
    (proxy [ApplicationProtocolNegotiationHandler] [fallback-protocol]
      (configurePipeline [^ChannelHandlerContext ctx ^String protocol]
        (configure-pipeline ctx protocol))
@@ -793,26 +794,12 @@
          (log/debug "Setting handler-removed-d to true")
          (d/success! handler-removed-d true))))))
 
-(defn chunked-writer-enabled?
-  [^Channel ch]
-  (some? (-> ch channel .pipeline (.get ChunkedWriteHandler))))
-
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
   [^ChannelPipeline pipeline ^Class handler]
   (when (some? (.get pipeline handler))
     (.remove pipeline handler))
   pipeline)
-
-(defn append-handler-to-pipeline
-  "Convenience function to add a handler to the tail of a netty pipeline."
-  [^ChannelPipeline pipeline handler-id ^ChannelHandler handler]
-  (.addLast pipeline (str handler-id) handler))
-
-(defn prepend-handler-to-pipeline
-  "Convenience function to add a handler to the head of a netty pipeline."
-  [^ChannelPipeline pipeline handler-id ^ChannelHandler handler]
-  (.addFirst pipeline (str handler-id) handler))
 
 (defn ^:no-doc instrument!
   [stream]
@@ -1069,8 +1056,10 @@
 
 (defn insecure-ssl-client-context
   "An insure SSL context for servers."
-  []
-  (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
+  ([]
+   (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
+  ([opts]
+   (ssl-client-context (assoc opts :trust-store InsecureTrustManagerFactory/INSTANCE))))
 
 (defn- coerce-ssl-context [options->context ssl-context]
   (cond
@@ -1086,10 +1075,10 @@
     (map? ssl-context)
     (options->context ssl-context)))
 
-(def ^:private coerce-ssl-server-context
+(def ^:no-doc coerce-ssl-server-context
   (partial coerce-ssl-context ssl-server-context))
 
-(def ^:private coerce-ssl-client-context
+(def ^:no-doc coerce-ssl-client-context
   (partial coerce-ssl-context ssl-client-context))
 
 (defn ^:no-doc channel-ssl-session [^Channel ch]
@@ -1356,37 +1345,100 @@ initialize an DnsAddressResolverGroup instance.
   anyway."
   [_])
 
-(defn- add-ssl-handler
-  "Adds an `SslHandler` to the pipeline."
+(defn ssl-handler
+  "Generates a new SslHandler for the given SslContext.
+
+   The 2-arity version is for the server.
+   The 3-arity version is for the client. The `remote-address` must be provided"
+  (^ChannelHandler
+   [^Channel ch ^SslContext ssl-ctx]
+   (.newHandler ssl-ctx
+                (.alloc ch)))
+  (^ChannelHandler
+   [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address]
+   (.newHandler ssl-ctx
+                (.alloc ch)
+                (.getHostName ^InetSocketAddress remote-address)
+                (.getPort ^InetSocketAddress remote-address))))
+
+(defn- add-ssl-handler-to-pipeline-builder
+  "Adds an `SslHandler` to the pipeline builder."
   ([pipeline-builder ssl-ctx]
-   (add-ssl-handler pipeline-builder ssl-ctx nil))
+   (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-ctx nil))
   ([pipeline-builder ssl-ctx remote-address]
    (fn [^ChannelPipeline p]
-     (let [ssl-handler (if remote-address
-                         (.newHandler ^SslContext ssl-ctx
-                                      (-> p .channel .alloc)
-                                      (.getHostName ^InetSocketAddress remote-address)
-                                      (.getPort ^InetSocketAddress remote-address))
-                         (.newHandler ^SslContext ssl-ctx
-                                      (-> p .channel .alloc)))]
-       (prepend-handler-to-pipeline p "ssl-handler" ssl-handler))
+     (.addFirst p
+                "ssl-handler"
+                (let [ch (.channel p)]
+                  (if remote-address
+                    (ssl-handler ch ssl-ctx remote-address)
+                    (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
 
 (defn ^:no-doc create-client-chan
-  "Returns a deferred containing a new Channel"
+  "Returns a deferred containing a new Channel.
+
+   Deferred will resolve one the channel is connected and ready. If the
+   SslHandler is on the pipeline, it will wait for the SSL handshake to
+   complete."
+  [{:keys [pipeline-builder
+           bootstrap-transform
+           ^SocketAddress remote-address
+           ^SocketAddress local-address
+           transport
+           name-resolver]
+    :as opts}]
+  (ensure-transport-available! transport)
+
+  (when (:ssl-context opts)
+    (log/warn "The :ssl-context option to `create-client-chan` is deprecated, add it with :pipeline-builder instead")
+    (throw (IllegalArgumentException. "Can't use :ssl-context anymore.")))
+
+  (let [^Class chan-class (transport-channel-class transport)
+        initializer (pipeline-initializer pipeline-builder)]
+    (try
+      (let [client-event-loop-group @(transport-client-group transport)
+            resolver' (when (some? name-resolver)
+                        (cond
+                          (= :default name-resolver) nil
+                          (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                          (instance? AddressResolverGroup name-resolver) name-resolver))
+            bootstrap (doto (Bootstrap.)
+                            (.option ChannelOption/SO_REUSEADDR true)
+                            #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
+                            (.group client-event-loop-group)
+                            (.channel chan-class)
+                            (.handler initializer)
+                            (.resolver resolver')
+                            bootstrap-transform)
+
+            fut (if local-address
+                  (.connect bootstrap remote-address local-address)
+                  (.connect bootstrap remote-address))]
+
+        (d/chain' (wrap-future fut)
+                  (fn [_]
+                    (let [ch (.channel ^ChannelFuture fut)]
+                      (maybe-ssl-handshake-future ch))))))))
+
+
+(defn ^:no-doc ^:deprecated create-client
+  "Returns a deferred containing a new Channel.
+
+   If given an SslContext, prepends an SslHandler to the start of the pipeline."
   ([pipeline-builder
     ssl-context
     bootstrap-transform
     remote-address
     local-address
     epoll?]
-   (create-client-chan pipeline-builder
-                       ssl-context
-                       bootstrap-transform
-                       remote-address
-                       local-address
-                       epoll?
-                       nil))
+   (create-client pipeline-builder
+                  ssl-context
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  nil))
   ([pipeline-builder
     ssl-context
     bootstrap-transform
@@ -1394,65 +1446,25 @@ initialize an DnsAddressResolverGroup instance.
     ^SocketAddress local-address
     epoll?
     name-resolver]
-   (create-client-chan {:pipeline-builder    pipeline-builder
-                        :ssl-context         ssl-context
-                        :bootstrap-transform bootstrap-transform
-                        :remote-address      remote-address
-                        :local-address       local-address
-                        :transport           (if epoll? :epoll :nio)
-                        :name-resolver       name-resolver}))
-  ([{:keys [pipeline-builder
-            ssl-context
-            bootstrap-transform
-            ^SocketAddress remote-address
-            ^SocketAddress local-address
-            transport
-            name-resolver]}]
-   (ensure-transport-available! transport)
-
-   (let [^Class
-         chan-class (transport-channel-class transport)
-
-         ^SslContext
+   (let [^SslContext
          ssl-context (when (some? ssl-context)
                        (coerce-ssl-client-context ssl-context))
 
          pipeline-builder (if ssl-context
-                            (add-ssl-handler pipeline-builder ssl-context remote-address)
-                            pipeline-builder)
-
-         initializer (pipeline-initializer pipeline-builder)]
-     (try
-       (let [client-event-loop-group @(transport-client-group transport)
-             resolver' (when (some? name-resolver)
-                         (cond
-                           (= :default name-resolver) nil
-                           (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                           (instance? AddressResolverGroup name-resolver) name-resolver))
-             bootstrap (doto (Bootstrap.)
-                             (.option ChannelOption/SO_REUSEADDR true)
-                             #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
-                             (.group client-event-loop-group)
-                             (.channel chan-class)
-                             (.handler initializer)
-                             (.resolver resolver')
-                             bootstrap-transform)
-
-             fut (if local-address
-                   (.connect bootstrap remote-address local-address)
-                   (.connect bootstrap remote-address))]
-
-         (d/chain' (wrap-future fut)
-                   (fn [_]
-                     (let [ch (.channel ^ChannelFuture fut)]
-                       (maybe-ssl-handshake-future ch)))))))))
+                            (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-context remote-address)
+                            pipeline-builder)]
+     (create-client-chan {:pipeline-builder    pipeline-builder
+                          :bootstrap-transform bootstrap-transform
+                          :remote-address      remote-address
+                          :local-address       local-address
+                          :transport           (if epoll? :epoll :nio)
+                          :name-resolver       name-resolver}))))
 
 
 (defn- add-channel-tracker-handler
   [pipeline-builder chan-group]
   (fn [pipeline]
-    (prepend-handler-to-pipeline pipeline "channel-tracker"
-                                 (channel-tracking-handler chan-group))
+    (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
 (defn ^:no-doc start-server
@@ -1493,7 +1505,7 @@ initialize an DnsAddressResolverGroup instance.
 
          pipeline-builder
          (cond-> (add-channel-tracker-handler pipeline-builder chan-group)
-                 (some? ssl-context) (add-ssl-handler ssl-context))]
+                 (some? ssl-context) (add-ssl-handler-to-pipeline-builder ssl-context))]
 
      (try
        (let [b (doto (ServerBootstrap.)

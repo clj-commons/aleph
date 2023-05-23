@@ -39,7 +39,6 @@
       Http2StreamChannel Http2StreamChannelBootstrap
       Http2StreamFrameToHttpObjectCodec)
     (io.netty.handler.logging
-      LogLevel
       LoggingHandler)
     (io.netty.handler.proxy
       HttpProxyHandler
@@ -55,6 +54,7 @@
       ApplicationProtocolConfig$SelectedListenerFailureBehavior
       ApplicationProtocolConfig$SelectorFailureBehavior
       ApplicationProtocolNames
+      SslContext
       SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
@@ -67,8 +67,7 @@
       URI
       URL)
     (java.util.concurrent.atomic
-      AtomicInteger)
-    (javax.net.ssl SSLHandshakeException)))
+      AtomicInteger)))
 
 (set! *unchecked-math* true)
 
@@ -567,24 +566,24 @@
       (println (str "Unsupported SSL protocol: " protocol))
       (throw (IllegalStateException. (str "Unsupported SSL protocol: " protocol))))))
 
-;; TODO: add SSL handler in here.
 (defn make-pipeline-builder
   "Returns a function that initializes a new channel's pipeline.
 
    For HTTP/2 multiplexing, does not set up child channel pipelines. See
-   `h2-stream-chan-initializer` for that.
-
-   SSL/TLS is handled with `add-ssl-handler`."
+   `h2-stream-chan-initializer` for that."
   [response-stream
-   {:keys [ssl? apn-handler-removed]
+   {:keys [ssl? apn-handler-removed remote-address ssl-context]
     :as   opts}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
     (if ssl?
-      ;; when making an SSL request while supporting multiple HTTP versions,
-      ;; the client and server negotiate which version to use, and we can't
-      ;; finish the pipeline until that happens
       (do
+        (.addLast pipeline
+                  "ssl-handler"
+                  (netty/ssl-handler (.channel pipeline) ssl-context remote-address))
+        ;; when making an SSL request while supporting multiple HTTP versions,
+        ;; the client and server negotiate which version to use, and we can't
+        ;; finish the pipeline until that happens
         (.addLast pipeline
                   "apn-handler"
                   (netty/application-protocol-negotiation-handler
@@ -860,22 +859,22 @@
                                                 (get proxy-options :keep-alive? true))))
         authority (str host (when explicit-port? (str ":" port)))
 
+
         ssl-context (when ssl?
-                      (or ssl-context
+                      (if ssl-context
+                        (netty/coerce-ssl-client-context ssl-context)
+                        (let [ssl-ctx-opts {:application-protocol-config
+                                            (ApplicationProtocolConfig.
+                                              ApplicationProtocolConfig$Protocol/ALPN
+                                              ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+                                              ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+                                              ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+                                              ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+                                              ^"[Ljava.lang.String;"
+                                              (into-array String http-versions))}]
                           (if insecure?
-                            (netty/insecure-ssl-client-context)
-                            (let [application-protocol-config
-                                  (ApplicationProtocolConfig.
-                                    ApplicationProtocolConfig$Protocol/ALPN
-                                    ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
-                                    ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
-                                    ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
-                                    ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
-                                    ^"[Ljava.lang.String;"
-                                    (into-array String http-versions))]
-                              (netty/ssl-client-context
-                                {:application-protocol-config
-                                 application-protocol-config})))))
+                            (netty/insecure-ssl-client-context ssl-ctx-opts)
+                            (netty/ssl-client-context ssl-ctx-opts)))))
         apn-handler-removed (d/deferred)
 
         logger (cond
@@ -891,13 +890,14 @@
                                                 (assoc options
                                                        :ssl? ssl?
                                                        :handler handler
+                                                       :ssl-context ssl-context
+                                                       :remote-address remote-address
                                                        :logger logger
                                                        :apn-handler-removed apn-handler-removed
                                                        :pipeline-transform pipeline-transform))
 
         ch (netty/create-client-chan
              {:pipeline-builder    pipeline-builder
-              :ssl-context         ssl-context
               :bootstrap-transform bootstrap-transform
               :remote-address      remote-address
               :local-address       local-address
