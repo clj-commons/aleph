@@ -453,7 +453,7 @@
 (defn- h2-stream-chan-initializer
   "The multiplex handler creates a channel per HTTP2 stream, this
    sets up each new stream channel"
-  [response-stream proxy-options ssl? logger pipeline-transform handler]
+  [response-stream proxy-options ssl? logger pipeline-transform raw-stream? response-buffer-size]
   (log/trace "h2-stream-chan-initializer")
 
   (netty/pipeline-initializer
@@ -469,7 +469,9 @@
                 ^ChannelHandler (ChunkedWriteHandler.))
       (.addLast p
                 "handler"
-                ^ChannelHandler handler)
+                ^ChannelHandler (if raw-stream?
+                                  (raw-client-handler response-stream response-buffer-size)
+                                  (client-handler response-stream response-buffer-size)))
 
       (add-non-http-handlers
         p
@@ -490,7 +492,6 @@
    handshake completes."
   [{:keys
     [protocol
-     handler
      logger
      pipeline-transform
      max-initial-line-length
@@ -500,6 +501,8 @@
      ssl?
      idle-timeout
      response-stream
+     raw-stream?
+     response-buffer-size
      ^ChannelPipeline pipeline]
     :or
     {pipeline-transform      identity
@@ -516,23 +519,26 @@
   ;; because case doesn't work with Java constants
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-    (-> pipeline
-        (common/attach-idle-handlers idle-timeout)
-        (.addLast "http-client"
-                  (HttpClientCodec.
-                    max-initial-line-length
-                    max-header-size
-                    max-chunk-size
-                    false
-                    false))
-        (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
-        (.addLast "handler" ^ChannelHandler handler)
-        (add-non-http-handlers
-          response-stream
-          proxy-options
-          ssl?
-          logger
-          pipeline-transform))
+    (let [handler (if raw-stream?
+                    (raw-client-handler response-stream response-buffer-size)
+                    (client-handler response-stream response-buffer-size))]
+      (-> pipeline
+          (common/attach-idle-handlers idle-timeout)
+          (.addLast "http-client"
+                    (HttpClientCodec.
+                      max-initial-line-length
+                      max-header-size
+                      max-chunk-size
+                      false
+                      false))
+          (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
+          (.addLast "handler" ^ChannelHandler handler)
+          (add-non-http-handlers
+            response-stream
+            proxy-options
+            ssl?
+            logger
+            pipeline-transform)))
 
     (.equals ApplicationProtocolNames/HTTP_2 protocol)
     (let [log-level (some-> logger (.level))
@@ -551,7 +557,7 @@
           ;; the pipeline to get new outbound channels.
           server-initiated-stream-chan-initializer
           (h2-stream-chan-initializer
-            response-stream proxy-options ssl? logger pipeline-transform handler)
+            response-stream proxy-options ssl? logger pipeline-transform raw-stream? response-buffer-size)
 
           multiplex-handler (Http2MultiplexHandler. server-initiated-stream-chan-initializer)]
 
@@ -575,8 +581,7 @@
 
    For HTTP/2 multiplexing, does not set up child channel pipelines. See
    `h2-stream-chan-initializer` for that."
-  [response-stream
-   {:keys [ssl? remote-address ssl-context]
+  [{:keys [response-stream ssl? remote-address ssl-context]
     :as   opts}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
@@ -753,7 +758,8 @@
 
    Used for HTTP/2, but falls back to HTTP1 objects for multipart requests
    (Netty HTTP/2 code doesn't support multipart)."
-  [{:keys [authority ch handler logger pipeline-transform proxy-options responses ssl?] :as opts}]
+  [{:keys [authority ch logger pipeline-transform proxy-options responses ssl? raw-stream?
+           response-buffer-size] :as opts}]
   (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)
         ;; TODO: is the delay actually helping? It still creates a Delay and a new fn...
         multipart-req-preprocess (delay (make-http1-req-preprocessor opts))]
@@ -762,7 +768,7 @@
     ;; handler for the response
     (.handler h2-bootstrap
               (h2-stream-chan-initializer
-                responses proxy-options ssl? logger pipeline-transform handler))
+                responses proxy-options ssl? logger pipeline-transform raw-stream? response-buffer-size))
 
     (fn http2-req-preprocess-init [req]
       (log/trace "http2-req-preprocess-init fired")
@@ -797,7 +803,7 @@
 
    Converts a Ring req to Netty-friendly objects, updates headers, encodes for
    multipart reqs, and records debug vals."
-  [{:keys [ch protocol responses ssl? authority] :as opts}]
+  [{:keys [ch protocol responses] :as opts}]
   (cond
     (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
     (make-http1-req-preprocessor opts)
@@ -835,7 +841,7 @@
            pipeline-transform
            log-activity
            http-versions]
-    :or   {raw-stream? false
+    :or   {raw-stream?          false
            bootstrap-transform  identity
            pipeline-transform   identity
            keep-alive?          true
@@ -882,18 +888,16 @@
                  (some? log-activity) (netty/activity-logger "aleph-client" log-activity)
                  :else nil)
 
-        handler (if raw-stream?
-                  (raw-client-handler responses response-buffer-size)
-                  (client-handler responses response-buffer-size))
-
-        pipeline-builder (make-pipeline-builder responses
-                                                (assoc options
-                                                       :ssl? ssl?
-                                                       :handler handler
-                                                       :ssl-context ssl-context
-                                                       :remote-address remote-address
-                                                       :logger logger
-                                                       :pipeline-transform pipeline-transform))
+        pipeline-builder (make-pipeline-builder
+                           (assoc options
+                                  :response-stream responses
+                                  :ssl? ssl?
+                                  :ssl-context ssl-context
+                                  :remote-address remote-address
+                                  :raw-stream? raw-stream?
+                                  :response-buffer-size response-buffer-size
+                                  :logger logger
+                                  :pipeline-transform pipeline-transform))
 
         ch (netty/create-client-chan
              {:pipeline-builder    pipeline-builder
@@ -918,7 +922,7 @@
 
                 ;; We know the SSL handshake must be complete because create-client wraps the
                 ;; future with maybe-ssl-handshake-future, so we can get the negotiated
-                ;; protocol, falling back to HTTP/1.1 by default. 
+                ;; protocol, falling back to HTTP/1.1 by default.
                 (let [protocol (if ssl?
                                  (or (-> ch
                                          (.pipeline)
@@ -928,18 +932,19 @@
                                  ApplicationProtocolNames/HTTP_1_1)]
                   (log/debug (str "HTTP protocol: " protocol))
 
-                                   (s/consume
-                                     (req-preprocesser {:ch                 ch
-                                                        :protocol           protocol
-                                                        :authority          authority
-                                                        :keep-alive?'       keep-alive?'
-                                                        :non-tun-proxy?     non-tun-proxy?
-                                                        :responses          responses
-                                                        :ssl?               ssl?
-                                                        :proxy-options      proxy-options
-                                                        :logger             logger
-                                                        :pipeline-transform pipeline-transform
-                                                        :handler            handler})
+                  (s/consume
+                    (req-preprocesser {:ch                   ch
+                                       :protocol             protocol
+                                       :authority            authority
+                                       :keep-alive?'         keep-alive?'
+                                       :non-tun-proxy?       non-tun-proxy?
+                                       :responses            responses
+                                       :ssl?                 ssl?
+                                       :proxy-options        proxy-options
+                                       :logger               logger
+                                       :pipeline-transform   pipeline-transform
+                                       :raw-stream?          raw-stream?
+                                       :response-buffer-size response-buffer-size})
                     requests)
 
                   (req-handler {:ch                   ch
