@@ -772,28 +772,6 @@
   [pipeline-builder]
   (PipelineInitializer. pipeline-builder))
 
-
-(defn ^:no-doc application-protocol-negotiation-handler
-  "Returns an ApplicationProtocolNegotiationHandler that will be
-   called when the TLS handshake is complete. The handler will finish
-   setting up the pipeline for the negotiated protocol"
-  (^ApplicationProtocolNegotiationHandler
-   [configure-pipeline fallback-protocol]
-   (application-protocol-negotiation-handler configure-pipeline fallback-protocol nil))
-  (^ApplicationProtocolNegotiationHandler
-   [configure-pipeline fallback-protocol handler-removed-d]
-   (proxy [ApplicationProtocolNegotiationHandler] [fallback-protocol]
-     (configurePipeline [^ChannelHandlerContext ctx ^String protocol]
-       (configure-pipeline ctx protocol))
-     (handlerRemoved [^ChannelHandlerContext ctx]
-       (let [^ApplicationProtocolNegotiationHandler this this]               ; stupid proxy reflection warning
-         (proxy-super handlerRemoved ctx))
-
-       (log/debug "ApplicationProtocolNegotiationHandler removed from pipeline")
-       (when handler-removed-d
-         (log/debug "Setting handler-removed-d to true")
-         (d/success! handler-removed-d true))))))
-
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
   [^ChannelPipeline pipeline ^Class handler]

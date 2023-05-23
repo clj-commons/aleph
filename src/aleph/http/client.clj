@@ -10,6 +10,7 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
+    (aleph.http ApnHandler)
     (aleph.utils
       ProxyConnectionTimeoutException)
     (io.netty.buffer
@@ -483,7 +484,10 @@
 
 
 (defn- setup-http-pipeline
-  "Sets up the pipeline for the appropriate HTTP version"
+  "Sets up the pipeline for the appropriate HTTP version.
+
+   If SSL and/or ALPN are being used, this should be run *after* the SSL
+   handshake completes."
   [{:keys
     [protocol
      handler
@@ -567,12 +571,12 @@
       (throw (IllegalStateException. (str "Unsupported SSL protocol: " protocol))))))
 
 (defn make-pipeline-builder
-  "Returns a function that initializes a new channel's pipeline.
+  "Returns a function that initializes a new conn channel's pipeline.
 
    For HTTP/2 multiplexing, does not set up child channel pipelines. See
    `h2-stream-chan-initializer` for that."
   [response-stream
-   {:keys [ssl? apn-handler-removed remote-address ssl-context]
+   {:keys [ssl? remote-address ssl-context]
     :as   opts}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
@@ -586,22 +590,19 @@
         ;; finish the pipeline until that happens
         (.addLast pipeline
                   "apn-handler"
-                  (netty/application-protocol-negotiation-handler
+                  (ApnHandler.
                     (fn configure-pipeline
-                      [^ChannelHandlerContext ctx protocol]
+                      [^ChannelPipeline p protocol]
                       (setup-http-pipeline (assoc opts
                                                   :response-stream response-stream
-                                                  :pipeline (.pipeline ctx)
+                                                  :pipeline p
                                                   :protocol protocol)))
-                    ApplicationProtocolNames/HTTP_1_1
-                    apn-handler-removed))
+                    ApplicationProtocolNames/HTTP_1_1))
         (log/debug "ALPN setup: " pipeline))
 
-      (do
-        (setup-http-pipeline (assoc opts
-                                    :response-stream response-stream
-                                    :pipeline pipeline))
-        (d/success! apn-handler-removed true)))))
+      (setup-http-pipeline (assoc opts
+                                  :response-stream response-stream
+                                  :pipeline pipeline)))))
 
 (defn close-connection [f]
   (f
@@ -875,7 +876,6 @@
                           (if insecure?
                             (netty/insecure-ssl-client-context ssl-ctx-opts)
                             (netty/ssl-client-context ssl-ctx-opts)))))
-        apn-handler-removed (d/deferred)
 
         logger (cond
                  (instance? LoggingHandler log-activity) log-activity
@@ -893,7 +893,6 @@
                                                        :ssl-context ssl-context
                                                        :remote-address remote-address
                                                        :logger logger
-                                                       :apn-handler-removed apn-handler-removed
                                                        :pipeline-transform pipeline-transform))
 
         ch (netty/create-client-chan
@@ -919,8 +918,7 @@
 
                 ;; We know the SSL handshake must be complete because create-client wraps the
                 ;; future with maybe-ssl-handshake-future, so we can get the negotiated
-                ;; protocol, falling back to HTTP/1.1 by default. However, the ALPN handler
-                ;; may still be present on the pipeline, so we can't start req-preprocessor yet
+                ;; protocol, falling back to HTTP/1.1 by default. 
                 (let [protocol (if ssl?
                                  (or (-> ch
                                          (.pipeline)
@@ -930,9 +928,6 @@
                                  ApplicationProtocolNames/HTTP_1_1)]
                   (log/debug (str "HTTP protocol: " protocol))
 
-                  (d/on-realized apn-handler-removed
-                                 (fn [_]
-                                   (log/trace "APN handler removed. Beginning request consumption.")
                                    (s/consume
                                      (req-preprocesser {:ch                 ch
                                                         :protocol           protocol
@@ -945,12 +940,7 @@
                                                         :logger             logger
                                                         :pipeline-transform pipeline-transform
                                                         :handler            handler})
-                                     requests))
-                                 (fn [^Throwable t]
-                                   (log/error t "Error removing ALPN handler")
-                                   (s/close! responses)
-                                   (s/close! requests)
-                                   (.close ch)))
+                    requests)
 
                   (req-handler {:ch                   ch
                                 :keep-alive?          keep-alive? ; why not keep-alive?'
