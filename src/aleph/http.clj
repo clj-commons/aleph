@@ -11,6 +11,7 @@
     [aleph.http.websocket.server :as ws.server]
     [aleph.netty :as netty]
     [clojure.string :as str]
+    [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.executor :as executor])
   (:import
@@ -344,12 +345,14 @@
                          ;; connection timeout triggered, dispose of the connetion
                          (d/catch' TimeoutException
                            (fn [^Throwable e]
+                             (log/error e "Timed out waiting for connection to be established")
                              (flow/dispose pool k conn)
                              (d/error-deferred (ConnectionTimeoutException. e))))
 
                          ;; connection failed, bail out
                          (d/catch'
                            (fn [e]
+                             (log/error e "Connection failure")
                              (flow/dispose pool k conn)
                              (d/error-deferred e)))
 
