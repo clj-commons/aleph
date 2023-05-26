@@ -85,6 +85,10 @@ cost of a more complicated implementation. Netty does not have built-in support
 for it, though https://github.com/jauntsdn/netty-websocket-http2[user implementations]
 exist.
 
+=== Proxies
+
+HTTP/2 supports CONNECT proxying, but over a single HTTP/2 stream, not a whole TCP connection. Aleph has only ever supported using proxies from the client-side.
+
 == Decision
 
 === Backwards-compatibility mode
@@ -130,6 +134,9 @@ into this somehow?
 We will NOT add support for HTTP/2 websocket tunneling at this time. The
 cost/benefit ratio is too low. PRs may be considered, though.
 
+=== Proxies
+
+NOTE: TBD
 
 == Consequences
 
