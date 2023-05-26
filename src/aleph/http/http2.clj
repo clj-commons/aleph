@@ -448,7 +448,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions  ["h2" "http/1.1"]}))
+                  :http-versions  [:http2 :http1]}))
 
     (def result
       @(conn {:request-method :post

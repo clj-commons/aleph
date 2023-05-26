@@ -573,7 +573,6 @@
     :else
     (do
       (log/error (str "Unsupported SSL protocol: " protocol))
-      (println (str "Unsupported SSL protocol: " protocol))
       (throw (IllegalStateException. (str "Unsupported SSL protocol: " protocol))))))
 
 (defn make-pipeline-builder
@@ -849,8 +848,7 @@
            epoll?               false
            name-resolver        :default
            log-activity         :debug
-           http-versions        [ApplicationProtocolNames/HTTP_2
-                                 ApplicationProtocolNames/HTTP_1_1]}
+           http-versions        [:http2 :http1]}
     :as   options}]
   (let [responses (doto (s/stream 1024 nil response-executor)
                         (s/on-closed #(log/debug "responses stream closed.")))
@@ -870,7 +868,10 @@
         ssl-context (when ssl?
                       (if ssl-context
                         (netty/coerce-ssl-client-context ssl-context)
-                        (let [ssl-ctx-opts {:application-protocol-config
+                        (let [supported-protocols (mapv {:http1 ApplicationProtocolNames/HTTP_1_1
+                                                         :http2 ApplicationProtocolNames/HTTP_2}
+                                                        http-versions)
+                              ssl-ctx-opts {:application-protocol-config
                                             (ApplicationProtocolConfig.
                                               ApplicationProtocolConfig$Protocol/ALPN
                                               ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
@@ -878,7 +879,7 @@
                                               ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
                                               ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
                                               ^"[Ljava.lang.String;"
-                                              (into-array String http-versions))}]
+                                              (into-array String supported-protocols))}]
                           (if insecure?
                             (netty/insecure-ssl-client-context ssl-ctx-opts)
                             (netty/ssl-client-context ssl-ctx-opts)))))
@@ -963,7 +964,7 @@
                  (InetSocketAddress/createUnresolved "www.google.com" (int 443))
                  true
                  {:on-closed #(println "http conn closed")
-                  :http-versions  ["http/1.1"]}))
+                  :http-versions  [:http1]}))
 
     (conn {:request-method :get}))
   )

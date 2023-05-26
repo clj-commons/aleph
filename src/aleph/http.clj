@@ -113,7 +113,7 @@
    | `middleware`                 | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`
    | `pool-builder-fn`            | an optional one arity function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
    | `pool-controller-builder-fn` | an optional zero arity function which returns a `io.aleph.dirigiste.IPool$Controller`.
-   | `http-versions`              | an optional vector of preferred HTTP versions to negotiate via ALPN, in order. See io.netty.handler.ssl.ApplicationProtocolNames. Defaults to `[\"h2\" \"http/1.1\"]`
+   | `http-versions`              | an optional vector of preferred HTTP versions to negotiate via ALPN, in order. Defaults to `[:http2 :http1]`
 
    the `connection-options` are a map describing behavior across all connections:
 
