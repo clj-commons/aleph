@@ -42,14 +42,15 @@
                                "-Dorg.slf4j.simpleLogger.showDateTime=true"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
-             :pedantic {:pedantic? :abort}}
+             :pedantic {:pedantic? :abort}
+             :trace {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}}
   :java-source-paths ["src-java"]
-  :test-selectors {:default #(not
-                              (some #{:benchmark :stress}
-                                    (cons (:tag %) (keys %))))
+  :test-selectors {:default   #(not
+                                 (some #{:benchmark :stress}
+                                   (cons (:tag %) (keys %))))
                    :benchmark :benchmark
-                   :stress :stress
-                   :all (constantly true)}
+                   :stress    :stress
+                   :all       (constantly true)}
   :jvm-opts ^:replace ["-server"
                        "-Xmx2g"
                        "-XX:+HeapDumpOnOutOfMemoryError"
