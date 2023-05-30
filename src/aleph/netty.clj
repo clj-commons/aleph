@@ -10,12 +10,14 @@
     [manifold.stream.core :as manifold]
     [potemkin :refer [doary doit]])
   (:import
-    (aleph.http PipelineInitializer)
+    (aleph.http AlephChannelInitializer)
     (clojure.lang DynamicClassLoader)
     (io.netty.bootstrap
       Bootstrap
       ServerBootstrap)
-    (io.netty.buffer ByteBuf Unpooled)
+    (io.netty.buffer
+      ByteBuf
+      Unpooled)
     (io.netty.channel
       Channel
       ChannelFuture
@@ -786,7 +788,7 @@
    configures it."
   ^ChannelInitializer
   [pipeline-builder]
-  (PipelineInitializer. pipeline-builder))
+  (AlephChannelInitializer. #(pipeline-builder (.pipeline ^Channel %))))
 
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."

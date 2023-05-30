@@ -10,7 +10,9 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
-    (aleph.http ApnHandler)
+    (aleph.http
+      AlephChannelInitializer
+      ApnHandler)
     (aleph.utils
       ProxyConnectionTimeoutException)
     (io.netty.buffer
@@ -85,7 +87,7 @@
                  nil))]
 
   (defn req->domain
-    "Returns the URI corresponding to a request"
+    "Returns the URI corresponding to a request's scheme, host, and port"
     ^URI [req]
     (if-let [url (:url req)]
       (let [^URL uri (URL. url)]
@@ -556,8 +558,6 @@
           ;; h2-stream-chan-initializer. Regardless, Http2MultiplexHandler must be on
           ;; the pipeline to get new outbound channels.
           server-initiated-stream-chan-initializer
-          (h2-stream-chan-initializer
-            response-stream proxy-options ssl? logger pipeline-transform raw-stream? response-buffer-size)
 
           multiplex-handler (Http2MultiplexHandler. server-initiated-stream-chan-initializer)]
 
@@ -569,6 +569,18 @@
           (.addLast "multiplex" multiplex-handler))
 
       (log/debug "Conn chan pipeline:" pipeline))
+        (AlephChannelInitializer.
+          (fn [^Channel ch]
+            (let [p (.pipeline ch)]
+              (.addLast p
+                        "client-inbound-handler"
+                        ^ChannelHandler (netty/channel-inbound-handler
+                                          {:channel-active
+                                           ([_ ctx]
+                                            (log/error "Cannot currently handle server-initiated streams. Closing channel")
+                                            (netty/close ctx))})))))
+        #_(h2-stream-chan-initializer
+            response proxy-options logger pipeline-transform raw-stream? response-buffer-size)
 
     :else
     (do
