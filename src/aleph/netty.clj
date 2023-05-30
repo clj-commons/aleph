@@ -810,6 +810,35 @@
       true)
     false))
 
+(defn ^:no-doc pause-handler
+  "Returns a handler that stores all messages until removed from the pipeline."
+  []
+  (let [msgs (atom [])
+        fire-buffered-msgs (fn [^ChannelHandlerContext ctx]
+                             (log/debug "pause-handler - firing buffered msgs")
+                             (run! #(.fireChannelRead ctx %) @msgs)
+                             (.fireChannelReadComplete ctx))]
+    (channel-inbound-handler
+      {:channel-read
+       ([_ ctx msg]
+        (log/trace "pause-handler buffering msg" msg)
+        (swap! msgs conj msg))
+
+       :handler-removed
+       ([_ ctx]
+        (fire-buffered-msgs ctx))
+
+       :channel-inactive
+       ([_ ctx]
+        (fire-buffered-msgs ctx)
+        (.fireChannelInactive ctx))
+
+       :user-event-triggered
+       ([_ ctx evt]
+        (when (instance? ChannelInputShutdownEvent evt)
+          (fire-buffered-msgs ctx))
+        (.fireUserEventTriggered ctx evt))})))
+
 (defn ^:no-doc coerce-log-level
   "Returns a netty LogLevel. Accepts either a keyword or a LogLevel."
   [level]
