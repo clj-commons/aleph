@@ -47,19 +47,22 @@
       KQueueServerSocketChannel
       KQueueSocketChannel)
     (io.netty.channel.nio NioEventLoopGroup)
-    (io.netty.channel.socket ServerSocketChannel)
+    (io.netty.channel.socket
+      ChannelInputShutdownEvent
+      ServerSocketChannel)
     (io.netty.channel.socket.nio
       NioDatagramChannel
       NioServerSocketChannel
       NioSocketChannel)
-    (io.netty.handler.codec DecoderException)
+    (io.netty.handler.codec
+      CharSequenceValueConverter
+      DecoderException)
     (io.netty.handler.codec.http2 Http2StreamChannel)
     (io.netty.handler.logging
       LogLevel
       LoggingHandler)
     (io.netty.handler.ssl
       ApplicationProtocolConfig
-      ApplicationProtocolNegotiationHandler
       ClientAuth
       SslContext
       SslContextBuilder
@@ -68,7 +71,6 @@
     (io.netty.handler.ssl.util
       InsecureTrustManagerFactory
       SelfSignedCertificate)
-    (io.netty.handler.stream ChunkedWriteHandler)
     (io.netty.incubator.channel.uring
       IOUring
       IOUringDatagramChannel
@@ -127,6 +129,8 @@
       SSLHandshakeException
       TrustManager
       TrustManagerFactory)))
+
+(def ^:no-doc ^CharSequenceValueConverter char-seq-val-converter CharSequenceValueConverter/INSTANCE)
 
 ;;;
 

@@ -1,4 +1,5 @@
 (ns ^:no-doc aleph.http.http2
+  "HTTP/2 functionality"
   (:require
     [aleph.http.common :as common]
     [aleph.http.file :as file]
@@ -51,38 +52,38 @@
 ;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
 (def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
 
-(defn- add-header
-  "Add a single header and value. The value can be a string or a collection of
-   strings.
+(let [illegal-arg (fn [^String emsg]
+                    (let [ex (IllegalArgumentException. emsg)]
+                      (log/error ex emsg)
+                      (throw ex)))]
+  (defn- add-header
+    "Add a single header and value. The value can be a string or a collection of
+     strings.
 
-   Respects HTTP/2 rules. Strips invalid connection-related headers. Throws on
-   nil header values. Throws if `transfer-encoding` is present, but not 'trailers'."
-  [^Http2Headers h2-headers ^String header-name header-value]
-  (log/debug "adding header" header-name ": " header-value)
-  (if (nil? header-name)
-    (throw (IllegalArgumentException. "Header name cannot be nil"))
-    (let [header-name (str/lower-case header-name)]         ; http2 requires lowercase headers
-      (cond
-        (nil? header-value)
-        (throw (IllegalArgumentException. (str "Invalid nil value for header '" header-name "'")))
+     Respects HTTP/2 rules. Strips invalid connection-related headers. Throws on
+     nil header values. Throws if `transfer-encoding` is present, but not 'trailers'."
+    [^Http2Headers h2-headers ^String header-name header-value]
+    (log/debug "Adding HTTP header" header-name ": " header-value)
+    (if (nil? header-name)
+      (throw (IllegalArgumentException. "Header name cannot be nil"))
+      (let [header-name (str/lower-case header-name)]       ; http2 requires lowercase headers
+        (cond
+          (nil? header-value)
+          (illegal-arg (str "Invalid nil value for header '" header-name "'"))
 
-        (invalid-headers header-name)
-        (do
-          (println (str "Forbidden HTTP/2 header: \"" header-name "\""))
-          (throw
-            (IllegalArgumentException. (str "Forbidden HTTP/2 header: \"" header-name "\""))))
+          (invalid-headers header-name)
+          (illegal-arg (str "Forbidden HTTP/2 header: \"" header-name "\""))
 
-        ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
-        (and (.equals "transfer-encoding" header-name)
-             (not (.equals "trailers" header-value)))
-        (throw
-          (IllegalArgumentException. "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed."))
+          ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
+          (and (.equals "transfer-encoding" header-name)
+               (not (.equals "trailers" header-value)))
+          (illegal-arg "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed.")
 
-        (sequential? header-value)
-        (.add h2-headers ^CharSequence header-name ^Iterable header-value)
+          (sequential? header-value)
+          (.add h2-headers ^CharSequence header-name ^Iterable header-value)
 
-        :else
-        (.add h2-headers ^CharSequence header-name ^Object header-value)))))
+          :else
+          (.add h2-headers ^CharSequence header-name ^Object header-value))))))
 
 (defn- ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map."
@@ -104,6 +105,21 @@
       (run! #(add-header h2-headers (key %) (val %))
             headers))
     h2-headers))
+
+(defn netty-http2-headers->map
+  "Returns a map of Ring headers from a Netty Http2Headers object.
+
+   Includes pseudo-headers."
+  [^Http2Headers headers]
+  (loop [iter (.iterator headers)
+         result {}]
+    (if (.hasNext iter)
+      (let [entry (.next iter)]
+        (recur iter
+               (assoc result
+                      (.toString ^CharSequence (key entry))
+                      (.toString ^CharSequence (val entry)))))
+      result)))
 
 (defn- try-set-content-length!
   "Attempts to set the `content-length` header if not already set.
@@ -259,6 +275,7 @@
     (netty/write-and-flush ch (end-of-stream-frame stream))))
 
 (defn- send-message
+  "Given Http2Headers and a body, determines the best way to write the body to the stream channel"
   [^Http2StreamChannel ch ^Http2Headers headers body chunk-size file-chunk-size]
   (log/trace "http2 send-message")
   (let [^Http2FrameStream stream (.stream ch)]
@@ -267,7 +284,7 @@
         (or (nil? body)
             (identical? :aleph/omitted body))
         (do
-          (log/debug "Body is nil or omitted")
+          (log/trace "Body is nil or omitted")
           (let [header-frame (-> headers (DefaultHttp2HeadersFrame. true) (.stream stream))]
             (log/debug header-frame)
             (netty/write-and-flush ch header-frame)))
@@ -324,7 +341,6 @@
             (throw e))))
 
       (catch Exception e
-        (println "Error sending message" e)
         (log/error e "Error sending message")
         (throw (Http2FrameStreamException. (.stream ch)
                                            Http2Error/PROTOCOL_ERROR
@@ -335,10 +351,9 @@
 ;; branches based on the class (channel vs context), but that's not ideal. It's slower, and
 ;; writing to the channel vs the context means different things, anyway, they're not
 ;; usually interchangeable.
-(defn req-preprocess
-  [^Http2StreamChannel ch req responses]
-  (log/trace "http2 req-preprocess fired")
-  (log/debug "req" (prn-str req))
+(defn send-request
+  [^Http2StreamChannel ch req response]
+  (log/trace "http2 send-request fired")
 
   (when (multipart/is-multipart? req)
     ;; shouldn't reach at the moment, but just in case
@@ -369,13 +384,13 @@
       (-> (netty/safe-execute ch (send-message ch headers body chunk-size file-chunk-size))
           (d/catch' (fn [e]
                       (log/error e "Error in http2 req-preprocess")
-                      (s/put! responses (d/error-deferred e))
+                      (d/error! response e)
                       (netty/close ch)))))
 
     ;; this will usually happen because of a malformed request
     (catch Throwable e
       (log/error e "Error in http2 req-preprocess")
-      (s/put! responses (d/error-deferred e))
+      (d/error! response e)
       (netty/close ch))))
 
 
@@ -396,9 +411,12 @@
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
-                 {:on-closed #(log/debug "http conn closed")}))
+                 {:on-closed #(log/debug "http conn closed")
+                  :http-versions [:http1]}))
 
-    @(conn {:request-method :get}))
+    (def result @(conn {:request-method :get
+                        ;;:raw-stream?    true
+                        })))
 
   ;; different body types test
   (do
@@ -437,7 +455,7 @@
                 :uri            "/post"
                 :headers        {"content-type" "text/plain"}
                 :body           body
-                :raw-stream?    true
+                ;;:raw-stream?    true
                 }))
 
       (some-> result :body bs/to-string)))
@@ -475,8 +493,8 @@
                :uri            "/post"
                :headers        {"content-type" "text/plain"}
                :body           "Body test"
-               ;;:raw-stream?    true
+               :raw-stream?    true
                }]
-      (def results (map conn (repeat 6 req)))
-      @(nth results 5)))
+      (def results (map conn (repeat 3 req)))
+      @(nth results 2)))
   )

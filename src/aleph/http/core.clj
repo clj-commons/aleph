@@ -19,13 +19,8 @@
       Channel
       ChannelFuture
       ChannelFutureListener
-      ChannelHandler
-      ChannelPipeline
       ChannelHandlerContext
       DefaultFileRegion)
-    (io.netty.handler.codec
-      DecoderResult
-      DecoderResultProvider)
     (io.netty.handler.codec.http
       DefaultFullHttpRequest
       DefaultHttpContent
@@ -46,10 +41,6 @@
       ChunkedFile
       ChunkedInput
       ChunkedWriteHandler)
-    (io.netty.handler.timeout
-      IdleState
-      IdleStateEvent
-      IdleStateHandler)
     (io.netty.util.internal StringUtil)
     (java.io
       Closeable
@@ -60,8 +51,7 @@
     (java.nio.file
       Path)
     (java.util.concurrent
-      ConcurrentHashMap
-      TimeUnit)
+      ConcurrentHashMap)
     (java.util.concurrent.atomic
       AtomicBoolean)))
 

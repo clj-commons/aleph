@@ -476,3 +476,59 @@
    (file/http-file path offset length nil))
   ([path offset length chunk-size]
    (file/http-file path offset length chunk-size)))
+
+
+
+
+(comment
+  (do
+    (require '[aleph.http.client]
+             '[aleph.http.multipart]
+             '[clj-commons.byte-streams :as bs])
+    (import '(io.netty.channel DefaultFileRegion)
+            '(io.netty.handler.stream ChunkedFile ChunkedNioFile)
+            '(java.net InetSocketAddress)
+            '(java.nio.channels FileChannel)
+            '(java.nio.file Files OpenOption Path Paths)
+            '(java.nio.file.attribute FileAttribute)))
+
+  ;; basic test
+  (def result @(get "https://postman-echo.com" {}))
+
+  (-> @(get "https://google.com" {})
+      :body bs/to-string)
+
+
+  ;; basic file post test
+  (let [body-string "Body test"
+        fpath (Files/createTempFile "test" ".txt" (into-array FileAttribute []))
+        ffile (.toFile fpath)
+        _ (spit ffile body-string)
+        fchan (FileChannel/open fpath (into-array OpenOption []))
+        aleph-1k (repeat 1000 \ℵ)
+        aleph-20k (repeat 20000 \ℵ)
+        aleph-1k-string (apply str aleph-1k)
+
+        body
+        body-string
+        #_fpath
+        #_ffile
+        #_(RandomAccessFile. ffile "r")
+        #_fchan
+        #_(ChunkedFile. ffile)
+        #_(ChunkedNioFile. fchan)
+        #_(file/http-file ffile 1 6 4)
+        #_(DefaultFileRegion. fchan 0 (.size fchan))
+        #_(seq body-string)
+        #_[:foo :bar :moop]
+        #_aleph-20k
+        #_[aleph-1k-string aleph-1k-string]]
+
+
+    (def result
+      @(post "https://postman-echo.com/post"
+             {:headers        {"content-type" "text/plain"}
+              :body           body
+              ;;:raw-stream?    true
+              })))
+  )
