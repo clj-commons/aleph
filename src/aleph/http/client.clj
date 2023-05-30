@@ -101,23 +101,6 @@
           nil))
       (no-url req))))
 
-(defn send-response-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
-  (let [^Throwable ex (common/decoder-failure msg)]
-    (s/put! response-stream ex)
-    (netty/close ctx)))
-
-(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream complete response-stream]
-  (if (instance? HttpContent msg)
-    ;; note that we are most likely to get this when dealing
-    ;; with transfer encoding chunked
-    (if-let [s @stream]
-      (do
-        ;; flag that body was not completed succesfully
-        (d/success! @complete true)
-        (s/close! s))
-      (send-response-decoder-failure ctx msg response-stream))
-    (send-response-decoder-failure ctx msg response-stream)))
-
 (defn exception-handler [ctx ex response-stream]
   (log/warn "exception-handler" ex)
   (cond
@@ -164,7 +147,7 @@
       ([_ ctx msg]
        (cond
          (common/decoder-failed? msg)
-         (handle-decoder-failure ctx msg stream complete response-stream)
+         (http1/handle-decoder-failure ctx msg body-stream complete response-stream)
 
          (instance? HttpResponse msg)
          (let [rsp msg
@@ -226,7 +209,7 @@
 
        (cond
          (common/decoder-failed? msg)
-         (handle-decoder-failure ctx msg body-stream complete response-stream)
+         (http1/handle-decoder-failure ctx msg body-stream complete response-stream)
 
          ;; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
          (instance? FullHttpResponse msg)

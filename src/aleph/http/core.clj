@@ -21,6 +21,7 @@
       ChannelFutureListener
       ChannelHandler
       ChannelPipeline
+      ChannelHandlerContext
       DefaultFileRegion)
     (io.netty.handler.codec
       DecoderResult
@@ -502,6 +503,24 @@
         (handle-cleanup ch fut))
 
       fut)))
+
+(defn send-response-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
+  (let [^Throwable ex (common/decoder-failure msg)]
+    (s/put! response-stream ex)
+    (netty/close ctx)))
+
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream complete response-stream]
+  (if (instance? HttpContent msg)
+    ;; note that we are most likely to get this when dealing
+    ;; with transfer encoding chunked
+    (if-let [s @stream]
+      (do
+        ;; flag that body was not completed succesfully
+        (d/success! @complete true)
+        (s/close! s))
+      (send-response-decoder-failure ctx msg response-stream))
+    (send-response-decoder-failure ctx msg response-stream)))
+
 
 (comment
   (let [ch (EmbeddedChannel.)
