@@ -25,6 +25,7 @@
       ChannelInitializer
       ChannelOption
       ChannelOutboundHandler
+      ChannelOutboundInvoker
       ChannelPipeline
       EventLoopGroup
       FileRegion)
@@ -175,11 +176,24 @@
 
 (def ^:const ^:no-doc byte-array-class (Class/forName "[B"))
 
+#_
 (defn ^:no-doc buf->array [^ByteBuf buf]
   (let [dst (ByteBuffer/allocate (.readableBytes buf))]
     (doary [^ByteBuffer buf (.nioBuffers buf)]
            (.put dst buf))
     (.array dst)))
+
+(defn ^:no-doc buf->array [^ByteBuf buf]
+  (if (.hasArray buf)
+    (-> buf
+        (.array)
+        (java.util.Arrays/copyOfRange (.readerIndex buf) (.writerIndex buf)))
+    (let [dst (ByteBuffer/allocate (.readableBytes buf))]
+      (doary [^ByteBuffer buf (.nioBuffers buf)]
+             (.put dst buf))
+      (.array dst))))
+
+
 
 (defn ^:no-doc release-buf->array [^ByteBuf buf]
   (try
@@ -327,12 +341,12 @@
     (.flush ^Channel x)
     (.flush ^ChannelHandlerContext x)))
 
-(defn ^:no-doc close [x]
-  (if (instance? Channel x)
-    (.close ^Channel x)
-    (.close ^ChannelHandlerContext x)))
+(defn ^:no-doc close
+  [^ChannelOutboundInvoker x]
+  (.close x))
 
-(defn ^:no-doc ^Channel channel [x]
+(defn ^:no-doc channel
+  ^Channel [x]
   (if (instance? Channel x)
     x
     (.channel ^ChannelHandlerContext x)))
@@ -362,7 +376,9 @@
                          (d/error! d# e#)))))
          d#))))
 
-(defn ^:no-doc put! [^Channel ch s msg]
+(defn ^:no-doc put!
+  "Netty-aware put! that can apply backpressure to Netty channels if necessary"
+  [^Channel ch s msg]
   (let [d (s/put! s msg)]
     (d/success-error-unrealized d
 
@@ -1441,7 +1457,7 @@ initialize an DnsAddressResolverGroup instance.
 
 (defn- add-channel-tracker-handler
   [pipeline-builder chan-group]
-  (fn [pipeline]
+  (fn [^ChannelPipeline pipeline]
     (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
