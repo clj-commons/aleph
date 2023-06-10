@@ -627,16 +627,10 @@
   "Set up pipeline for an HTTP/2 connection channel"
   [{:keys
     [^LoggingHandler logger
-     pipeline-transform
-     proxy-options
-     ssl?
      idle-timeout
-     raw-stream?
-     response-buffer-size
      ^ChannelPipeline pipeline]
     :or
-    {pipeline-transform      identity
-     idle-timeout            0}}]
+    {idle-timeout            0}}]
   (log/trace "setup-http2-pipeline fired")
   (let [log-level (some-> logger (.level))
         http2-frame-codec (let [builder (Http2FrameCodecBuilder/forClient)]
@@ -689,8 +683,7 @@
 
    Can't use an ApnHandler/ApplicationProtocolNegotiationHandler here,
    because it's tricky to run Manifold code on Netty threads."
-  [{:keys [ssl? remote-address ssl-context]
-    :as   opts}]
+  [{:keys [ssl? remote-address ssl-context]}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
     (when ssl?
@@ -701,37 +694,6 @@
         (.addLast pipeline
                   "pause-handler"
                   ^ChannelHandler (netty/pause-handler))))))
-
-#_(defn make-pipeline-builder
-    "Returns a function that initializes a new conn channel's pipeline.
-
-     For HTTP/2 multiplexing, does not set up child channel pipelines. See
-     `h2-stream-chan-initializer` for that."
-    [{:keys [ssl? remote-address ssl-context]
-      :as   opts}]
-    (fn pipeline-builder
-      [^ChannelPipeline pipeline]
-      (if ssl?
-      (do
-        (.addLast pipeline
-                  "ssl-handler"
-                  (netty/ssl-handler (.channel pipeline) ssl-context remote-address))
-        ;; when making an SSL request while supporting multiple HTTP versions,
-        ;; the client and server negotiate which version to use, and we can't
-        ;; finish the pipeline until that happens
-        (.addLast pipeline
-                  "apn-handler"
-                  (ApnHandler.
-                    (fn configure-pipeline
-                      [^ChannelPipeline p protocol]
-                      (setup-http-pipeline (assoc opts
-                                                  :pipeline p
-                                                  :protocol protocol)))
-                    ApplicationProtocolNames/HTTP_1_1))
-        (log/debug "ALPN setup: " pipeline))
-
-      (setup-http-pipeline (assoc opts
-                                  :pipeline pipeline)))))
 
 (defn close-connection [f]
   (f

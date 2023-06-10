@@ -27,7 +27,8 @@
       DefaultHttpRequest
       DefaultHttpResponse
       DefaultLastHttpContent
-      HttpChunkedInput HttpContent
+      HttpChunkedInput
+      HttpContent
       HttpHeaders
       HttpMessage
       HttpMethod
@@ -270,10 +271,8 @@
 
 (defn send-streaming-body
   "Write out a msg and a body that's streamable"
-  ;;HTTP1
   [ch ^HttpMessage msg body]
 
-  ;;HTTP1
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
   (netty/write ch msg)
 
@@ -328,7 +327,6 @@
                              nil))))))
                 (netty/to-byte-buf-stream body' 8192))
 
-          ;;HTTP1
           sink (netty/sink ch false #(DefaultHttpContent. %))
 
           ;; mustn't close over body' if NOT a stream, can hold on to data too long when conns are keep-alive
@@ -352,11 +350,9 @@
 
                      (.execute (-> ch aleph.netty/channel .eventLoop)
                                #(d/success! d
-                                            ;;HTTP1
                                             (netty/write-and-flush ch empty-last-content)))))
       d)
 
-    ;;HTTP1
     (netty/write-and-flush ch empty-last-content)))
 
 

@@ -61,9 +61,11 @@
      strings.
 
      Respects HTTP/2 rules. Strips invalid connection-related headers. Throws on
-     nil header values. Throws if `transfer-encoding` is present, but not 'trailers'."
+     nil header values. Throws if `transfer-encoding` is present, but is not
+     equal to 'trailers'."
     [^Http2Headers h2-headers ^String header-name header-value]
     (log/debug "Adding HTTP header" header-name ": " header-value)
+
     (if (nil? header-name)
       (throw (IllegalArgumentException. "Header name cannot be nil"))
       (let [header-name (str/lower-case header-name)]       ; http2 requires lowercase headers
@@ -130,9 +132,10 @@
   [^Http2Headers headers ^long length]
   (when-not (.get headers "content-length")
     (if (some? (.status headers))
+      ;; TODO: consider switching to netty's HttpResponseStatus and HttpStatusClass for clarity
       (let [code (-> headers (.status) (Long/parseLong))]
         (when-not (or (<= 100 code 199)
-                      (== 204 code))
+                      (p/== 204 code))
           (.setLong headers "content-length" length)))
       (.setLong headers "content-length" length))))
 
