@@ -508,17 +508,20 @@
               (s/on-closed #(d/success! complete true)))
 
         handle-error
-        (fn [ex]
-          (log/error ex "Exception caught in HTTP/2 stream client handler" {:raw-stream? raw-stream?})
-          ;; if we've already returned a response, best we can do is blow up the
-          ;; complete deferred
-          (if-not (d/realized? response-d)
-            (d/error! response-d ex)
-            (d/error! complete ex))
-          (s/close! body-stream))
+        (let [close-body-handler (fn [_] (s/close! body-stream))]
+          (fn handle-error [ex]
+            (log/error ex "Exception caught in HTTP/2 stream client handler" {:raw-stream? raw-stream?})
+            ;; if we've already returned a response, best we can do is blow up the
+            ;; body stream and the complete deferred
+            (if-not (d/realized? response-d)
+              (d/error! response-d ex)
+              (do
+                (d/error! complete ex)
+                (-> (s/put! body-stream ex)
+                    (d/on-realized close-body-handler close-body-handler))))))
 
         handle-shutdown-frame
-        (fn [evt]
+        (fn handle-shutdown-frame [evt]
           (when (or (instance? Http2ResetFrame evt)
                     (instance? Http2GoAwayFrame evt))
             (let [stream-id (-> ch (.stream) (.id))
@@ -674,8 +677,7 @@
                     {:exception-caught
                      ([_ ctx ex]
                       (log/error ex "Exception in HTTP/2 connection channel. Closing channel.")
-                      (netty/close ctx)
-                      (.fireExceptionCaught ctx ex))})))
+                      (netty/close ctx))})))
 
     (log/debug "Conn chan pipeline:" pipeline)))
 
