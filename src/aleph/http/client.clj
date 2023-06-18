@@ -891,7 +891,7 @@
                      (.protocols)
                      (.contains ApplicationProtocolNames/HTTP_2)
                      not)
-                 (some #(= :http2 %) desired-protocols))
+                 (some #(= ApplicationProtocolNames/HTTP_2 %) desired-protocols))
           (let [emsg "HTTP/2 has been requested, but the required ALPN is not configured properly."
                 ex (ex-info emsg {:ssl-context ssl-context})]
             (log/error ex emsg)
