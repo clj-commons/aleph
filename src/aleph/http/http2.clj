@@ -3,7 +3,6 @@
   (:require
     [aleph.http.common :as common]
     [aleph.http.file :as file]
-    [aleph.http.multipart :as multipart]
     [aleph.netty :as netty]
     [clj-commons.primitive-math :as p]
     [clojure.string :as str]
@@ -40,7 +39,8 @@
     (java.nio.file
       OpenOption
       Path
-      StandardOpenOption)))
+      StandardOpenOption)
+    (java.util.concurrent ConcurrentHashMap)))
 
 (set! *warn-on-reflection* true)
 
@@ -52,46 +52,59 @@
 ;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
 (def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
 
-(let [illegal-arg (fn [^String emsg]
-                    (let [ex (IllegalArgumentException. emsg)]
-                      (log/error ex emsg)
-                      (throw ex)))]
-  (defn- add-header
-    "Add a single header and value. The value can be a string or a collection of
-     strings.
+(def ^:private ^ConcurrentHashMap cached-header-names
+  "No point in lower-casing the same strings over and over again."
+  (ConcurrentHashMap. 128))
 
-     Respects HTTP/2 rules. Strips invalid connection-related headers. Throws on
-     nil header values. Throws if `transfer-encoding` is present, but is not
-     equal to 'trailers'."
-    [^Http2Headers h2-headers ^String header-name header-value]
-    (log/debug "Adding HTTP header" header-name ": " header-value)
+(defn- illegal-arg
+  "Logs an error message, then throws an IllegalArgumentException with that error message."
+  [^String emsg]
+  (let [ex (IllegalArgumentException. emsg)]
+    (log/error ex emsg)
+    (throw ex)))
 
-    (if (nil? header-name)
-      (throw (IllegalArgumentException. "Header name cannot be nil"))
-      (let [header-name (str/lower-case header-name)]       ; http2 requires lowercase headers
-        (cond
-          (nil? header-value)
-          (illegal-arg (str "Invalid nil value for header '" header-name "'"))
+(defn- add-header
+  "Add a single header and value. The value can be a string or a collection of
+   strings.
 
-          (invalid-headers header-name)
-          (illegal-arg (str "Forbidden HTTP/2 header: \"" header-name "\""))
+   Respects HTTP/2 rules. All headers will be made lower-case. Strips invalid
+   connection-related headers. Throws on nil header values. Throws if
+   `transfer-encoding` is present, but is not equal to 'trailers'."
+  [^Http2Headers h2-headers ^String header-name header-value]
+  (log/debug "Adding HTTP header" header-name ": " header-value)
 
-          ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
-          (and (.equals "transfer-encoding" header-name)
-               (not (.equals "trailers" header-value)))
-          (illegal-arg "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed.")
+  (if (nil? header-name)
+    (illegal-arg "Header name cannot be nil")
 
-          (sequential? header-value)
-          (.add h2-headers ^CharSequence header-name ^Iterable header-value)
+    ;; Technically, Ring requires lower-cased headers, but there's no guarantee, and this is
+    ;; probably faster, since most users won't be caching.
+    (let [header-name (if-some [cached (.get cached-header-names header-name)]
+                        cached
+                        (let [lower-cased (str/lower-case (name header-name))]
+                          (.put cached-header-names header-name lower-cased)
+                          lower-cased))]
+      (cond
+        (nil? header-value)
+        (illegal-arg (str "Invalid nil value for header '" header-name "'"))
 
-          :else
-          (.add h2-headers ^CharSequence header-name ^Object header-value))))))
+        (invalid-headers header-name)
+        (illegal-arg (str "Forbidden HTTP/2 header: \"" header-name "\""))
+
+        ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
+        (and (.equals "transfer-encoding" header-name)
+             (not (.equals "trailers" header-value)))
+        (illegal-arg "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed.")
+
+        (sequential? header-value)
+        (.add h2-headers ^CharSequence header-name ^Iterable header-value)
+
+        :else
+        (.add h2-headers ^CharSequence header-name ^Object header-value)))))
 
 (defn- ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map."
   ^DefaultHttp2Headers
   [req]
-  (prn req)
   (let [headers (get req :headers)
         h2-headers (doto (DefaultHttp2Headers.)
                          (.method (-> req (get :request-method) name str/upper-case))
@@ -100,12 +113,13 @@
                          (.path (str (get req :uri)
                                      (when-let [q (get req :query-string)]
                                        (str "?" q)))))]
-    (when (:status req)
-      (.status h2-headers (-> req (get :status) str)))
+    (when-some [status (get req :status)]
+      (.status h2-headers (.toString status)))
 
     (when headers
       (run! #(add-header h2-headers (key %) (val %))
             headers))
+
     h2-headers))
 
 (defn netty-http2-headers->map
@@ -126,16 +140,17 @@
 (defn- try-set-content-length!
   "Attempts to set the `content-length` header if not already set.
 
-   Will skip if it's a response and the status code is 1xx or 204.
+   Will skip if it's a response and the status code is 1xx or 204. (RFC 9110 §8.6)
    Negative length values are ignored."
   ^Http2Headers
   [^Http2Headers headers ^long length]
   (when-not (.get headers "content-length")
     (if (some? (.status headers))
       ;; TODO: consider switching to netty's HttpResponseStatus and HttpStatusClass for clarity
-      (let [code (-> headers (.status) (Long/parseLong))]
-        (when-not (or (<= 100 code 199)
-                      (p/== 204 code))
+      (let [code (-> headers (.status) (.toString) (Long/parseLong))]
+        (when-not (or (p/== 204 code)
+                      (and (p/<= 100 code)
+                           (p/<= code 199)))
           (.setLong headers "content-length" length)))
       (.setLong headers "content-length" length))))
 
@@ -357,12 +372,6 @@
 (defn send-request
   [^Http2StreamChannel ch req response]
   (log/trace "http2 send-request fired")
-
-  (when (multipart/is-multipart? req)
-    ;; shouldn't reach at the moment, but just in case
-    (throw (ex-info "HTTP/2 code path multipart not supported"
-                    {:req req
-                     :stream (.stream ch)})))
 
   (try
     (let [body (if (= :trace (:request-method req))

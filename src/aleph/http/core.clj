@@ -71,7 +71,7 @@
       (map str/lower-case ks)
       (map #(HttpHeaders/newEntity %) ks))))
 
-(def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
+(def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap. 128))
 
 (defn normalize-header-key
   "Normalizes a header key to `Ab-Cd` format.

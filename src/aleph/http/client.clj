@@ -752,11 +752,12 @@
                                                {:buffer-size response-buffer-size}))))))))
 
 (defn- http1-req-handler
-  "Returns a fn that takes a Ring request and returns a deferred containing a
+  "Returns a fn that takes a Ring request and returns a deferred containing the
    Ring response.
 
-   Otherwise, puts/takes to/from the requests/responses streams."
-  [{:keys [ch keep-alive? raw-stream? requests response-buffer-size responses]}]
+   Puts to the requests stream, then takes from the responses stream. (This
+   works since HTTP/1 requests and responses are always in order.)"
+  [{:keys [ch requests responses]}]
   (fn [req]
     (log/trace "http1-req-handler fired")
     (let [resp (locking ch
@@ -774,8 +775,7 @@
   [{:keys [authority ch keep-alive?' non-tun-proxy? responses ssl?]}]
   (fn http1-req-preprocess [req]
     (try
-      (let [out-ch (or (:ch req) ch)                      ; for HTTP/2 multiplex chans
-            ^HttpRequest req' (http1/ring-request->netty-request
+      (let [^HttpRequest req' (http1/ring-request->netty-request
                                 (if non-tun-proxy?
                                   (assoc req :uri (req->proxy-url req))
                                   req))]
@@ -813,14 +813,12 @@
             ;; might be different in case we use :multipart
             (reset! save-body body))
 
-          (-> (netty/safe-execute out-ch
-                                  (http1/send-message out-ch true ssl? req' body))
+          (-> (netty/safe-execute ch
+                                  (http1/send-message ch true ssl? req' body))
               (d/catch' (fn [e]
                           (log/error e "Error in http1-req-preprocess")
                           (s/put! responses (d/error-deferred e))
-                          (netty/close out-ch)
-                          (when-not (= ch out-ch)
-                            (netty/close ch)))))))
+                          (netty/close ch))))))
 
       ;; this will usually happen because of a malformed request
       (catch Throwable e
@@ -1026,8 +1024,8 @@
                                  (or (-> pipeline
                                          ^SslHandler (.get ^Class SslHandler)
                                          (.applicationProtocol))
-                                     ApplicationProtocolNames/HTTP_1_1)
-                                 ApplicationProtocolNames/HTTP_1_1)
+                                     ApplicationProtocolNames/HTTP_1_1) ; Not using ALPN, HTTP/2 isn't allowed
+                                 ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed
                       setup-opts (assoc opts
                                         :authority authority
                                         :ch ch
@@ -1044,7 +1042,7 @@
                                         :ssl? ssl?)]
                   (log/debug (str "HTTP protocol: " protocol))
 
-                  (let [version-specific-req-fn
+                  (let [http-req-handler
                         (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
                               (setup-http1-client setup-opts)
 
@@ -1089,7 +1087,7 @@
                           (if (or (contains? req :aleph/close)
                                   (contains? req ::close))
                             (netty/wrap-future (netty/close ch))
-                            (-> (version-specific-req-fn req)
+                            (-> (http-req-handler req)
                                 (d/chain' (rsp-handler
                                             {:ch                   ch
                                              :keep-alive?          keep-alive? ; why not keep-alive?'
