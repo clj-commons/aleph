@@ -48,7 +48,7 @@
       KQueueSocketChannel)
     (io.netty.channel.nio NioEventLoopGroup)
     (io.netty.channel.socket
-      ChannelInputShutdownEvent
+      ChannelInputShutdownReadComplete
       ServerSocketChannel)
     (io.netty.channel.socket.nio
       NioDatagramChannel
@@ -839,7 +839,7 @@
 
        :user-event-triggered
        ([_ ctx evt]
-        (when (instance? ChannelInputShutdownEvent evt)
+        (when (instance? ChannelInputShutdownReadComplete evt)
           (fire-buffered-msgs ctx))
         (.fireUserEventTriggered ctx evt))})))
 
