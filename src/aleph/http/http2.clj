@@ -418,13 +418,15 @@
             '(java.nio.file Files OpenOption Path Paths)
             '(java.nio.file.attribute FileAttribute)))
 
+  ;; NB: postman-echo.com ALWAYS prefers http2, regardless of your order
+
   ;; basic test
   (do
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions [:http1]}))
+                  :http-versions [:http2]}))
 
     (def result @(conn {:request-method :get
                         ;;:raw-stream?    true
@@ -435,7 +437,8 @@
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
-                 {:on-closed #(log/debug "http conn closed")}))
+                 {:on-closed #(log/debug "http conn closed")
+                  :http-versions [:http2]}))
 
     (let [body-string "Body test"
           fpath (Files/createTempFile "test" ".txt" (into-array FileAttribute []))
@@ -467,6 +470,7 @@
                 :uri            "/post"
                 :headers        {"content-type" "text/plain"}
                 :body           body
+                :http-versions [:http2]
                 ;;:raw-stream?    true
                 }))
 
@@ -478,7 +482,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions  [:http2 :http1]}))
+                  :http-versions  [:http2]}))
 
     (def result
       @(conn {:request-method :post
@@ -499,7 +503,8 @@
     (def conn @(aleph.http.client/http-connection
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
-                 {:on-closed #(log/debug "http conn closed")}))
+                 {:on-closed #(log/debug "http conn closed")
+                  :http-versions [:http2]}))
 
     (let [req {:request-method :post
                :uri            "/post"
@@ -509,4 +514,20 @@
                }]
       (def results (map conn (repeat 3 req)))
       @(nth results 2)))
+
+  ;; compression test - don't support automatic decompression yet
+  #_(do
+    (def conn @(aleph.http.client/http-connection
+                 (InetSocketAddress. "postman-echo.com" (int 443))
+                 true
+                 {:on-closed #(log/debug "http conn closed")
+                  :http-versions [:http1]}))
+
+    (def result @(conn {:request-method :get
+                        :uri           "/gzip" #_ "/deflate"
+                        ;; FWIW, postman-echo.com ignores the accept-encoding header below
+                        :headers       {"accept-encoding" "gzip"}
+                        :body          "ABC123"}))
+
+    (some-> result :body bs/to-string))
   )
