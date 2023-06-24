@@ -137,6 +137,7 @@
    | `response-executor`       | optional `java.util.concurrent.Executor` that will execute response callbacks
    | `log-activity`            | when set, logs all events on each channel (connection) with a log level given. Accepts one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
    | `http-versions`           | an optional vector of preferred HTTP versions to negotiate via ALPN, in order. Defaults to `[:http2 :http1]`.
+   | `force-h2c?`              | an optional boolean indicating you wish to force the use of insecure HTTP/2 cleartext (h2c) for `http://` URLs. Not recommended, and unsupported by most servers in the wild. Only do this with infrastructure you control. Defaults to `false`.
 
    Supported `proxy-options` are
 
@@ -534,4 +535,12 @@
               :body           body
               ;;:raw-stream?    true
               })))
+
+  ;; h2c test
+  (let [pool (connection-pool
+               {:connection-options {:force-h2c? true}})]
+    (def result @(get "http://example.com"
+                      {:pool              pool
+                       :follow-redirects? false})))
+
   )

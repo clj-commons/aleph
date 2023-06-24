@@ -960,7 +960,8 @@
            proxy-options
            pipeline-transform
            log-activity
-           http-versions]
+           http-versions
+           force-h2c?]
     :or   {raw-stream?          false
            bootstrap-transform  identity
            pipeline-transform   identity
@@ -969,7 +970,8 @@
            epoll?               false
            name-resolver        :default
            log-activity         :debug
-           http-versions        [:http1 :http2]}
+           http-versions        [:http1 :http2]
+           force-h2c?           false}
     :as   opts}]
 
   (let [host (.getHostName remote-address)
@@ -1020,12 +1022,20 @@
                 ;; future with maybe-ssl-handshake-future, so we can get the negotiated
                 ;; protocol, falling back to HTTP/1.1 by default.
                 (let [pipeline (.pipeline ch)
-                      protocol (if ssl?
+                      protocol (cond
+                                 ssl?
                                  (or (-> pipeline
                                          ^SslHandler (.get ^Class SslHandler)
                                          (.applicationProtocol))
                                      ApplicationProtocolNames/HTTP_1_1) ; Not using ALPN, HTTP/2 isn't allowed
-                                 ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed
+
+                                 force-h2c?
+                                 (do
+                                   (log/info "Forcing HTTP/2 over cleartext. Be sure to do this only with servers you control.")
+                                   ApplicationProtocolNames/HTTP_2)
+
+                                 :else
+                                 ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed unless h2c requested
                       setup-opts (assoc opts
                                         :authority authority
                                         :ch ch
@@ -1040,7 +1050,11 @@
                                         :response-buffer-size response-buffer-size
                                         :ssl-context ssl-context
                                         :ssl? ssl?)]
-                  (log/debug (str "HTTP protocol: " protocol))
+
+                  (log/debug (str "Using HTTP protocol: " protocol)
+                             {:authority authority
+                              :ssl? ssl?
+                              :force-h2c? force-h2c?})
 
                   (let [http-req-handler
                         (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
