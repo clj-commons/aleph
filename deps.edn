@@ -9,23 +9,23 @@
   org.clj-commons/dirigiste {:mvn/version "1.0.3"},
   org.clj-commons/primitive-math {:mvn/version "1.0.0"},
   potemkin/potemkin {:mvn/version "0.4.5"},
-  io.netty/netty-transport {:mvn/version "4.1.89.Final"},
+  io.netty/netty-transport {:mvn/version "4.1.94.Final"},
   io.netty/netty-transport-native-epoll$linux-x86_64
-  {:mvn/version "4.1.89.Final"},
+  {:mvn/version "4.1.94.Final"},
   io.netty/netty-transport-native-epoll$linux-aarch_64
-  {:mvn/version "4.1.89.Final"},
+  {:mvn/version "4.1.94.Final"},
   io.netty/netty-transport-native-kqueue$osx-x86_64
-  {:mvn/version "4.1.89.Final"},
+  {:mvn/version "4.1.94.Final"},
   io.netty.incubator/netty-incubator-transport-native-io_uring$linux-x86_64
   {:mvn/version "0.0.18.Final"},
   io.netty.incubator/netty-incubator-transport-native-io_uring$linux-aarch_64
   {:mvn/version "0.0.18.Final"},
-  io.netty/netty-codec {:mvn/version "4.1.89.Final"},
-  io.netty/netty-codec-http {:mvn/version "4.1.89.Final"},
-  io.netty/netty-handler {:mvn/version "4.1.89.Final"},
-  io.netty/netty-handler-proxy {:mvn/version "4.1.89.Final"},
-  io.netty/netty-resolver {:mvn/version "4.1.89.Final"},
-  io.netty/netty-resolver-dns {:mvn/version "4.1.89.Final"},
+  io.netty/netty-codec {:mvn/version "4.1.94.Final"},
+  io.netty/netty-codec-http {:mvn/version "4.1.94.Final"},
+  io.netty/netty-handler {:mvn/version "4.1.94.Final"},
+  io.netty/netty-handler-proxy {:mvn/version "4.1.94.Final"},
+  io.netty/netty-resolver {:mvn/version "4.1.94.Final"},
+  io.netty/netty-resolver-dns {:mvn/version "4.1.94.Final"},
   metosin/malli
   {:mvn/version "0.10.4", :exclusions [org.clojure/clojure]}},
  :aliases
