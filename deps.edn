@@ -1,7 +1,8 @@
 ;; DO NOT EDIT MANUALLY - generated from project.clj via deps/lein-to-deps
 {:paths ["src" "resources" "target/classes"],
  :deps
- {org.clojure/tools.logging
+ {org.clojure/clojure {:mvn/version "1.11.1"},
+  org.clojure/tools.logging
   {:mvn/version "1.2.4", :exclusions [org.clojure/clojure]},
   manifold/manifold
   {:mvn/version "0.3.0", :exclusions [org.clojure/tools.logging]},

@@ -5,7 +5,8 @@
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
+  :dependencies [[org.clojure/clojure "1.11.1"]
+                 [org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
                  [manifold "0.3.0" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.2"]
                  [org.clj-commons/dirigiste "1.0.3"]
@@ -25,8 +26,7 @@
                  [io.netty/netty-resolver ~netty-version]
                  [io.netty/netty-resolver-dns ~netty-version]
                  [metosin/malli "0.10.4" :exclusions [org.clojure/clojure]]]
-  :profiles {:dev  {:dependencies [[org.clojure/clojure "1.11.1"]
-                                   [criterium "0.4.6"]
+  :profiles {:dev  {:dependencies [[criterium "0.4.6"]
                                    [cheshire "5.10.0"]
                                    [org.slf4j/slf4j-simple "1.7.30"]
                                    [com.cognitect/transit-clj "1.0.324"]
