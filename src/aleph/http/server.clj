@@ -3,74 +3,78 @@
     [aleph.flow :as flow]
     [aleph.http.common :as common]
     [aleph.http.core :as http1]
+    [aleph.http.http2 :as http2]
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
-    (io.netty.util AsciiString)
-    (java.util
-      EnumSet
-      TimeZone
-      Date
-      Locale)
-    (java.text
-      DateFormat
-      SimpleDateFormat)
-    (io.aleph.dirigiste
-      Stats$Metric)
-    ;; Do not remove
+    (aleph.http ApnHandler)
     (aleph.http.core
       NettyRequest)
+    (io.aleph.dirigiste
+      Stats$Metric)
     (io.netty.buffer
       ByteBuf
       ByteBufHolder
       Unpooled)
     (io.netty.channel
-      ChannelHandlerContext
       ChannelHandler
+      ChannelHandlerContext
       ChannelPipeline)
-    (io.netty.handler.stream
-      ChunkedWriteHandler)
     (io.netty.handler.codec
       TooLongFrameException)
+    ;; Do not remove
     (io.netty.handler.codec.http
       DefaultFullHttpResponse
       FullHttpRequest
       HttpContent
-      HttpHeaders
-      HttpUtil
       HttpContentCompressor
+      HttpHeaderNames
+      HttpMethod
       HttpObjectAggregator
       HttpRequest
       HttpResponse
       HttpResponseStatus
       HttpServerCodec
-      HttpVersion
-      HttpMethod
       HttpServerExpectContinueHandler
-      HttpHeaderNames
+      HttpUtil
+      HttpVersion
       LastHttpContent)
+    (io.netty.handler.ssl ApplicationProtocolNames)
+    (io.netty.handler.stream
+      ChunkedWriteHandler)
+    (io.netty.util AsciiString)
+    (io.netty.util.concurrent
+      FastThreadLocal)
     (java.io
       IOException)
     (java.net
       InetSocketAddress)
-    (io.netty.util.concurrent
-      FastThreadLocal)
+    (java.text
+      DateFormat
+      SimpleDateFormat)
+    (java.util
+      Date
+      EnumSet
+      Locale
+      TimeZone)
     (java.util.concurrent
-      TimeUnit
       Executor
       ExecutorService
-      RejectedExecutionException)
+      RejectedExecutionException
+      TimeUnit)
     (java.util.concurrent.atomic
-      AtomicReference
+      AtomicBoolean
       AtomicInteger
-      AtomicBoolean)))
+      AtomicReference)))
 
 (set! *unchecked-math* true)
 
 ;;;
+
+(def ^:const apn-fallback-protocol ApplicationProtocolNames/HTTP_1_1)
 
 (defonce ^FastThreadLocal date-format (FastThreadLocal.))
 (defonce ^FastThreadLocal date-value (FastThreadLocal.))
@@ -471,19 +475,21 @@ Example: {:status 200
          :else
          (.fireChannelRead ctx msg))))))
 
+;; HTTP1
 (def ^HttpResponse default-accept-response
   (doto (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
                                   HttpResponseStatus/CONTINUE
                                   Unpooled/EMPTY_BUFFER)
         (HttpUtil/setContentLength 0)))
 
+;; HTTP1
 (def ^HttpResponse default-expectation-failed-response
   (doto (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
                                   HttpResponseStatus/EXPECTATION_FAILED
                                   Unpooled/EMPTY_BUFFER)
         (HttpUtil/setContentLength 0)))
 
-;; HTTP1
+;; HTTP1 - doesn't seem to be equivalent code in http2 netty code
 (defn new-continue-handler
   "Wraps the supplied `continue-handler` that will respond to requests with the
    header \"expect: 100-continue\" set.
@@ -539,7 +545,6 @@ Example: {:status 200
   "Returns a fn that adds all the needed ChannelHandlers to a ChannelPipeline"
   [^ChannelPipeline pipeline
    handler
-   pipeline-transform
    {:keys
     [executor
      rejected-handler
@@ -558,7 +563,8 @@ Example: {:status 200
      compression-level
      idle-timeout
      continue-handler
-     continue-executor]
+     continue-executor
+     pipeline-transform]
     :or
     {request-buffer-size             16384
      max-initial-line-length         8192
@@ -582,7 +588,6 @@ Example: {:status 200
     (doto pipeline
           (common/attach-idle-handlers idle-timeout)
           (.addLast "http-server"
-                    ; HTTP1
                     (HttpServerCodec.
                       max-initial-line-length
                       max-header-size
@@ -606,11 +611,56 @@ Example: {:status 200
 
 (defn ^:deprecated ^:no-doc pipeline-builder
   [handler pipeline-transform opts]
-  #(setup-http1-pipeline % handler pipeline-transform opts))
+  #(setup-http1-pipeline % handler (assoc opts :pipeline-transform pipeline-transform)))
+
+(defn make-pipeline-builder
+  "Returns a function that initializes a new server channel's pipeline."
+  [handler {:keys [ssl? ssl-context use-h2c?] :as opts}]
+  (fn pipeline-builder*
+    [^ChannelPipeline pipeline]
+    (log/trace "pipeline-builder*" pipeline opts)
+    (let [setup-opts (assoc opts
+                            :inbound-handler handler
+                            :is-server? true
+                            :pipeline pipeline)]
+      (cond ssl?
+            (do
+              (log/info "Setting up secure server pipeline.")
+              (-> pipeline
+                  (.addLast "ssl-handler"
+                            (netty/ssl-handler (.channel pipeline)
+                                               (netty/coerce-ssl-server-context ssl-context)))
+                  (.addLast "apn-handler"
+                            (ApnHandler.
+                              (fn setup-secure-pipeline
+                                [^ChannelPipeline pipeline protocol]
+                                (log/trace "setup-secure-pipeline")
+                                (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
+                                      (setup-http1-pipeline pipeline handler opts)
+
+                                      (.equals ApplicationProtocolNames/HTTP_2 protocol)
+                                      (http2/setup-http2-pipeline setup-opts)
+
+                                      :else
+                                      (let [msg (str "Unknown protocol: " protocol)
+                                            e (IllegalStateException. msg)]
+                                        (log/error e msg)
+                                        (throw e))))
+                              apn-fallback-protocol))))
+
+            use-h2c?
+            (do
+              (log/warn "Setting up insecure HTTP/2 server pipeline.")
+              (http2/setup-http2-pipeline setup-opts))
+
+            :else
+            (do
+              (log/info "Setting up insecure HTTP/1 server pipeline.")
+              (setup-http1-pipeline pipeline handler opts))))))
 
 ;;;
 
-(defn- setup-executor
+(defn- ^:no-doc setup-executor
   "Returns a general executor for user handlers to run on."
   [executor]
   (cond
@@ -631,7 +681,7 @@ Example: {:status 200
       (IllegalArgumentException.
         (str "invalid executor specification: " (pr-str executor))))))
 
-(defn- setup-continue-executor
+(defn- ^:no-doc setup-continue-executor
   "Returns an executor for custom continue handlers to run on.
 
    Defaults to general Aleph server executor."
@@ -653,7 +703,7 @@ Example: {:status 200
              (pr-str continue-executor))))))
 
 
-(defn start-server
+(defn ^:no-doc start-server
   [handler
    {:keys [port
            socket-address
@@ -665,29 +715,25 @@ Example: {:status 200
            shutdown-executor?
            epoll?
            transport
-           compression?
-           continue-handler
            continue-executor
            shutdown-timeout]
     :or   {bootstrap-transform identity
            pipeline-transform  identity
            shutdown-executor?  true
            epoll?              false
-           compression?        false
            shutdown-timeout    netty/default-shutdown-timeout}
-    :as   options}]
+    :as   opts}]
   (let [executor (setup-executor executor)
-        continue-executor (setup-continue-executor executor continue-executor)]
+        continue-executor (setup-continue-executor executor continue-executor)
+        pipeline-builder (make-pipeline-builder
+                           handler
+                           (assoc opts
+                                  :executor executor
+                                  :ssl? (or manual-ssl? (boolean ssl-context))
+                                  :pipeline-transform pipeline-transform
+                                  :continue-executor continue-executor))]
     (netty/start-server
-      {:pipeline-builder    (pipeline-builder
-                              handler
-                              pipeline-transform
-                              (assoc options
-                                     :executor executor
-                                     :ssl? (or manual-ssl? (boolean ssl-context))
-                                     :continue-executor continue-executor))
-       :ssl-context         ssl-context
-
+      {:pipeline-builder    pipeline-builder
        :bootstrap-transform bootstrap-transform
        :socket-address      (if socket-address
                               socket-address
@@ -702,3 +748,29 @@ Example: {:status 200
                                    (.shutdown ^ExecutorService continue-executor))))
        :transport           (netty/determine-transport transport epoll?)
        :shutdown-timeout    shutdown-timeout})))
+
+
+(comment
+
+  ;; from examples/
+  (defn hello-world-handler
+    "A basic Ring handler which immediately returns 'hello world'"
+    [req]
+    {:status 200
+     :headers {"content-type" "text/plain"}
+     :body "hello world!"})
+
+  (def ssl-ctx-opts {:application-protocol-config
+                     (ApplicationProtocolConfig.
+                       ApplicationProtocolConfig$Protocol/ALPN
+                       ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+                       ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+                       ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+                       ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+                       ^"[Ljava.lang.String;"
+                       (into-array String ))})
+
+  (def s (start-server hello-world-handler {:port 10000
+                                            :ssl-context (netty/ssl-server-context ssl-ctx-opts)}))
+
+  )
