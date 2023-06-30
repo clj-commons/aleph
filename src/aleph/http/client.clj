@@ -970,7 +970,7 @@
            epoll?               false
            name-resolver        :default
            log-activity         :debug
-           http-versions        [:http1 :http2]
+           http-versions        [:http2 :http1]
            force-h2c?           false}
     :as   opts}]
 

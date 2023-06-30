@@ -136,7 +136,7 @@
    | `proxy-options`           | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor`       | optional `java.util.concurrent.Executor` that will execute response callbacks
    | `log-activity`            | when set, logs all events on each channel (connection) with a log level given. Accepts one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
-   | `http-versions`           | an optional vector of preferred HTTP versions to negotiate via ALPN, in order. Defaults to `[:http2 :http1]`.
+   | `http-versions`           | an optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http2 :http1]`.
    | `force-h2c?`              | an optional boolean indicating you wish to force the use of insecure HTTP/2 cleartext (h2c) for `http://` URLs. Not recommended, and unsupported by most servers in the wild. Only do this with infrastructure you control. Defaults to `false`.
 
    Supported `proxy-options` are
