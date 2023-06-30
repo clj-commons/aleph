@@ -1,3 +1,21 @@
+### 0.6.3
+
+* Bump Netty to 4.1.94.Final for CVE-2023-34462
+
+Contributions by Matthew Davidson and Stefan van den Oord.
+
+### 0.6.2
+
+* Fix backwards-compatibility for transport options
+* Bump Netty to 4.1.89.Final, and io_uring to 0.0.18.Final
+* Add `wrap-validation` middleware to validate Ring maps 
+* Bump deps and example deps
+* Upgrade CircleCI instance size
+* Switch to pedantic deps for CircleCI
+
+Contributions by Arnaud Geiser, Ertuğrul Çetin, Jeroen van Dijk, David Ongaro, 
+Matthew Davidson, and Moritz Heidkamp.
+
 ### 0.6.1
 
 * Switch back to JDK 8 in CI

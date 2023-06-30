@@ -1,7 +1,7 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
 (def netty-version "4.1.94.Final")
 
-(defproject aleph (or (System/getenv "PROJECT_VERSION") "0.6.1")
+(defproject aleph (or (System/getenv "PROJECT_VERSION") "0.6.3")
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
