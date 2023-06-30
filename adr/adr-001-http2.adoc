@@ -1,0 +1,156 @@
+= ADR 001: HTTP/2 API
+
+Date: 2023-04-10
+
+
+== Status
+
+#Proposed#
+
+A decision may be "proposed" if the project stakeholders haven't agreed with it
+yet, or "accepted" once it is agreed. If a later ADR changes or reverses a
+decision, it may be marked as "deprecated" or "superseded" with a reference to
+its replacement.
+
+== Context
+
+- https://datatracker.ietf.org/doc/html/rfc9113
+- https://web.dev/performance-http2/
+- https://www.rfc-editor.org/rfc/rfc8441
+
+=== HTTP/2
+
+HTTP/2 is eight years old now, and quite popular. It adds numerous advantages,
+some invisible, some requiring user coding. Adding support in both the client and
+server is obvious, but the installed base of Aleph is quite large (1.8m downloads),
+so we have a duty to maintain backwards compatibility while also exposing HTTP/2
+capabilities to those who want/need it.
+
+The default API Aleph presents is a handler fn that receives a single Ring map
+with an `InputStream` body (potentially transformed by middleware), and returns
+a Ring response map, with a static or streamable body.
+
+HTTP/2 offers new features that users may want to take advantage of: flow
+control, in particular. HTTP/2 introduced other features, in particular server
+push and prioritization, but they did not work out. Server push  (the ability to
+send "responses" before receiving a request) has been criticized as difficult
+to use correctly, and effectively https://chromestatus.com/feature/6302414934114304[disabled by Chrome].
+Prioritization hasn't been disabled exactly, but it has various problems, and
+was replaced with a simpler scheme for HTTP/3.
+
+Since the Aleph team is small, we have to carefully consider what to support.
+Full HTTP/2 support may not be advisable.
+
+=== Prioritization
+
+- https://datatracker.ietf.org/doc/html/rfc9218
+- https://calendar.perfplanet.com/2022/http-3-prioritization-demystified/
+- https://blog.cloudflare.com/better-http-2-prioritization-for-a-faster-web/
+- https://calendar.perfplanet.com/2018/http2-prioritization/
+- https://github.com/andydavies/http2-prioritization-issues
+
+Prioritization in HTTP/2 is considered overly-complicated and was partially
+deprecated in RFC 9113. The browsers have different interpretations of how to
+arrange the priority tree, and Safari/Edge do not utilize it much at all. Many
+HTTP servers have broken or nonresponsive implementations. Many Linux servers
+have TCP buffers too large too effectively handle preempting lower-priority
+resources or change existing priorities.
+
+Because of this RFC 9218 (Extensible Prioritization) was introduced. For HTTP/2,
+RFC 9218 is suggested as a backwards-compatible alternative, since it depends
+only on standard HTTP headers; it was adopted for HTTP/3 as the primary
+prioritization scheme.
+
+=== Server Push
+
+- https://docs.google.com/document/d/1K0NykTXBbbbTlv60t5MyJvXjqKGsCVNYHyLEXIxYMv0/edit
+- https://jakearchibald.com/2017/h2-push-tougher-than-i-thought/
+- https://developer.chrome.com/blog/removing-push/
+- https://chromestatus.com/feature/6302414934114304
+
+HTTP/2 added the ability for servers to push unrequested data to clients, via
+the PUSH_PROMISE frame type. In theory, it can make better use of bandwidth by
+not waiting for browsers to discover and request necessary resources. In
+practice, it was found difficult to do so, accounting for buffer bloat, RTT, and
+browser caches, and not make things _worse_. Chrome effectively disabled it in
+Sept 2022.
+
+=== Websockets
+
+Websockets were built on top of HTTP/1.1-only fields, like the Upgrade and
+Connection headers and the 101 status code. RFC 8441 describes an HTTP/2 extension
+that allows websockets to be tunneled over an HTTP/2 stream. This allows efficient
+sharing of a single TCP connection for both HTTP/2 and websocket traffic, at the
+cost of a more complicated implementation. Netty does not have built-in support
+for it, though https://github.com/jauntsdn/netty-websocket-http2[user implementations]
+exist.
+
+=== Proxies
+
+HTTP/2 supports CONNECT proxying, but over a single HTTP/2 stream, not a whole TCP connection. Aleph has only ever supported using proxies from the client-side.
+
+== Decision
+
+=== Backwards-compatibility mode
+
+We will maintain a backwards-compatible API for the majority of users, where
+their existing handlers will work as is. All streams will have equal priority,
+and flow control will ...
+
+NOTE: What should the default flow control strategy be? An infinitely large
+window? The default 64kb window, that auto-replenishes as soon as bytes are read
+off? Netty offers both of the previous as default strategies available for use.
+
+NOTE: What should a raw stream look like? A sequence of ByteBufs? Or a sequence
+of Frames, which is Netty's "raw" level for HTTP/2?
+
+=== HTTP/2 connection mode
+We will NOT support server push, as our resources are too limited relative to
+the minimal potential benefit. Outside PRs may be considered, depending on the
+expected maintenance burden.
+
+We will expose a connection-level handler API, where the handler can access the
+entire connection, all streams in the connection, and all frames in the streams.
+We will expose APIs to change connection and stream settings.
+
+We will add APIs to get/set stream priorities and dependencies. We will NOT do
+anything with that knowledge. It will be up to the users to decide what to do
+with the priority/dependencies.
+
+NOTE: Is there an obvious priority/dependency win we can offer? Maybe from Netty?
+
+NOTE: Is there a way to assist in things like pausing or throttling other streams?
+Manifold's `throttle` doesn't support a function to change throttling behavior.
+And nothing supports pausing a stream at the moment.
+
+We will add APIs to expose flow control for getting/setting both stream-level
+and connection-level window sizes.
+
+NOTE: Do we need to do anything special to incorporate Manifold backpressure
+into this somehow?
+
+=== Websockets
+
+We will NOT add support for HTTP/2 websocket tunneling at this time. The
+cost/benefit ratio is too low. PRs may be considered, though.
+
+=== Proxies
+
+NOTE: TBD
+
+== Consequences
+
+This will improve web support for Clojure. I believe http-kit doesn't support
+HTTP/2, and Pedestal, if it supports it, only does so through Jetty, which is
+not very performant.
+
+This will give us a chance to improve the clarity of the code.
+
+As with any major change, this will add to the maintenance burden, and run the
+risk of breaking things, not just in HTTP/2 code, but also in pre-existing,
+overlapping HTTP/1.1 code.
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+See https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions[Documenting architecture decisions - Michael Nygard]
+for the format and rationale of this document.

@@ -1,6 +1,6 @@
 (ns aleph.http.multipart
   (:require
-   [aleph.http.core :as http-core]
+   [aleph.http.core :as http1]
    [aleph.http.encoding :refer [encode]]
    [aleph.netty :as netty]
    [clj-commons.byte-streams :as bs]
@@ -36,6 +36,12 @@
     HttpPostRequestEncoder
     InterfaceHttpData
     InterfaceHttpData$HttpDataType]))
+
+(defn is-multipart?
+  "Is the Ring map multipart?"
+  [req]
+  (and (contains? req :multipart)
+       (some? (get req :multipart))))
 
 (defn ^:no-doc boundary []
   (-> (ThreadLocalRandom/current) .nextLong Long/toHexString .toLowerCase))
@@ -266,7 +272,7 @@
                            body
                            (netty/to-byte-buf-stream body body-buffer-size))
          destroyed?      (atom false)
-         req'            (http-core/ring-request->netty-request req)
+         req'            (http1/ring-request->netty-request req)
          factory         (DefaultHttpDataFactory. (long memory-limit))
          decoder         (HttpPostRequestDecoder. factory req')
          parts           (s/stream)

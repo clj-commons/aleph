@@ -1,12 +1,18 @@
 (ns aleph.ssl
   (:require
-   [aleph.netty :as netty])
+    [aleph.netty :as netty])
   (:import
-   (java.io ByteArrayInputStream)
-   (java.security KeyFactory PrivateKey)
-   (java.security.cert CertificateFactory X509Certificate)
-   (java.security.spec RSAPrivateCrtKeySpec)
-   (org.apache.commons.codec.binary Base64)))
+    (io.netty.handler.ssl
+      ApplicationProtocolConfig
+      ApplicationProtocolConfig$Protocol
+      ApplicationProtocolConfig$SelectedListenerFailureBehavior
+      ApplicationProtocolConfig$SelectorFailureBehavior
+      ApplicationProtocolNames)
+    (java.io ByteArrayInputStream)
+    (java.security KeyFactory PrivateKey)
+    (java.security.cert CertificateFactory X509Certificate)
+    (java.security.spec RSAPrivateCrtKeySpec)
+    (org.apache.commons.codec.binary Base64)))
 
 (set! *warn-on-reflection* false)
 
@@ -55,9 +61,17 @@
   (netty/ssl-server-context server-ssl-context-opts))
 
 (def client-ssl-context-opts
-  {:private-key client-key
-   :certificate-chain [client-cert]
-   :trust-store [ca-cert]})
+  {:private-key                 client-key
+   :certificate-chain           [client-cert]
+   :trust-store                 [ca-cert]
+   :application-protocol-config (ApplicationProtocolConfig.
+                                  ApplicationProtocolConfig$Protocol/ALPN
+                                  ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+                                  ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+                                  ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+                                  ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+                                  ^"[Ljava.lang.String;"
+                                  (into-array String [ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_2]))})
 
 (def client-ssl-context
   (netty/ssl-client-context client-ssl-context-opts))

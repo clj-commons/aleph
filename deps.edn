@@ -5,10 +5,10 @@
   {:mvn/version "1.2.4", :exclusions [org.clojure/clojure]},
   manifold/manifold
   {:mvn/version "0.3.0", :exclusions [org.clojure/tools.logging]},
-  org.clj-commons/byte-streams {:mvn/version "0.3.1"},
+  org.clj-commons/byte-streams {:mvn/version "0.3.2"},
   org.clj-commons/dirigiste {:mvn/version "1.0.3"},
   org.clj-commons/primitive-math {:mvn/version "1.0.0"},
-  potemkin/potemkin {:mvn/version "0.4.5"},
+  potemkin/potemkin {:mvn/version "0.4.6"},
   io.netty/netty-transport {:mvn/version "4.1.94.Final"},
   io.netty/netty-transport-native-epoll$linux-x86_64
   {:mvn/version "4.1.94.Final"},
@@ -22,6 +22,7 @@
   {:mvn/version "0.0.18.Final"},
   io.netty/netty-codec {:mvn/version "4.1.94.Final"},
   io.netty/netty-codec-http {:mvn/version "4.1.94.Final"},
+  io.netty/netty-codec-http2 {:mvn/version "4.1.94.Final"},
   io.netty/netty-handler {:mvn/version "4.1.94.Final"},
   io.netty/netty-handler-proxy {:mvn/version "4.1.94.Final"},
   io.netty/netty-resolver {:mvn/version "4.1.94.Final"},
@@ -35,7 +36,7 @@
     {:git/sha "1bcf2fbbcbef611381e5e9ccdc77bec1e62ea5e5"}},
    :ns-default lein2deps.build,
    :lein2deps/compile-java
-   {:src-dirs ["src/aleph/utils"],
+   {:src-dirs ["src-java"],
     :class-dir "target/classes",
     :javac-opts ["-target" "1.8" "-source" "1.8"]}}},
  :deps/prep-lib

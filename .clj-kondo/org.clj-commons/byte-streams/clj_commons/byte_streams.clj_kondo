@@ -1,0 +1,11 @@
+(ns clj-commons.byte-streams)
+
+;; TODO: propagate type info from src/dst
+(defmacro def-conversion
+  "Kondo hook"
+  [[src dst :as conversion] params & body]
+  `(fn [~(first params)
+        ~(if-let [options (second params)]
+           options
+           `_#)]
+     ~@body))

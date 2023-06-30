@@ -1,0 +1,9 @@
+{:lint-as {byte-streams.utils/defprotocol+  clojure.core/defprotocol
+           byte-streams.utils/deftype+      clojure.core/deftype
+           byte-streams.utils/defrecord+    clojure.core/defrecord
+           byte-streams.utils/definterface+ clojure.core/definterface
+           clj-commons.byte-streams.utils/defprotocol+  clojure.core/defprotocol
+           clj-commons.byte-streams.utils/deftype+      clojure.core/deftype
+           clj-commons.byte-streams.utils/defrecord+    clojure.core/defrecord
+           clj-commons.byte-streams.utils/definterface+ clojure.core/definterface}
+ :hooks {:macroexpand {clj-commons.byte-streams/def-conversion clj-commons.byte-streams/def-conversion}}}

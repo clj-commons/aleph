@@ -790,6 +790,10 @@
 (defn tcp-handler [response]
   (fn [s ch]
     (s/take! s)
+    ;; too fast, have to slow it down - since this handler responds as soon as
+    ;; it's called, a returned error can shut down the client channel before
+    ;; it's even finished sending, leading to UNexpected errors
+    (Thread/sleep 5)
     (s/put! s (encode-http-object response))))
 
 (defmacro with-tcp-response [response & body]

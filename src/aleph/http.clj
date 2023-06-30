@@ -1,28 +1,32 @@
 (ns aleph.http
   (:refer-clojure :exclude [get])
   (:require
-   [aleph.flow :as flow]
-   [aleph.http
-    [client :as client]
-    [client-middleware :as middleware]
-    [core :as http-core]
-    [server :as server]]
-   [aleph.netty :as netty]
-   [clojure.string :as str]
-   [manifold.deferred :as d]
-   [manifold.executor :as executor])
+    [aleph.flow :as flow]
+    [aleph.http.client :as client]
+    [aleph.http.client-middleware :as middleware]
+    [aleph.http.file :as file]
+    [aleph.http.server :as server]
+    [aleph.http.websocket.client :as ws.client]
+    [aleph.http.websocket.common :as ws.common]
+    [aleph.http.websocket.server :as ws.server]
+    [aleph.netty :as netty]
+    [clojure.string :as str]
+    [clojure.tools.logging :as log]
+    [manifold.deferred :as d]
+    [manifold.executor :as executor])
   (:import
-   [io.aleph.dirigiste Pools]
-   [aleph.utils
-    PoolTimeoutException
-    ConnectionTimeoutException
-    RequestTimeoutException
-    ReadTimeoutException]
-   [java.net
-    URI
-    InetSocketAddress]
-   [java.util.concurrent
-    TimeoutException]))
+    (aleph.utils
+      ConnectionTimeoutException
+      PoolTimeoutException
+      ReadTimeoutException
+      RequestTimeoutException)
+    (io.aleph.dirigiste Pools)
+    (io.netty.handler.codec.http HttpHeaders)
+    (java.net
+      InetSocketAddress
+      URI)
+    (java.util.concurrent
+      TimeoutException)))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
@@ -78,7 +82,7 @@
             (assoc options :on-closed on-closed)
             options))
 
-      (d/chain' middleware))))
+        (d/chain' middleware))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -131,7 +135,9 @@
    | `name-resolver`           | specify the mechanism to resolve the address of the unresolved named address. When not set or equals to `:default`, JDK's built-in domain name lookup mechanism is used (blocking). Set to`:noop` not to resolve addresses or pass an instance of `io.netty.resolver.AddressResolverGroup` you need. Note, that if the appropriate connection-pool is created with dns-options shared DNS resolver would be used
    | `proxy-options`           | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor`       | optional `java.util.concurrent.Executor` that will execute response callbacks
-   | `log-activity`            | when set, logs all events on each channel (connection) with a log level given. Accepts either one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
+   | `log-activity`            | when set, logs all events on each channel (connection) with a log level given. Accepts one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
+   | `http-versions`           | an optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http2 :http1]`.
+   | `force-h2c?`              | an optional boolean indicating you wish to force the use of insecure HTTP/2 cleartext (h2c) for `http://` URLs. Not recommended, and unsupported by most servers in the wild. Only do this with infrastructure you control. Defaults to `false`.
 
    Supported `proxy-options` are
 
@@ -156,17 +162,17 @@
            max-queue-size
            pool-builder-fn
            pool-controller-builder-fn]
-    :or {connections-per-host 8
-         total-connections 1024
-         target-utilization 0.9
-         control-period 60000
-         middleware middleware/wrap-request
-         max-queue-size 65536}}]
+    :or   {connections-per-host 8
+           total-connections    1024
+           target-utilization   0.9
+           control-period       60000
+           middleware           middleware/wrap-request
+           max-queue-size       65536}}]
   (when (and (false? (:keep-alive? connection-options))
              (pos? (:idle-timeout connection-options 0)))
     (throw
-     (IllegalArgumentException.
-      ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
+      (IllegalArgumentException.
+        ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
 
   (let [log-activity (:log-activity connection-options)
         dns-options' (if-not (and (some? dns-options)
@@ -177,34 +183,34 @@
                              transport (netty/determine-transport transport epoll?)]
                          (assoc dns-options :transport transport)))
         conn-options' (cond-> connection-options
-                        (some? dns-options')
-                        (assoc :name-resolver (netty/dns-resolver-group dns-options'))
+                              (some? dns-options')
+                              (assoc :name-resolver (netty/dns-resolver-group dns-options'))
 
-                        (some? log-activity)
-                        (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
+                              (some? log-activity)
+                              (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
         p (promise)
-        create-pool-fn      (or pool-builder-fn
-                                flow/instrumented-pool)
+        create-pool-fn (or pool-builder-fn
+                           flow/instrumented-pool)
         create-pool-ctrl-fn (or pool-controller-builder-fn
                                 #(Pools/utilizationController target-utilization connections-per-host total-connections))
         pool (create-pool-fn
-              {:generate (fn [host]
-                           (let [c (promise)
-                                 conn (create-connection
-                                       host
-                                       conn-options'
-                                       middleware
-                                       #(flow/dispose @p host [@c]))]
-                             (deliver c conn)
-                             [conn]))
-               :destroy (fn [_ c]
-                          (d/chain' c
-                                    first
-                                    client/close-connection))
-               :control-period control-period
-               :max-queue-size max-queue-size
-               :controller (create-pool-ctrl-fn)
-               :stats-callback stats-callback})]
+               {:generate       (fn [host]
+                                  (let [c (promise)
+                                        conn (create-connection
+                                               host
+                                               conn-options'
+                                               middleware
+                                               #(flow/dispose @p host [@c]))]
+                                    (deliver c conn)
+                                    [conn]))
+                :destroy        (fn [_ c]
+                                  (d/chain' c
+                                            first
+                                            client/close-connection))
+                :control-period control-period
+                :max-queue-size max-queue-size
+                :controller     (create-pool-ctrl-fn)
+                :stats-callback stats-callback})]
     @(deliver p pool)))
 
 (def ^:no-doc default-connection-pool
@@ -236,7 +242,7 @@
   ([url]
    (websocket-client url nil))
   ([url options]
-   (client/websocket-connection url options)))
+   (ws.client/websocket-connection url options)))
 
 (defn websocket-connection
   "Given an HTTP request that can be upgraded to a WebSocket connection, returns a
@@ -256,18 +262,18 @@
   ([req]
    (websocket-connection req nil))
   ([req options]
-   (server/initialize-websocket-handler req options)))
+   (ws.server/initialize-websocket-handler req options)))
 
 (defn websocket-ping
   "Takes a websocket endpoint (either client or server) and returns a deferred that will
    yield true whenever the PONG comes back, or false if the connection is closed. Subsequent
    PINGs are supressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
   ([conn]
-   (http-core/websocket-ping conn (d/deferred) nil))
+   (ws.common/websocket-ping conn (d/deferred) nil))
   ([conn d']
-   (http-core/websocket-ping conn d' nil))
+   (ws.common/websocket-ping conn d' nil))
   ([conn d' data]
-   (http-core/websocket-ping conn d' data)))
+   (ws.common/websocket-ping conn d' data)))
 
 (defn websocket-close!
   "Closes given websocket endpoint (either client or server) sending Close frame with provided
@@ -277,14 +283,14 @@
    client waits for the connection to be closed by the server (no longer than close handshake
    timeout, see websocket connection configuration for more details)."
   ([conn]
-   (websocket-close! conn http-core/close-empty-status-code "" nil))
+   (websocket-close! conn ws.common/close-empty-status-code "" nil))
   ([conn status-code]
    (websocket-close! conn status-code "" nil))
   ([conn status-code reason-text]
    (websocket-close! conn status-code reason-text nil))
   ([conn status-code reason-text deferred]
    (let [d' (or deferred (d/deferred))]
-     (http-core/websocket-close! conn status-code reason-text d'))))
+     (ws.common/websocket-close! conn status-code reason-text d'))))
 
 (let [maybe-timeout! (fn [d timeout] (when d (d/timeout! d timeout)))]
   (defn request
@@ -340,12 +346,14 @@
                          ;; connection timeout triggered, dispose of the connetion
                          (d/catch' TimeoutException
                            (fn [^Throwable e]
+                             (log/error e "Timed out waiting for connection to be established")
                              (flow/dispose pool k conn)
                              (d/error-deferred (ConnectionTimeoutException. e))))
 
                          ;; connection failed, bail out
                          (d/catch'
                            (fn [e]
+                             (log/error e "Connection failure")
                              (flow/dispose pool k conn)
                              (d/error-deferred e)))
 
@@ -405,22 +413,22 @@
   ([method url options]
    (request
      (assoc options
-       :request-method method
-       :url url))))
+            :request-method method
+            :url url))))
 
 (def ^:private arglists
   '[[url]
     [url
      {:keys [pool middleware headers body multipart]
-      :or {pool default-connection-pool
-           middleware identity}
-      :as options}]])
+      :or   {pool       default-connection-pool
+             middleware identity}
+      :as   options}]])
 
 (defmacro ^:private def-http-method [method]
   `(do
      (def ~method (partial req ~(keyword method)))
      (alter-meta! (resolve '~method) assoc
-       :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
+                  :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
    the response.
 
    Param key      | Description
@@ -428,9 +436,9 @@
    | `pool`       | the `connection-pool` that should be used, defaults to the `default-connection-pool`
    | `middleware` | any additional middleware that should be used for handling requests and responses
    | `headers`    | the HTTP headers for the request
-   | `body`       | an optional body, which should be coercable to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
+   | `body`       | an optional body, which should be coerce-able to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
    | `multipart`  | a vector of bodies")
-       :arglists arglists)))
+                  :arglists arglists)))
 
 (def-http-method get)
 (def-http-method post)
@@ -446,7 +454,7 @@
   "Given a header map from an HTTP request or response, returns a collection of values associated with the key,
    rather than a comma-delimited string."
   [^aleph.http.core.HeaderMap headers ^String k]
-  (-> headers ^io.netty.handler.codec.http.HttpHeaders (.headers) (.getAll k)))
+  (-> headers ^HttpHeaders (.headers) (.getAll k)))
 
 (defn wrap-ring-async-handler
   "Converts given asynchronous Ring handler to Aleph-compliant handler.
@@ -464,8 +472,75 @@
    Accepts string path to the file, instance of `java.io.File` or instance of
    `java.nio.file.Path`."
   ([path]
-   (http-core/http-file path nil nil nil))
+   (file/http-file path nil nil nil))
   ([path offset length]
-   (http-core/http-file path offset length nil))
+   (file/http-file path offset length nil))
   ([path offset length chunk-size]
-   (http-core/http-file path offset length chunk-size)))
+   (file/http-file path offset length chunk-size)))
+
+
+
+
+(comment
+  (do
+    (require '[aleph.http.client]
+             '[aleph.http.multipart]
+             '[clj-commons.byte-streams :as bs])
+    (import '(io.netty.channel DefaultFileRegion)
+            '(io.netty.handler.stream ChunkedFile ChunkedNioFile)
+            '(java.net InetSocketAddress)
+            '(java.nio.channels FileChannel)
+            '(java.nio.file Files OpenOption Path Paths)
+            '(java.nio.file.attribute FileAttribute)))
+
+  ;; basic test
+  (let [pool (connection-pool
+               {:connection-options
+                {:http-versions [:http2]}})]
+    (def result @(get "https://postman-echo.com?hand=wave" {:pool pool})))
+
+  (-> @(get "https://google.com" {})
+      :body bs/to-string)
+
+
+  ;; basic file post test
+  (let [body-string "Body test"
+        fpath (Files/createTempFile "test" ".txt" (into-array FileAttribute []))
+        ffile (.toFile fpath)
+        _ (spit ffile body-string)
+        fchan (FileChannel/open fpath (into-array OpenOption []))
+        aleph-1k (repeat 1000 \ℵ)
+        aleph-20k (repeat 20000 \ℵ)
+        aleph-1k-string (apply str aleph-1k)
+
+        body
+        body-string
+        #_fpath
+        #_ffile
+        #_(RandomAccessFile. ffile "r")
+        #_fchan
+        #_(ChunkedFile. ffile)
+        #_(ChunkedNioFile. fchan)
+        #_(file/http-file ffile 1 6 4)
+        #_(DefaultFileRegion. fchan 0 (.size fchan))
+        #_(seq body-string)
+        #_[:foo :bar :moop]
+        #_aleph-20k
+        #_[aleph-1k-string aleph-1k-string]]
+
+
+    (def result
+      @(post "https://postman-echo.com/post"
+             {:headers        {"content-type" "text/plain"}
+              :body           body
+              ;;:raw-stream?    true
+              })))
+
+  ;; h2c test
+  (let [pool (connection-pool
+               {:connection-options {:force-h2c? true}})]
+    (def result @(get "http://example.com"
+                      {:pool              pool
+                       :follow-redirects? false})))
+
+  )

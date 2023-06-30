@@ -1,9 +1,9 @@
 (ns ^:no-doc aleph.http.core
+  "HTTP/1.1 functionality"
   (:require
+    [aleph.http.common :as common]
+    [aleph.http.file :as file]
     [aleph.netty :as netty]
-    [clj-commons.byte-streams :as bs]
-    [clj-commons.byte-streams.graph :as g]
-    [clojure.java.io :as io]
     [clojure.set :as set]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
@@ -11,58 +11,50 @@
     [manifold.stream :as s]
     [potemkin :as p])
   (:import
-    [io.netty.channel
-     Channel
-     DefaultFileRegion
-     ChannelFuture
-     ChannelFutureListener
-     ChannelPipeline
-     ChannelHandler
-     ChannelHandlerContext]
-    [io.netty.buffer
-     ByteBuf]
-    [java.nio
-     ByteBuffer]
-    [io.netty.handler.codec
-     DecoderResult
-     DecoderResultProvider]
-    [io.netty.handler.codec.http
-     DefaultHttpRequest DefaultLastHttpContent
-     DefaultHttpResponse DefaultFullHttpRequest
-     HttpHeaders HttpUtil HttpContent
-     HttpMethod HttpRequest HttpMessage
-     HttpResponse HttpResponseStatus
-     DefaultHttpContent
-     HttpVersion
-     LastHttpContent HttpChunkedInput]
-    [io.netty.handler.timeout
-     IdleState
-     IdleStateEvent
-     IdleStateHandler]
-    [io.netty.handler.stream
-     ChunkedInput
-     ChunkedFile
-     ChunkedWriteHandler]
-    [io.netty.handler.codec.http.websocketx
-     WebSocketFrame
-     PingWebSocketFrame
-     TextWebSocketFrame
-     BinaryWebSocketFrame
-     CloseWebSocketFrame]
-    [java.io
-     File
-     RandomAccessFile
-     Closeable]
-    [java.nio.file Path]
-    [java.nio.channels
-     FileChannel
-     FileChannel$MapMode]
-    [java.util.concurrent
-     ConcurrentHashMap
-     ConcurrentLinkedQueue
-     TimeUnit]
-    [java.util.concurrent.atomic
-     AtomicBoolean]))
+    (aleph.http.file
+      HttpFile)
+    (io.netty.buffer
+      ByteBuf)
+    (io.netty.channel
+      Channel
+      ChannelFuture
+      ChannelFutureListener
+      ChannelHandlerContext
+      DefaultFileRegion)
+    (io.netty.handler.codec.http
+      DefaultFullHttpRequest
+      DefaultHttpContent
+      DefaultHttpRequest
+      DefaultHttpResponse
+      DefaultLastHttpContent
+      HttpChunkedInput
+      HttpContent
+      HttpHeaders
+      HttpMessage
+      HttpMethod
+      HttpRequest
+      HttpResponse
+      HttpResponseStatus
+      HttpUtil
+      HttpVersion
+      LastHttpContent)
+    (io.netty.handler.stream
+      ChunkedFile
+      ChunkedInput
+      ChunkedWriteHandler)
+    (io.netty.util.internal StringUtil)
+    (java.io
+      Closeable
+      File
+      RandomAccessFile)
+    (java.nio
+      ByteBuffer)
+    (java.nio.file
+      Path)
+    (java.util.concurrent
+      ConcurrentHashMap)
+    (java.util.concurrent.atomic
+      AtomicBoolean)))
 
 (def non-standard-keys
   (let [ks ["Content-MD5"
@@ -79,10 +71,12 @@
       (map str/lower-case ks)
       (map #(HttpHeaders/newEntity %) ks))))
 
-(def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap.))
+(def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap. 128))
 
 (defn normalize-header-key
-  "Normalizes a header key to `Ab-Cd` format."
+  "Normalizes a header key to `Ab-Cd` format.
+
+   NB: This is illegal for HTTP/2, which requires all header names be lower-case."
   [s]
   (if-let [s' (.get cached-header-keys s)]
     s'
@@ -149,7 +143,10 @@
 (defn headers->map [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
-(defn map->headers! [^HttpHeaders h m]
+(defn map->headers!
+  "Despite the name, this doesn't convert; it adds headers from the Ring :headers
+   map to the Netty HttpHeaders param."
+  [^HttpHeaders h m]
   (doseq [e m]
     (let [k (normalize-header-key (key e))
           v (val e)]
@@ -164,41 +161,50 @@
         :else
         (.add h ^CharSequence k ^Object v)))))
 
-(defn ring-response->netty-response [m]
-  (let [status (get m :status 200)
-        headers (get m :headers)
-        rsp (DefaultHttpResponse.
-              HttpVersion/HTTP_1_1
-              (HttpResponseStatus/valueOf status)
-              false)]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; HTTP/1.1 request/response handling
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn ring-response->netty-response
+  "Turns a Ring response into a Netty HTTP/1.1 DefaultHttpResponse"
+  [rsp]
+  (let [status (get rsp :status 200)
+        headers (get rsp :headers)
+        netty-rsp (DefaultHttpResponse.
+                    HttpVersion/HTTP_1_1
+                    (HttpResponseStatus/valueOf status)
+                    false)]
     (when headers
-      (map->headers! (.headers rsp) headers))
-    rsp))
+      (map->headers! (.headers netty-rsp) headers))
+    netty-rsp))
 
-(defn ring-request->netty-request [m]
-  (let [headers (get m :headers)
-        req (DefaultHttpRequest.
-              HttpVersion/HTTP_1_1
-              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (str (get m :uri)
-                (when-let [q (get m :query-string)]
-                  (str "?" q))))]
+(defn ring-request->netty-request
+  "Turns a Ring request into a Netty HTTP/1.1 DefaultHttpRequest"
+  ^DefaultHttpRequest [req]
+  (let [headers (get req :headers)
+        netty-req (DefaultHttpRequest.
+                    HttpVersion/HTTP_1_1
+                    (-> req (get :request-method) name str/upper-case HttpMethod/valueOf)
+                    (str (get req :uri)
+                         (when-let [q (get req :query-string)]
+                           (str "?" q))))]
     (when headers
-      (map->headers! (.headers req) headers))
-    req))
+      (map->headers! (.headers netty-req) headers))
+    netty-req))
 
-(defn ring-request->full-netty-request [m]
-  (let [headers (get m :headers)
-        req (DefaultFullHttpRequest.
-              HttpVersion/HTTP_1_1
-              (-> m (get :request-method) name str/upper-case HttpMethod/valueOf)
-              (str (get m :uri)
-                (when-let [q (get m :query-string)]
-                  (str "?" q)))
-              (netty/to-byte-buf (:body m)))]
+(defn ring-request->full-netty-request
+  "Turns a Ring request into a Netty HTTP/1.1 DefaultFullHttpRequest"
+  ^DefaultFullHttpRequest [req]
+  (let [headers (get req :headers)
+        netty-req (DefaultFullHttpRequest.
+                    HttpVersion/HTTP_1_1
+                    (-> req (get :request-method) name str/upper-case HttpMethod/valueOf)
+                    (str (get req :uri)
+                         (when-let [q (get req :query-string)]
+                           (str "?" q)))
+                    (netty/to-byte-buf (:body req)))]
     (when headers
-      (map->headers! (.headers req) headers))
-    req))
+      (map->headers! (.headers netty-req) headers))
+    netty-req))
 
 (p/def-derived-map NettyRequest
   [^HttpRequest req
@@ -233,7 +239,10 @@
   :aleph/complete complete
   :body body)
 
-(defn netty-request->ring-request [^HttpRequest req ssl? ch body]
+(defn netty-request->ring-request
+  "Confusingly named, this converts a Netty HttpRequest object to a NettyRequest
+   object, which looks like a Ring map."
+  [^HttpRequest req ssl? ch body]
   (->NettyRequest req ssl?
    ch
    (AtomicBoolean. false)
@@ -241,7 +250,8 @@
    body
    (System/nanoTime)))
 
-(defn netty-response->ring-response [rsp complete body]
+(defn netty-response->ring-response
+  [rsp complete body]
   (->NettyResponse rsp complete body))
 
 (defn ring-request-ssl-session [^NettyRequest req]
@@ -258,41 +268,35 @@
 
 (def empty-last-content LastHttpContent/EMPTY_LAST_CONTENT)
 
-(let [ary-class (class (byte-array 0))]
-  (defn coerce-element [x]
-    (if (or
-          (instance? String x)
-          (instance? ary-class x)
-          (instance? ByteBuffer x)
-          (instance? ByteBuf x))
-      x
-      (str x))))
 
-(defn chunked-writer-enabled? [^Channel ch]
-  (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler))))
-
-(defn send-streaming-body [ch ^HttpMessage msg body]
+(defn send-streaming-body
+  "Write out a msg and a body that's streamable"
+  [ch ^HttpMessage msg body]
 
   (HttpUtil/setTransferEncodingChunked msg (boolean (not (has-content-length? msg))))
   (netty/write ch msg)
 
   (if-let [body' (if (sequential? body)
 
+                   ;; write out all the data we have already, and return the rest
                    (let [buf (netty/allocate ch)
                          pending? (instance? clojure.lang.IPending body)]
-                     (loop [s (map coerce-element body)]
+                     (loop [s (map common/coerce-element body)]
                        (cond
 
+                         ;; lazy and no data available yet - write out and move on
                          (and pending? (not (realized? s)))
                          (do
                            (netty/write-and-flush ch buf)
                            s)
 
+                         ;; If we're out of data, write out the buf, and return nil
                          (empty? s)
                          (do
                            (netty/write-and-flush ch buf)
                            nil)
 
+                         ;; if some data is ready, append it to the buf and recur
                          (or (not pending?) (realized? s))
                          (let [x (first s)]
                            (netty/append-to-buf! buf x)
@@ -332,6 +336,7 @@
 
       (s/connect src sink)
 
+      ;; set up close handlers
       (-> ch
           netty/channel
           .closeFuture
@@ -350,140 +355,67 @@
 
     (netty/write-and-flush ch empty-last-content)))
 
-(def default-chunk-size 8192)
 
-(deftype HttpFile [^File fd ^long offset ^long length ^long chunk-size])
 
-(defmethod print-method HttpFile [^HttpFile file ^java.io.Writer w]
-  (.write w (format "HttpFile[fd:%s offset:%s length:%s]"
-                    (.-fd file)
-                    (.-offset file)
-                    (.-length file))))
-
-(defn http-file
-  ([path]
-   (http-file path nil nil default-chunk-size))
-  ([path offset length]
-   (http-file path offset length default-chunk-size))
-  ([path offset length chunk-size]
-   (let [^File
-         fd (cond
-              (string? path)
-              (io/file path)
-
-              (instance? File path)
-              path
-
-              (instance? Path path)
-              (.toFile ^Path path)
-
-              :else
-              (throw
-               (IllegalArgumentException.
-                (str "cannot conver " (class path) " to file, "
-                     "expected either string, java.io.File "
-                     "or java.nio.file.Path"))))
-         region? (or (some? offset) (some? length))]
-     (when-not (.exists fd)
-       (throw
-        (IllegalArgumentException.
-         (str fd " file does not exist"))))
-
-     (when (.isDirectory fd)
-       (throw
-        (IllegalArgumentException.
-         (str fd " is a directory, file expected"))))
-
-     (when (and region? (not (<= 0 offset)))
-       (throw
-        (IllegalArgumentException.
-         "offset of the region should be 0 or greater")))
-
-     (when (and region? (not (pos? length)))
-       (throw
-        (IllegalArgumentException.
-         "length of the region should be greater than 0")))
-
-     (let [len (.length fd)
-           [p c] (if region?
-                   [offset length]
-                   [0 len])
-           chunk-size (or chunk-size default-chunk-size)]
-       (when (and region? (< len (+ offset length)))
-         (throw
-          (IllegalArgumentException.
-           "the region exceeds the size of the file")))
-
-       (HttpFile. fd p c chunk-size)))))
-
-(bs/def-conversion ^{:cost 0} [HttpFile (bs/seq-of ByteBuffer)]
-  [file {:keys [chunk-size writable?]
-         :or {chunk-size (int default-chunk-size)
-              writable? false}}]
-  (let [^RandomAccessFile raf (RandomAccessFile. ^File (.-fd file)
-                                                 (if writable? "rw" "r"))
-        ^FileChannel fc (.getChannel raf)
-        end-offset (+ (.-offset file) (.-length file))
-        buf-seq (fn buf-seq [offset]
-                  (when-not (<= end-offset offset)
-                    (let [remaining (- end-offset offset)]
-                      (lazy-seq
-                       (cons
-                        (.map fc
-                              (if writable?
-                                FileChannel$MapMode/READ_WRITE
-                                FileChannel$MapMode/READ_ONLY)
-                              offset
-                              (min remaining chunk-size))
-                        (buf-seq (+ offset chunk-size)))))))]
-    (g/closeable-seq
-     (buf-seq (.-offset file))
-     false
-     #(do
-        (.close raf)
-        (.close fc)))))
-
-(defn send-chunked-file [ch ^HttpMessage msg ^HttpFile file]
+(defn send-chunked-file
+  "Write out a msg and an HttpFile as a ChunkedInput"
+  [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         cf (ChunkedFile. raf
                          (.-offset file)
                          (.-length file)
                          (.-chunk-size file))]
+
     (try-set-content-length! msg (.-length file))
     (netty/write ch msg)
     (netty/write-and-flush ch (HttpChunkedInput. cf))))
 
-(defn send-chunked-body [ch ^HttpMessage msg ^ChunkedInput body]
+(defn send-chunked-body
+  "Write out a msg and a body that's already chunked as a ChunkedInput"
+  [ch ^HttpMessage msg ^ChunkedInput body]
   (netty/write ch msg)
   (netty/write-and-flush ch body))
 
-(defn send-file-region [ch ^HttpMessage msg ^HttpFile file]
+(defn send-file-region
+  "Write out a msg and an HttpFile as a FileRegion.
+
+   NB: incompatible with SslHandler."
+  [ch ^HttpMessage msg ^HttpFile file]
   (let [raf (RandomAccessFile. ^File (.-fd file) "r")
         fc (.getChannel raf)
-        fr (DefaultFileRegion. fc (.-offset file) (.-length file))]
+        fr (DefaultFileRegion. fc ^long (.-offset file) ^long (.-length file))]
     (try-set-content-length! msg (.-length file))
     (netty/write ch msg)
     (netty/write ch fr)
     (netty/write-and-flush ch empty-last-content)))
 
-(defn- file->stream [^HttpFile file]
-  (-> file
-      (bs/to-byte-buffers {:chunk-size (.-chunk-size file)})
-      s/->source))
+;; TODO: Try to enable ChunkedInput with SSL; SSL can't use FileRegion,
+;;   which calls .transferTo(), but anything resulting in ByteBufs should be fine,
+;;   so ChunkedINputs should work, too.
+(defn send-file-body
+  "Writes out a msg and chooses how to write out a body.
 
-(defn send-file-body [ch ssl? ^HttpMessage msg ^HttpFile file]
+   If using SSL, sends a streaming body.
+   If the ChunkedWriteHandler is on the pipeline, sends as a ChunkedInput.
+   Otherwise, sends as a FileRegion."
+  [ch ssl? ^HttpMessage msg ^HttpFile file]
   (cond
     ssl?
-    (let [body (when (pos-int? (.length file)) (file->stream file))]
+    (let [body (when (pos-int? (.length file)) (file/http-file->stream file))]
       (send-streaming-body ch msg body))
 
-    (chunked-writer-enabled? ch)
+    (some? (-> ch netty/channel .pipeline (.get ChunkedWriteHandler)))
     (send-chunked-file ch msg file)
 
     :else
     (send-file-region ch msg file)))
 
-(defn send-contiguous-body [ch ^HttpMessage msg body]
+(defn send-contiguous-body
+  "Writes out a msg and a body that can be turned into a single ByteBuf.
+
+   Sets the content-length header on requests, and non-204/non-1xx responses."
+  [ch ^HttpMessage msg body]
+  (log/debug "send-contiguous-body headers:" (.headers msg))
   (let [omitted? (identical? :aleph/omitted body)
         body (if (or (nil? body) omitted?)
                empty-last-content
@@ -514,7 +446,8 @@
             (d/catch' (fn [_]))))]
 
   (defn send-message
-    "Write an HttpMessage and body to a Netty channel.
+    "Write an HttpMessage and body to a Netty channel. Returns a ChannelFuture
+     for the status of the write/flush operations.
 
      Accepts Strings, ByteBuffers, ByteBufs, byte[], ChunkedInputs,
      Files, Paths, HttpFiles, seqs and streams for bodies.
@@ -522,173 +455,65 @@
      Seqs and streams must be, or be coercible to, a stream of ByteBufs."
     [ch keep-alive? ssl? ^HttpMessage msg body]
 
-    (let [f (cond
+    (let [fut (cond
+                (or
+                  (nil? body)
+                  (identical? :aleph/omitted body)
+                  (instance? String body)
+                  (instance? ary-class body)
+                  (instance? ByteBuffer body)
+                  (instance? ByteBuf body))
+                (send-contiguous-body ch msg body)
 
-              (or
-                (nil? body)
-                (identical? :aleph/omitted body)
-                (instance? String body)
-                (instance? ary-class body)
-                (instance? ByteBuffer body)
-                (instance? ByteBuf body))
-              (send-contiguous-body ch msg body)
+                (instance? ChunkedInput body)
+                (send-chunked-body ch msg body)
 
-              (instance? ChunkedInput body)
-              (send-chunked-body ch msg body)
+                (instance? File body)
+                (send-file-body ch ssl? msg (file/http-file body))
 
-              (instance? File body)
-              (send-file-body ch ssl? msg (http-file body))
+                (instance? Path body)
+                (send-file-body ch ssl? msg (file/http-file body))
 
-              (instance? Path body)
-              (send-file-body ch ssl? msg (http-file body))
+                (instance? HttpFile body)
+                (send-file-body ch ssl? msg body)
 
-              (instance? HttpFile body)
-              (send-file-body ch ssl? msg body)
-
-              :else
-              (let [class-name (.getName (class body))]
-                (try
-                  (send-streaming-body ch msg body)
-                  (catch Throwable e
-                    (log/error e "error sending body of type " class-name)
-                    (throw e)))))]
+                :else
+                (let [class-name (StringUtil/simpleClassName body)]
+                  (try
+                    (send-streaming-body ch msg body)
+                    (catch Throwable e
+                      (log/error e "error sending body of type " class-name)
+                      (throw e)))))]
 
       (when-not keep-alive?
-        (handle-cleanup ch f))
+        (handle-cleanup ch fut))
 
-      f)))
+      fut)))
 
-(deftype WebsocketPing [deferred payload])
+(defn send-response-decoder-failure [^ChannelHandlerContext ctx msg response-stream]
+  (let [^Throwable ex (common/decoder-failure msg)]
+    (s/put! response-stream ex)
+    (netty/close ctx)))
 
-(deftype WebsocketClose [deferred status-code reason-text])
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream complete response-stream]
+  (if (instance? HttpContent msg)
+    ;; note that we are most likely to get this when dealing
+    ;; with transfer encoding chunked
+    (if-let [s @stream]
+      (do
+        ;; flag that body was not completed succesfully
+        (d/success! @complete true)
+        (s/close! s))
+      (send-response-decoder-failure ctx msg response-stream))
+    (send-response-decoder-failure ctx msg response-stream)))
 
-(def close-empty-status-code -1)
 
-(defn resolve-pings! [^ConcurrentLinkedQueue pending-pings v]
-  (loop []
-    (when-let [^WebsocketPing ping (.poll pending-pings)]
-      (let [d' (.-deferred ping)]
-        (when (not (realized? d'))
-          (try
-            (d/success! d' v)
-            (catch Throwable e
-              (log/error e "error in ping callback")))))
-      (recur))))
-
-(defn websocket-message-coerce-fn
-  ([ch pending-pings]
-   (websocket-message-coerce-fn ch pending-pings nil))
-  ([^Channel ch ^ConcurrentLinkedQueue pending-pings close-handshake-fn]
-   (fn [msg]
-     (condp instance? msg
-       WebSocketFrame
-       msg
-
-       ChunkedInput
-       msg
-
-       WebsocketPing
-       (let [^WebsocketPing msg msg
-             ;; this check should be safe as we rely on the strictly sequential
-             ;; processing of all messages put onto the same stream
-             send-ping? (.isEmpty pending-pings)]
-         (.offer pending-pings msg)
-         (when send-ping?
-           (if-some [payload (.-payload msg)]
-             (->> payload
-                  (netty/to-byte-buf ch)
-                  (PingWebSocketFrame.))
-             (PingWebSocketFrame.))))
-
-       WebsocketClose
-       (when (some? close-handshake-fn)
-         (let [^WebsocketClose msg msg
-               code (.-status-code msg)
-               frame (if (identical? close-empty-status-code code)
-                       (CloseWebSocketFrame.)
-                       (CloseWebSocketFrame. ^int code
-                                             ^String (.-reason-text msg)))
-               succeed? (close-handshake-fn frame)]
-           ;; it still feels somewhat clumsy to make concurrent
-           ;; updates and realized deferred from internals of the
-           ;; function that meant to be a stateless coercer
-           (when-not (d/realized? (.-deferred msg))
-             (d/success! (.-deferred msg) succeed?))
-
-           ;; we want to close the sink here to stop accepting
-           ;; new messages from the user
-           (when succeed?
-             netty/sink-close-marker)))
-
-       CharSequence
-       (TextWebSocketFrame. (bs/to-string msg))
-
-       (BinaryWebSocketFrame. (netty/to-byte-buf ch msg))))))
-
-(defn close-on-idle-handler []
-  (netty/channel-handler
-   :user-event-triggered
-   ([_ ctx evt]
-    (if (and (instance? IdleStateEvent evt)
-             (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-      (netty/close ctx)
-      (.fireUserEventTriggered ctx evt)))))
-
-(defn attach-idle-handlers [^ChannelPipeline pipeline idle-timeout]
-  (if (pos? idle-timeout)
-    (doto pipeline
-      (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
-      (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
-    pipeline))
-
-(defn websocket-ping [conn d' data]
-  (d/chain'
-   (s/put! conn (aleph.http.core.WebsocketPing. d' data))
-   #(when (and (false? %) (not (d/realized? d')))
-      ;; meaning connection is already closed
-      (d/success! d' false)))
-  d')
-
-(defn websocket-close! [conn status-code reason-text d']
-  (when-not (or (identical? close-empty-status-code status-code)
-                (<= 1000 status-code 4999))
-    (throw (IllegalArgumentException.
-            "websocket status code should be in range 1000-4999")))
-
-  (let [payload (aleph.http.core/WebsocketClose. d' status-code reason-text)]
-    (d/chain'
-     (s/put! conn payload)
-     (fn [put?]
-       (when (and (false? put?) (not (d/realized? d')))
-         ;; if the stream does not accept new messages,
-         ;; connection is already closed
-         (d/success! d' false))))
-    d'))
-
-(defn attach-heartbeats-handler [^ChannelPipeline pipeline heartbeats]
-  (when (and (some? heartbeats)
-             (pos? (:send-after-idle heartbeats)))
-    (let [after (:send-after-idle heartbeats)]
-      (.addLast pipeline
-                "websocket-heartbeats"
-                ^ChannelHandler
-                (IdleStateHandler. 0 0 after TimeUnit/MILLISECONDS)))))
-
-(defn handle-heartbeat [^ChannelHandlerContext ctx conn {:keys [payload
-                                                                timeout]}]
-  (let [done (d/deferred)]
-    (websocket-ping conn done payload)
-    (when (and timeout (pos? timeout))
-      (-> done
-          (d/timeout! timeout ::ping-timeout)
-          (d/chain'
-           (fn [v]
-             (when (and (identical? ::ping-timeout v)
-                        (.isOpen ^Channel (.channel ctx)))
-               (netty/close ctx))))))))
-
-(defn decoder-failed? [^DecoderResultProvider msg]
-  (.isFailure ^DecoderResult (.decoderResult msg)))
-
-(defn ^Throwable decoder-failure [^DecoderResultProvider msg]
-  (.cause ^DecoderResult (.decoderResult msg)))
+(comment
+  (let [ch (EmbeddedChannel.)
+        keep-alive? true
+        ssl? true
+        body (-> ch .alloc (.buffer 100))
+        msg :fixme]
+    (quick-bench
+      (send-message ch keep-alive? ssl? msg body)))
+  )
