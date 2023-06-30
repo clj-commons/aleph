@@ -623,58 +623,6 @@
       (build-http2-stream-pipeline ch response proxy-options logger pipeline-transform raw-stream? response-buffer-size))))
 
 
-(defn- setup-http2-pipeline
-  "Set up pipeline for an HTTP/2 connection channel"
-  [{:keys
-    [^LoggingHandler logger
-     idle-timeout
-     ^ChannelPipeline pipeline]
-    :or
-    {idle-timeout            0}}]
-  (log/trace "setup-http2-pipeline fired")
-  (let [log-level (some-> logger (.level))
-        http2-frame-codec (let [builder (Http2FrameCodecBuilder/forClient)]
-                            (when log-level
-                              (.frameLogger builder (Http2FrameLogger. log-level)))
-                            (-> builder
-                                (.initialSettings (Http2Settings/defaultSettings))
-                                (.build)))
-
-        ;; For the client, this may never get used, since the server will rarely
-        ;; initiate streams, and PUSH_PROMISE is deprecated. Responses to client-
-        ;; initiated streams use a separate handler, though we *also* set that using
-        ;; h2-stream-chan-initializer. Regardless, Http2MultiplexHandler must be on
-        ;; the pipeline to get new outbound channels.
-        server-initiated-stream-chan-initializer
-        (AlephChannelInitializer.
-          (fn [^Channel ch]
-            (let [p (.pipeline ch)]
-              (.addLast p
-                        "client-inbound-handler"
-                        ^ChannelHandler (netty/channel-inbound-handler
-                                          {:channel-active
-                                           ([_ ctx]
-                                            (log/error "Cannot currently handle server-initiated streams. Closing channel")
-                                            (netty/close ctx))})))))
-
-        multiplex-handler
-        (Http2MultiplexHandler. server-initiated-stream-chan-initializer)]
-
-    (-> pipeline
-        (common/attach-idle-handlers idle-timeout)
-        (.addLast "http2-frame-codec" http2-frame-codec)
-        (.addLast "multiplex" multiplex-handler)
-        ;; TODO: add handler for conn-level frames?
-        (.addLast "ex-handler"
-                  ^ChannelHandler
-                  (netty/channel-inbound-handler
-                    {:exception-caught
-                     ([_ ctx ex]
-                      (log/error ex "Exception in HTTP/2 connection channel. Closing channel.")
-                      (netty/close ctx))})))
-
-    (log/debug "Conn chan pipeline:" pipeline)))
-
 (defn make-pipeline-builder
   "Returns a function that initializes a new conn channel's pipeline.
 
@@ -1039,6 +987,7 @@
                       setup-opts (assoc opts
                                         :authority authority
                                         :ch ch
+                                        :is-server? false
                                         :keep-alive? keep-alive?
                                         :keep-alive?' keep-alive?'
                                         :logger logger
@@ -1056,13 +1005,14 @@
                               :ssl? ssl?
                               :force-h2c? force-h2c?})
 
+                  ;; can't use ApnHandler, because we need to coordinate with Manifold code
                   (let [http-req-handler
                         (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
                               (setup-http1-client setup-opts)
 
                               (.equals ApplicationProtocolNames/HTTP_2 protocol)
                               (do
-                                (setup-http2-pipeline setup-opts)
+                                (http2/setup-http2-pipeline setup-opts)
                                 (http2-req-handler setup-opts))
 
                               :else

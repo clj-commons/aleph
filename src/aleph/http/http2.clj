@@ -13,17 +13,25 @@
     (aleph.http.file HttpFile)
     (clojure.lang IPending)
     (io.netty.buffer ByteBuf)
-    (io.netty.channel FileRegion)
+    (io.netty.channel
+      ChannelHandler
+      ChannelPipeline
+      FileRegion)
     (io.netty.handler.codec.http2
       DefaultHttp2DataFrame
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
       Http2DataChunkedInput
       Http2Error
+      Http2FrameCodecBuilder
+      Http2FrameLogger
       Http2FrameStream
       Http2FrameStreamException
       Http2Headers
+      Http2MultiplexHandler
+      Http2Settings
       Http2StreamChannel)
+    (io.netty.handler.logging LoggingHandler)
     (io.netty.handler.ssl SslHandler)
     (io.netty.handler.stream
       ChunkedFile
@@ -405,6 +413,59 @@
       (log/error e "Error in http2 req-preprocess")
       (d/error! response e)
       (netty/close ch))))
+
+
+(defn setup-http2-pipeline
+  "Set up pipeline for an HTTP/2 connection channel. Works for both server
+   and client."
+  [{:keys
+    [^ChannelPipeline pipeline
+     ^LoggingHandler logger
+     idle-timeout
+     ^ChannelHandler inbound-handler
+     is-server?
+     http2-settings]
+    :or
+    {idle-timeout    0
+     ;; For the client, the inbound handler will probably never get used.
+     ;; Servers will rarely initiate streams, because PUSH_PROMISE is effectively
+     ;; deprecated. Responses to client-initiated streams are set elsewhere
+     ;; (even if it's the same handler fn).
+     inbound-handler (netty/channel-inbound-handler
+                       {:channel-active
+                        ([_ ctx]
+                         (log/error "Cannot currently handle peer-initiated streams. (You must override this handler if receiving server-pushed streams.) Closing channel.")
+                         (netty/close ctx))})
+     http2-settings (Http2Settings/defaultSettings)}}]
+
+  (log/trace "setup-http2-pipeline fired")
+  (let [log-level (some-> logger (.level))
+        http2-frame-codec (let [builder (if is-server?
+                                          (Http2FrameCodecBuilder/forServer)
+                                          (Http2FrameCodecBuilder/forClient))]
+                            (when log-level
+                              (.frameLogger builder (Http2FrameLogger. log-level)))
+                            (-> builder
+                                (.initialSettings http2-settings)
+                                (.build)))
+        multiplex-handler (Http2MultiplexHandler. inbound-handler)]
+
+    (-> pipeline
+        (common/attach-idle-handlers idle-timeout)
+        (.addLast "http2-frame-codec" http2-frame-codec)
+        (.addLast "multiplex" multiplex-handler)
+        ;; TODO: add handler for conn-level frames?
+        (.addLast "ex-handler"
+                  ^ChannelHandler
+                  (netty/channel-inbound-handler
+                    {:exception-caught
+                     ([_ ctx ex]
+                      (log/error ex "Exception in HTTP/2 connection channel. Closing channel.")
+                      (netty/close ctx))})))
+
+    (log/debug "Conn chan pipeline:" pipeline)
+    pipeline))
+
 
 
 (comment
