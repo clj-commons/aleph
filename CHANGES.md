@@ -1,3 +1,9 @@
+### 0.7.0-alpha1
+
+* Add support for HTTP/2 in the client.
+
+Contributions by Matthew Davidson and Arnaud Geiser.
+
 ### 0.6.3
 
 * Bump Netty to 4.1.94.Final for CVE-2023-34462
