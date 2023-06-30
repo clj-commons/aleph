@@ -131,6 +131,8 @@
       TrustManager
       TrustManagerFactory)))
 
+(set! *warn-on-reflection* true)
+
 (def ^:no-doc ^CharSequenceValueConverter char-seq-val-converter CharSequenceValueConverter/INSTANCE)
 
 ;;;
@@ -1004,8 +1006,10 @@
      | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
      | `start-tls`            | if the first write request shouldn't be encrypted.
      | `client-auth`          | the client authentication mode, one of `:none`, `:optional` or `:require`.
+     | `application-protocol-config` | an `ApplicationProtocolConfig` instance to configure ALPN.
 
-     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either
+     both input streams, both files, or a private key and an array of certificates."
     ([] (ssl-server-context {}))
     ([{:keys [private-key
               ^String private-key-password
@@ -1017,7 +1021,8 @@
               ^long session-cache-size
               ^long session-timeout
               start-tls
-              client-auth]}]
+              client-auth
+              ^ApplicationProtocolConfig application-protocol-config]}]
      (let [^SslContextBuilder
            b (cond (and (instance? File private-key)
                         (instance? File certificate-chain))
@@ -1074,7 +1079,10 @@
                      (.clientAuth (case client-auth
                                     :none ClientAuth/NONE
                                     :optional ClientAuth/OPTIONAL
-                                    :require ClientAuth/REQUIRE)))]
+                                    :require ClientAuth/REQUIRE))
+
+                     (some? application-protocol-config)
+                     (.applicationProtocolConfig application-protocol-config))]
        (.build b)))))
 
 (defn self-signed-ssl-context
