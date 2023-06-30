@@ -393,7 +393,8 @@
         ;; might be different in case we use :multipart
         (reset! save-body body))
 
-      (-> (netty/safe-execute ch (send-message ch headers body chunk-size file-chunk-size))
+      (-> (netty/safe-execute ch
+            (send-message ch headers body chunk-size file-chunk-size))
           (d/catch' (fn [e]
                       (log/error e "Error in http2 req-preprocess")
                       (d/error! response e)

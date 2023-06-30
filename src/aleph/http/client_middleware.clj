@@ -167,7 +167,7 @@
      :uri          path
      :path         path
      :user-info    (when-let [user-info (.getUserInfo url-parsed)]
-                     (URLDecoder/decode user-info))
+                     (URLDecoder/decode user-info "UTF-8"))
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 (defn- nest-params

@@ -42,6 +42,7 @@
       ChunkedFile
       ChunkedInput
       ChunkedWriteHandler)
+    (io.netty.util AsciiString)
     (io.netty.util.internal StringUtil)
     (java.io
       Closeable
@@ -69,7 +70,7 @@
             "TE"]]
     (zipmap
       (map str/lower-case ks)
-      (map #(HttpHeaders/newEntity %) ks))))
+      (map #(AsciiString. ^CharSequence %) ks))))
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap. 128))
 
@@ -86,7 +87,7 @@
                (->> (str/split s' #"-")
                  (map str/capitalize)
                  (str/join "-")
-                 HttpHeaders/newEntity))]
+                 (AsciiString.)))]
 
       ;; in practice this should never happen, so we
       ;; can be stupid about cache expiration
@@ -216,8 +217,8 @@
    request-arrived]
   :uri (let [idx (long question-mark-index)]
          (if (neg? idx)
-           (.getUri req)
-           (.substring (.getUri req) 0 idx)))
+           (.uri req)
+           (.substring (.uri req) 0 idx)))
   :query-string (let [uri (.uri req)]
                   (if (neg? question-mark-index)
                     nil

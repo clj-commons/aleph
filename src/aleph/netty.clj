@@ -107,6 +107,7 @@
       Log4JLoggerFactory
       Slf4JLoggerFactory)
     (java.io
+      Closeable
       File
       IOException
       InputStream)
@@ -806,11 +807,11 @@
   (if-let [^Channel ch (->> stream meta :aleph/channel)]
     (do
       (safe-execute ch
-                    (let [pipeline (.pipeline ch)]
-                      (when (and
-                              (.isActive ch)
-                              (nil? (.get pipeline "bandwidth-tracker")))
-                        (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
+        (let [pipeline (.pipeline ch)]
+          (when (and
+                  (.isActive ch)
+                  (nil? (.get pipeline "bandwidth-tracker")))
+            (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
 
@@ -1214,7 +1215,7 @@
     :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
     :nio (NioEventLoopGroup. num-threads thread-factory)))
 
-(defn ^:no-doc transport-server-channel [transport]
+(defn ^:no-doc transport-server-channel-class [transport]
   (case transport
     :epoll EpollServerSocketChannel
     :kqueue KQueueServerSocketChannel
@@ -1491,6 +1492,10 @@ initialize an DnsAddressResolverGroup instance.
 
 
 (defn- add-channel-tracker-handler
+  "Wraps the pipeline-builder fn with a handler that adds a newly-active
+   channel to the common ChannelGroup.
+
+   Useful for things like broadcasting messages to all connected clients."
   [pipeline-builder chan-group]
   (fn [^ChannelPipeline pipeline]
     (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
@@ -1516,20 +1521,22 @@ initialize an DnsAddressResolverGroup instance.
             ^SocketAddress socket-address
             transport
             shutdown-timeout]
-     :or   {shutdown-timeout default-shutdown-timeout}}]
+     :or   {shutdown-timeout default-shutdown-timeout}
+     :as   opts}]
    (ensure-transport-available! transport)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
-         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
+         thread-factory (enumerating-thread-factory "aleph-server-pool" false)
          closed? (atom false)
-         chan-group (make-channel-group)
+         chan-group (make-channel-group)                    ; a ChannelGroup for all active server Channels
 
          ^EventLoopGroup group (transport-event-loop-group transport num-threads thread-factory)
 
-         ^Class channel (transport-server-channel transport)
+         ^Class channel-class (transport-server-channel-class transport)
 
          ^SslContext
          ssl-context (when (some? ssl-context)
+                       (log/warn "The :ssl-context option to `start-server` is discouraged, set up SSL with :pipeline-builder instead.")
                        (coerce-ssl-server-context ssl-context))
 
          pipeline-builder
@@ -1542,7 +1549,8 @@ initialize an DnsAddressResolverGroup instance.
                      (.option ChannelOption/SO_REUSEADDR true)
                      (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
-                     (.channel channel)
+                     (.channel channel-class)
+                     ;;TODO: add a server (.handler) call to the bootstrap, for logging or something
                      (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
                      (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
@@ -1550,8 +1558,9 @@ initialize an DnsAddressResolverGroup instance.
 
              ^ServerSocketChannel
              ch (-> b (.bind socket-address) .sync .channel)]
+
          (reify
-           java.io.Closeable
+           Closeable
            (close [_]
              (when (compare-and-set! closed? false true)
                ;; This is the three step closing sequence:

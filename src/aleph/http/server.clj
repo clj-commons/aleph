@@ -9,6 +9,7 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
+    (io.netty.util AsciiString)
     (java.util
       EnumSet
       TimeZone
@@ -74,7 +75,9 @@
 (defonce ^FastThreadLocal date-format (FastThreadLocal.))
 (defonce ^FastThreadLocal date-value (FastThreadLocal.))
 
-(defn rfc-1123-date-string []
+(defn rfc-1123-date-string
+  ^String
+  []
   (let [^DateFormat format
         (or
           (.get date-format)
@@ -89,10 +92,10 @@
   [^ChannelHandlerContext ctx]
   (if-let [^AtomicReference ref (.get date-value)]
     (.get ref)
-    (let [ref (AtomicReference. (HttpHeaders/newEntity (rfc-1123-date-string)))]
+    (let [ref (AtomicReference. (AsciiString. (rfc-1123-date-string)))]
       (.set date-value ref)
       (.scheduleAtFixedRate (.executor ctx)
-                            #(.set ref (HttpHeaders/newEntity (rfc-1123-date-string)))
+                            #(.set ref (AsciiString. (rfc-1123-date-string)))
                             1000
                             1000
                             TimeUnit/MILLISECONDS)
@@ -105,10 +108,11 @@
    :body    "Internal Server Error"})
 
 (let [[server-name connection-name date-name content-type]
-      (map #(HttpHeaders/newEntity %) ["Server" "Connection" "Date" "Content-Type"])
+      (map #(AsciiString. ^CharSequence %) ["Server" "Connection" "Date" "Content-Type"])
 
       [server-value keep-alive-value close-value]
-      (map #(HttpHeaders/newEntity %) ["Aleph/0.7.0-alpha1" "Keep-Alive" "Close"])]
+      (map #(AsciiString. ^CharSequence %) ["Aleph/0.7.0-alpha1" "Keep-Alive" "Close"])]
+
   (defn send-response
     [^ChannelHandlerContext ctx keep-alive? ssl? error-handler rsp]
     (let [[^HttpResponse rsp body]
@@ -122,19 +126,19 @@
                  (get rsp :body)])))]
 
       (netty/safe-execute ctx
-                          (let [headers (.headers rsp)]
-                            (when-not (.contains headers ^CharSequence server-name)
-                              (.set headers ^CharSequence server-name server-value))
+        (let [headers (.headers rsp)]
+          (when-not (.contains headers ^CharSequence server-name)
+            (.set headers ^CharSequence server-name server-value))
 
-                            (when-not (.contains headers ^CharSequence date-name)
-                              (.set headers ^CharSequence date-name (date-header-value ctx)))
+          (when-not (.contains headers ^CharSequence date-name)
+            (.set headers ^CharSequence date-name (date-header-value ctx)))
 
-                            (when (= (.get headers ^CharSequence content-type) "text/plain")
-                              (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
+          (when (= (.get headers ^CharSequence content-type) "text/plain")
+            (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
-                            (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
+          (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
-                            (http1/send-message ctx keep-alive? ssl? rsp body))))))
+          (http1/send-message ctx keep-alive? ssl? rsp body))))))
 
 ;;;
 
@@ -223,10 +227,13 @@ Example: {:status 200
     (not (instance? IOException ex))
     (log/warn ex "error in HTTP server")))
 
+;; HTTP1
 (defn invalid-request? [^HttpRequest req]
   (-> req .decoderResult .isFailure))
 
-(defn- ^HttpResponseStatus cause->status [^Throwable cause]
+(defn- cause->status
+  ^HttpResponseStatus
+  [^Throwable cause]
   (if (instance? TooLongFrameException cause)
     (let [message (.getMessage cause)]
       (cond
@@ -240,6 +247,7 @@ Example: {:status 200
         HttpResponseStatus/BAD_REQUEST))
     HttpResponseStatus/BAD_REQUEST))
 
+;; HTTP1
 (defn reject-invalid-request [ctx ^HttpRequest req]
   (let [cause (-> req .decoderResult .cause)
         status (cause->status cause)]
@@ -274,11 +282,11 @@ Example: {:status 200
                     req
                     @previous-response
                     (when body (bs/to-input-stream body))
-                    (HttpHeaders/isKeepAlive req))))
+                    (HttpUtil/isKeepAlive req))))
 
         process-request
         (fn [ctx req]
-          (if (HttpHeaders/isTransferEncodingChunked req)
+          (if (HttpUtil/isTransferEncodingChunked req)
             (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
               (reset! stream s)
               (handle-request ctx req s))
@@ -446,10 +454,10 @@ Example: {:status 200
          (instance? HttpRequest msg)
          (if (invalid-request? msg)
            (reject-invalid-request ctx msg)
-           (let [req msg]
-             (let [s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
-               (reset! stream s)
-               (handle-raw-request ctx req s))))
+           (let [req msg
+                 s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
+             (reset! stream s)
+             (handle-raw-request ctx req s)))
 
          ;; More body content has arrived, put the bytes on the stream
          (instance? HttpContent msg)
@@ -464,20 +472,29 @@ Example: {:status 200
          (.fireChannelRead ctx msg))))))
 
 (def ^HttpResponse default-accept-response
-  (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
-                            HttpResponseStatus/CONTINUE
-                            Unpooled/EMPTY_BUFFER))
-
-(HttpHeaders/setContentLength default-accept-response 0)
+  (doto (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
+                                  HttpResponseStatus/CONTINUE
+                                  Unpooled/EMPTY_BUFFER)
+        (HttpUtil/setContentLength 0)))
 
 (def ^HttpResponse default-expectation-failed-response
-  (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
-                            HttpResponseStatus/EXPECTATION_FAILED
-                            Unpooled/EMPTY_BUFFER))
+  (doto (DefaultFullHttpResponse. HttpVersion/HTTP_1_1
+                                  HttpResponseStatus/EXPECTATION_FAILED
+                                  Unpooled/EMPTY_BUFFER)
+        (HttpUtil/setContentLength 0)))
 
-(HttpHeaders/setContentLength default-expectation-failed-response 0)
+;; HTTP1
+(defn new-continue-handler
+  "Wraps the supplied `continue-handler` that will respond to requests with the
+   header \"expect: 100-continue\" set.
 
-(defn new-continue-handler [continue-handler continue-executor ssl?]
+   `continue-handler` receives the ring request, and returns either a boolean
+   or a custom ring response map. If boolean, it indicates whether the request
+   is accepted or not, and in both cases, a default response is sent.
+
+   If the `continue-executor` is nil, calls the handler on the Netty event loop
+   thread. Otherwise, calls the handler on the supplied executor."
+  [continue-handler continue-executor ssl?]
   (netty/channel-inbound-handler
 
     :channel-read
@@ -488,36 +505,40 @@ Example: {:status 200
        (let [^HttpRequest req msg
              ch (.channel ctx)
              ring-req (http1/netty-request->ring-request req ssl? ch nil)
-             resume (fn [accept?]
+             resume (fn continue-handler-accept
+                      [accept?]
                       (if (true? accept?)
-                        ;; accepted
-                        (let [rsp (.retainedDuplicate
+                        ;; accepted, send a 100 Continue response, and re-send
+                        ;; req along Netty pipeline
+                        (let [resp (.retainedDuplicate
                                     ^ByteBufHolder
                                     default-accept-response)]
-                          (netty/write-and-flush ctx rsp)
+                          (netty/write-and-flush ctx resp)
                           (.remove (.headers req) HttpHeaderNames/EXPECT)
                           (.fireChannelRead ctx req))
+
                         ;; rejected, use the default reject response if
                         ;; alternative is not provided
                         (do
                           (netty/release msg)
                           (if (false? accept?)
-                            (let [rsp (.retainedDuplicate
+                            (let [resp (.retainedDuplicate
                                         ^ByteBufHolder
                                         default-expectation-failed-response)]
-                              (netty/write-and-flush ctx rsp))
+                              (netty/write-and-flush ctx resp))
                             (let [keep-alive? (HttpUtil/isKeepAlive req)
-                                  rsp (http1/ring-response->netty-response accept?)]
-                              (http1/send-message ctx keep-alive? ssl? rsp nil))))))]
+                                  resp (http1/ring-response->netty-response accept?)]
+                              (http1/send-message ctx keep-alive? ssl? resp nil))))))]
          (if (nil? continue-executor)
            (resume (continue-handler ring-req))
            (d/chain'
              (d/future-with continue-executor (continue-handler ring-req))
              resume)))))))
 
-(defn pipeline-builder
+(defn setup-http1-pipeline
   "Returns a fn that adds all the needed ChannelHandlers to a ChannelPipeline"
-  [handler
+  [^ChannelPipeline pipeline
+   handler
    pipeline-transform
    {:keys
     [executor
@@ -549,38 +570,88 @@ Example: {:status 200
      compression?                    false
      idle-timeout                    0
      error-handler                   error-response}}]
-  (fn [^ChannelPipeline pipeline]
-    (let [handler (if raw-stream?
-                    (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
-                    (ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size))
-          ^ChannelHandler
-          continue-handler (if (nil? continue-handler)
-                             (HttpServerExpectContinueHandler.)
-                             (new-continue-handler continue-handler
-                                                   continue-executor
-                                                   ssl?))]
+  (let [handler (if raw-stream?
+                  (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
+                  (ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size))
+        ^ChannelHandler
+        continue-handler (if (nil? continue-handler)
+                           (HttpServerExpectContinueHandler.)
+                           (new-continue-handler continue-handler
+                                                 continue-executor
+                                                 ssl?))]
+    (doto pipeline
+          (common/attach-idle-handlers idle-timeout)
+          (.addLast "http-server"
+                    ; HTTP1
+                    (HttpServerCodec.
+                      max-initial-line-length
+                      max-header-size
+                      max-chunk-size
+                      validate-headers
+                      initial-buffer-size
+                      allow-duplicate-content-lengths))
+          ;; FIXME: HttpObjectAggregator and continue handler can't be mixed
+          ;; since the former may send its own 100-continue response.
+          (#(when max-request-body-size
+              (.addLast ^ChannelPipeline %1 "aggregator" (HttpObjectAggregator. max-request-body-size))))
+          (.addLast "continue-handler" continue-handler)
+          (.addLast "request-handler" ^ChannelHandler handler)
 
-      (doto pipeline
-            (common/attach-idle-handlers idle-timeout)
-            (.addLast "http-server"
-                      (HttpServerCodec.
-                        max-initial-line-length
-                        max-header-size
-                        max-chunk-size
-                        validate-headers
-                        initial-buffer-size
-                        allow-duplicate-content-lengths))
-            (#(when max-request-body-size
-                (.addLast ^ChannelPipeline %1 "aggregator" (HttpObjectAggregator. max-request-body-size))))
-            (.addLast "continue-handler" continue-handler)
-            (.addLast "request-handler" ^ChannelHandler handler)
-            (#(when (or compression? (some? compression-level))
-                (let [compressor (HttpContentCompressor. (int (or compression-level 6)))]
-                  (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
-                (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
-            pipeline-transform))))
+          ;; HTTP1 - HTTP2 code uses decorating coders/decoders passed to the Builder.build() call
+          (#(when (or compression? (some? compression-level))
+              (let [compressor (HttpContentCompressor. (int (or compression-level 6)))]
+                (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
+              (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
+          pipeline-transform)))
+
+(defn ^:deprecated ^:no-doc pipeline-builder
+  [handler pipeline-transform opts]
+  #(setup-http1-pipeline % handler pipeline-transform opts))
 
 ;;;
+
+(defn- setup-executor
+  "Returns a general executor for user handlers to run on."
+  [executor]
+  (cond
+    (instance? Executor executor)
+    executor
+
+    (nil? executor)
+    (flow/utilization-executor 0.9 512
+                               {:metrics (EnumSet/of Stats$Metric/UTILIZATION)
+                                ;;:onto? false
+                                })
+
+    (= :none executor)
+    nil
+
+    :else
+    (throw
+      (IllegalArgumentException.
+        (str "invalid executor specification: " (pr-str executor))))))
+
+(defn- setup-continue-executor
+  "Returns an executor for custom continue handlers to run on.
+
+   Defaults to general Aleph server executor."
+  [executor continue-executor]
+  (cond
+    (nil? continue-executor)
+    executor
+
+    (identical? :none continue-executor)
+    nil
+
+    (instance? Executor continue-executor)
+    continue-executor
+
+    :else
+    (throw
+      (IllegalArgumentException.
+        (str "invalid continue-executor specification: "
+             (pr-str continue-executor))))))
+
 
 (defn start-server
   [handler
@@ -605,38 +676,8 @@ Example: {:status 200
            compression?        false
            shutdown-timeout    netty/default-shutdown-timeout}
     :as   options}]
-  (let [executor (cond
-                   (instance? Executor executor)
-                   executor
-
-                   (nil? executor)
-                   (flow/utilization-executor 0.9 512
-                                              {:metrics (EnumSet/of Stats$Metric/UTILIZATION)
-                                               ;;:onto? false
-                                               })
-
-                   (= :none executor)
-                   nil
-
-                   :else
-                   (throw
-                     (IllegalArgumentException.
-                       (str "invalid executor specification: " (pr-str executor)))))
-        continue-executor' (cond
-                             (nil? continue-executor)
-                             executor
-
-                             (identical? :none continue-executor)
-                             nil
-
-                             (instance? Executor continue-executor)
-                             continue-executor
-
-                             :else
-                             (throw
-                               (IllegalArgumentException.
-                                 (str "invalid continue-executor specification: "
-                                      (pr-str continue-executor)))))]
+  (let [executor (setup-executor executor)
+        continue-executor (setup-continue-executor executor continue-executor)]
     (netty/start-server
       {:pipeline-builder    (pipeline-builder
                               handler
@@ -644,15 +685,16 @@ Example: {:status 200
                               (assoc options
                                      :executor executor
                                      :ssl? (or manual-ssl? (boolean ssl-context))
-                                     :continue-executor continue-executor'))
+                                     :continue-executor continue-executor))
        :ssl-context         ssl-context
 
        :bootstrap-transform bootstrap-transform
        :socket-address      (if socket-address
                               socket-address
                               (InetSocketAddress. port))
-       :on-close            (when (and shutdown-executor? (or (instance? ExecutorService executor)
-                                                              (instance? ExecutorService continue-executor)))
+       :on-close            (when (and shutdown-executor?
+                                       (or (instance? ExecutorService executor)
+                                           (instance? ExecutorService continue-executor)))
                               #(do
                                  (when (instance? ExecutorService executor)
                                    (.shutdown ^ExecutorService executor))
