@@ -24,6 +24,7 @@
       ChannelHandlerContext
       ChannelPipeline)
     (io.netty.handler.codec
+      DateFormatter
       TooLongFrameException)
     ;; Do not remove
     (io.netty.handler.codec.http
@@ -76,22 +77,23 @@
 
 (def ^:const apn-fallback-protocol ApplicationProtocolNames/HTTP_1_1)
 
-(defonce ^FastThreadLocal date-format (FastThreadLocal.))
+;; only remains for backwards-compatibility
+(defonce ^:deprecated ^FastThreadLocal
+  date-format (doto (FastThreadLocal.)
+                    (.set (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)
+                                (.setTimeZone (TimeZone/getTimeZone "GMT"))))))
+
 (defonce ^FastThreadLocal date-value (FastThreadLocal.))
 
 (defn rfc-1123-date-string
+  "Returns an RFC 1123 date string, e.g. \"Sat, 01 Jul 2023 09:49:56 GMT\""
   ^String
   []
-  (let [^DateFormat format
-        (or
-          (.get date-format)
-          (let [format (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)]
-            (.setTimeZone format (TimeZone/getTimeZone "GMT"))
-            (.set date-format format)
-            format))]
-    (.format format (Date.))))
+  (DateFormatter/format (Date.)))
 
 (defn date-header-value
+  "Returns a cached RFC 1123 date string. The ThreadLocal cached value is
+   updated every second."
   ^CharSequence
   [^ChannelHandlerContext ctx]
   (if-let [^AtomicReference ref (.get date-value)]
