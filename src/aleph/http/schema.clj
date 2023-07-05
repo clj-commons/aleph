@@ -7,7 +7,7 @@
 (def uri [:maybe :string])
 (def query-string [:maybe :string])
 (def scheme [:enum :http :https])
-(def request-method :keyword)
+(def request-method [:or :string :keyword])
 (def content-type [:maybe [:or :string :keyword]])
 (def content-length [:maybe :int])
 (def character-encoding [:maybe :string])
