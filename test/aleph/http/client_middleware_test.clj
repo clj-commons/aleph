@@ -2,7 +2,7 @@
   (:require
    [aleph.http.client-middleware :as middleware]
    [aleph.http.schema :as schema]
-   [clojure.test :as t :refer [deftest is]]
+   [clojure.test :as t :refer [deftest is testing]]
    [malli.core :as m]
    [malli.generator :as mg])
   (:import
@@ -182,6 +182,12 @@
 (deftest test-wrap-validation
   (doseq [req (mg/sample schema/ring-request)]
     (is (middleware/wrap-validation req)))
+
+  (testing "Request methods can be strings"
+    (is (middleware/wrap-validation {:remote-addr    "localhost"
+                                     :server-name    "computer"
+                                     :scheme         :http
+                                     :request-method "GET"})))
 
   (is (thrown-with-msg?
         IllegalArgumentException
