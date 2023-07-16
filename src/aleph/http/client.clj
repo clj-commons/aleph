@@ -433,28 +433,6 @@
                    (pending-proxy-connection-handler response-stream)))))
   p)
 
-(defn- ^:no-doc add-non-http-handlers
-  "Set up the pipeline with HTTP-independent handlers.
-
-   Includes logger, proxy, and custom pipeline-transform handlers."
-  [^ChannelPipeline p logger pipeline-transform]
-  (when (some? logger)
-    (log/trace "Adding activity logger")
-    (.addFirst p "activity-logger" ^ChannelHandler logger)
-
-    ;; TODO: remove me
-    (.addLast p
-              "debug"
-              ^ChannelHandler
-              (netty/channel-inbound-handler
-                :channel-read ([_ ctx msg]
-                               (log/debug "received msg of class" (StringUtil/simpleClassName ^Object msg))
-                               (log/debug "msg:" msg)))))
-
-  (pipeline-transform p)
-  p)
-
-
 (defn- setup-http1-pipeline
   [{:keys
     [logger
@@ -491,10 +469,10 @@
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
         (.addLast "handler" ^ChannelHandler handler)
         (add-proxy-handlers responses proxy-options ssl?)
-        (add-non-http-handlers logger pipeline-transform))))
+        (common/add-non-http-handlers logger pipeline-transform))))
 
 
-(defn http2-client-handler
+(defn- http2-client-handler
   "Given a response-stream, returns a ChannelInboundHandler that processes
    inbound Netty Http2 frames, converts them, and places them on the stream"
   [^Http2StreamChannel ch response-d raw-stream? ^long buffer-capacity]
@@ -581,47 +559,6 @@
       ([_ ctx evt]
        (handle-shutdown-frame evt)
        (.fireUserEventTriggered ctx evt)))))
-
-
-(defn- build-http2-stream-pipeline
-  "Set up the pipeline for an HTTP/2 stream channel"
-  [^Http2StreamChannel ch resp proxy-options logger pipeline-transform raw-stream? response-buffer-size]
-  (log/trace "build-http2-stream-pipeline called")
-
-  (let [p (.pipeline ch)]
-    ;; necessary for multipart support in HTTP/2
-    #_(.addLast p
-                "stream-frame-to-http-object"
-                ^ChannelHandler stream-frame->http-object-codec)
-    (.addLast p
-              "streamer"
-              ^ChannelHandler (ChunkedWriteHandler.))
-    (.addLast p
-              "handler"
-              ^ChannelHandler
-              (http2-client-handler ch resp raw-stream? response-buffer-size))
-
-    (when (some? proxy-options)
-      (throw (IllegalArgumentException. "Proxying HTTP/2 messages not supported yet")))
-
-    (add-non-http-handlers p logger pipeline-transform)
-
-    (log/trace "added all stream-chan handlers")
-    (log/debug "Stream chan:" ch)
-
-    ch))
-
-(defn- h2-stream-chan-initializer
-  "The multiplex handler creates a channel per HTTP2 stream, this
-   sets up each new stream channel"
-  [response proxy-options logger pipeline-transform raw-stream? response-buffer-size]
-  (log/trace "h2-stream-chan-initializer")
-
-  (AlephChannelInitializer.
-    (fn [^Channel ch]
-      (log/trace "h2-stream-chan-initializer initChannel called")
-      (build-http2-stream-pipeline ch response proxy-options logger pipeline-transform raw-stream? response-buffer-size))))
-
 
 (defn make-pipeline-builder
   "Returns a function that initializes a new conn channel's pipeline.
@@ -778,7 +715,7 @@
 (defn- http2-req-handler
   "Returns a fn that takes a Ring request and returns a deferred containing a
    Ring response."
-  [{:keys [authority ch logger pipeline-transform proxy-options ssl? raw-stream? response-buffer-size]}]
+  [{:keys [authority ch is-server? logger pipeline-transform proxy-options ssl? raw-stream? response-buffer-size]}]
   (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)]
     (fn [req]
       (log/trace "http2-req-handler fired")
@@ -801,14 +738,14 @@
         (-> (.open h2-bootstrap)
             netty/wrap-future
             (d/chain' (fn [^Http2StreamChannel chan]
-                        (build-http2-stream-pipeline
-                          chan
-                          resp
+                        (http2/setup-stream-pipeline
+                          (.pipeline chan)
+                          (http2-client-handler chan resp raw-stream? response-buffer-size)
+                          is-server?
                           proxy-options
                           logger
-                          pipeline-transform
-                          raw-stream?
-                          response-buffer-size)))
+                          pipeline-transform)
+                        ch))
             (d/chain' (fn [^Http2StreamChannel chan]
                         (log/debug "New outbound HTTP/2 channel ready.")
                         (if (multipart/is-multipart? req)
@@ -1012,7 +949,7 @@
 
                               (.equals ApplicationProtocolNames/HTTP_2 protocol)
                               (do
-                                (http2/setup-http2-pipeline setup-opts)
+                                (http2/setup-conn-pipeline setup-opts)
                                 (http2-req-handler setup-opts))
 
                               :else

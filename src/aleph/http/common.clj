@@ -77,6 +77,26 @@
           (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
     pipeline))
 
+(defn add-non-http-handlers
+  "Set up the pipeline with HTTP-independent handlers.
+
+   Includes logger, proxy, and custom pipeline-transform handlers."
+  [^ChannelPipeline p logger pipeline-transform]
+  (when (some? logger)
+    (log/trace "Adding activity logger")
+    (.addFirst p "activity-logger" ^ChannelHandler logger)
+
+    ;; TODO: remove me
+    (.addLast p
+              "debug"
+              ^ChannelHandler
+              (netty/channel-inbound-handler
+                :channel-read ([_ ctx msg]
+                               (log/debug "received msg of class" (StringUtil/simpleClassName ^Object msg))
+                               (log/debug "msg:" msg)))))
+
+  (pipeline-transform p)
+  p)
 
 (defn decoder-failed? [^DecoderResultProvider msg]
   (.isFailure ^DecoderResult (.decoderResult msg)))
