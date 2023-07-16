@@ -169,13 +169,13 @@
 ;;;
 
 (defn ^:no-doc channel-server-name [^Channel ch]
-  (some-> ch ^InetSocketAddress (.localAddress) .getHostName))
+  (some-> ch ^InetSocketAddress (.localAddress) (.getHostName)))
 
 (defn ^:no-doc channel-server-port [^Channel ch]
-  (some-> ch ^InetSocketAddress (.localAddress) .getPort))
+  (some-> ch ^InetSocketAddress (.localAddress) (.getPort)))
 
 (defn ^:no-doc channel-remote-address [^Channel ch]
-  (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+  (some-> ch ^InetSocketAddress (.remoteAddress) (.getAddress) (.getHostAddress)))
 
 ;;; Defaults defined here since they are not publically exposed by Netty
 
@@ -367,10 +367,11 @@
   (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
 
 (defmacro ^:no-doc safe-execute
-  "Executes the body on the event-loop (an executor service) associated with the Netty channel.
+  "Executes the body on the event-loop (an executor service) associated with
+   the Netty channel or context.
 
-   Executes immediately if current thread is in the event loop. Otherwise, returns a deferred
-   that will hold the result once done."
+   Executes immediately if current thread is in the event loop. Otherwise,
+   returns a deferred that will hold the result once done."
   [ch & body]
   `(let [f# (fn [] ~@body)
          event-loop# (-> ~ch aleph.netty/channel .eventLoop)]

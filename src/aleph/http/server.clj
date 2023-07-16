@@ -120,6 +120,8 @@
       (map #(AsciiString. ^CharSequence %) ["Aleph/0.7.0-alpha1" "Keep-Alive" "Close"])]
 
   (defn send-response
+    "Converts the Ring response to a Netty HttpResponse, and then sends it to
+     Netty to be sent out over the wire."
     [^ChannelHandlerContext ctx keep-alive? ssl? error-handler rsp]
     (let [[^HttpResponse rsp body]
           (try
@@ -238,6 +240,8 @@ Example: {:status 200
   (-> req .decoderResult .isFailure))
 
 (defn- cause->status
+  "Given an exception/throwable, tries to pick an appropriate HTTP status code.
+   Defaults to 400."
   ^HttpResponseStatus
   [^Throwable cause]
   (if (instance? TooLongFrameException cause)
@@ -267,6 +271,13 @@ Example: {:status 200
       (fn [_] (netty/close ctx)))))
 
 (defn ring-handler
+  "Does not handle Ring maps, but rather, creates them for the user-supplied
+   handler.
+
+   Keeps track of the state of the HTTP/1 connection and its incoming objects,
+   and dispatches to the user handler. Builds a Ring map from HttpRequest and
+   FullHttpRequest, and converts incoming HttpContents to an InputStream for
+   the body."
   [ssl? handler rejected-handler error-handler executor buffer-capacity]
   (let [buffer-capacity (long buffer-capacity)
         request (atom nil)
@@ -275,7 +286,7 @@ Example: {:status 200
         stream (atom nil)
         previous-response (atom nil)
 
-        handle-request
+        handle-req*
         (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
                   (handle-request
@@ -295,7 +306,7 @@ Example: {:status 200
           (if (HttpUtil/isTransferEncodingChunked req)
             (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)]
               (reset! stream s)
-              (handle-request ctx req s))
+              (handle-req* ctx req s))
             (reset! request req)))
 
         process-full-request
@@ -306,7 +317,7 @@ Example: {:status 200
                        (netty/buf->array content))]
             ;; Don't release content as it will happen automatically once whole
             ;; request is released.
-            (handle-request ctx req body)))
+            (handle-req* ctx req body)))
 
         process-last-content
         (fn [ctx ^HttpContent msg]
@@ -324,13 +335,13 @@ Example: {:status 200
                 ;; there was never any body
                 (do
                   (netty/release content)
-                  (handle-request ctx @request nil))
+                  (handle-req* ctx @request nil))
 
                 (let [bufs (conj @buffer content)
                       bytes (netty/bufs->array bufs)]
                   (doseq [b bufs]
                     (netty/release b))
-                  (handle-request ctx @request bytes))))
+                  (handle-req* ctx @request bytes))))
 
             (.set buffer-size 0)
             (reset! stream nil)
@@ -366,7 +377,7 @@ Example: {:status 200
                       (reset! buffer [])
                       (reset! stream s)
 
-                      (handle-request ctx @request s))))))))]
+                      (handle-req* ctx @request s))))))))]
 
     (netty/channel-inbound-handler
 
@@ -406,12 +417,14 @@ Example: {:status 200
          (.fireChannelRead ctx msg))))))
 
 (defn raw-ring-handler
+  "Like `ring-handler`, but the body is a Manifold stream of ByteBufs that
+   the user must manually `release`."
   [ssl? handler rejected-handler error-handler executor buffer-capacity]
   (let [buffer-capacity (long buffer-capacity)
         stream (atom nil)
         previous-response (atom nil)
 
-        handle-raw-request
+        handle-req*
         (fn [^ChannelHandlerContext ctx req body]
           (reset! previous-response
                   (handle-request
@@ -454,7 +467,7 @@ Example: {:status 200
                ;; compensate for it being released together with the request.
                (netty/put! ch s (netty/acquire content)))
              (s/close! s)
-             (handle-raw-request ctx req s)))
+             (handle-req* ctx req s)))
 
          ;; A new request with no body has come in, start a new stream
          (instance? HttpRequest msg)
@@ -463,7 +476,7 @@ Example: {:status 200
            (let [req msg
                  s (netty/buffered-source (netty/channel ctx) #(.readableBytes ^ByteBuf %) buffer-capacity)]
              (reset! stream s)
-             (handle-raw-request ctx req s)))
+             (handle-req* ctx req s)))
 
          ;; More body content has arrived, put the bytes on the stream
          (instance? HttpContent msg)

@@ -447,8 +447,8 @@
             (d/catch' (fn [_]))))]
 
   (defn send-message
-    "Write an HttpMessage and body to a Netty channel. Returns a ChannelFuture
-     for the status of the write/flush operations.
+    "Write an HttpMessage and body to a Netty channel or context. Returns a
+     ChannelFuture for the status of the write/flush operations.
 
      Accepts Strings, ByteBuffers, ByteBufs, byte[], ChunkedInputs,
      Files, Paths, HttpFiles, seqs and streams for bodies.
