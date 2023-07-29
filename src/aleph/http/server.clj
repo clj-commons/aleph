@@ -735,7 +735,8 @@ Example: {:status 200
                               #(do
                                  (when (instance? ExecutorService executor)
                                    (.shutdown ^ExecutorService executor))
-                                 (when (instance? ExecutorService continue-executor)
+                                 (when (and (instance? ExecutorService continue-executor)
+                                            (not= continue-executor executor))
                                    (.shutdown ^ExecutorService continue-executor))))
        :transport           (netty/determine-transport transport epoll?)
        :shutdown-timeout    shutdown-timeout})))
