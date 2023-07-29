@@ -89,11 +89,20 @@
    :headers {"content-type" "text/plain"}
    :body    "Internal Server Error"})
 
-(let [[server-name connection-name date-name content-type]
-      (map #(AsciiString. ^CharSequence %) ["Server" "Connection" "Date" "Content-Type"])
-
-      [server-value keep-alive-value close-value]
-      (map #(AsciiString. ^CharSequence %) ["Aleph/0.7.0-alpha1" "Keep-Alive" "Close"])]
+(let [[server-name
+       connection-name
+       date-name
+       content-type
+       keep-alive-value
+       close-value]
+      (map #(AsciiString. ^CharSequence %)
+           ; http1 - not lower-cased
+           ["Server"
+            "Connection"
+            "Date"
+            "Content-Type"
+            "Keep-Alive"
+            "Close"])]
 
   (defn send-response
     "Converts the Ring response to a Netty HttpResponse, and then sends it to
