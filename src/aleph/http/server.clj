@@ -83,30 +83,6 @@
                     (.set (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)
                                 (.setTimeZone (TimeZone/getTimeZone "GMT"))))))
 
-(defonce ^FastThreadLocal date-value (FastThreadLocal.))
-
-(defn rfc-1123-date-string
-  "Returns an RFC 1123 date string, e.g. \"Sat, 01 Jul 2023 09:49:56 GMT\""
-  ^String
-  []
-  (DateFormatter/format (Date.)))
-
-(defn date-header-value
-  "Returns a cached RFC 1123 date string. The ThreadLocal cached value is
-   updated every second."
-  ^CharSequence
-  [^ChannelHandlerContext ctx]
-  (if-let [^AtomicReference ref (.get date-value)]
-    (.get ref)
-    (let [ref (AtomicReference. (AsciiString. (rfc-1123-date-string)))]
-      (.set date-value ref)
-      (.scheduleAtFixedRate (.executor ctx)
-                            #(.set ref (AsciiString. (rfc-1123-date-string)))
-                            1000
-                            1000
-                            TimeUnit/MILLISECONDS)
-      (.get ref))))
-
 (defn error-response [^Throwable e]
   (log/error e "error in HTTP handler")
   {:status  500
@@ -136,10 +112,10 @@
       (netty/safe-execute ctx
         (let [headers (.headers rsp)]
           (when-not (.contains headers ^CharSequence server-name)
-            (.set headers ^CharSequence server-name server-value))
+            (.set headers ^CharSequence server-name common/aleph-server-header))
 
           (when-not (.contains headers ^CharSequence date-name)
-            (.set headers ^CharSequence date-name (date-header-value ctx)))
+            (.set headers ^CharSequence date-name (common/date-header-value (.executor ctx))))
 
           (when (= (.get headers ^CharSequence content-type) "text/plain")
             (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))

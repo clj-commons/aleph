@@ -11,17 +11,26 @@
       ChannelHandler
       ChannelPipeline)
     (io.netty.handler.codec
+      DateFormatter
       DecoderResult
       DecoderResultProvider)
     (io.netty.handler.timeout
       IdleState
       IdleStateEvent
       IdleStateHandler)
+    (io.netty.util AsciiString)
+    (io.netty.util.concurrent
+      EventExecutorGroup
+      FastThreadLocal)
     (io.netty.util.internal StringUtil)
     (java.nio ByteBuffer)
-    (java.util.concurrent TimeUnit)))
+    (java.util Date)
+    (java.util.concurrent TimeUnit)
+    (java.util.concurrent.atomic AtomicReference)))
 
 (set! *warn-on-reflection* true)
+
+(def aleph-server-header "Aleph value for the Server header" (AsciiString. "Aleph/0.7.0-alpha1"))
 
 (defn coerce-element
   "Turns an object into something writable to a Netty channel.
@@ -104,3 +113,29 @@
 
 (defn ^Throwable decoder-failure [^DecoderResultProvider msg]
   (.cause ^DecoderResult (.decoderResult msg)))
+
+
+;; Date-supporting fns
+(defonce ^FastThreadLocal date-value (FastThreadLocal.))
+
+(defn rfc-1123-date-string
+  "Returns an RFC 1123 date string, e.g. \"Sat, 01 Jul 2023 09:49:56 GMT\""
+  ^String
+  []
+  (DateFormatter/format (Date.)))
+
+(defn date-header-value
+  "Returns a cached RFC 1123 date string. The ThreadLocal cached value is
+   updated every second."
+  ^CharSequence
+  [^EventExecutorGroup exec]
+  (if-let [^AtomicReference ref (.get date-value)]
+    (.get ref)
+    (let [ref (AtomicReference. (AsciiString. (rfc-1123-date-string)))]
+      (.set date-value ref)
+      (.scheduleAtFixedRate exec
+                            #(.set ref (AsciiString. (rfc-1123-date-string)))
+                            1000
+                            1000
+                            TimeUnit/MILLISECONDS)
+      (.get ref))))
