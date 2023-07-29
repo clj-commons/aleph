@@ -543,10 +543,10 @@ Example: {:status 200
 
 (defn setup-http1-pipeline
   "Returns a fn that adds all the needed ChannelHandlers to a ChannelPipeline"
-  [^ChannelPipeline pipeline
-   handler
-   {:keys
-    [executor
+  [{:keys
+    [^ChannelPipeline pipeline
+     handler
+     executor
      rejected-handler
      error-handler
      request-buffer-size
@@ -611,7 +611,10 @@ Example: {:status 200
 
 (defn ^:deprecated ^:no-doc pipeline-builder
   [handler pipeline-transform opts]
-  #(setup-http1-pipeline % handler (assoc opts :pipeline-transform pipeline-transform)))
+  #(setup-http1-pipeline (assoc opts
+                                :pipeline %
+                                :handler handler
+                                :pipeline-transform pipeline-transform)))
 
 (defn make-pipeline-builder
   "Returns a function that initializes a new server channel's pipeline."
@@ -620,7 +623,7 @@ Example: {:status 200
     [^ChannelPipeline pipeline]
     (log/trace "pipeline-builder*" pipeline opts)
     (let [setup-opts (assoc opts
-                            :inbound-handler handler
+                            :handler handler
                             :is-server? true
                             :pipeline pipeline)]
       (cond ssl?
@@ -636,7 +639,7 @@ Example: {:status 200
                                 [^ChannelPipeline pipeline protocol]
                                 (log/trace "setup-secure-pipeline")
                                 (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-                                      (setup-http1-pipeline pipeline handler opts)
+                                      (setup-http1-pipeline setup-opts)
 
                                       (.equals ApplicationProtocolNames/HTTP_2 protocol)
                                       (http2/setup-http2-pipeline setup-opts)
@@ -656,7 +659,7 @@ Example: {:status 200
             :else
             (do
               (log/info "Setting up insecure HTTP/1 server pipeline.")
-              (setup-http1-pipeline pipeline handler opts))))))
+              (setup-http1-pipeline setup-opts))))))
 
 ;;;
 
