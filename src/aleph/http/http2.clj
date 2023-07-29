@@ -4,31 +4,41 @@
     [aleph.http.common :as common]
     [aleph.http.file :as file]
     [aleph.netty :as netty]
+    [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
+    (aleph.http AlephChannelInitializer)
     (aleph.http.file HttpFile)
     (clojure.lang IPending)
     (io.netty.buffer ByteBuf)
     (io.netty.channel
+      Channel
       ChannelHandler
       ChannelPipeline
       FileRegion)
+    (io.netty.handler.codec.http
+      QueryStringDecoder)
     (io.netty.handler.codec.http2
       DefaultHttp2DataFrame
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
       Http2DataChunkedInput
+      Http2DataFrame
       Http2Error
+      Http2Exception
       Http2FrameCodecBuilder
       Http2FrameLogger
       Http2FrameStream
       Http2FrameStreamException
+      Http2GoAwayFrame
       Http2Headers
+      Http2HeadersFrame
       Http2MultiplexHandler
+      Http2ResetFrame
       Http2Settings
       Http2StreamChannel)
     (io.netty.handler.logging LoggingHandler)
@@ -36,7 +46,11 @@
     (io.netty.handler.stream
       ChunkedFile
       ChunkedInput
-      ChunkedNioFile)
+      ChunkedNioFile
+      ChunkedWriteHandler)
+    (io.netty.util
+      AsciiString
+      ReferenceCounted)
     (io.netty.util.internal StringUtil)
     (java.io
       Closeable
@@ -48,7 +62,9 @@
       OpenOption
       Path
       StandardOpenOption)
-    (java.util.concurrent ConcurrentHashMap)))
+    (java.util.concurrent
+      ConcurrentHashMap
+      RejectedExecutionException)))
 
 (set! *warn-on-reflection* true)
 
@@ -58,7 +74,10 @@
 (def ^:dynamic *default-chunk-size* 16384) ; same as default SETTINGS_MAX_FRAME_SIZE
 
 ;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
-(def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
+;;(def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
+(def ^:private invalid-headers (set (map #(AsciiString/cached ^String %)
+                                         ["connection" "proxy-connection" "keep-alive" "upgrade"])))
+(def ^:private te-header-name (AsciiString/cached "transfer-encoding"))
 
 (def ^:private ^ConcurrentHashMap cached-header-names
   "No point in lower-casing the same strings over and over again."
@@ -75,12 +94,17 @@
   "Add a single header and value. The value can be a string or a collection of
    strings.
 
-   Respects HTTP/2 rules. All headers will be made lower-case. Strips invalid
-   connection-related headers. Throws on nil header values. Throws if
+   Header names are converted to lower-case AsciiStrings. Values are left as-is,
+   but it's up to the user to ensure they are valid. For more info, see
+   https://www.rfc-editor.org/rfc/rfc9113.html#section-8.2.1
+
+   Respects HTTP/2 rules. All headers will be made lower-case. Throws on
+   invalid connection-related headers. Throws on nil header values. Throws if
    `transfer-encoding` is present, but is not equal to 'trailers'."
   [^Http2Headers h2-headers ^String header-name header-value]
   (log/debug "Adding HTTP header" header-name ": " header-value)
 
+  ;; Also checked by Netty, but we want to avoid work, so we check too
   (if (nil? header-name)
     (illegal-arg "Header name cannot be nil")
 
@@ -88,18 +112,19 @@
     ;; probably faster, since most users won't be caching.
     (let [header-name (if-some [cached (.get cached-header-names header-name)]
                         cached
-                        (let [lower-cased (str/lower-case (name header-name))]
+                        (let [lower-cased (-> header-name (name) (AsciiString.) (.toLowerCase))]
                           (.put cached-header-names header-name lower-cased)
                           lower-cased))]
       (cond
-        (nil? header-value)
-        (illegal-arg (str "Invalid nil value for header '" header-name "'"))
+        ;; Will be checked by Netty
+        ;;(nil? header-value)
+        ;;(illegal-arg (str "Invalid nil value for header '" header-name "'"))
 
         (invalid-headers header-name)
         (illegal-arg (str "Forbidden HTTP/2 header: \"" header-name "\""))
 
         ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
-        (and (.equals "transfer-encoding" header-name)
+        (and (.equals te-header-name header-name)
              (not (.equals "trailers" header-value)))
         (illegal-arg "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed.")
 
@@ -112,19 +137,25 @@
 (defn- ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map."
   ^DefaultHttp2Headers
-  [req]
-  (let [headers (get req :headers)
-        h2-headers (doto (DefaultHttp2Headers.)
-                         (.method (-> req (get :request-method) name str/upper-case))
-                         (.scheme (-> req (get :scheme) name))
-                         (.authority (:authority req))
-                         (.path (str (get req :uri)
-                                     (when-let [q (get req :query-string)]
-                                       (str "?" q)))))]
-    (when-some [status (get req :status)]
-      (.status h2-headers (.toString status)))
+  [m is-request?]
+  (let [h2-headers (DefaultHttp2Headers. true)]
 
-    (when headers
+    (if is-request?
+      (-> h2-headers
+          (.method (-> m (get :request-method) name str/upper-case))
+          (.scheme (-> m (get :scheme) name))
+          (.authority (:authority m))
+          (.path (str (get m :uri)
+                      (when-let [q (get m :query-string)]
+                        (str "?" q)))))
+      (let [status (get m :status)]
+        (if (string? status)
+          (.status h2-headers status)
+          (.status h2-headers (Integer/toString status)))))
+
+    ;; Technically, missing :headers is a violation of the Ring SPEC, but kept
+    ;; for backwards compatibility
+    (when-let [headers (get m :headers)]
       (run! #(add-header h2-headers (key %) (val %))
             headers))
 
@@ -390,7 +421,7 @@
                      (log/warn "Non-nil TRACE request body was removed"))
                    nil)
                  (:body req))
-          headers (ring-map->netty-http2-headers req)
+          headers (ring-map->netty-http2-headers req true)
           chunk-size (or (:chunk-size req) *default-chunk-size*)
           file-chunk-size (p/int (or (:chunk-size req) file/*default-file-chunk-size*))]
 
