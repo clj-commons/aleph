@@ -73,6 +73,7 @@
 (def ^:const max-allowed-frame-size 16777215) ; 2^24 - 1, see RFC 9113, SETTINGS_MAX_FRAME_SIZE
 (def ^:dynamic *default-chunk-size* 16384) ; same as default SETTINGS_MAX_FRAME_SIZE
 
+;; TODO: optimize. Either non-concurrent HashMap, regex, or with a fn
 ;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
 ;;(def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
 (def ^:private invalid-headers (set (map #(AsciiString/cached ^String %)
@@ -333,75 +334,77 @@
 
 (defn- send-message
   "Given Http2Headers and a body, determines the best way to write the body to the stream channel"
-  [^Http2StreamChannel ch ^Http2Headers headers body chunk-size file-chunk-size]
-  (log/trace "http2 send-message")
-  (let [^Http2FrameStream stream (.stream ch)]
-    (try
-      (cond
-        (or (nil? body)
-            (identical? :aleph/omitted body))
-        (do
-          (log/trace "Body is nil or omitted")
-          (let [header-frame (-> headers (DefaultHttp2HeadersFrame. true) (.stream stream))]
-            (log/debug header-frame)
-            (netty/write-and-flush ch header-frame)))
+  ([^Http2StreamChannel ch ^Http2Headers headers body]
+   (send-message ch headers body *default-chunk-size* file/*default-file-chunk-size*))
+  ([^Http2StreamChannel ch ^Http2Headers headers body chunk-size file-chunk-size]
+   (log/trace "http2 send-message")
+   (let [^Http2FrameStream stream (.stream ch)]
+     (try
+       (cond
+         (or (nil? body)
+             (identical? :aleph/omitted body))
+         (do
+           (log/trace "Body is nil or omitted")
+           (let [header-frame (-> headers (DefaultHttp2HeadersFrame. true) (.stream stream))]
+             (log/debug header-frame)
+             (netty/write-and-flush ch header-frame)))
 
-        (or
-          (instance? String body)
-          (instance? ByteBuf body)
-          (instance? ByteBuffer body)
-          (instance? byte-array-class body))
-        (send-contiguous-body ch stream headers body)
+         (or
+           (instance? String body)
+           (instance? ByteBuf body)
+           (instance? ByteBuffer body)
+           (instance? byte-array-class body))
+         (send-contiguous-body ch stream headers body)
 
-        (instance? ChunkedInput body)
-        (send-chunked-body ch stream headers body)
+         (instance? ChunkedInput body)
+         (send-chunked-body ch stream headers body)
 
-        (instance? RandomAccessFile body)
-        (send-chunked-body ch stream headers
-                           (ChunkedFile. ^RandomAccessFile body
-                                         ^int file-chunk-size))
+         (instance? RandomAccessFile body)
+         (send-chunked-body ch stream headers
+                            (ChunkedFile. ^RandomAccessFile body
+                                          ^int file-chunk-size))
 
-        (instance? File body)
-        (send-chunked-body ch stream headers
-                           (ChunkedNioFile. ^File body ^int file-chunk-size))
+         (instance? File body)
+         (send-chunked-body ch stream headers
+                            (ChunkedNioFile. ^File body ^int file-chunk-size))
 
-        (instance? Path body)
-        (send-chunked-body ch stream headers
-                           (ChunkedNioFile. ^FileChannel
-                                            (FileChannel/open
-                                              ^Path body
-                                              (into-array OpenOption [StandardOpenOption/READ]))
-                                            ^int file-chunk-size))
+         (instance? Path body)
+         (send-chunked-body ch stream headers
+                            (ChunkedNioFile. ^FileChannel
+                                             (FileChannel/open
+                                               ^Path body
+                                               (into-array OpenOption [StandardOpenOption/READ]))
+                                             ^int file-chunk-size))
 
-        (instance? HttpFile body)
-        (send-http-file ch stream headers body)
+         (instance? HttpFile body)
+         (send-http-file ch stream headers body)
 
-        (instance? FileChannel body)
-        (send-chunked-body ch stream headers
-                           (ChunkedNioFile. ^FileChannel body ^int file-chunk-size))
+         (instance? FileChannel body)
+         (send-chunked-body ch stream headers
+                            (ChunkedNioFile. ^FileChannel body ^int file-chunk-size))
 
-        (instance? FileRegion body)
-        (if (or (-> ch (.pipeline) (.get ^Class SslHandler))
-                (some-> ch (.parent) (.pipeline) (.get ^Class SslHandler)))
-          (let [emsg (str "FileRegion not supported with SSL in Netty")
-                ex (ex-info emsg {:ch ch :headers headers :body body})
-                e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR ex)]
-            (log/error e emsg)
-            (netty/close ch))
-          (send-file-region ch headers body))
+         (instance? FileRegion body)
+         (if (or (-> ch (.pipeline) (.get ^Class SslHandler))
+                 (some-> ch (.parent) (.pipeline) (.get ^Class SslHandler)))
+           (let [emsg (str "FileRegion not supported with SSL in Netty")
+                 ex (ex-info emsg {:ch ch :headers headers :body body})
+                 e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR ex)]
+             (log/error e emsg)
+             (netty/close ch))
+           (send-file-region ch headers body))
 
-        :else
-        (try
-          (send-streaming-body ch stream headers body chunk-size)
-          (catch Throwable e
-            (log/error e "Error sending body of type " (StringUtil/simpleClassName body))
-            (throw e))))
+         :else
+         (try
+           (send-streaming-body ch stream headers body chunk-size)
+           (catch Throwable e
+             (log/error e "Error sending body of type " (StringUtil/simpleClassName body))
+             (throw e))))
 
-      (catch Exception e
-        (log/error e "Error sending message")
-        (throw (Http2FrameStreamException. (.stream ch)
-                                           Http2Error/PROTOCOL_ERROR
-                                           (ex-info "Error sending message" {:headers headers :body body} e)))))))
+       (catch Exception e
+         (log/error e "Error sending message")
+         (throw (Http2FrameStreamException. (.stream ch)
+                                            Http2Error/PROTOCOL_ERROR
+                                            (ex-info "Error sending message" {:headers headers :body body} e))))))))
 
 ;; NOTE: can't be as vague about whether we're working with a channel or context in HTTP/2 code,
 ;; because we need access to the .stream method. We have a lot of code in aleph.netty that
@@ -435,7 +438,7 @@
       (-> (netty/safe-execute ch
             (send-message ch headers body chunk-size file-chunk-size))
           (d/catch' (fn [e]
-                      (log/error e "Error in http2 req-preprocess")
+                      (log/error e "Error in http2 send-request")
                       (d/error! response e)
                       (netty/close ch)))))
 
@@ -445,32 +448,303 @@
       (d/error! response e)
       (netty/close ch))))
 
+(let [[server-name date-name content-type]
+      (map #(AsciiString. ^CharSequence %) ["server" "date" "content-type"])]
 
-(defn setup-http2-pipeline
+  (defn send-response
+    "Converts the Ring response map to a Netty HttpResponse, and then sends it to
+     Netty to be sent out over the wire."
+    [^Http2StreamChannel ch error-handler head-request? rsp]
+    (log/trace "http2 send-response fired")
+
+    (let [body (if head-request?
+                 ;; https://www.rfc-editor.org/rfc/rfc9110#section-9.3.2
+                 (do
+                   (when (some? (:body rsp))
+                     (log/warn "Non-nil HEAD response body was removed"))
+                   :aleph/omitted)
+                 (:body rsp))
+          headers (ring-map->netty-http2-headers rsp false)
+          chunk-size (or (:chunk-size rsp) *default-chunk-size*)
+          file-chunk-size (p/int (or (:chunk-size rsp) file/*default-file-chunk-size*))]
+
+      ;; Add default headers if they're not already present
+      (when-not (.contains headers ^CharSequence server-name)
+        (.set headers ^CharSequence server-name common/aleph-server-header))
+
+      (when-not (.contains headers ^CharSequence date-name)
+        (.set headers ^CharSequence date-name (common/date-header-value (.eventLoop ch))))
+
+      (when (.equals "text/plain" (.get headers ^CharSequence content-type))
+        (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
+
+      (-> (netty/safe-execute ch
+            (send-message ch headers body chunk-size file-chunk-size))
+          (d/catch' (fn [e]
+                      (log/error e "Error in http2 send-request")
+                      (netty/close ch)))))))
+
+
+
+(comment
+  ;; parsing authority probably not needed for server-name/port,
+  ;; but may be useful for generating "Host" header???
+  (def ^:const ^:private ^int at-int (int (.charValue \@)))
+  (def ^:const ^:private ^int colon-int (int (.charValue \:)))
+  (let [scheme (keyword (.scheme headers))
+        ;; parsing :authority is 10x faster than using URI
+        authority (.toString (.authority headers))
+        at-index (.indexOf authority at-int)
+        colon-index (.indexOf authority colon-int at-index)]
+
+    {:server-name       (.subSequence authority
+                                      (p/inc at-index)
+                                      (if (p/== colon-index -1)
+                                        (.length authority)
+                                        colon-index))
+     :server-port       (if (p/== colon-index -1)
+                          (if (= scheme :https) 443 80)
+                          (Integer/parseInt (.subSequence authority
+                                                          (p/inc colon-index)
+                                                          (.length authority)) 10))})
+  )
+
+
+(defn- netty->ring-request
+  "Given Netty Http2Headers and a body stream, returns a Ring request map"
+  [ch ^Http2Headers headers body complete]
+  ;; The :path pseudo-header is not the same as the Ring SPEC, it has to be split.
+  (let [qsd (QueryStringDecoder. (-> headers (.path) (.toString)))
+        path (.rawPath qsd)
+        query-string (.rawQuery qsd)]
+    (cond->
+      {:request-method    (-> headers (.method) (.toString) (.toLowerCase) keyword)
+       :scheme            (-> headers (.scheme) keyword)
+       :path              path
+       :uri               path                              ; not really a URI
+       :server-name       (netty/channel-server-name ch)    ; is this best?
+       :server-port       (netty/channel-server-port ch)
+       :remote-addr       (netty/channel-remote-address ch)
+       :headers           (netty-http2-headers->map headers)
+       :body              body
+       ;;:trailers          (d/deferred)
+
+       :protocol          "HTTP/2.0"
+       :aleph/keep-alive? true                              ; not applicable to HTTP/2, but here for compatibility
+       :aleph/complete    complete}
+
+      (not (.isEmpty query-string))
+      (assoc :query-string query-string))))
+
+(defn- server-handler
+  "Given a response-stream, returns a ChannelInboundHandler that processes
+   inbound Netty Http2 frames, converts them, and places them on the stream"
+  [^Http2StreamChannel ch
+   handler
+   raw-stream?
+   rejected-handler
+   error-handler
+   executor
+   buffer-capacity]
+  (let [buffer-capacity ^long buffer-capacity               ; stupid compiler limitation
+        complete (d/deferred) ; realized when this stream is done, regardless of success/error
+
+        ;; if raw, we're returning a stream of ByteBufs, if not, we return byte arrays
+        body-stream
+        (doto (if raw-stream?
+                (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
+                (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
+              (s/on-closed #(d/success! complete true)))
+
+        ;; TODO: passing errors to the stream is problematic
+        ;; Not clear how byte-streams will propagate errors when converting for
+        ;; non-raw streams (what happens when bs gets an Exception? Should it
+        ;; close the stream? Throw mysterious IOExceptions?)
+        ;; A user-supplied error handler may be better, either in here, or as part of the netty pipeline
+        handle-error
+        (let [close-body-handler (fn [_] (s/close! body-stream))]
+          (fn handle-error [ex]
+            (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
+            (d/error! complete ex)
+            (-> (s/put! body-stream ex)                     ; FIXME?
+                (d/on-realized close-body-handler close-body-handler))))
+
+        handle-shutdown-frame
+        (fn handle-shutdown-frame [evt]
+          ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame
+          (when (or (instance? Http2ResetFrame evt)
+                    (instance? Http2GoAwayFrame evt))
+            (let [stream-id (-> ch (.stream) (.id))
+                  error-code (if (instance? Http2ResetFrame evt)
+                               (.errorCode ^Http2ResetFrame evt)
+                               (.errorCode ^Http2GoAwayFrame evt))
+                  msg (if (instance? Http2ResetFrame evt)
+                        (str "Received RST_STREAM from peer, stream closing. Error code: " error-code ".")
+                        (str "Received GOAWAY from peer, connection closing. Error code: " error-code ". Stream " stream-id " was not processed by peer."))
+                  no-error? (p/== error-code (.code Http2Error/NO_ERROR))]
+              ;; Was there an error, or does the peer just want to shut down the stream/conn?
+              (if no-error?
+                (do
+                  (log/info msg)
+                  (s/close! body-stream))
+                (handle-error (Http2Exception. (Http2Error/valueOf error-code) msg))))))]
+
+    (netty/channel-inbound-handler
+
+      :exception-caught
+      ([_ ctx ex]
+       (handle-error ex))
+
+      :channel-inactive
+      ([_ ctx]
+       (s/close! body-stream)
+       (.fireChannelInactive ctx))
+
+      :channel-read
+      ([_ ctx msg]
+       (cond
+         (instance? Http2HeadersFrame msg)
+         ;; TODO: support trailers?
+         (let [headers (.headers ^Http2HeadersFrame msg)
+               body (if raw-stream? body-stream (bs/to-input-stream body-stream))
+               ring-req (netty->ring-request ch headers body complete)]
+
+           (when (.isEndStream ^Http2HeadersFrame msg)
+             (s/close! body-stream))
+
+           (-> (if executor
+                 ;; handle request on a separate thread
+                 (try
+                   (d/future-with executor
+                     (handler ring-req))
+                   (catch RejectedExecutionException e
+                     (if rejected-handler
+                       (try
+                         (rejected-handler ring-req)
+                         (catch Throwable e
+                           (error-handler e)))
+                       {:status  503
+                        :headers {"content-type" "text/plain"}
+                        :body    "503 Service Unavailable"})))
+
+                 ;; else handle it inline (hope you know what you're doing!)
+                 (try
+                   (handler ring-req)
+                   (catch Throwable e
+                     (error-handler e))))
+               (d/catch' error-handler)
+               (d/chain'
+                 (fn send-http-response [rsp]
+                   ;;FIXME
+                   #_(send-response ch
+                                  ctx
+                                  error-handler
+                                  (= :head (:request-method ring-req))
+                                  (cond
+
+                                    (map? rsp)
+                                    (if is-head?
+                                      (assoc rsp :body :aleph/omitted)
+                                      rsp)
+
+                                    (nil? rsp)
+                                    {:status 204}
+
+                                    :else
+                                    (error-handler (invalid-value-exception req rsp))))))))
+
+         (instance? Http2DataFrame msg)
+         (let [content (.content ^Http2DataFrame msg)]
+           ;; skip empty bytebufs
+           (when (p/> (.readableBytes content) 0)
+             (netty/put! (.channel ctx)
+                         body-stream
+                         (if raw-stream?
+                           content
+                           (netty/buf->array content))))
+
+           (when-not raw-stream?
+             (.release ^ReferenceCounted msg))
+
+           (when (.isEndStream ^Http2DataFrame msg)
+             (s/close! body-stream)))
+
+         :else
+         (.fireChannelRead ctx msg)))
+
+      :user-event-triggered
+      ([_ ctx evt]
+       (handle-shutdown-frame evt)
+       (.fireUserEventTriggered ctx evt)))))
+
+(defn setup-stream-pipeline
+  "Set up the pipeline for an HTTP/2 stream channel"
+  [^ChannelPipeline p handler is-server? proxy-options logger pipeline-transform]
+  (log/trace "setup-stream-pipeline called")
+
+  ;; necessary for multipart support in HTTP/2?
+  #_(.addLast p
+              "stream-frame-to-http-object"
+              ^ChannelHandler stream-frame->http-object-codec)
+  (.addLast p
+            "streamer"
+            ^ChannelHandler (ChunkedWriteHandler.))
+
+  (when is-server?
+    ;; TODO: add continue handler for server-side
+    )
+
+  (.addLast p
+            "handler"
+            ^ChannelHandler
+            handler)
+
+  (when (some? proxy-options)
+    (throw (IllegalArgumentException. "Proxying HTTP/2 messages not supported yet")))
+
+  (common/add-non-http-handlers p logger pipeline-transform)
+
+  (log/trace "added all stream handlers")
+  (log/debug "Stream chan pipeline:" p)
+
+  p)
+
+(def ^:private client-inbound-handler
+  "For the client, the inbound handler will probably never get used.
+   Servers will rarely initiate streams, because PUSH_PROMISE is effectively
+   deprecated. Responses to client-initiated streams are set elsewhere
+   (even if it's the same handler fn)."
+  (netty/channel-inbound-handler
+    {:channel-active
+     ([_ ctx]
+      (log/error "Cannot currently handle peer-initiated streams. (You must override this handler if receiving server-pushed streams.) Closing channel.")
+      (netty/close ctx))}))
+
+(defn setup-conn-pipeline
   "Set up pipeline for an HTTP/2 connection channel. Works for both server
    and client."
   [{:keys
     [^ChannelPipeline pipeline
      ^LoggingHandler logger
      idle-timeout
-     ^ChannelHandler inbound-handler
+     ^ChannelHandler handler
      is-server?
-     http2-settings]
+     raw-stream?
+     rejected-handler
+     error-handler
+     executor
+     http2-settings
+     buffer-capacity
+     proxy-options
+     pipeline-transform]
     :or
-    {idle-timeout    0
-     ;; For the client, the inbound handler will probably never get used.
-     ;; Servers will rarely initiate streams, because PUSH_PROMISE is effectively
-     ;; deprecated. Responses to client-initiated streams are set elsewhere
-     ;; (even if it's the same handler fn).
-     inbound-handler (netty/channel-inbound-handler
-                       {:channel-active
-                        ([_ ctx]
-                         (log/error "Cannot currently handle peer-initiated streams. (You must override this handler if receiving server-pushed streams.) Closing channel.")
-                         (netty/close ctx))})
-     http2-settings (Http2Settings/defaultSettings)}}]
-
-  (log/trace "setup-http2-pipeline fired")
-  (let [log-level (some-> logger (.level))
+    {idle-timeout   0
+     http2-settings (Http2Settings/defaultSettings)
+     pipeline-transform identity}
+    :as opts}]
+  (log/trace "setup-conn-pipeline fired")
+  (let [
+        log-level (some-> logger (.level))
         http2-frame-codec (let [builder (if is-server?
                                           (Http2FrameCodecBuilder/forServer)
                                           (Http2FrameCodecBuilder/forClient))]
@@ -479,7 +753,23 @@
                             (-> builder
                                 (.initialSettings http2-settings)
                                 (.build)))
-        multiplex-handler (Http2MultiplexHandler. inbound-handler)]
+        stream-chan-initializer (AlephChannelInitializer.
+                                  (fn [^Channel ch]
+                                    (setup-stream-pipeline (.pipeline ch)
+                                                           (if is-server?
+                                                             (server-handler ch
+                                                                             handler
+                                                                             raw-stream?
+                                                                             rejected-handler
+                                                                             error-handler
+                                                                             executor
+                                                                             buffer-capacity)
+                                                             client-inbound-handler)
+                                                           is-server?
+                                                           proxy-options
+                                                           logger
+                                                           pipeline-transform)))
+        multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)]
 
     (-> pipeline
         (common/attach-idle-handlers idle-timeout)

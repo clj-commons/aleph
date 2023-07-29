@@ -642,7 +642,7 @@ Example: {:status 200
                                       (setup-http1-pipeline setup-opts)
 
                                       (.equals ApplicationProtocolNames/HTTP_2 protocol)
-                                      (http2/setup-http2-pipeline setup-opts)
+                                      (http2/setup-conn-pipeline setup-opts)
 
                                       :else
                                       (let [msg (str "Unknown protocol: " protocol)
@@ -654,7 +654,7 @@ Example: {:status 200
             use-h2c?
             (do
               (log/warn "Setting up insecure HTTP/2 server pipeline.")
-              (http2/setup-http2-pipeline setup-opts))
+              (http2/setup-conn-pipeline setup-opts))
 
             :else
             (do
