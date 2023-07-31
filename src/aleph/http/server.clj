@@ -24,7 +24,6 @@
       ChannelHandlerContext
       ChannelPipeline)
     (io.netty.handler.codec
-      DateFormatter
       TooLongFrameException)
     ;; Do not remove
     (io.netty.handler.codec.http
@@ -43,7 +42,7 @@
       HttpUtil
       HttpVersion
       LastHttpContent)
-    (io.netty.handler.ssl ApplicationProtocolNames)
+    (io.netty.handler.ssl ApplicationProtocolNames SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
     (io.netty.util AsciiString)
@@ -54,22 +53,18 @@
     (java.net
       InetSocketAddress)
     (java.text
-      DateFormat
       SimpleDateFormat)
     (java.util
-      Date
       EnumSet
       Locale
       TimeZone)
     (java.util.concurrent
       Executor
       ExecutorService
-      RejectedExecutionException
-      TimeUnit)
+      RejectedExecutionException)
     (java.util.concurrent.atomic
       AtomicBoolean
-      AtomicInteger
-      AtomicReference)))
+      AtomicInteger)))
 
 (set! *unchecked-math* true)
 
@@ -104,6 +99,7 @@
             "Keep-Alive"
             "Close"])]
 
+  ;; http1
   (defn send-response
     "Converts the Ring response to a Netty HttpResponse, and then sends it to
      Netty to be sent out over the wire."
@@ -129,6 +125,7 @@
           (when (= (.get headers ^CharSequence content-type) "text/plain")
             (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
+          ; http1
           (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
           (http1/send-message ctx keep-alive? ssl? rsp body))))))
@@ -148,6 +145,7 @@ Example: {:status 200
           :headers \"text/plain\"}"
                  (pr-str (select-keys req [:uri :request-method :query-string :headers]))))))
 
+; http1
 (defn handle-request
   "Converts to a Ring request, dispatches user handler on the appropriate
    executor if necessary, then sets up the chain to clean up, and convert
@@ -158,7 +156,7 @@ Example: {:status 200
    rejected-handler
    error-handler
    executor
-   ^HttpRequest req
+   ^HttpRequest req                                         ; HTTP1
    previous-response
    body
    keep-alive?]
@@ -255,6 +253,7 @@ Example: {:status 200
       netty/wrap-future
       (fn [_] (netty/close ctx)))))
 
+;; http1
 (defn ring-handler
   "Does not handle Ring maps, but rather, creates them for the user-supplied
    handler.
@@ -401,6 +400,7 @@ Example: {:status 200
          :else
          (.fireChannelRead ctx msg))))))
 
+;; HTTP1
 (defn raw-ring-handler
   "Like `ring-handler`, but the body is a Manifold stream of ByteBufs that
    the user must manually `release`."
@@ -649,7 +649,11 @@ Example: {:status 200
                                             e (IllegalStateException. msg)]
                                         (log/error e msg)
                                         (throw e))))
-                              apn-fallback-protocol))))
+                              apn-fallback-protocol)))
+
+              (do
+                (prn (.get pipeline ^Class SslHandler))
+                pipeline))
 
             use-h2c?
             (do
@@ -756,25 +760,57 @@ Example: {:status 200
 
 (comment
 
+  (do
+    (require '[aleph.http.client])
+    (import '(io.netty.handler.ssl ApplicationProtocolConfig
+                                   ApplicationProtocolConfig$Protocol
+                                   ApplicationProtocolConfig$SelectorFailureBehavior
+                                   ApplicationProtocolConfig$SelectedListenerFailureBehavior)))
+
   ;; from examples/
   (defn hello-world-handler
     "A basic Ring handler which immediately returns 'hello world'"
     [req]
-    {:status 200
+    {:status  200
      :headers {"content-type" "text/plain"}
-     :body "hello world!"})
+     :body    "hello world!"})
 
-  (def ssl-ctx-opts {:application-protocol-config
-                     (ApplicationProtocolConfig.
-                       ApplicationProtocolConfig$Protocol/ALPN
-                       ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
-                       ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
-                       ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
-                       ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
-                       ^"[Ljava.lang.String;"
-                       (into-array String ))})
+  (def http2-ssl-ctx
+    ;; this creates a certificate from the local files aleph.localhost+3-key.pem and aleph.localhost+3.pem
+    (netty/ssl-server-context
+      {:private-key       "aleph.localhost+3-key.pem"
+       :certificate-chain "aleph.localhost+3.pem"
+       :application-protocol-config
+       (ApplicationProtocolConfig.
+         ApplicationProtocolConfig$Protocol/ALPN
+         ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+         ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+         ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+         ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+         ^"[Ljava.lang.String;"
+         (into-array String [ApplicationProtocolNames/HTTP_2]))}))
 
-  (def s (start-server hello-world-handler {:port 10000
-                                            :ssl-context (netty/ssl-server-context ssl-ctx-opts)}))
+  (def port "'alef' in ascii" 11256)
+
+  ;; open and close
+  (with-open [s (start-server hello-world-handler
+                              {:port        port
+                               :ssl-context http2-ssl-ctx})]
+    (Thread/sleep 500)
+
+    ;; basic test
+    (do
+      (def conn @(aleph.http.client/http-connection
+                   (InetSocketAddress. "127.0.0.1" (int port))
+                   true
+                   {:on-closed     #(log/debug "http conn closed")
+                    :http-versions [:http2]}))
+
+      (def result @(conn {:request-method :get}))))
+
+  (def s (start-server hello-world-handler
+                       {:port        port
+                        :ssl-context http2-ssl-ctx}))
+
 
   )

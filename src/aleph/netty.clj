@@ -333,23 +333,27 @@
     (-> ^Channel x .alloc .ioBuffer)
     (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
+;; TODO: convert to use ChannelOutboundInvoker
 (defn ^:no-doc write [x msg]
   (if (instance? Channel x)
     (.write ^Channel x msg (.voidPromise ^Channel x))
     (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x)))
   nil)
 
+;; TODO: convert to use ChannelOutboundInvoker
 (defn ^:no-doc write-and-flush
   [x msg]
   (if (instance? Channel x)
     (.writeAndFlush ^Channel x msg)
     (.writeAndFlush ^ChannelHandlerContext x msg)))
 
+;; TODO: convert to use ChannelOutboundInvoker
 (defn ^:no-doc flush [x]
   (if (instance? Channel x)
     (.flush ^Channel x)
     (.flush ^ChannelHandlerContext x)))
 
+;; TODO: inline or macroize
 (defn ^:no-doc close
   [^ChannelOutboundInvoker x]
   (.close x))
@@ -1025,7 +1029,12 @@
               client-auth
               ^ApplicationProtocolConfig application-protocol-config]}]
      (let [^SslContextBuilder
-           b (cond (and (instance? File private-key)
+           b (cond (and (instance? String private-key)
+                        (instance? String certificate-chain))
+                   (SslContextBuilder/forServer ^File (File. ^String certificate-chain)
+                                                ^File (File. ^String private-key)
+                                                private-key-password)
+                   (and (instance? File private-key)
                         (instance? File certificate-chain))
                    (SslContextBuilder/forServer ^File certificate-chain
                                                 ^File private-key
@@ -1087,14 +1096,18 @@
        (.build b)))))
 
 (defn self-signed-ssl-context
-  "A self-signed SSL context for servers."
-  []
-  (let [cert (SelfSignedCertificate.)]
-    (ssl-server-context {:private-key       (.privateKey cert)
-                         :certificate-chain (.certificate cert)})))
+  "A self-signed SSL context for servers.
+
+   Never use in production."
+  ([] (self-signed-ssl-context {}))
+  ([opts]
+   (let [cert (SelfSignedCertificate.)]
+     (ssl-server-context (assoc opts
+                                :private-key (.privateKey cert)
+                                :certificate-chain (.certificate cert))))))
 
 (defn insecure-ssl-client-context
-  "An insure SSL context for servers."
+  "An insecure client SSL context."
   ([]
    (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
   ([opts]

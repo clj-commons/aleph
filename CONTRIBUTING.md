@@ -8,6 +8,36 @@ This document is a work in progress, so if there's anything you feel needs to be
 
 We require a recent version of [Leiningen](https://leiningen.org/), and a minimum Java version of 8. Running the deps update script will require bash on your system. Other than that, we have no specific requirements.
 
+### TLS/SSL
+
+To develop against TLS, (effectively mandatory for HTTP/2+) it's best to install your own root authority and certificates. The [mkcert](https://github.com/FiloSottile/mkcert) tool is very helpful. 
+
+An example setup:
+```shell
+# first check $JAVA_HOME is not empty, mkcert will use it to know where to install
+echo $JAVA_HOME
+
+# this is installs the root certificate authority (CA) for browsers/OS/Java
+mkcert -install 
+
+# if you have multiple JVMs in use, you will need to install the CA for each
+export JAVA_HOME=/path/to/some/other/jdk
+TRUST_STORES=java mkcert -install
+
+# this will generate a cert file and a key file in .pem format
+mkcert aleph.localhost localhost 127.0.0.1 ::1
+# e.g., aleph.localhost+3-key.pem and aleph.localhost+3.pem
+```
+
+Then, in code, generate an SslContext like:
+
+```clojure
+(aleph.netty/ssl-server-context
+  {:private-key       "aleph.localhost+3-key.pem"
+   :certificate-chain "aleph.localhost+3.pem"
+   ...})
+```
+
 ## Testing
 
 `lein test` should be run, and pass, before pushing up to GitHub.

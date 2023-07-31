@@ -31,9 +31,10 @@
                                    [org.slf4j/slf4j-simple "1.7.30"]
                                    [com.cognitect/transit-clj "1.0.324"]
                                    [spootnik/signal "0.2.4"]
-                                   ;; This is for self-generating certs for testing ONLY:
-                                   [org.bouncycastle/bcprov-jdk18on "1.72"]
-                                   [org.bouncycastle/bcpkix-jdk18on "1.72"]]
+                                   ;; This is for dev and testing ONLY:
+                                   [org.bouncycastle/bcprov-jdk18on "1.75"]
+                                   [org.bouncycastle/bcpkix-jdk18on "1.75"]
+                                   [org.bouncycastle/bctls-jdk18on "1.75"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                "-Dorg.slf4j.simpleLogger.showThreadId=true"
@@ -54,6 +55,7 @@
   :jvm-opts ^:replace ["-server"
                        "-Xmx2g"
                        "-XX:+HeapDumpOnOutOfMemoryError"
+                       "-XX:+PrintCommandLineFlags"
                        #_"-XX:+PrintCompilation"
                        #_"-XX:+UnlockDiagnosticVMOptions"
                        #_"-XX:+PrintInlining"]
