@@ -486,7 +486,6 @@ Example: {:status 200
                                        ^ByteBufHolder
                                        default-accept-response)]
                          (netty/write-and-flush ctx rsp)
-                         (.remove (.headers req) HttpHeaderNames/EXPECT)
                          (.fireChannelRead ctx req))
                        ;; rejected, use the default reject response if
                        ;; alternative is not provided
