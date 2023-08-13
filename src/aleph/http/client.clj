@@ -737,24 +737,27 @@
         ;; create a new outbound HTTP2 stream/channel
         (-> (.open h2-bootstrap)
             netty/wrap-future
-            (d/chain' (fn [^Http2StreamChannel chan]
+            (d/chain' (fn [^Http2StreamChannel out-chan]
+                        (log/debug "New outbound HTTP/2 channel available.")
+
                         (http2/setup-stream-pipeline
-                          (.pipeline chan)
-                          (http2-client-handler chan resp raw-stream? response-buffer-size)
+                          (.pipeline out-chan)
+                          (http2-client-handler out-chan resp raw-stream? response-buffer-size)
                           is-server?
                           proxy-options
                           logger
                           pipeline-transform)
-                        ch))
-            (d/chain' (fn [^Http2StreamChannel chan]
-                        (log/debug "New outbound HTTP/2 channel ready.")
+                        out-chan))
+            (d/chain' (fn [^Http2StreamChannel out-chan]
+                        (log/debug "New outbound HTTP/2 channel's pipeline configured.")
+
                         (if (multipart/is-multipart? req)
                           (let [emsg "Multipart requests are not yet supported in HTTP/2"
                                 ex (ex-info emsg {:req req})]
                             (log/error ex emsg)
                             (throw ex))
-                          #_(@multipart-req-preprocess (assoc req :ch chan)) ; switch to HTTP1 code for multipart
-                          (http2/send-request chan req' resp))))
+                          #_(@multipart-req-preprocess (assoc req :ch out-chan)) ; switch to HTTP1 code for multipart
+                          (http2/send-request out-chan req' resp))))
             (d/catch' (fn [^Throwable t]
                         (log/error t "Unable to open outbound HTTP/2 stream channel")
                         (d/error! resp t)

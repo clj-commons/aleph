@@ -338,6 +338,7 @@
    (send-message ch headers body *default-chunk-size* file/*default-file-chunk-size*))
   ([^Http2StreamChannel ch ^Http2Headers headers body chunk-size file-chunk-size]
    (log/trace "http2 send-message")
+
    (let [^Http2FrameStream stream (.stream ch)]
      (try
        (cond
@@ -414,7 +415,7 @@
 (defn send-request
   [^Http2StreamChannel ch req response]
   (log/trace "http2 send-request fired")
-
+  
   (try
     (let [body (if (= :trace (:request-method req))
                  ;; RFC #7231 4.3.8. TRACE
