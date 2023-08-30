@@ -1,6 +1,5 @@
-(ns aleph.http.server-test
+(ns aleph.http.common-test
   (:require [aleph.http.common :as common]
-            [aleph.http.server :as server]
             [clojure.string    :as str]
             [clojure.test      :refer [deftest is]]))
 

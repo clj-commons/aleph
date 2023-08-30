@@ -1,5 +1,5 @@
 (ns aleph.http-timeout-test
-  (:require [aleph.http   :as http]
+  (:require [aleph.http :as http]
             [clj-commons.byte-streams :as bs]
             [clojure.test :refer [deftest testing is]]
             [manifold.stream :as s])
