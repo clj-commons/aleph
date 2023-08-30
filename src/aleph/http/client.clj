@@ -11,8 +11,6 @@
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
-    (aleph.http
-      AlephChannelInitializer)
     (aleph.utils
       ProxyConnectionTimeoutException)
     (io.netty.buffer
@@ -458,7 +456,7 @@
                   (http1-client-handler responses response-buffer-size))]
 
     (-> pipeline
-        (common/attach-idle-handlers idle-timeout)
+        (common/add-idle-handlers idle-timeout)
         (.addLast "http-client"
                   (HttpClientCodec.
                     max-initial-line-length

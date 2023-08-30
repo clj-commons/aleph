@@ -50,12 +50,12 @@
 (def client-key (gen-key 65537 (read-string (slurp "test/client_key.edn"))))
 
 (def server-ssl-context-opts
-  {:private-key server-key
+  {:private-key       server-key
    ;; See https://github.com/clj-commons/aleph/issues/647
-   :protocols ["TLSv1.2" "TLSv1.3"]
+   :protocols         ["TLSv1.2" "TLSv1.3"]
    :certificate-chain [server-cert]
-   :trust-store [ca-cert]
-   :client-auth :optional})
+   :trust-store       [ca-cert]
+   :client-auth       :optional})
 
 (def server-ssl-context
   (netty/ssl-server-context server-ssl-context-opts))

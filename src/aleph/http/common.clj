@@ -77,7 +77,7 @@
        (netty/close ctx)
        (.fireUserEventTriggered ctx evt)))))
 
-(defn attach-idle-handlers
+(defn add-idle-handlers
   ^ChannelPipeline
   [^ChannelPipeline pipeline idle-timeout]
   (if (pos? idle-timeout)
@@ -107,12 +107,52 @@
   (pipeline-transform p)
   p)
 
+(defn add-exception-handler
+  "Set up the pipeline with an exception handler. Takes an optional name and
+   callback that will be passed the exception."
+  ([^ChannelPipeline p]
+   (add-exception-handler p "ex-handler"))
+  ([^ChannelPipeline p ^String handler-name]
+   (add-exception-handler p handler-name nil))
+  ([^ChannelPipeline p ^String handler-name ex-handler]
+   (.addLast p
+             handler-name
+             ^ChannelHandler
+             (netty/channel-inbound-handler
+               {:exception-caught
+                ([_ ctx ex]
+                 (when ex-handler (ex-handler ex))
+                 (log/error ex "Exception in channel. Closing...")
+                 (netty/close ctx))}))))
+
+(defn error-response
+  "Generic 500 error response"
+  [^Throwable e]
+  (log/error e "Error in HTTP handler")
+  {:status  500
+   :headers {"content-type" "text/plain"}
+   :body    "Internal Server Error"})
+
 (defn decoder-failed? [^DecoderResultProvider msg]
   (.isFailure ^DecoderResult (.decoderResult msg)))
 
 
 (defn ^Throwable decoder-failure [^DecoderResultProvider msg]
   (.cause ^DecoderResult (.decoderResult msg)))
+
+(defn invalid-value-exception
+  [req x]
+  (IllegalArgumentException.
+    (str "Cannot treat "
+         (pr-str x)
+         (when (some? x) (str " of " (type x)))
+         (format " as a response to '%s'.
+Ring response map expected.
+
+Example: {:status 200
+          :body \"hello world\"
+          :headers \"text/plain\"}"
+                 (pr-str (select-keys req [:uri :request-method :query-string :headers]))))))
 
 
 ;; Date-supporting fns
@@ -139,3 +179,4 @@
                             1000
                             TimeUnit/MILLISECONDS)
       (.get ref))))
+

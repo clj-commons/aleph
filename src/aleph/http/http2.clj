@@ -652,7 +652,7 @@
                                     {:status 204}
 
                                     :else
-                                    (error-handler (invalid-value-exception req rsp))))))))
+                                    (error-handler (common/invalid-value-exception ring-req ring-resp))))))))
 
          (instance? Http2DataFrame msg)
          (let [content (.content ^Http2DataFrame msg)]
@@ -705,7 +705,9 @@
 
   (common/add-non-http-handlers p logger pipeline-transform)
 
-  (log/trace "added all stream handlers")
+  (common/add-exception-handler p "stream-ex-handler")
+
+  (log/trace "Added all stream handlers")
   (log/debug "Stream chan pipeline:" p)
 
   p)
@@ -773,17 +775,11 @@
         multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)]
 
     (-> pipeline
-        (common/attach-idle-handlers idle-timeout)
+        (common/add-idle-handlers idle-timeout)
         (.addLast "http2-frame-codec" http2-frame-codec)
         (.addLast "multiplex" multiplex-handler)
         ;; TODO: add handler for conn-level frames?
-        (.addLast "ex-handler"
-                  ^ChannelHandler
-                  (netty/channel-inbound-handler
-                    {:exception-caught
-                     ([_ ctx ex]
-                      (log/error ex "Exception in HTTP/2 connection channel. Closing channel.")
-                      (netty/close ctx))})))
+        (common/add-exception-handler "conn-ex-handler"))
 
     (log/debug "Conn chan pipeline:" pipeline)
     pipeline))

@@ -1,20 +1,23 @@
 (ns aleph.http.server-test
-  (:require [aleph.http.server :as server]
+  (:require [aleph.http.common :as common]
+            [aleph.http.server :as server]
             [clojure.string    :as str]
             [clojure.test      :refer [deftest is]]))
 
 (deftest test-invalid-value-exception
   (is (str/starts-with?
-       (ex-message (server/invalid-value-exception nil nil))
-       "Cannot treat nil as a response to '{}'.\nRing response expected."))
+       (ex-message (common/invalid-value-exception nil nil))
+       "Cannot treat nil as a response to '{}'."))
   (is (str/starts-with?
-       (ex-message (server/invalid-value-exception nil false))
-       "Cannot treat false of class java.lang.Boolean as a response to '{}'.\nRing response expected."))
+       (ex-message (common/invalid-value-exception nil false))
+       "Cannot treat false of class java.lang.Boolean as a response to '{}'."))
   (is (str/starts-with?
-       (ex-message (server/invalid-value-exception {:uri "http://localhost/hello"
-                                                    :request-method :get} nil))
-       "Cannot treat nil as a response to '{:uri \"http://localhost/hello\", :request-method :get}'.\nRing response expected."))
+       (ex-message (common/invalid-value-exception {:uri "http://localhost/hello"
+                                                    :request-method :get}
+                                                   nil))
+       "Cannot treat nil as a response to '{:uri \"http://localhost/hello\", :request-method :get}'."))
   (is (str/starts-with?
-       (ex-message (server/invalid-value-exception {:uri "http://localhost/hello"
-                                                    :request-method :get} "hello"))
-       "Cannot treat \"hello\" of class java.lang.String as a response to '{:uri \"http://localhost/hello\", :request-method :get}'.\nRing response expected.")))
+       (ex-message (common/invalid-value-exception {:uri "http://localhost/hello"
+                                                    :request-method :get}
+                                                   "hello"))
+       "Cannot treat \"hello\" of class java.lang.String as a response to '{:uri \"http://localhost/hello\", :request-method :get}'.")))

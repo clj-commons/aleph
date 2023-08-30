@@ -78,12 +78,6 @@
                     (.set (doto (SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss z" Locale/ENGLISH)
                                 (.setTimeZone (TimeZone/getTimeZone "GMT"))))))
 
-(defn error-response [^Throwable e]
-  (log/error e "error in HTTP handler")
-  {:status  500
-   :headers {"content-type" "text/plain"}
-   :body    "Internal Server Error"})
-
 (let [[server-name
        connection-name
        date-name
@@ -129,21 +123,6 @@
           (.set headers ^CharSequence connection-name (if keep-alive? keep-alive-value close-value))
 
           (http1/send-message ctx keep-alive? ssl? rsp body))))))
-
-;;;
-
-(defn invalid-value-exception [req x]
-  (IllegalArgumentException.
-    (str "Cannot treat "
-         (pr-str x)
-         (when (some? x) (str " of " (type x)))
-         (format " as a response to '%s'.
-Ring response expected.
-
-Example: {:status 200
-          :body \"hello world\"
-          :headers \"text/plain\"}"
-                 (pr-str (select-keys req [:uri :request-method :query-string :headers]))))))
 
 ; http1
 (defn handle-request
@@ -206,7 +185,7 @@ Example: {:status 200
                                            {:status 204}
 
                                            :else
-                                           (error-handler (invalid-value-exception req rsp))))))))))))
+                                           (error-handler (common/invalid-value-exception req rsp))))))))))))
 
 (defn exception-handler [ctx ex]
   (cond
@@ -575,7 +554,7 @@ Example: {:status 200
      allow-duplicate-content-lengths false
      compression?                    false
      idle-timeout                    0
-     error-handler                   error-response}}]
+     error-handler                   common/error-response}}]
   (let [handler (if raw-stream?
                   (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
                   (ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size))
@@ -586,7 +565,7 @@ Example: {:status 200
                                                  continue-executor
                                                  ssl?))]
     (doto pipeline
-          (common/attach-idle-handlers idle-timeout)
+          (common/add-idle-handlers idle-timeout)
           (.addLast "http-server"
                     (HttpServerCodec.
                       max-initial-line-length

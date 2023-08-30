@@ -1015,8 +1015,11 @@
 
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either
      both input streams, both files, or a private key and an array of certificates."
-    ([] (ssl-server-context {}))
-    ([{:keys [private-key
+    (^SslContext
+     []
+     (ssl-server-context {}))
+    (^SslContext
+     [{:keys [private-key
               ^String private-key-password
               certificate-chain
               trust-store
