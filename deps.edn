@@ -6,7 +6,7 @@
   {:mvn/version "1.2.4", :exclusions [org.clojure/clojure]},
   manifold/manifold
   {:mvn/version "0.3.0", :exclusions [org.clojure/tools.logging]},
-  org.clj-commons/byte-streams {:mvn/version "0.3.2"},
+  org.clj-commons/byte-streams {:mvn/version "0.3.4"},
   org.clj-commons/dirigiste {:mvn/version "1.0.3"},
   org.clj-commons/primitive-math {:mvn/version "1.0.0"},
   potemkin/potemkin {:mvn/version "0.4.6"},

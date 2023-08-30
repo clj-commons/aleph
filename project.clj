@@ -8,7 +8,7 @@
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
                  [manifold "0.3.0" :exclusions [org.clojure/tools.logging]]
-                 [org.clj-commons/byte-streams "0.3.2"]
+                 [org.clj-commons/byte-streams "0.3.4"]
                  [org.clj-commons/dirigiste "1.0.3"]
                  [org.clj-commons/primitive-math "1.0.0"]
                  [potemkin "0.4.6"]
@@ -41,7 +41,8 @@
                                "-Dorg.slf4j.simpleLogger.showThreadId=true"
                                "-Dorg.slf4j.simpleLogger.showLogName=false"
                                "-Dorg.slf4j.simpleLogger.showShortLogName=true"
-                               "-Dorg.slf4j.simpleLogger.showDateTime=true"]}
+                               "-Dorg.slf4j.simpleLogger.showDateTime=true"
+                               "-Dorg.slf4j.simpleLogger.log.io.netty.util=error"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
              :pedantic {:pedantic? :abort}
