@@ -73,7 +73,8 @@
 
 ;;;
 
-(def ^:const apn-fallback-protocol ApplicationProtocolNames/HTTP_1_1)
+(def apn-fallback-protocol ApplicationProtocolNames/HTTP_1_1)
+;;(def apn-fallback-protocol ApplicationProtocolNames/HTTP_2)
 
 ;; only remains for backwards-compatibility
 (defonce ^:deprecated ^FastThreadLocal
@@ -639,9 +640,7 @@
                                         (log/error e msg)
                                         (throw e))))
                               apn-fallback-protocol)))
-              (do
-                (prn (.get pipeline ^Class SslHandler))
-                pipeline))
+              pipeline)
 
             use-h2c?
             (do
