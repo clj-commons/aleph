@@ -419,7 +419,7 @@
 (defn send-request
   [^Http2StreamChannel ch req response]
   (log/trace "http2 send-request fired")
-  
+
   (try
     (let [body (if (= :trace (:request-method req))
                  ;; RFC #7231 4.3.8. TRACE
@@ -462,24 +462,24 @@
     [^Http2StreamChannel ch error-handler head-request? rsp]
     (log/trace "http2 send-response")
 
-                   (when (some? (:body rsp))
-                     (log/warn "Non-nil HEAD response body was removed"))
-                   :aleph/omitted)
-                 (:body rsp))
-          headers (ring-map->netty-http2-headers rsp false)
-          chunk-size (or (:chunk-size rsp) *default-chunk-size*)
-          file-chunk-size (p/int (or (:chunk-size rsp) file/*default-file-chunk-size*))]
     (try
       (let [body (if head-request?
                    ;; https://www.rfc-editor.org/rfc/rfc9110#section-9.3.2
                    (do
+                     (when (some? (:body rsp))
+                       (log/warn "Non-nil HEAD response body was removed"))
+                     :aleph/omitted)
+                   (:body rsp))
+            headers (ring-map->netty-http2-headers rsp false)
+            chunk-size (or (:chunk-size rsp) *default-chunk-size*)
+            file-chunk-size (p/int (or (:chunk-size rsp) file/*default-file-chunk-size*))]
 
-      ;; Add default headers if they're not already present
-      (when-not (.contains headers ^CharSequence server-name)
-        (.set headers ^CharSequence server-name common/aleph-server-header))
+        ;; Add default headers if they're not already present
+        (when-not (.contains headers ^CharSequence server-name)
+          (.set headers ^CharSequence server-name common/aleph-server-header))
 
-      (when-not (.contains headers ^CharSequence date-name)
-        (.set headers ^CharSequence date-name (common/date-header-value (.eventLoop ch))))
+        (when-not (.contains headers ^CharSequence date-name)
+          (.set headers ^CharSequence date-name (common/date-header-value (.eventLoop ch))))
 
         (when (.equals "text/plain" (.get headers ^CharSequence content-type))
           (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
@@ -559,7 +559,6 @@
    error-handler
    executor
    buffer-capacity]
-  (let [buffer-capacity ^long buffer-capacity               ; stupid compiler limitation
   (log/trace "server-handler")
   (log/debug "server-handler args" {:ch ch
                                     :handler handler
@@ -568,6 +567,7 @@
                                     :error-handler error-handler
                                     :executor executor
                                     :buffer-capacity buffer-capacity})
+  (let [buffer-capacity (long buffer-capacity)
         complete (d/deferred) ; realized when this stream is done, regardless of success/error
 
         ;; if raw, we're returning a stream of ByteBufs, if not, we return byte arrays
@@ -576,6 +576,10 @@
                 (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
                 (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
               (s/on-closed #(d/success! complete true)))
+
+        body (if raw-stream?
+               body-stream
+               (bs/to-input-stream body-stream))
 
         ;; TODO: passing errors to the stream is problematic
         ;; Not clear how byte-streams will propagate errors when converting for
@@ -587,7 +591,8 @@
           (fn handle-error [ex]
             (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
             (d/error! complete ex)
-            (-> (s/put! body-stream ex)                     ; FIXME?
+            (s/close! body-stream)
+            #_(-> (s/put! body-stream ex)                     ; FIXME?
                 (d/on-realized close-body-handler close-body-handler))))
 
         ;; TODO: probably need to stop logging GOAWAY and RST_STREAM as error - more like info or warn
@@ -632,8 +637,10 @@
          (instance? Http2HeadersFrame msg)
          ;; TODO: support trailers?
          (let [headers (.headers ^Http2HeadersFrame msg)
-               body (if raw-stream? body-stream (bs/to-input-stream body-stream))
-               ring-req (netty->ring-request ch headers body complete)]
+               ;;body (if raw-stream? body-stream (bs/to-input-stream body-stream))
+               ring-req (netty->ring-request ch headers body complete)
+               is-head? (= :head (:request-method ring-req))]
+
            (log/debug "Received HTTP/2 request"
                       (pr-str (assoc ring-req :body (class (:body ring-req)))))
 
@@ -647,7 +654,7 @@
                      (log/debug "Dispatching request to user handler"
                                 (assoc ring-req :body (class (:body ring-req))))
                      (handler ring-req))
-                   (catch RejectedExecutionException e
+                   (catch #_RejectedExecution Exception e
                      (if rejected-handler
                        (try
                          (rejected-handler ring-req)
@@ -665,20 +672,19 @@
                      (error-handler e))))
                (d/catch' error-handler)
                (d/chain'
-                 (fn send-http-response [rsp]
-                   ;;FIXME
-                   #_(send-response ch
-                                  ctx
+                 (fn send-http-response [ring-resp]
+                   (log/trace "send-http-response")
+                   (log/debug "Response from user handler"
+                              (pr-str (assoc ring-resp :body (class (:body ring-resp)))))
+
+                   (send-response ch
                                   error-handler
-                                  (= :head (:request-method ring-req))
+                                  is-head?
                                   (cond
+                                    (map? ring-resp)
+                                    ring-resp
 
-                                    (map? rsp)
-                                    (if is-head?
-                                      (assoc rsp :body :aleph/omitted)
-                                      rsp)
-
-                                    (nil? rsp)
+                                    (nil? ring-resp)
                                     {:status 204}
 
                                     :else
@@ -769,13 +775,15 @@
      error-handler
      executor
      http2-settings
-     buffer-capacity
+     request-buffer-size
      proxy-options
      pipeline-transform]
     :or
-    {idle-timeout   0
-     http2-settings (Http2Settings/defaultSettings)
-     pipeline-transform identity}
+    {idle-timeout        0
+     http2-settings      (Http2Settings/defaultSettings)
+     pipeline-transform  identity
+     request-buffer-size 16384
+     error-handler       common/error-response}
     :as opts}]
   (log/trace "setup-conn-pipeline fired")
   (let [
@@ -786,7 +794,8 @@
                             (when log-level
                               (.frameLogger builder (Http2FrameLogger. log-level)))
                             (-> builder
-                                (.initialSettings http2-settings)
+                                (.initialSettings ^Http2Settings http2-settings)
+                                (.validateHeaders true)
                                 (.build)))
         stream-chan-initializer (AlephChannelInitializer.
                                   #_netty/ensure-dynamic-classloader
@@ -799,7 +808,7 @@
                                                                              rejected-handler
                                                                              error-handler
                                                                              executor
-                                                                             buffer-capacity)
+                                                                             request-buffer-size)
                                                              client-inbound-handler)
                                                            is-server?
                                                            proxy-options
