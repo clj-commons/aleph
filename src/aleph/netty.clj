@@ -3,6 +3,7 @@
   (:require
     [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p]
+    [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.executor :as e]
@@ -547,6 +548,7 @@
   "A buffered Manifold stream with the originating Channel attached to the
    stream's metadata"
   [^Channel ch metric capacity]
+  (log/debug "Creating buffered source with capacity:" capacity)
   (let [src (s/buffered-stream
               metric
               capacity
@@ -1097,6 +1099,8 @@
 
                      (some? application-protocol-config)
                      (.applicationProtocolConfig application-protocol-config))]
+       (log/info "Application protocol config supports protocols:"
+                 (str/join ", " (.supportedProtocols application-protocol-config)))
        (.build b)))))
 
 (defn self-signed-ssl-context

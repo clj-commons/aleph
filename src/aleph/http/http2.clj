@@ -103,7 +103,7 @@
    invalid connection-related headers. Throws on nil header values. Throws if
    `transfer-encoding` is present, but is not equal to 'trailers'."
   [^Http2Headers h2-headers ^String header-name header-value]
-  (log/debug "Adding HTTP header" header-name ": " header-value)
+  (log/debug (str "Adding HTTP header: " header-name ": " header-value))
 
   ;; Also checked by Netty, but we want to avoid work, so we check too
   (if (nil? header-name)
@@ -201,6 +201,7 @@
    Works with strings, byte arrays, ByteBuffers, ByteBufs, nil, and
    anything supported by byte-streams' `convert`"
   [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers body]
+  (log/trace "http2 send-contiguous-body")
   (let [body-bb (netty/to-byte-buf ch body)]
     (try-set-content-length! headers (.readableBytes body-bb))
 
@@ -210,7 +211,7 @@
 (defn send-chunked-body
   "Write out a msg and a body that's already chunked as a ChunkedInput"
   [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers ^ChunkedInput body]
-  (log/trace "Sending ChunkedInput")
+  (log/trace "http2 send-chunked-body")
   (let [len (.length body)]
     (when (p/>= len 0)
       (try-set-content-length! headers len)))
@@ -225,6 +226,7 @@
    some OSes/NICs that can support SSL and zero-copy, Netty does not. This means
    FileRegions can only be used with non-SSL connections."
   [^Http2StreamChannel ch ^Http2Headers headers ^FileRegion fr]
+  (log/trace "http2 send-file-region")
   (let [stream (.stream ch)]
     (try-set-content-length! headers (.count fr))
     (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
@@ -233,6 +235,7 @@
 (defn send-http-file
   "Send an HttpFile using ChunkedNioFile"
   [ch stream headers ^HttpFile hf]
+  (log/trace "http2 send-http-file")
   (let [file-channel (-> hf
                          ^File (.-fd)
                          (.toPath)
@@ -284,6 +287,7 @@
 (defn send-streaming-body
   "Write out a msg and a body that's streamable"
   [^Http2StreamChannel ch ^Http2FrameStream stream ^Http2Headers headers body chunk-size]
+  (log/trace "http2 send-streaming-body")
 
   ;; write out header frame first
   (netty/write ch (-> headers (DefaultHttp2HeadersFrame.) (.stream stream)))
@@ -456,7 +460,7 @@
     "Converts the Ring response map to a Netty HttpResponse, and then sends it to
      Netty to be sent out over the wire."
     [^Http2StreamChannel ch error-handler head-request? rsp]
-    (log/trace "http2 send-response fired")
+    (log/trace "http2 send-response")
 
     (let [body (if head-request?
                  ;; https://www.rfc-editor.org/rfc/rfc9110#section-9.3.2
@@ -484,6 +488,8 @@
           (d/catch' (fn [e]
                       (log/error e "Error in http2 send-request")
                       (netty/close ch)))))))
+        (log/debug "Sending to Netty. Headers:" (pr-str headers) " - Body class:" (class body))
+
 
 
 
@@ -548,6 +554,14 @@
    executor
    buffer-capacity]
   (let [buffer-capacity ^long buffer-capacity               ; stupid compiler limitation
+  (log/trace "server-handler")
+  (log/debug "server-handler args" {:ch ch
+                                    :handler handler
+                                    :raw-stream? raw-stream?
+                                    :rejected-handler rejected-handler
+                                    :error-handler error-handler
+                                    :executor executor
+                                    :buffer-capacity buffer-capacity})
         complete (d/deferred) ; realized when this stream is done, regardless of success/error
 
         ;; if raw, we're returning a stream of ByteBufs, if not, we return byte arrays
@@ -613,6 +627,8 @@
          (let [headers (.headers ^Http2HeadersFrame msg)
                body (if raw-stream? body-stream (bs/to-input-stream body-stream))
                ring-req (netty->ring-request ch headers body complete)]
+           (log/debug "Received HTTP/2 request"
+                      (pr-str (assoc ring-req :body (class (:body ring-req)))))
 
            (when (.isEndStream ^Http2HeadersFrame msg)
              (s/close! body-stream))
@@ -621,6 +637,8 @@
                  ;; handle request on a separate thread
                  (try
                    (d/future-with executor
+                     (log/debug "Dispatching request to user handler"
+                                (assoc ring-req :body (class (:body ring-req))))
                      (handler ring-req))
                    (catch RejectedExecutionException e
                      (if rejected-handler
@@ -634,6 +652,7 @@
 
                  ;; else handle it inline (hope you know what you're doing!)
                  (try
+                   (log/warn "Running user handler inline")
                    (handler ring-req)
                    (catch Throwable e
                      (error-handler e))))
@@ -675,7 +694,9 @@
              (s/close! body-stream)))
 
          :else
-         (.fireChannelRead ctx msg)))
+         (do
+           (log/debug "Unhandled message in server-handler" msg)
+           (.fireChannelRead ctx msg))))
 
       :user-event-triggered
       ([_ ctx evt]

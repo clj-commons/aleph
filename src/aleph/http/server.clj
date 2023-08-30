@@ -42,7 +42,10 @@
       HttpUtil
       HttpVersion
       LastHttpContent)
-    (io.netty.handler.ssl ApplicationProtocolNames SslHandler)
+    (io.netty.handler.ssl
+      ApplicationProtocolNames
+      SslContext
+      SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
     (io.netty.util AsciiString)
@@ -555,6 +558,7 @@
      compression?                    false
      idle-timeout                    0
      error-handler                   common/error-response}}]
+  (log/trace "setup-http1-pipeline")
   (let [handler (if raw-stream?
                   (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
                   (ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size))
@@ -606,17 +610,20 @@
                             :is-server? true
                             :pipeline pipeline)]
       (cond ssl?
-            (do
-              (log/info "Setting up secure server pipeline.")
+            (let [^SslContext ssl-context (netty/coerce-ssl-server-context ssl-context)
+                  ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]
+              (log/info "Setting up secure HTTP server pipeline.")
+              (log/info "Available HTTP versions:" (mapv str (.nextProtocols ssl-context)))
+
               (-> pipeline
-                  (.addLast "ssl-handler"
-                            (netty/ssl-handler (.channel pipeline)
-                                               (netty/coerce-ssl-server-context ssl-context)))
+                  (.addLast "ssl-handler" ssl-handler)
                   (.addLast "apn-handler"
                             (ApnHandler.
                               (fn setup-secure-pipeline
                                 [^ChannelPipeline pipeline protocol]
-                                (log/trace "setup-secure-pipeline")
+                                (log/trace "setup-secure-pipeline: chosen protocol:" protocol)
+                                (when (nil? (.applicationProtocol ssl-handler))
+                                  (log/debug (str "ALPN not used. Protocol " protocol " chosen by fallback.")))
                                 (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
                                       (setup-http1-pipeline setup-opts)
 
@@ -629,7 +636,6 @@
                                         (log/error e msg)
                                         (throw e))))
                               apn-fallback-protocol)))
-
               (do
                 (prn (.get pipeline ^Class SslHandler))
                 pipeline))
@@ -750,6 +756,7 @@
   (defn hello-world-handler
     "A basic Ring handler which immediately returns 'hello world'"
     [req]
+    (log/trace "hello-world-handler" req)
     {:status  200
      :headers {"content-type" "text/plain"}
      :body    "hello world!"})
