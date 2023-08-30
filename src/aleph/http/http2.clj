@@ -462,9 +462,6 @@
     [^Http2StreamChannel ch error-handler head-request? rsp]
     (log/trace "http2 send-response")
 
-    (let [body (if head-request?
-                 ;; https://www.rfc-editor.org/rfc/rfc9110#section-9.3.2
-                 (do
                    (when (some? (:body rsp))
                      (log/warn "Non-nil HEAD response body was removed"))
                    :aleph/omitted)
@@ -472,6 +469,10 @@
           headers (ring-map->netty-http2-headers rsp false)
           chunk-size (or (:chunk-size rsp) *default-chunk-size*)
           file-chunk-size (p/int (or (:chunk-size rsp) file/*default-file-chunk-size*))]
+    (try
+      (let [body (if head-request?
+                   ;; https://www.rfc-editor.org/rfc/rfc9110#section-9.3.2
+                   (do
 
       ;; Add default headers if they're not already present
       (when-not (.contains headers ^CharSequence server-name)
@@ -480,16 +481,21 @@
       (when-not (.contains headers ^CharSequence date-name)
         (.set headers ^CharSequence date-name (common/date-header-value (.eventLoop ch))))
 
-      (when (.equals "text/plain" (.get headers ^CharSequence content-type))
-        (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
+        (when (.equals "text/plain" (.get headers ^CharSequence content-type))
+          (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
-      (-> (netty/safe-execute ch
-            (send-message ch headers body chunk-size file-chunk-size))
-          (d/catch' (fn [e]
-                      (log/error e "Error in http2 send-request")
-                      (netty/close ch)))))))
         (log/debug "Sending to Netty. Headers:" (pr-str headers) " - Body class:" (class body))
 
+        (-> (netty/safe-execute ch
+              (send-message ch headers body chunk-size file-chunk-size))
+            (d/catch' (fn [e]
+                        (log/error e "Error in http2 send-message")
+                        (netty/close ch)))))
+
+      (catch Exception e
+        (log/error e "Error in http2 send-response")
+        (log/error "Stack trace:" (.printStackTrace e))
+        (throw e)))))
 
 
 
