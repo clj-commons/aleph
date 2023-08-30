@@ -34,7 +34,8 @@
                                    ;; This is for dev and testing ONLY:
                                    [org.bouncycastle/bcprov-jdk18on "1.75"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.75"]
-                                   [org.bouncycastle/bctls-jdk18on "1.75"]]
+                                   ;;[org.bouncycastle/bctls-jdk18on "1.75"]
+                                   [io.netty/netty-tcnative-boringssl-static "2.0.61.Final"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                "-Dorg.slf4j.simpleLogger.showThreadId=true"

@@ -1,16 +1,17 @@
 (ns aleph.tcp-ssl-test
   (:require
-   [aleph.netty :as netty]
-   [aleph.ssl :as ssl]
-   [aleph.tcp :as tcp]
-   [aleph.tcp-test :refer [with-server]]
-   [clj-commons.byte-streams :as bs]
-   [clojure.test :refer [deftest is]]
-   [manifold.deferred :as d]
-   [manifold.stream :as s])
+    [aleph.netty :as netty]
+    [aleph.ssl :as ssl]
+    [aleph.tcp :as tcp]
+    [aleph.tcp-test :refer [with-server]]
+    [clj-commons.byte-streams :as bs]
+    [clojure.test :refer [deftest is]]
+    [manifold.deferred :as d]
+    [manifold.stream :as s])
   (:import
-   (java.security.cert X509Certificate)
-   (java.util.concurrent TimeoutException)))
+    (java.security.cert X509Certificate)
+    (java.util.concurrent TimeoutException)
+    (javax.net.ssl SSLHandshakeException)))
 
 (netty/leak-detector-level! :paranoid)
 
@@ -54,20 +55,27 @@
 (deftest test-failed-ssl-handshake
   (let [ssl-session (atom nil)]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
-                                   {:port 10001
+                                   {:port             10001
                                     :shutdown-timeout 0
-                                    :ssl-context ssl/server-ssl-context})
-      (let [c @(tcp/client {:host "localhost"
-                            :port 10001
-                            :ssl-context (netty/ssl-client-context
-                                          ;; Note the intentionally wrong private key here
-                                          {:private-key ssl/server-key
-                                           ;; See https://github.com/clj-commons/aleph/issues/647
-                                           :protocols ["TLSv1.3"]
-                                           :certificate-chain (into-array X509Certificate [ssl/client-cert])
-                                           :trust-store (into-array X509Certificate [ssl/ca-cert])})})]
-        (is (nil? @(s/take! c)))
-        (is (nil? @ssl-session) "SSL session should be undefined")))))
+                                    :ssl-context      ssl/server-ssl-context})
+      (try
+        (let [c @(tcp/client {:host        "localhost"
+                              :port        10001
+                              :ssl-context (netty/ssl-client-context
+                                             ;; Note the intentionally wrong private key here
+                                             {:private-key       ssl/server-key
+                                              ;; See https://github.com/clj-commons/aleph/issues/647
+                                              :protocols         ["TLSv1.3"]
+                                              :certificate-chain (into-array X509Certificate [ssl/client-cert])
+                                              :trust-store       (into-array X509Certificate [ssl/ca-cert])})})]
+          (is (nil? @(s/take! c)))
+          (is (nil? @ssl-session) "SSL session should be undefined"))
+
+        (catch SSLHandshakeException e
+          ;; JDK built-in SSL doesn't throw this, but BoringSSL does, so we
+          ;; catch, instead of asserting
+          ;; TODO: enforce use of BoringSSL or OpenSSL?
+          )))))
 
 (deftest test-connection-close-during-ssl-handshake
   (let [ssl-session (atom nil)
