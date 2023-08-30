@@ -493,14 +493,17 @@
             '(java.nio.file Files OpenOption Path Paths)
             '(java.nio.file.attribute FileAttribute)))
 
-  ;; basic test
-  (let [pool (connection-pool
-               {:connection-options
-                {:http-versions [:http2]}})]
-    (def result @(get "https://postman-echo.com?hand=wave" {:pool pool})))
+  (def pool (connection-pool
+              {:connection-options
+               {:http-versions [:http2]}}))
 
-  (-> @(get "https://google.com" {})
-      :body bs/to-string)
+  ;; basic test
+  (def result @(get "https://postman-echo.com?hand=wave" {:pool pool}))
+
+  ;; aleph.localhost
+  (-> @(get "https://aleph.localhost:11256/" {:pool pool})
+      :body
+      bs/to-string)
 
 
   ;; basic file post test
