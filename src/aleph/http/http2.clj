@@ -457,8 +457,8 @@
       (map #(AsciiString. ^CharSequence %) ["server" "date" "content-type"])]
 
   (defn send-response
-    "Converts the Ring response map to a Netty HttpResponse, and then sends it to
-     Netty to be sent out over the wire."
+    "Converts the Ring response map to Netty Http2Headers, extracts the body,
+     and then sends both to Netty to be sent out over the wire."
     [^Http2StreamChannel ch error-handler head-request? rsp]
     (log/trace "http2 send-response")
 
@@ -584,6 +584,7 @@
             (-> (s/put! body-stream ex)                     ; FIXME?
                 (d/on-realized close-body-handler close-body-handler))))
 
+        ;; TODO: probably need to stop logging GOAWAY and RST_STREAM as error - more like info or warn
         handle-shutdown-frame
         (fn handle-shutdown-frame [evt]
           ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame
@@ -594,8 +595,8 @@
                                (.errorCode ^Http2ResetFrame evt)
                                (.errorCode ^Http2GoAwayFrame evt))
                   msg (if (instance? Http2ResetFrame evt)
-                        (str "Received RST_STREAM from peer, stream closing. Error code: " error-code ".")
-                        (str "Received GOAWAY from peer, connection closing. Error code: " error-code ". Stream " stream-id " was not processed by peer."))
+                        (str "Received RST_STREAM from peer, closing stream " stream-id ". HTTP/2 error code: " error-code ".")
+                        (str "Received GOAWAY from peer, closing connection and all streams. HTTP/2 error code: " error-code "."))
                   no-error? (p/== error-code (.code Http2Error/NO_ERROR))]
               ;; Was there an error, or does the peer just want to shut down the stream/conn?
               (if no-error?
@@ -824,7 +825,8 @@
             '(java.nio.file Files OpenOption Path Paths)
             '(java.nio.file.attribute FileAttribute)))
 
-  ;; NB: postman-echo.com ALWAYS prefers http2, regardless of your order
+  ;; NB: postman-echo.com ALWAYS prefers http2, regardless of your order,
+  ;; which is ironic, since the Postman app doesn't support sending http2 :P
 
   ;; basic test
   (do

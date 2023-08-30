@@ -578,8 +578,11 @@
                       validate-headers
                       initial-buffer-size
                       allow-duplicate-content-lengths))
-          ;; FIXME: HttpObjectAggregator and continue handler can't be mixed
-          ;; since the former may send its own 100-continue response.
+          ;; FIXME: HttpObjectAggregator and continue handler shouldn't really be mixed
+          ;; since the former may send its own 100-continue response. In theory,
+          ;; since whichever sends the 100-continue, removes the expect header,
+          ;; it shouldn't be a problem, but we may need to rearrange this for the S3
+          ;; signature case where we need to preserve the expect header.
           (#(when max-request-body-size
               (.addLast ^ChannelPipeline %1 "aggregator" (HttpObjectAggregator. max-request-body-size))))
           (.addLast "continue-handler" continue-handler)
@@ -762,10 +765,15 @@
      :body    "hello world!"})
 
   (def http2-ssl-ctx
+    #_(netty/self-signed-ssl-context)
+
     ;; this creates a certificate from the local files aleph.localhost+3-key.pem and aleph.localhost+3.pem
     (netty/ssl-server-context
       {:private-key       "aleph.localhost+3-key.pem"
        :certificate-chain "aleph.localhost+3.pem"
+       ;;:ssl-provider      :jdk
+       ;;:ssl-provider      :openssl
+       :ssl-provider      :openssl-refcnt
        :application-protocol-config
        (ApplicationProtocolConfig.
          ApplicationProtocolConfig$Protocol/ALPN
@@ -779,7 +787,7 @@
   (def port "'alef' in ascii" 11256)
 
   ;; open and close
-  (with-open [s (start-server hello-world-handler
+  #_(with-open [s (start-server hello-world-handler
                               {:port        port
                                :ssl-context http2-ssl-ctx})]
     (Thread/sleep 500)
@@ -792,11 +800,32 @@
                    {:on-closed     #(log/debug "http conn closed")
                     :http-versions [:http2]}))
 
-      (def result @(conn {:request-method :get}))))
+      (def result @(d/timeout! (conn {:request-method :get})
+                               2000
+                               :timeout))))
 
-  (def s (start-server hello-world-handler
-                       {:port        port
-                        :ssl-context http2-ssl-ctx}))
+  ;; restart server
+  (do
+    (declare s)
+    (when (and (bound? #'s) s)
+      (.close ^java.io.Closeable s))
+    (def s (start-server hello-world-handler
+                         {:port        port
+                          :ssl-context http2-ssl-ctx
+                          :logger      (netty/activity-logger "aleph-server" :debug)})))
+
+  (do
+    (def conn @(aleph.http.client/http-connection
+                 (InetSocketAddress. "aleph.localhost" (int port))
+                 true
+                 {:on-closed     #(log/debug "http conn closed")
+                  :http-versions [:http2]}))
+
+    (def result @(d/timeout! (conn {:request-method :get})
+                             2000
+                             :timeout))
+    result)
+
 
 
   )
