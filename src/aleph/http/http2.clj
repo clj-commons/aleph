@@ -532,7 +532,7 @@
         query-string (.rawQuery qsd)]
     (cond->
       {:request-method    (-> headers (.method) (.toString) (.toLowerCase) keyword)
-       :scheme            (-> headers (.scheme) keyword)
+       :scheme            (-> headers (.scheme) (.toString) keyword)
        :path              path
        :uri               path                              ; not really a URI
        :server-name       (netty/channel-server-name ch)    ; is this best?
