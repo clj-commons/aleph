@@ -800,7 +800,8 @@
    configures it."
   ^ChannelInitializer
   [pipeline-builder]
-  (AlephChannelInitializer. #(pipeline-builder (.pipeline ^Channel %))))
+  (AlephChannelInitializer. #_ensure-dynamic-classloader
+                            #(pipeline-builder (.pipeline ^Channel %))))
 
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
@@ -1191,7 +1192,9 @@
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
-(defn ^:no-doc ^ThreadFactory enumerating-thread-factory [prefix daemon?]
+#_(defn ^:no-doc enumerating-thread-factory
+  ^ThreadFactory
+  [prefix daemon?]
   (let [num-threads (atom 0)]
     (e/thread-factory
       #(str prefix "-" (swap! num-threads inc))
@@ -1199,6 +1202,23 @@
       nil
       daemon?
       (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
+
+(defn ^:no-doc enumerating-thread-factory
+  "Sets the ThreadFactory used by Netty EventLoopGroups.
+
+   Sets the ClassLoader to the Clojure DynamicClassLoader for any clj
+   code that could be loaded by Netty."
+  ^ThreadFactory
+  [prefix daemon?]
+  (let [num-threads (atom 0)]
+    (e/thread-factory
+      #(str prefix "-" (swap! num-threads inc))
+      (deliver (promise) nil)
+      nil
+      daemon?
+      (fn [group target name stack-size]
+        (doto (FastThreadLocalThread. group target name stack-size)
+              (.setContextClassLoader (DynamicClassLoader.)))))))
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 

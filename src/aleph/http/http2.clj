@@ -591,6 +591,10 @@
                 (handle-error (Http2Exception. (Http2Error/valueOf error-code) msg))))))]
 
     (netty/channel-inbound-handler
+      ;;:channel-active
+      ;;([_ ctx]
+      ;; (netty/ensure-dynamic-classloader)
+      ;; (.fireChannelActive ctx))
 
       :exception-caught
       ([_ ctx ex]
@@ -757,6 +761,7 @@
                                 (.initialSettings http2-settings)
                                 (.build)))
         stream-chan-initializer (AlephChannelInitializer.
+                                  #_netty/ensure-dynamic-classloader
                                   (fn [^Channel ch]
                                     (setup-stream-pipeline (.pipeline ch)
                                                            (if is-server?
