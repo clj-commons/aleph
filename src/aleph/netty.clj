@@ -1117,7 +1117,9 @@
   ([opts]
    (ssl-client-context (assoc opts :trust-store InsecureTrustManagerFactory/INSTANCE))))
 
-(defn- coerce-ssl-context [options->context ssl-context]
+(defn- coerce-ssl-context
+  ^SslContext
+  [options->context ssl-context]
   (cond
     (instance? SslContext ssl-context)
     ssl-context
@@ -1425,11 +1427,11 @@ initialize an DnsAddressResolverGroup instance.
 
    The 2-arity version is for the server.
    The 3-arity version is for the client. The `remote-address` must be provided"
-  (^ChannelHandler
+  (^SslHandler
    [^Channel ch ^SslContext ssl-ctx]
    (.newHandler ssl-ctx
                 (.alloc ch)))
-  (^ChannelHandler
+  (^SslHandler
    [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address]
    (.newHandler ssl-ctx
                 (.alloc ch)
