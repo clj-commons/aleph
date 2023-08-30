@@ -1099,8 +1099,9 @@
 
                      (some? application-protocol-config)
                      (.applicationProtocolConfig application-protocol-config))]
-       (log/info "Application protocol config supports protocols:"
-                 (str/join ", " (.supportedProtocols application-protocol-config)))
+       (when application-protocol-config
+         (log/info "Application protocol config supports protocols:"
+                   (str/join ", " (.supportedProtocols application-protocol-config))))
        (.build b)))))
 
 (defn self-signed-ssl-context
