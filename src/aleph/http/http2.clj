@@ -78,7 +78,7 @@
 ;;(def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
 (def ^:private invalid-headers (set (map #(AsciiString/cached ^String %)
                                          ["connection" "proxy-connection" "keep-alive" "upgrade"])))
-(def ^:private te-header-name (AsciiString/cached "transfer-encoding"))
+(def ^:private ^AsciiString te-header-name (AsciiString/cached "transfer-encoding"))
 
 (def ^:private ^ConcurrentHashMap cached-header-names
   "No point in lower-casing the same strings over and over again."
