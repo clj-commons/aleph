@@ -431,13 +431,19 @@
                   :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
    the response.
 
-   Param key      | Description
-   | ---          | ---
-   | `pool`       | the `connection-pool` that should be used, defaults to the `default-connection-pool`
-   | `middleware` | any additional middleware that should be used for handling requests and responses
-   | `headers`    | the HTTP headers for the request
-   | `body`       | an optional body, which should be coerce-able to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
-   | `multipart`  | a vector of bodies")
+   Param key              | Description
+   | ---                  | ---
+   | `headers`            | the HTTP headers for the request
+   | `body`               | an optional body, which should be coerce-able to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
+   | `middleware`         | any additional middleware that should be used for handling requests and responses
+   | `multipart`          | a vector of bodies
+   | `follow-redirects?`  | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`
+   | `pool`               | a custom connection pool
+   | `pool-timeout`       | timeout in milliseconds for the pool to generate a connection
+   | `connection-timeout` | timeout in milliseconds for the connection to become established
+   | `request-timeout`    | timeout in milliseconds for the arrival of a response over the established connection
+   | `read-timeout`       | timeout in milliseconds for the response to be completed
+   | `response-executor`  | optional `java.util.concurrent.Executor` that will handle the requests (defaults to a `flow/utilization-executor` of 256 `max-threads` and a `queue-length` of 0)")
                   :arglists arglists)))
 
 (def-http-method get)
