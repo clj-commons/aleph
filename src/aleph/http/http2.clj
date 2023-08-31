@@ -550,8 +550,10 @@
       (assoc :query-string query-string))))
 
 (defn- server-handler
-  "Given a response-stream, returns a ChannelInboundHandler that processes
-   inbound Netty Http2 frames, converts them, and places them on the stream"
+  "Returns a ChannelInboundHandler that processes inbound Netty Http2 frames,
+   converts them, and calls the user handler with them. It then converts the
+   handler's Ring response into Netty Http2 objects and sends them on the
+   outbound pipeline."
   [^Http2StreamChannel ch
    handler
    raw-stream?
@@ -560,7 +562,7 @@
    executor
    buffer-capacity]
   (log/trace "server-handler")
-  (log/debug "server-handler args" {:ch ch
+  #_(log/debug "server-handler args" {:ch ch
                                     :handler handler
                                     :raw-stream? raw-stream?
                                     :rejected-handler rejected-handler
@@ -654,7 +656,7 @@
                      (log/debug "Dispatching request to user handler"
                                 (assoc ring-req :body (class (:body ring-req))))
                      (handler ring-req))
-                   (catch #_RejectedExecution Exception e
+                   (catch RejectedExecutionException e
                      (if rejected-handler
                        (try
                          (rejected-handler ring-req)
