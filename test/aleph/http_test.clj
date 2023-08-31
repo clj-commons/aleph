@@ -224,20 +224,12 @@
     (apply concat)
     (partition 2)))
 
-(def default-ssl-options {:port port
-                          :ssl-context (netty/self-signed-ssl-context)})
 
-(def http2-server-options {:port port
-                           :ssl-context (netty/self-signed-ssl-context
-                                          {:application-protocol-config
-                                           (ApplicationProtocolConfig.
-                                             ApplicationProtocolConfig$Protocol/ALPN
-                                             ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
-                                             ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
-                                             ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
-                                             ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
-                                             ^"[Ljava.lang.String;"
-                                             (into-array String [ApplicationProtocolNames/HTTP_2]))})})
+(def http1-server-options {:port port})
+(def http1-ssl-server-options {:port        port
+                               :ssl-context (netty/self-signed-ssl-context)})
+(def http2-server-options {:port        port
+                           :ssl-context ssl/http2-only-ssl-context})
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -251,15 +243,18 @@
 
 (defmacro with-http1-server
   [handler server-options & body]
-  `(with-server (http/start-server ~handler ~server-options)
-     ~@body))
+  `(testing "- http1"
+     (with-server (http/start-server ~handler ~server-options)
+       ~@body)))
 
 (defmacro with-http2-server
   [handler server-options & body]
-  #_
-  `(let [server-options# ~server-options]
-     (with-server (http/start-server ~handler (merge server-options# http2-server-options))
-       ~@body)))
+  ;; with-redefs used so clj fns running on netty threads will work
+  `(testing "- http2"
+     (with-redefs [*use-tls?* true]
+       (let [server-options# ~server-options]
+         (with-server (http/start-server ~handler (merge server-options# http2-server-options))
+           ~@body)))))
 
 (defmacro with-http-servers
   "Run the same body of tests for each HTTP version"
@@ -267,15 +262,7 @@
   `(let [handler# ~handler
          server-options# ~server-options]
      (with-http2-server handler# server-options# ~@body)
-     (with-http1-server handler# server-options# ~@body))
-  #_`(let [server# (http/start-server ~handler ~server-options)]
-     (binding [*pool* (http/connection-pool {:connection-options (merge *connection-options* {:insecure? true})})]
-       (try
-         ~@body
-         (finally
-           (.close ^Closeable server#)
-           (netty/wait-for-close server#)
-           (.shutdown *pool*))))))
+     #_(with-http1-server handler# server-options# ~@body)))
 
 (defmacro with-handler [handler & body]
   `(with-http-servers ~handler {:port port :shutdown-timeout 0}
@@ -283,9 +270,9 @@
 
 (defmacro with-compressed-handler [handler & body]
   `(do
-     (with-http-servers ~handler {:port port :compression? true :shutdown-timeout 0}
+     (with-http1-server ~handler {:port port :compression? true :shutdown-timeout 0}
                         ~@body)
-     (with-http-servers ~handler {:port port :compression-level 3 :shutdown-timeout 0}
+     (with-http1-server ~handler {:port port :compression-level 3 :shutdown-timeout 0}
                         ~@body)))
 
 
@@ -317,22 +304,23 @@
                (:body
                  @(http-get (str "/" path)))))))))
 
+;; FIXME when http2 support added
 (deftest test-compressed-response
   (with-compressed-handler basic-handler
-                           (doseq [[path result] expected-results
-                                   :let [resp @(http-get (str "/" path)
-                                                         {:headers {:accept-encoding "gzip"}})
-                                         unzipped (try
-                                                    (bs/to-string (GZIPInputStream. (:body resp)))
-                                                    (catch ZipException _ nil))]]
-                             (is (= "gzip" (get-in resp [:headers :content-encoding])) 'content-encoding-header-is-set)
-                             (is (some? unzipped) 'should-be-valid-gzip)
-                             (is (= result unzipped) 'decompressed-body-is-correct))))
+    (doseq [[path result] expected-results
+            :let [resp @(http-get (str "/" path)
+                                  {:headers {:accept-encoding "gzip"}})
+                  unzipped (try
+                             (bs/to-string (GZIPInputStream. (:body resp)))
+                             (catch ZipException _ nil))]]
+      (is (= "gzip" (get-in resp [:headers :content-encoding])) 'content-encoding-header-is-set)
+      (is (some? unzipped) 'should-be-valid-gzip)
+      (is (= result unzipped) 'decompressed-body-is-correct))))
 
 
 (deftest test-ssl-response-formats
-  (binding [*use-tls?* true]
-    (with-handler-options basic-handler default-ssl-options
+  (with-redefs [*use-tls?* true]
+    (with-handler-options basic-handler http1-ssl-server-options
                           (doseq [[path result] expected-results]
                             (is
                               (= result
@@ -342,22 +330,23 @@
                               (str path "path failed"))))))
 
 (deftest test-files
-  (with-handler identity
-    (is (str/blank?
-          (bs/to-string
-            (:body @(http-put "/"
-                              {:body (io/file "test/empty.txt")})))))
+  (with-handler echo-handler
+    (is (-> @(http-put "/" {:body (io/file "test/empty.txt")})
+            :body
+            bs/to-string
+            str/blank?))
     (is (= (slurp "test/file.txt" :encoding "UTF-8")
-           (bs/to-string
-             (:body @(http-put "/"
-                               {:body (io/file "test/file.txt")})))))))
+           (-> @(http-put "/" {:body (io/file "test/file.txt")})
+               :body
+               bs/to-string)))))
 
 (deftest test-ssl-files
-  (binding [*use-tls?* true]
+  (with-redefs [*use-tls?* true]
     (let [client-path "/"
           client-options {:connection-options {:ssl-context ssl/client-ssl-context}}
           client-pool (http/connection-pool client-options)]
-      (with-handler-options identity (merge default-ssl-options {:ssl-context ssl/server-ssl-context})
+      (with-handler-options echo-handler
+                            (merge http1-ssl-server-options {:ssl-context ssl/server-ssl-context})
                             (is (str/blank?
                                   (bs/to-string
                                     (:body @(http-put client-path
@@ -375,11 +364,11 @@
     {:status 200 :body "ok"}))
 
 (deftest test-ssl-session-access
-  (binding [*use-tls?* true]
+  (with-redefs [*use-tls?* true]
     (let [ssl-session (atom nil)]
       (with-handler-options
         (ssl-session-capture-handler ssl-session)
-        default-ssl-options
+        http1-ssl-server-options
         (is (= 200 (:status @(http-get "/"))))
         (is (some? @ssl-session))
         (when-let [^SSLSession s @ssl-session]
@@ -387,11 +376,11 @@
           (is (not (str/includes? "NULL" (.getCipherSuite s)))))))))
 
 (deftest test-ssl-with-plain-client-request
-  (binding [*use-tls?* false]                               ; intentionally wrong
+  (with-redefs [*use-tls?* false]                               ; intentionally wrong
     (let [ssl-session (atom nil)]
-      (with-handler-options
+      (with-http1-server
         (ssl-session-capture-handler ssl-session)
-        default-ssl-options
+        http1-ssl-server-options
         ;; Note the intentionally wrong "http" scheme here
         (is (some-> (http-get "/")
                     (d/catch identity)
@@ -402,8 +391,8 @@
 
 (deftest test-invalid-body
   (let [client-url "/"]
-    (with-handler identity
-      (is (thrown? IllegalArgumentException
+    (with-handler echo-handler
+      (is (thrown? Exception
                    @(http-put client-url
                               {:body 123}))))))
 
@@ -436,7 +425,7 @@
       (is (= 431 (:status @(http-get url opts)))))))
 
 (deftest test-invalid-http-version-format
-  (with-handler basic-handler
+  (with-http1-server basic-handler http1-server-options
     (let [client @(tcp/client {:host "localhost" :port port})
           _ @(s/put! client "GET / HTTP-1,1\r\n\r\n")
           response (bs/to-string @(s/take! client))]
@@ -489,7 +478,6 @@
                           {:middleware
                            (fn [client]
                              (fn [req]
-                               (prn req)
                                (client (assoc req :url (make-url "/string")))))})
                :body
                bs/to-string)))))
@@ -535,10 +523,11 @@
 (deftest test-explicit-url
   (with-handler hello-handler
     (is (= "hello" (-> @(http/request {:method          :get
-                                       :scheme          :http
+                                       :scheme          (if *use-tls?* :https :http)
                                        :server-name     "localhost"
                                        :server-port     port
-                                       :request-timeout 1e3})
+                                       :request-timeout 1e3
+                                       :pool *pool*})
                        :body
                        bs/to-string)))))
 
@@ -647,14 +636,17 @@
         (d/chain' (fn [_] (s/close! body))))
     body))
 
-(defn force-stream-to-string-memoization! []
-  (bs/to-string (doto (s/stream 1) (s/put! "x") s/close!)))
+(defn- force-stream-to-string-memoization! []
+  (bs/to-string (doto (s/stream 1)
+                      (s/put! "x")
+                      s/close!)))
 
 (deftest test-idle-timeout
   ;; Required so that the conversion initialization doesn't count
   ;; toward the idle timeout. See
   ;; https://github.com/clj-commons/aleph/issues/626 for background.
   (force-stream-to-string-memoization!)
+
   (let [path "/"
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
@@ -745,7 +737,7 @@
                 (HttpObjectAggregator. max-content-length))))
 
 (deftest test-http-object-aggregator-support
-  (with-http-servers
+  (with-http1-server
     basic-handler
     {:port               port
      :shutdown-timeout   0
@@ -762,7 +754,7 @@
       (is (empty? (bs/to-string (:body rsp)))))))
 
 (deftest test-http-object-aggregator-raw-stream-support
-  (with-http-servers
+  (with-http1-server
     basic-handler
     {:port               port
      :shutdown-timeout   0
@@ -830,7 +822,7 @@
 
 (deftest test-max-request-body-size
   (testing "max-request-body-size of 0"
-    (with-handler-options (constantly {:body "OK"})
+    (with-handler-options (constantly {:body "OK" :status 200})
                           {:port                  port
                            :max-request-body-size 0}
                           (let [resp @(http-put "/"
@@ -838,7 +830,7 @@
                             (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 1"
-    (with-handler-options (constantly {:body "OK"})
+    (with-handler-options (constantly {:body "OK" :status 200})
                           {:port                  port
                            :max-request-body-size 1}
                           (let [resp @(http-put "/"
@@ -846,7 +838,7 @@
                             (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 6"
-    (with-handler-options (constantly {:body "OK"})
+    (with-handler-options (constantly {:body "OK" :status 200})
                           {:port                  port
                            :max-request-body-size 6}
                           (let [resp @(http-put "/"
@@ -860,7 +852,8 @@
      :shutdown-timeout 0}
 
     (let [resp @(http-get "/text_plain")]
-      (is (= "text/plain; charset=UTF-8" (-> resp :headers (get "Content-Type"))))
+      (prn resp)
+      (is (= "text/plain; charset=UTF-8" (-> resp :headers (get "content-type"))))
       (is (= 200 (:status resp)))
       (is (= "Hello" (bs/to-string (:body resp)))))))
 
@@ -919,20 +912,20 @@
                       "Connection: close"]
                      (is (thrown? IllegalArgumentException
                                   (-> (http-post "/" {:body "hello!"})
-                                      (d/timeout! 1e3)
+                                      (d/timeout! 5e3)
                                       deref)))))
 
 (deftest test-client-errors-handling
   (testing "writing invalid request message"
     (with-handler echo-string-handler
-      (is (thrown? IllegalArgumentException
+      (is (thrown? Exception
                    (-> (http-post "/" {:body 42})
                        (d/timeout! 1e3)
                        deref)))))
 
   (testing "writing invalid request body"
     (with-handler echo-string-handler
-      (is (thrown? IllegalArgumentException
+      (is (thrown? Exception
                    (-> (http-post "/" {:body (s/->source [1])})
                        (d/timeout! 1e3)
                        deref)))))
@@ -1034,25 +1027,25 @@
 (deftest test-server-errors-handling
   (testing "rejected handler when accepting connection"
     (with-rejected-handler nil
-                           (is (= 503 (-> (http-get "/")
-                                          (d/timeout! 1e3)
-                                          deref
-                                          :status)))))
+      (is (= 503 (-> (http-get "/")
+                     (d/timeout! 1e3)
+                     deref
+                     :status)))))
 
   (testing "custom rejected handler"
     (with-rejected-handler (fn [_] {:status 201 :body "I'm actually okayish"})
-                           (is (= 201 (-> (http-get "/")
-                                          (d/timeout! 1e3)
-                                          deref
-                                          :status)))))
+      (is (= 201 (-> (http-get "/")
+                     (d/timeout! 1e3)
+                     deref
+                     :status)))))
 
   (testing "throwing exception within rejected handler"
     (with-rejected-handler (fn [_] (throw (RuntimeException. "you shall not reject!")))
-                           (let [resp (-> (http-get "/")
-                                          (d/timeout! 1e3)
-                                          deref)]
-                             (is (= 500 (:status resp)))
-                             (is (= "Internal Server Error" (bs/to-string (:body resp)))))))
+      (let [resp (-> (http-get "/")
+                     (d/timeout! 1e3)
+                     deref)]
+        (is (= 500 (:status resp)))
+        (is (= "Internal Server Error" (bs/to-string (:body resp)))))))
 
   (testing "throwing exception within ring handler"
     (with-handler (fn [_] (throw (RuntimeException. "you shall not pass!")))

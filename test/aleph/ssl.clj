@@ -50,15 +50,34 @@
 (def client-key (gen-key 65537 (read-string (slurp "test/client_key.edn"))))
 
 (def server-ssl-context-opts
-  {:private-key       server-key
+  {:private-key                 server-key
    ;; See https://github.com/clj-commons/aleph/issues/647
-   :protocols         ["TLSv1.2" "TLSv1.3"]
-   :certificate-chain [server-cert]
-   :trust-store       [ca-cert]
-   :client-auth       :optional})
+   :protocols                   ["TLSv1.2" "TLSv1.3"]
+   :certificate-chain           [server-cert]
+   :trust-store                 [ca-cert]
+   :client-auth                 :optional
+   :application-protocol-config (ApplicationProtocolConfig.
+                                  ApplicationProtocolConfig$Protocol/ALPN
+                                  ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+                                  ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+                                  ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+                                  ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+                                  ^"[Ljava.lang.String;"
+                                  (into-array String [ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_2]))})
 
 (def server-ssl-context
   (netty/ssl-server-context server-ssl-context-opts))
+
+(def http2-only-ssl-context
+  "Well, minus the HTTP/1 fallback if ALPN isn't being used at all..."
+  (netty/ssl-server-context (assoc server-ssl-context-opts
+                                   :application-protocol-config
+                                   (ApplicationProtocolConfig.
+                                     ApplicationProtocolConfig$Protocol/ALPN
+                                     ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+                                     ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+                                     ^"[Ljava.lang.String;"
+                                     (into-array String [ApplicationProtocolNames/HTTP_2])))))
 
 (def client-ssl-context-opts
   {:private-key                 client-key
