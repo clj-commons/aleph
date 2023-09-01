@@ -36,13 +36,9 @@
       Http2DataFrame
       Http2Error
       Http2Exception
-      Http2FrameCodecBuilder
-      Http2FrameLogger
       Http2GoAwayFrame
       Http2HeadersFrame
-      Http2MultiplexHandler
       Http2ResetFrame
-      Http2Settings
       Http2StreamChannel
       Http2StreamChannelBootstrap)
     (io.netty.handler.logging
@@ -66,7 +62,7 @@
     (io.netty.handler.stream
       ChunkedWriteHandler)
     (io.netty.util ReferenceCounted)
-    (io.netty.util.internal StringUtil)
+    (io.netty.util.internal EmptyArrays)
     (java.io
       IOException)
     (java.net
@@ -513,7 +509,10 @@
                 (do
                   (log/info msg)
                   (s/close! body-stream))
-                (handle-error (Http2Exception. (Http2Error/valueOf error-code) msg))))))]
+                (handle-error (Http2Exception/streamError stream-id
+                                                          (Http2Error/valueOf error-code)
+                                                          msg
+                                                          EmptyArrays/EMPTY_OBJECTS))))))]
 
     (netty/channel-inbound-handler
 
