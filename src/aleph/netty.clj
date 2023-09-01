@@ -89,6 +89,7 @@
       SequentialDnsServerAddressStreamProvider
       SingletonDnsServerAddressStreamProvider)
     (io.netty.util
+      AsciiString
       Attribute
       AttributeKey
       ResourceLeakDetector
@@ -1658,6 +1659,12 @@ initialize an DnsAddressResolverGroup instance.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; prn support for Netty for debugging
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod print-method AsciiString
+  [^AsciiString ascii-string ^java.io.Writer writer]
+  (.write writer "AS\"")
+  (.write writer (.toString ascii-string))
+  (.write writer "\""))
 
 (defn- ^:no-doc append-pipeline*
   [^StringBuilder sb ^ChannelPipeline pipeline]
