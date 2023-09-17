@@ -19,6 +19,7 @@
    (io.netty.channel ChannelHandlerContext ChannelOutboundHandlerAdapter ChannelPipeline ChannelPromise)
    (io.netty.handler.codec TooLongFrameException)
    (io.netty.handler.codec.http HttpMessage HttpObjectAggregator)
+   (io.netty.handler.ssl.util SelfSignedCertificate)
    (java.io File)
    (java.net UnknownHostException)
    (java.util.concurrent SynchronousQueue TimeoutException ThreadPoolExecutor ThreadPoolExecutor$AbortPolicy TimeUnit)
@@ -186,9 +187,20 @@
     (apply concat)
     (partition 2)))
 
+(def default-ssl-certificate
+  (SelfSignedCertificate. "localhost"))
+
+(def default-ssl-server-options
+  {:port port
+   :ssl-context (netty/ssl-server-context {:private-key       (.privateKey default-ssl-certificate)
+                                           :certificate-chain (.certificate default-ssl-certificate)})})
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool {:connection-options (merge *connection-options* {:insecure? true})})]
+     (binding [*pool* (http/connection-pool {:connection-options (merge
+                                                                  {:ssl-context {:trust-store (.certificate default-ssl-certificate)}
+                                                                   :http-versions [:http1]}
+                                                                  *connection-options* )})]
        (try
          ~@body
          (finally
@@ -207,7 +219,7 @@
      (with-server (http/start-server ~handler {:port port :compression-level 3 :shutdown-timeout 0})
        ~@body)))
 
-(def default-ssl-options {:port port, :ssl-context (netty/self-signed-ssl-context)})
+
 
 (defmacro with-handler-options
   [handler options & body]
@@ -247,7 +259,7 @@
 
 
 (deftest test-ssl-response-formats
-  (with-handler-options basic-handler default-ssl-options
+  (with-handler-options basic-handler default-ssl-server-options
     (doseq [[path result] expected-results]
       (is
        (= result
@@ -272,7 +284,7 @@
   (let [client-url (str "https://localhost:" port)
         client-options {:connection-options {:ssl-context ssl/client-ssl-context}}
         client-pool    (http/connection-pool client-options)]
-    (with-handler-options identity (merge default-ssl-options {:ssl-context ssl/server-ssl-context})
+    (with-handler-options identity (merge default-ssl-server-options {:ssl-context ssl/server-ssl-context})
       (is (str/blank?
            (bs/to-string
             (:body @(http-put client-url
@@ -293,7 +305,7 @@
   (let [ssl-session (atom nil)]
     (with-handler-options
       (ssl-session-capture-handler ssl-session)
-      default-ssl-options
+      default-ssl-server-options
       (is (= 200 (:status @(http-get (str "https://localhost:" port)))))
       (is (some? @ssl-session))
       (when-let [^SSLSession s @ssl-session]
@@ -304,7 +316,7 @@
   (let [ssl-session (atom nil)]
     (with-handler-options
       (ssl-session-capture-handler ssl-session)
-      default-ssl-options
+      default-ssl-server-options
       ;; Note the intentionally wrong "http" scheme here
       (is (some-> (http-get (str "http://localhost:" port))
                   (d/catch identity)
@@ -312,6 +324,37 @@
                   ex-message
                   (str/includes? "connection was closed")))
       (is (nil? @ssl-session)))))
+
+(def wrong-hostname-cert
+  (SelfSignedCertificate. "some-random-hostname"))
+
+(def wrong-hsotname-ssl-server-context
+  (netty/ssl-server-context
+   {:private-key       (.privateKey wrong-hostname-cert)
+    :certificate-chain (.certificate wrong-hostname-cert)}))
+
+(def wrong-hostname-client-options
+  {:ssl-context {:trust-store (.certificate wrong-hostname-cert)}})
+
+(deftest test-ssl-endpoint-identification
+  (let [ssl-session (atom nil)]
+    (binding [*connection-options* wrong-hostname-client-options]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        (assoc default-ssl-server-options :ssl-context wrong-hsotname-ssl-server-context)
+        (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
+                              #"^No name matching localhost found$"
+                              @(http-get (str "https://localhost:" port))))
+        (is (nil? @ssl-session))))))
+
+(deftest test-disabling-ssl-endpoint-identification
+  (let [ssl-session (atom nil)]
+    (binding [*connection-options* (assoc wrong-hostname-client-options :ssl-endpoint-id-alg nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        (assoc default-ssl-server-options :ssl-context wrong-hsotname-ssl-server-context)
+        (is (= 200 (:status @(http-get (str "https://localhost:" port)))))
+        (is (some? @ssl-session))))))
 
 (deftest test-invalid-body
   (let [client-url (str "http://localhost:" port)]

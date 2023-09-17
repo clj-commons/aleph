@@ -232,6 +232,7 @@
    {:keys [raw-stream?
            insecure?
            ssl-context
+           ssl-endpoint-id-alg
            headers
            local-address
            bootstrap-transform
@@ -294,7 +295,7 @@
                            (when ssl?
                              (.addLast p
                                        "ssl-handler"
-                                       (netty/ssl-handler (.channel p) ssl-context remote-address)))
+                                       (netty/ssl-handler (.channel p) ssl-context remote-address ssl-endpoint-id-alg)))
                            (.addLast p "http-client" (HttpClientCodec.))
                            (.addLast p "aggregator" (HttpObjectAggregator. 16384))
                            (.addLast p "websocket-frame-aggregator" (WebSocketFrameAggregator. max-frame-size))

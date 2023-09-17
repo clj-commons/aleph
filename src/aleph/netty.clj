@@ -1384,11 +1384,17 @@ initialize an DnsAddressResolverGroup instance.
    (.newHandler ssl-ctx
                 (.alloc ch)))
   (^ChannelHandler
-   [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address]
-   (.newHandler ssl-ctx
-                (.alloc ch)
-                (.getHostName ^InetSocketAddress remote-address)
-                (.getPort ^InetSocketAddress remote-address))))
+   [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address ssl-endpoint-id-alg]
+   (let [ssl-handler (.newHandler ssl-ctx
+                                  (.alloc ch)
+                                  (.getHostName ^InetSocketAddress remote-address)
+                                  (.getPort ^InetSocketAddress remote-address))]
+     (when ssl-endpoint-id-alg
+       (let [ssl-engine (.engine ssl-handler)
+             ssl-params (.getSSLParameters ssl-engine)]
+         (.setEndpointIdentificationAlgorithm ssl-params ssl-endpoint-id-alg)
+         (.setSSLParameters ssl-engine ssl-params)))
+     ssl-handler)))
 
 (defn- add-ssl-handler-to-pipeline-builder
   "Adds an `SslHandler` to the pipeline builder."
@@ -1400,7 +1406,10 @@ initialize an DnsAddressResolverGroup instance.
                 "ssl-handler"
                 (let [ch (.channel p)]
                   (if remote-address
-                    (ssl-handler ch ssl-ctx remote-address)
+                    ;; Always passing `nil` as `ssl-endpoint-id-alg` here since this code path is
+                    ;; only hit in the deprecated `create-client`. To keep it fully backwards
+                    ;; compatible, we don't enable endpoint identification by default.
+                    (ssl-handler ch ssl-ctx remote-address nil)
                     (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
 
