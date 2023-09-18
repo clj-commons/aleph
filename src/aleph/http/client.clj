@@ -525,6 +525,7 @@
       :channel-inactive
       ([_ ctx]
        (s/close! body-stream)
+       (d/success! complete true)
        (.fireChannelInactive ctx))
 
       :channel-read
@@ -539,6 +540,7 @@
                           :body              body-stream}]
            (d/success! response-d ring-resp)
            (when (.isEndStream ^Http2HeadersFrame msg)
+             ;; TODO: set complete false here?
              (s/close! body-stream)))
 
          (instance? Http2DataFrame msg)
@@ -549,6 +551,7 @@
                (netty/put! (.channel ctx) body-stream (netty/buf->array content))
                (.release ^ReferenceCounted msg)))
            (when (.isEndStream ^Http2DataFrame msg)
+             ;; TODO: set complete false here?
              (s/close! body-stream)))
 
          :else
