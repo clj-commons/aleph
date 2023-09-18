@@ -130,7 +130,7 @@
                  (log/error ex (str "Exception in channel (" handler-name ")."))
                  (if ex-handler
                    (ex-handler ex ctx)
-                   (.fireExceptionCaught ctx ex)))}))))
+                   (netty/close ctx)))}))))
 
 (defn error-response
   "Generic 500 error response"
