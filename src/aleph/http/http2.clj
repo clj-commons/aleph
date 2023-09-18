@@ -751,7 +751,8 @@
        (cond
          (instance? Http2HeadersFrame msg)
          ;; TODO: support trailers?
-         (let [headers (.headers ^Http2HeadersFrame msg)
+         (let [headers (-> (.headers ^Http2HeadersFrame msg)
+                           (validate-netty-req-headers stream-id))
                body (if raw-stream?
                       body-stream
                       (bs/to-input-stream body-stream))
