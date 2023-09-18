@@ -59,7 +59,14 @@
    | `continue-handler`                | Optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those. |
    | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-timeout`                | Interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of `0` bypasses waiting entirely. |
-   | `use-h2c?`                        | If `true`, uses HTTP/2 for insecure servers. Has no effect on secure servers, and upgrades are not allowed. Defaults to false |"
+
+   HTTP/2-specific options
+   | Param key                         | Description |
+   | ---                               | --- |
+   | `use-h2c?`                        | If `true`, uses HTTP/2 for insecure servers. Has no effect on secure servers, and upgrades are not allowed. Defaults to false|
+   | `conn-go-away-handler`            | A connection-level cleanup handler for when a GOAWAY is received. Indicates the client has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
+   | `stream-go-away-handler`          | A stream-level cleanup handler called for streams above the last-stream-id in a GOAWAY frame. Indicates the stream will not be processed. Called with the context and the Http2GoAwayFrame. |
+   | `reset-stream-handler`            | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |"
   [handler options]
   (server/start-server handler options))
 
@@ -137,7 +144,14 @@
    | `response-executor`       | optional `java.util.concurrent.Executor` that will execute response callbacks
    | `log-activity`            | when set, logs all events on each channel (connection) with a log level given. Accepts one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
    | `http-versions`           | an optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http2 :http1]`.
+
+   HTTP/2-specific options
+   | Param key                 | Description |
+   | ---                       | --- |
    | `force-h2c?`              | an optional boolean indicating you wish to force the use of insecure HTTP/2 cleartext (h2c) for `http://` URLs. Not recommended, and unsupported by most servers in the wild. Only do this with infrastructure you control. Defaults to `false`.
+   | `conn-go-away-handler`    | A connection-level cleanup handler for when a GOAWAY is received. Indicates the server has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
+   | `stream-go-away-handler`  | A stream-level cleanup handler called for streams above the last-stream-id in a GOAWAY frame. Indicates the stream will not be processed. Called with the context and the Http2GoAwayFrame. |
+   | `reset-stream-handler`    | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |
 
    Supported `proxy-options` are
 

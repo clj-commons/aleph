@@ -674,6 +674,35 @@
              {:headers headers}))
     headers))
 
+(defn- handle-shutdown-frame
+  "Common handling for RST_STREAM and GOAWAY frame events"
+  [evt stream-id body-stream ^AtomicBoolean writable? h2-exception]
+
+  ;; disable output - in both cases, we shouldn't send any more frames
+  (.set writable? false)
+  (s/close! body-stream)
+
+  ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame
+  (let [error-code (if (instance? Http2ResetFrame evt)
+                     (.errorCode ^Http2ResetFrame evt)
+                     (.errorCode ^Http2GoAwayFrame evt))
+        h2-error (Http2Error/valueOf error-code)
+        no-error? (p/== error-code (.code Http2Error/NO_ERROR))
+        msg (if (instance? Http2ResetFrame evt)
+              (str "Received RST_STREAM from peer, closing stream " stream-id ". HTTP/2 error code: " error-code ".")
+              (str "Received GOAWAY from peer, initiating shutdown of connection. HTTP/2 error code: " error-code "."))
+        ex (if (instance? Http2ResetFrame evt)
+             (stream-ex stream-id msg {} h2-error)
+             (conn-ex msg {} h2-error))]
+
+    ;; store in case user handler can do something with it
+    (reset! h2-exception ex)
+
+    (if no-error?
+      (log/info msg)
+      ; only log as warning, since the real error may be on the peer's side
+      (log/warn msg))))
+
 (defn- server-handler
   "Returns a ChannelInboundHandler that processes inbound Netty HTTP2 stream
    frames, converts them, and calls the user handler with them. It then
@@ -685,7 +714,9 @@
    rejected-handler
    error-handler
    executor
-   buffer-capacity]
+   buffer-capacity
+   stream-go-away-handler
+   reset-stream-handler]
   (log/trace "server-handler")
   #_(log/debug "server-handler args" {:ch ch
                                     :handler handler
@@ -716,27 +747,7 @@
             (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
             (s/close! body-stream)
             #_(-> (s/put! body-stream ex)                     ; FIXME?
-                (d/on-realized close-body-handler close-body-handler))))
-
-        handle-shutdown-frame
-        (fn handle-shutdown-frame [evt]
-          ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame
-          (when (or (instance? Http2ResetFrame evt)
-                    (instance? Http2GoAwayFrame evt))
-            (let [stream-id (-> ch (.stream) (.id))
-                  error-code (if (instance? Http2ResetFrame evt)
-                               (.errorCode ^Http2ResetFrame evt)
-                               (.errorCode ^Http2GoAwayFrame evt))
-                  msg (if (instance? Http2ResetFrame evt)
-                        (str "Received RST_STREAM from peer, closing stream " stream-id ". HTTP/2 error code: " error-code ".")
-                        (str "Received GOAWAY from peer, closing connection and all streams. HTTP/2 error code: " error-code "."))
-                  no-error? (p/== error-code (.code Http2Error/NO_ERROR))]
-              ;; Was there an error, or does the peer just want to shut down the stream/conn?
-              (if no-error?
-                (do
-                  (log/info msg)
-                  (s/close! body-stream))
-                (handle-error (Http2Exception. (Http2Error/valueOf error-code) msg))))))]
+                  (d/on-realized close-body-handler close-body-handler))))]
 
     (netty/channel-inbound-handler
       ;;:channel-active
@@ -845,8 +856,24 @@
 
       :user-event-triggered
       ([_ ctx evt]
-       (handle-shutdown-frame evt)
-       (.fireUserEventTriggered ctx evt)))))
+       (condp instance? evt
+
+         Http2GoAwayFrame
+         (do
+           (when (fn? stream-go-away-handler)
+             (stream-go-away-handler ctx evt))
+           (handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
+           (.release ^ReferenceCounted evt))
+
+         Http2ResetFrame
+         (do
+           (when (fn? reset-stream-handler)
+             (reset-stream-handler ctx evt))
+           (handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
+           (.release ^ReferenceCounted evt))
+
+         ;; else
+         (.fireUserEventTriggered ctx evt))))))
 
 (defn setup-stream-pipeline
   "Set up the pipeline for an HTTP/2 stream channel"
@@ -905,6 +932,8 @@
      raw-stream?
      rejected-handler
      error-handler
+     goaway-handler
+     reset-stream-handler
      executor
      http2-settings
      request-buffer-size
@@ -940,7 +969,9 @@
                                                                              rejected-handler
                                                                              error-handler
                                                                              executor
-                                                                             request-buffer-size)
+                                                                             request-buffer-size
+                                                                             nil
+                                                                             nil)
                                                              client-inbound-handler)
                                                            is-server?
                                                            proxy-options
