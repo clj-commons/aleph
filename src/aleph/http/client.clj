@@ -511,10 +511,9 @@
                 (do
                   (log/info msg)
                   (s/close! body-stream))
-                (handle-error (Http2Exception/streamError stream-id
-                                                          (Http2Error/valueOf error-code)
-                                                          msg
-                                                          EmptyArrays/EMPTY_OBJECTS))))))]
+                (handle-error (http2/stream-ex stream-id
+                                               msg
+                                               (Http2Error/valueOf error-code)))))))]
 
     (netty/channel-inbound-handler
 

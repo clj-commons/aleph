@@ -98,12 +98,21 @@
     (log/error ex emsg)
     (throw ex)))
 
-(defn- stream-ex
-  "Creates a StreamException. If a Throwable `cause` is passed-in, it will
-   be wrapped in an ex-info.
+(defn conn-ex
+  "Creates a connection-level Http2Exception. If a Throwable `cause` is
+   passed-in, it will be wrapped in an ex-info."
+  ([msg]
+   (conn-ex msg {}))
+  ([msg m]
+   (conn-ex msg m Http2Error/PROTOCOL_ERROR))
+  ([msg m h2-error]
+   (conn-ex msg m h2-error nil))
+  ([^String msg m ^Http2Error h2-error ^Throwable cause]
+   (Http2Exception. h2-error msg ^Throwable (ex-info msg m cause))))
 
-   (Can also pass Http2CodecUtil/CONNECTION_STREAM_ID (aka 0) to get a
-   connection-level Http2Exception.)"
+(defn stream-ex
+  "Creates a StreamException. If a Throwable `cause` is passed-in, it will
+   be wrapped in an ex-info."
   ([stream-id msg]
    (stream-ex stream-id msg {}))
   ([stream-id msg m]
@@ -111,6 +120,7 @@
   ([stream-id msg m h2-error]
    (stream-ex stream-id msg m h2-error nil))
   ([stream-id msg m h2-error ^Throwable cause]
+   ;; Http2Exception.StreamException constructor isn't public
    (Http2Exception/streamError
      stream-id
      h2-error
@@ -583,7 +593,6 @@
             (d/catch' (fn [e]
                         (log/error e "Error in http2 send-message")
                         (netty/close ch)))))
-
       (catch Exception e
         (log/error e "Error in http2 send-response")
         (log/error "Stack trace:" (.printStackTrace e))
@@ -659,12 +668,10 @@
   (if (or (nil? (.method headers))
           (nil? (.scheme headers))
           (nil? (.path headers)))
-    (throw (Http2Exception/streamError
+    (throw (stream-ex
              stream-id
-             Http2Error/PROTOCOL_ERROR
-             (ex-info "Missing mandatory pseudo-header in HTTP/2 request" {:headers headers})
              "Missing mandatory pseudo-header in HTTP/2 request"
-             EmptyArrays/EMPTY_OBJECTS))
+             {:headers headers}))
     headers))
 
 (defn- server-handler
