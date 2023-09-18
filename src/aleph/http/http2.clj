@@ -92,7 +92,27 @@
     (log/error ex emsg)
     (throw ex)))
 
-(defn- add-header
+(defn- stream-ex
+  "Creates a StreamException. If a Throwable `cause` is passed-in, it will
+   be wrapped in an ex-info.
+
+   (Can also pass Http2CodecUtil/CONNECTION_STREAM_ID (aka 0) to get a
+   connection-level Http2Exception.)"
+  ([stream-id msg]
+   (stream-ex stream-id msg {}))
+  ([stream-id msg m]
+   (stream-ex stream-id msg m Http2Error/PROTOCOL_ERROR))
+  ([stream-id msg m h2-error]
+   (stream-ex stream-id msg m h2-error nil))
+  ([stream-id msg m h2-error ^Throwable cause]
+   (Http2Exception/streamError
+     stream-id
+     h2-error
+     (ex-info msg m cause)
+     msg
+     EmptyArrays/EMPTY_OBJECTS)))
+
+(defn add-header
   "Add a single header and value. The value can be a string or a collection of
    strings.
 
@@ -393,8 +413,7 @@
          (if (or (-> ch (.pipeline) (.get ^Class SslHandler))
                  (some-> ch (.parent) (.pipeline) (.get ^Class SslHandler)))
            (let [emsg (str "FileRegion not supported with SSL in Netty")
-                 ex (ex-info emsg {:ch ch :headers headers :body body})
-                 e (Http2FrameStreamException. stream Http2Error/PROTOCOL_ERROR ex)]
+                 e (stream-ex (.id stream) emsg {:ch ch :headers headers :body body})]
              (log/error e emsg)
              (netty/close ch))
            (send-file-region ch headers body))
@@ -408,9 +427,7 @@
 
        (catch Exception e
          (log/error e "Error sending message")
-         (throw (Http2FrameStreamException. (.stream ch)
-                                            Http2Error/PROTOCOL_ERROR
-                                            (ex-info "Error sending message" {:headers headers :body body} e))))))))
+         (throw (stream-ex (.id stream) "Error sending message" {:headers headers :body body} e)))))))
 
 ;; NOTE: can't be as vague about whether we're working with a channel or context in HTTP/2 code,
 ;; because we need access to the .stream method. We have a lot of code in aleph.netty that
