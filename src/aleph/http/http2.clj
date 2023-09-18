@@ -187,24 +187,61 @@
         :else
         (.add h2-headers ^CharSequence header-name ^Object header-value)))))
 
-(defn- ring-map->netty-http2-headers
-  "Builds a Netty Http2Headers object from a Ring map."
+
+(defn parse-status
+  "Parses the HTTP status of a ring response map. Returns an HttpResponseStatus"
+  ^HttpResponseStatus
+  [status m stream-id]
+  (try
+    (cond
+      (or (instance? Long status)
+          (instance? Integer status)
+          (instance? Short status))
+      (HttpResponseStatus/valueOf status)
+
+      (instance? String status)
+      (HttpResponseStatus/parseLine ^String status)
+
+      (instance? AsciiString status)
+      (HttpResponseStatus/parseLine ^AsciiString status)
+
+      :else
+      (throw (stream-ex m stream-id "Unknown :status class in Ring response map")))
+
+    (catch IllegalArgumentException e
+      (throw (stream-ex m stream-id (str "Invalid :status in Ring response map: " (.getMessage e)))))))
+
+(defn ring-map->netty-http2-headers
+  "Builds a Netty Http2Headers object from a Ring map.
+
+   Checks headers and pseudo-headers."
   ^DefaultHttp2Headers
-  [m is-request?]
+  [m stream-id is-request?]
   (let [h2-headers (DefaultHttp2Headers. true)]
 
     (if is-request?
-      (-> h2-headers
-          (.method (-> m (get :request-method) name str/upper-case))
-          (.scheme (-> m (get :scheme) name))
-          (.authority (:authority m))
-          (.path (str (get m :uri)
-                      (when-let [q (get m :query-string)]
-                        (str "?" q)))))
-      (let [status (get m :status)]
-        (if (string? status)
-          (.status h2-headers status)
-          (.status h2-headers (Integer/toString status)))))
+      (do
+        (if-some [request-method (get m :request-method)]
+          (.method h2-headers (-> request-method name str/upper-case))
+          (throw (stream-ex stream-id "Missing :request-method in Ring request map" m)))
+
+        (if-some [scheme (get m :scheme)]
+          (.scheme h2-headers (name scheme))
+          (throw (stream-ex stream-id "Missing :scheme in Ring request map" m)))
+
+        (if-some [authority (get m :authority)]
+          (.authority h2-headers authority)
+          (throw (stream-ex stream-id "Missing :authority in Ring request map" m)))
+
+        (if-some [path (str (get m :uri)
+                            (when-let [q (get m :query-string)]
+                              (str "?" q)))]
+          (.path h2-headers path)
+          (throw (stream-ex stream-id "Invalid/missing :uri and/or :query-string in Ring request map" m))))
+
+      (if-let [status (get m :status)]
+        (.status h2-headers (.codeAsText ^HttpResponseStatus (parse-status status m stream-id)))
+        (throw (stream-ex stream-id "Missing :status in Ring response map" m))))
 
     ;; Technically, missing :headers is a violation of the Ring SPEC, but kept
     ;; for backwards compatibility
@@ -478,7 +515,7 @@
                      (log/warn "Non-nil TRACE request body was removed"))
                    nil)
                  (:body req))
-          headers (ring-map->netty-http2-headers req true)
+          headers (ring-map->netty-http2-headers req (-> ch (.stream) (.id)) true)
           chunk-size (or (:chunk-size req) *default-chunk-size*)
           file-chunk-size (p/int (or (:chunk-size req) file/*default-file-chunk-size*))]
 
@@ -519,7 +556,7 @@
                        (log/warn "Non-nil HEAD response body was removed"))
                      :aleph/omitted)
                    (:body rsp))
-            headers (ring-map->netty-http2-headers rsp false)
+            headers (ring-map->netty-http2-headers rsp (-> ch (.stream) (.id)) false)
             chunk-size (or (:chunk-size rsp) *default-chunk-size*)
             file-chunk-size (p/int (or (:chunk-size rsp) file/*default-file-chunk-size*))]
 
@@ -597,6 +634,20 @@
 
       (not (.isEmpty query-string))
       (assoc :query-string query-string))))
+
+(defn- validate-netty-req-headers
+  "Netty is not currently checking for missing pseudo-headers, so we do it here."
+  [^Http2Headers headers stream-id]
+  (if (or (nil? (.method headers))
+          (nil? (.scheme headers))
+          (nil? (.path headers)))
+    (throw (Http2Exception/streamError
+             stream-id
+             Http2Error/PROTOCOL_ERROR
+             (ex-info "Missing mandatory pseudo-header in HTTP/2 request" {:headers headers})
+             "Missing mandatory pseudo-header in HTTP/2 request"
+             EmptyArrays/EMPTY_OBJECTS))
+    headers))
 
 (defn- server-handler
   "Returns a ChannelInboundHandler that processes inbound Netty HTTP2 stream
