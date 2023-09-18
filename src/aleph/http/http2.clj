@@ -730,6 +730,11 @@
            (log/debug "Unhandled message in server-handler" msg)
            (.fireChannelRead ctx msg))))
 
+      :channel-read-complete
+      ([_ ctx]
+       (log/trace ":channel-read-complete fired")
+       (netty/flush ctx))
+
       :user-event-triggered
       ([_ ctx evt]
        (handle-shutdown-frame evt)
