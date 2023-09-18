@@ -683,10 +683,6 @@
                 (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
               (s/on-closed #(d/success! complete true)))
 
-        body (if raw-stream?
-               body-stream
-               (bs/to-input-stream body-stream))
-
         ;; TODO: passing errors to the stream is problematic
         ;; Not clear how byte-streams will propagate errors when converting for
         ;; non-raw streams (what happens when bs gets an Exception? Should it
@@ -742,8 +738,10 @@
          (instance? Http2HeadersFrame msg)
          ;; TODO: support trailers?
          (let [headers (.headers ^Http2HeadersFrame msg)
-               ;;body (if raw-stream? body-stream (bs/to-input-stream body-stream))
                ring-req (netty->ring-request ch headers body complete)
+               body (if raw-stream?
+                      body-stream
+                      (bs/to-input-stream body-stream))
                is-head? (= :head (:request-method ring-req))]
 
            (log/debug "Received HTTP/2 request"
