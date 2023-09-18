@@ -622,24 +622,22 @@
   (let [qsd (QueryStringDecoder. (-> headers (.path) (.toString)))
         path (.rawPath qsd)
         query-string (.rawQuery qsd)]
-    (cond->
-      {:request-method    (-> headers (.method) (.toString) (.toLowerCase) keyword)
-       :scheme            (-> headers (.scheme) (.toString) keyword)
-       :path              path
-       :uri               path                              ; not really a URI
-       :server-name       (netty/channel-server-name ch)    ; is this best?
-       :server-port       (netty/channel-server-port ch)
-       :remote-addr       (netty/channel-remote-address ch)
-       :headers           (netty-http2-headers->map headers)
-       :body              body
-       ;;:trailers          (d/deferred)
+    {:request-method        (-> headers (.method) (.toString) (.toLowerCase) keyword)
+     :scheme                (-> headers (.scheme) (.toString) keyword)
+     :path                  path
+     :uri                   path                            ; not really a URI
+     :query-string          (if (.isEmpty query-string) nil query-string)
+     :server-name           (netty/channel-server-name ch)  ; is this best?
+     :server-port           (netty/channel-server-port ch)
+     :remote-addr           (netty/channel-remote-address ch)
+     :headers               (netty-http2-headers->map headers)
+     :body                  body
+     ;;:trailers          (d/deferred)
 
-       :protocol          "HTTP/2.0"
-       :aleph/keep-alive? true                              ; not applicable to HTTP/2, but here for compatibility
-       :aleph/complete    complete}
+     :protocol              "HTTP/2.0"
 
-      (not (.isEmpty query-string))
-      (assoc :query-string query-string))))
+     :aleph/keep-alive?     true                            ; not applicable to HTTP/2, but here for compatibility
+     :aleph/request-arrived (System/nanoTime)}))
 
 (defn- validate-netty-req-headers
   "Netty is not currently checking for missing pseudo-headers, so we do it here."
