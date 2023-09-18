@@ -112,6 +112,37 @@
      msg
      EmptyArrays/EMPTY_OBJECTS)))
 
+(defn- go-away
+  "Sends a GOAWAY frame with the given error code (see Http2Error enums) to
+   shut down the entire connection. Does not automatically close the channel,
+   since you may want to keep processing other streams during
+   shutdown. By default, closing the conn channel will send a GOAWAY if none
+   has been sent yet, so you will only need this fn for fine-grained control.
+
+   The peer MUST not initiate *any* new streams after receiving the GOAWAY,
+   however, there may be recent streams started before the GOAWAY is received
+   that the peer does not know about. The default behavior is to ignore
+   those streams, but you can set `num-extra-streams` to indicate how many of
+   them you will process.
+
+   `num-extra-streams` is the number of un-encountered, but in-flight, streams
+   that you will process after sending. Set to 0 (default) to ignore *all*
+   newly-encountered streams. Set to Integer/MAX_VALUE for a more graceful
+   shutdown (all encountered streams will be processed)."
+  ([^ChannelOutboundInvoker out ^long h2-error-code]
+   (go-away out h2-error-code 0))
+  ([^ChannelOutboundInvoker out ^long h2-error-code num-extra-streams]
+   (log/trace (str "Sent GOAWAY(" h2-error-code ") on " out))
+   (condp instance? out
+     Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel
+     (go-away (.parent ^Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel out)
+              h2-error-code
+              num-extra-streams)
+
+     (netty/write-and-flush out
+                            (doto (DefaultHttp2GoAwayFrame. h2-error-code)
+                                  (.setExtraStreamIds num-extra-streams))))))
+
 (defn add-header
   "Add a single header and value. The value can be a string or a collection of
    strings.
