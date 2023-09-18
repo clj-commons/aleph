@@ -335,25 +335,20 @@
     (-> ^Channel x .alloc .ioBuffer)
     (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
-;; TODO: convert to use ChannelOutboundInvoker
-(defn ^:no-doc write [x msg]
-  (if (instance? Channel x)
-    (.write ^Channel x msg (.voidPromise ^Channel x))
-    (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x)))
+;; TODO: inline or macroize
+(defn ^:no-doc write [^ChannelOutboundInvoker x msg]
+  (.write x msg (.voidPromise x))
   nil)
 
-;; TODO: convert to use ChannelOutboundInvoker
+;; TODO: inline or macroize
 (defn ^:no-doc write-and-flush
-  [x msg]
-  (if (instance? Channel x)
-    (.writeAndFlush ^Channel x msg)
-    (.writeAndFlush ^ChannelHandlerContext x msg)))
+  [^ChannelOutboundInvoker x msg]
+  (.writeAndFlush x msg))
 
-;; TODO: convert to use ChannelOutboundInvoker
-(defn ^:no-doc flush [x]
-  (if (instance? Channel x)
-    (.flush ^Channel x)
-    (.flush ^ChannelHandlerContext x)))
+;; TODO: inline or macroize
+(defn ^:no-doc flush
+  [^ChannelOutboundInvoker x]
+  (.flush x))
 
 ;; TODO: inline or macroize
 (defn ^:no-doc close
