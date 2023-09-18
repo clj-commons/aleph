@@ -44,8 +44,7 @@
       LastHttpContent)
     (io.netty.handler.ssl
       ApplicationProtocolNames
-      SslContext
-      SslHandler)
+      SslContext)
     (io.netty.handler.stream
       ChunkedWriteHandler)
     (io.netty.util AsciiString)

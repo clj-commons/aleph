@@ -18,27 +18,30 @@
     (io.netty.channel
       Channel
       ChannelHandler
+      ChannelOutboundInvoker
       ChannelPipeline
       FileRegion)
     (io.netty.handler.codec.http
+      HttpResponseStatus
       QueryStringDecoder)
     (io.netty.handler.codec.http2
       DefaultHttp2DataFrame
+      DefaultHttp2GoAwayFrame
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
       Http2DataChunkedInput
       Http2DataFrame
       Http2Error
       Http2Exception
+      Http2FrameCodec
       Http2FrameCodecBuilder
       Http2FrameLogger
       Http2FrameStream
-      Http2FrameStreamException
       Http2GoAwayFrame
       Http2Headers
       Http2HeadersFrame
       Http2MultiplexHandler
-      Http2ResetFrame
+      Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel Http2ResetFrame
       Http2Settings
       Http2StreamChannel)
     (io.netty.handler.logging LoggingHandler)
@@ -51,7 +54,9 @@
     (io.netty.util
       AsciiString
       ReferenceCounted)
-    (io.netty.util.internal StringUtil)
+    (io.netty.util.internal
+      EmptyArrays
+      StringUtil)
     (java.io
       Closeable
       File
@@ -64,7 +69,8 @@
       StandardOpenOption)
     (java.util.concurrent
       ConcurrentHashMap
-      RejectedExecutionException)))
+      RejectedExecutionException)
+    (java.util.concurrent.atomic AtomicBoolean)))
 
 (set! *warn-on-reflection* true)
 
