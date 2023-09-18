@@ -616,8 +616,20 @@
 
 
 (defn- netty->ring-request
-  "Given Netty Http2Headers and a body stream, returns a Ring request map"
-  [ch ^Http2Headers headers body complete]
+  "Given Netty Http2Headers and a body stream, returns a Ring request map.
+
+
+   For advanced users only:
+   - :aleph/writable? is an AtomicBoolean indicating whether the stream can
+     still be written to. In case of error, RST_STREAM, or GOAWAY, it will be
+     set to false.
+   - :aleph/h2-exception is an atom wrapping an Exception if an error
+     occurred, or nil if not. It will be an Http2Exception for a connection
+     error, a Http2Exception.StreamException for a stream error, or a custom
+     exception thrown by the user.
+
+   You can monitor these to cease processing early if need be."
+  [ch ^Http2Headers headers body writable? h2-exception]
   ;; The :path pseudo-header is not the same as the Ring SPEC, it has to be split.
   (let [qsd (QueryStringDecoder. (-> headers (.path) (.toString)))
         path (.rawPath qsd)
@@ -636,6 +648,8 @@
 
      :protocol              "HTTP/2.0"
 
+     :aleph/writable?       writable?
+     :aleph/h2-exception    h2-exception
      :aleph/keep-alive?     true                            ; not applicable to HTTP/2, but here for compatibility
      :aleph/request-arrived (System/nanoTime)}))
 
@@ -673,15 +687,16 @@
                                     :error-handler error-handler
                                     :executor executor
                                     :buffer-capacity buffer-capacity})
-  (let [buffer-capacity (long buffer-capacity)
-        complete (d/deferred) ; realized when this stream is done, regardless of success/error
+  (let [stream-id (-> ch (.stream) (.id))
+        buffer-capacity (long buffer-capacity)
+        writable? (AtomicBoolean. true)                     ; can we still write out?
+        h2-exception (atom nil)                             ; atom, because we want to switch values
 
         ;; if raw, we're returning a stream of ByteBufs, if not, we return byte arrays
         body-stream
-        (doto (if raw-stream?
-                (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
-                (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
-              (s/on-closed #(d/success! complete true)))
+        (if raw-stream?
+          (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
+          (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
 
         ;; TODO: passing errors to the stream is problematic
         ;; Not clear how byte-streams will propagate errors when converting for
@@ -692,7 +707,6 @@
         (let [close-body-handler (fn [_] (s/close! body-stream))]
           (fn handle-error [ex]
             (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
-            (d/error! complete ex)
             (s/close! body-stream)
             #_(-> (s/put! body-stream ex)                     ; FIXME?
                 (d/on-realized close-body-handler close-body-handler))))
@@ -738,10 +752,10 @@
          (instance? Http2HeadersFrame msg)
          ;; TODO: support trailers?
          (let [headers (.headers ^Http2HeadersFrame msg)
-               ring-req (netty->ring-request ch headers body complete)
                body (if raw-stream?
                       body-stream
                       (bs/to-input-stream body-stream))
+               ring-req (netty->ring-request ch headers body writable? h2-exception)
                is-head? (= :head (:request-method ring-req))]
 
            (log/debug "Received HTTP/2 request"
@@ -780,18 +794,20 @@
                    (log/debug "Response from user handler"
                               (pr-str (assoc ring-resp :body (class (:body ring-resp)))))
 
-                   (send-response ch
-                                  error-handler
-                                  is-head?
-                                  (cond
-                                    (map? ring-resp)
-                                    ring-resp
+                   (if (.get writable?)
+                     (send-response ch
+                                    error-handler
+                                    is-head?
+                                    (cond
+                                      (map? ring-resp)
+                                      ring-resp
 
                                     (nil? ring-resp)
-                                    {:status 204}
+                                      {:status 204}
 
-                                    :else
-                                    (error-handler (common/invalid-value-exception ring-req ring-resp))))))))
+                                      :else
+                                      (error-handler (common/invalid-value-exception ring-req ring-resp))))
+                     (log/debug "Stream is no longer writable"))))))
 
          (instance? Http2DataFrame msg)
          (let [content (.content ^Http2DataFrame msg)]
