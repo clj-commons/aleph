@@ -745,6 +745,9 @@
        :shutdown-timeout    shutdown-timeout})))
 
 
+
+
+
 (comment
 
   (do
@@ -753,6 +756,8 @@
                                    ApplicationProtocolConfig$Protocol
                                    ApplicationProtocolConfig$SelectorFailureBehavior
                                    ApplicationProtocolConfig$SelectedListenerFailureBehavior)))
+
+  (def port "'alef' in ascii" 11256)
 
   ;; from examples/
   (defn hello-world-handler
@@ -783,7 +788,6 @@
          ^"[Ljava.lang.String;"
          (into-array String [ApplicationProtocolNames/HTTP_2]))}))
 
-  (def port "'alef' in ascii" 11256)
 
   ;; open and close
   #_(with-open [s (start-server hello-world-handler

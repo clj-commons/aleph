@@ -162,6 +162,7 @@
 
            (reset! body-stream s)
            (reset! complete c)
+           ; if stream closed for some reason, set complete true to indicate early termination
            (s/on-closed s #(d/success! c true))
            (handle-response rsp c s))
 
@@ -170,6 +171,7 @@
          (let [content (.content ^HttpContent msg)]
            (netty/put! (.channel ctx) @body-stream content)
            (when (instance? LastHttpContent msg)
+             ; false => conn not ended early, we got all the data
              (d/success! @complete false)
              (s/close! @body-stream)))
 
@@ -470,7 +472,7 @@
   "Given a response-stream, returns a ChannelInboundHandler that processes
    inbound Netty Http2 frames, converts them, and places them on the stream"
   [^Http2StreamChannel ch response-d raw-stream? ^long buffer-capacity]
-  (let [complete (d/deferred) ; realized when this stream is done, regardless of success/error
+  (let [complete (d/deferred) ; realized when this stream is done; true = close conn, false = keep conn open
 
         ;; if raw, we're returning ByteBufs, if not, we convert to byte[]'s
         body-stream

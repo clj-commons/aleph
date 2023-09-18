@@ -237,6 +237,7 @@
   :status (-> rsp .status .code)
   :aleph/keep-alive? (HttpUtil/isKeepAlive rsp)
   :headers (-> rsp .headers headers->map)
+  ;; Terrible name. It means, did the conn end unexpectedly early?
   :aleph/complete complete
   :body body)
 
@@ -502,7 +503,7 @@
     ;; with transfer encoding chunked
     (if-let [s @stream]
       (do
-        ;; flag that body was not completed succesfully
+        ;; flag that connection was terminated early
         (d/success! @complete true)
         (s/close! s))
       (send-response-decoder-failure ctx msg response-stream))

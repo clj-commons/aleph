@@ -109,14 +109,13 @@
 
 (defn add-exception-handler
   "Set up the pipeline with an exception handler. Takes an optional name and
-   callback that will be passed the exception and the context. By default, it
-   logs the error, and passes the exception on to the tail, which will cause
-   the channel to close.
+   handler, which will be passed (1) the exception and (2) the context. By
+   default, it logs the error and closes the channel.
 
-   NB: This is for the final handler in a pipeline. Any supplied ex-handler gets
-   the final say. Ring is not involved; if you wish to send something, use Netty.
-   If you wish to forward the error on, don't forget to call .fireExceptionCaught()
-   in your ex-handler."
+   NB: This is for the *final* handler in a pipeline. Any supplied ex-handler gets
+   full control. Ring is not involved; if you wish to send something, use Netty.
+   If you want the channel closed, you must do it. If you wish to forward the
+   error on, call .fireExceptionCaught() in your ex-handler."
   ([^ChannelPipeline p]
    (add-exception-handler p "ex-handler"))
   ([^ChannelPipeline p ^String handler-name]

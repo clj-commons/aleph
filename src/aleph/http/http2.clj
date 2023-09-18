@@ -84,6 +84,7 @@
   "No point in lower-casing the same strings over and over again."
   (ConcurrentHashMap. 128))
 
+
 (defn- illegal-arg
   "Logs an error message, then throws an IllegalArgumentException with that error message."
   [^String emsg]
@@ -550,10 +551,10 @@
       (assoc :query-string query-string))))
 
 (defn- server-handler
-  "Returns a ChannelInboundHandler that processes inbound Netty Http2 frames,
-   converts them, and calls the user handler with them. It then converts the
-   handler's Ring response into Netty Http2 objects and sends them on the
-   outbound pipeline."
+  "Returns a ChannelInboundHandler that processes inbound Netty HTTP2 stream
+   frames, converts them, and calls the user handler with them. It then
+   converts the handler's Ring response into Netty Http2 objects and sends
+   them on the outbound pipeline."
   [^Http2StreamChannel ch
    handler
    raw-stream?
@@ -597,7 +598,6 @@
             #_(-> (s/put! body-stream ex)                     ; FIXME?
                 (d/on-realized close-body-handler close-body-handler))))
 
-        ;; TODO: probably need to stop logging GOAWAY and RST_STREAM as error - more like info or warn
         handle-shutdown-frame
         (fn handle-shutdown-frame [evt]
           ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame

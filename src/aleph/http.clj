@@ -381,7 +381,7 @@
                                      (d/chain'
                                        (fn cleanup-conn [rsp]
 
-                                         ;; only release the connection back once the response is complete
+                                         ;; only release the connection back once the conn is "complete"
                                          (-> (:aleph/complete rsp)
                                              (maybe-timeout! read-timeout)
 
