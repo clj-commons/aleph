@@ -9,6 +9,7 @@
    [manifold.deferred :as d]
    [manifold.stream :as s])
   (:import
+   (io.netty.handler.ssl.util SelfSignedCertificate)
    (java.security.cert X509Certificate)
    (java.util.concurrent TimeoutException)))
 
@@ -68,6 +69,31 @@
                                            :trust-store (into-array X509Certificate [ssl/ca-cert])})})]
         (is (nil? @(s/take! c)))
         (is (nil? @ssl-session) "SSL session should be undefined")))))
+
+(def wrong-hostname-cert
+  (SelfSignedCertificate. "some-random-hostname"))
+
+(def wrong-hostname-ssl-server-context
+  (netty/ssl-server-context
+   {:private-key       (.privateKey wrong-hostname-cert)
+    :certificate-chain (.certificate wrong-hostname-cert)}))
+
+(def wrong-hostname-ssl-client-cotnext
+  (assoc ssl/client-ssl-context-opts
+         :trust-store (.certificate wrong-hostname-cert)))
+
+(deftest test-failed-endpoint-identification
+  (let [ssl-session (atom nil)]
+    (with-server (tcp/start-server (ssl-echo-handler ssl-session)
+                                   {:port 10001
+                                    :shutdown-timeout 0
+                                    :ssl-context wrong-hostname-ssl-server-context})
+      (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
+                            #"^No name matching localhost found$"
+                            @(tcp/client {:host "localhost"
+                                          :port 10001
+                                          :ssl-context wrong-hostname-ssl-client-cotnext})))
+      (is (nil? @ssl-session) "SSL session should be undefined"))))
 
 (deftest test-connection-close-during-ssl-handshake
   (let [ssl-session (atom nil)
