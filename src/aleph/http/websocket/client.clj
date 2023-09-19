@@ -249,6 +249,7 @@
            pipeline-transform  identity
            raw-stream?         false
            epoll?              false
+           ssl-endpoint-id-alg "HTTPS"
            sub-protocols       nil
            extensions?         false
            max-frame-payload   65536
