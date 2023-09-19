@@ -1405,17 +1405,14 @@ initialize an DnsAddressResolverGroup instance.
 (defn- add-ssl-handler-to-pipeline-builder
   "Adds an `SslHandler` to the pipeline builder."
   ([pipeline-builder ssl-ctx]
-   (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-ctx nil))
-  ([pipeline-builder ssl-ctx remote-address]
+   (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-ctx nil nil))
+  ([pipeline-builder ssl-ctx remote-address ssl-endpoint-id-alg]
    (fn [^ChannelPipeline p]
      (.addFirst p
                 "ssl-handler"
                 (let [ch (.channel p)]
                   (if remote-address
-                    ;; Always passing `nil` as `ssl-endpoint-id-alg` here since this code path is
-                    ;; only hit in the deprecated `create-client`. To keep it fully backwards
-                    ;; compatible, we don't enable endpoint identification by default.
-                    (ssl-handler ch ssl-ctx remote-address nil)
+                    (ssl-handler ch ssl-ctx remote-address ssl-endpoint-id-alg)
                     (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
 
@@ -1486,6 +1483,22 @@ initialize an DnsAddressResolverGroup instance.
   ([pipeline-builder
     ssl-context
     bootstrap-transform
+    remote-address
+    local-address
+    epoll?
+    name-resolver]
+   (create-client pipeline-builder
+                  ssl-context
+                  "HTTPS"
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  name-resolver))
+  ([pipeline-builder
+    ssl-context
+    ssl-endpoint-id-alg
+    bootstrap-transform
     ^SocketAddress remote-address
     ^SocketAddress local-address
     epoll?
@@ -1495,7 +1508,7 @@ initialize an DnsAddressResolverGroup instance.
                        (coerce-ssl-client-context ssl-context))
 
          pipeline-builder (if ssl-context
-                            (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-context remote-address)
+                            (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-context remote-address ssl-endpoint-id-alg)
                             pipeline-builder)]
      (create-client-chan {:pipeline-builder    pipeline-builder
                           :bootstrap-transform bootstrap-transform
