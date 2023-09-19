@@ -1377,12 +1377,18 @@ initialize an DnsAddressResolverGroup instance.
 (defn ssl-handler
   "Generates a new SslHandler for the given SslContext.
 
-   The 2-arity version is for the server.
-   The 3-arity version is for the client. The `remote-address` must be provided"
+   The 2-ary version is for servers.
+
+   The 3- and 4-ary version are for clients.
+   For these, the `remote-address` must be provided.
+   The `ssl-endpoint-id-alg` is the name of the algorithm to use for endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms). It defaults to \"HTTPS\" in the 3-ary version which is a reasonable default for non-HTTPS uses, too. Pass `nil` to disable endpoint identification."
   (^ChannelHandler
    [^Channel ch ^SslContext ssl-ctx]
    (.newHandler ssl-ctx
                 (.alloc ch)))
+  (^ChannelHandler
+   [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address]
+   (ssl-handler ch ssl-ctx remote-address "HTTPS"))
   (^ChannelHandler
    [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address ssl-endpoint-id-alg]
    (let [ssl-handler (.newHandler ssl-ctx
