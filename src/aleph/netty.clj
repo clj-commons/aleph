@@ -1078,10 +1078,12 @@
 
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
-  []
-  (let [cert (SelfSignedCertificate.)]
-    (ssl-server-context {:private-key       (.privateKey cert)
-                         :certificate-chain (.certificate cert)})))
+  ([]
+   (self-signed-ssl-context "localhost"))
+  ([hostname]
+   (let [cert (SelfSignedCertificate. hostname)]
+     (ssl-server-context {:private-key       (.privateKey cert)
+                          :certificate-chain (.certificate cert)}))))
 
 (defn insecure-ssl-client-context
   "An insure SSL context for servers."
@@ -1374,33 +1376,47 @@ initialize an DnsAddressResolverGroup instance.
   anyway."
   [_])
 
+(def ^:const ^:no-doc default-ssl-endpoint-id-alg "HTTPS")
+
 (defn ssl-handler
   "Generates a new SslHandler for the given SslContext.
 
-   The 2-arity version is for the server.
-   The 3-arity version is for the client. The `remote-address` must be provided"
-  (^ChannelHandler
+   The 2-ary version is for servers.
+
+   The 3- and 4-ary version are for clients.
+   For these, the `remote-address` must be provided.
+   The `ssl-endpoint-id-alg` is the name of the algorithm to use for endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms). It defaults to \"HTTPS\" in the 3-ary version which is a reasonable default for non-HTTPS uses, too. Pass `nil` to disable endpoint identification."
+  (^SslHandler
    [^Channel ch ^SslContext ssl-ctx]
    (.newHandler ssl-ctx
                 (.alloc ch)))
-  (^ChannelHandler
+  (^SslHandler
    [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address]
-   (.newHandler ssl-ctx
-                (.alloc ch)
-                (.getHostName ^InetSocketAddress remote-address)
-                (.getPort ^InetSocketAddress remote-address))))
+   (ssl-handler ch ssl-ctx remote-address default-ssl-endpoint-id-alg))
+  (^SslHandler
+   [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address ssl-endpoint-id-alg]
+   (let [ssl-handler (.newHandler ssl-ctx
+                                  (.alloc ch)
+                                  (.getHostName ^InetSocketAddress remote-address)
+                                  (.getPort ^InetSocketAddress remote-address))]
+     (when ssl-endpoint-id-alg
+       (let [ssl-engine (.engine ssl-handler)
+             ssl-params (.getSSLParameters ssl-engine)]
+         (.setEndpointIdentificationAlgorithm ssl-params ssl-endpoint-id-alg)
+         (.setSSLParameters ssl-engine ssl-params)))
+     ssl-handler)))
 
 (defn- add-ssl-handler-to-pipeline-builder
   "Adds an `SslHandler` to the pipeline builder."
   ([pipeline-builder ssl-ctx]
-   (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-ctx nil))
-  ([pipeline-builder ssl-ctx remote-address]
+   (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-ctx nil nil))
+  ([pipeline-builder ssl-ctx remote-address ssl-endpoint-id-alg]
    (fn [^ChannelPipeline p]
      (.addFirst p
                 "ssl-handler"
                 (let [ch (.channel p)]
                   (if remote-address
-                    (ssl-handler ch ssl-ctx remote-address)
+                    (ssl-handler ch ssl-ctx remote-address ssl-endpoint-id-alg)
                     (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
 
@@ -1471,6 +1487,22 @@ initialize an DnsAddressResolverGroup instance.
   ([pipeline-builder
     ssl-context
     bootstrap-transform
+    remote-address
+    local-address
+    epoll?
+    name-resolver]
+   (create-client pipeline-builder
+                  ssl-context
+                  default-ssl-endpoint-id-alg
+                  bootstrap-transform
+                  remote-address
+                  local-address
+                  epoll?
+                  name-resolver))
+  ([pipeline-builder
+    ssl-context
+    ssl-endpoint-id-alg
+    bootstrap-transform
     ^SocketAddress remote-address
     ^SocketAddress local-address
     epoll?
@@ -1480,7 +1512,7 @@ initialize an DnsAddressResolverGroup instance.
                        (coerce-ssl-client-context ssl-context))
 
          pipeline-builder (if ssl-context
-                            (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-context remote-address)
+                            (add-ssl-handler-to-pipeline-builder pipeline-builder ssl-context remote-address ssl-endpoint-id-alg)
                             pipeline-builder)]
      (create-client-chan {:pipeline-builder    pipeline-builder
                           :bootstrap-transform bootstrap-transform

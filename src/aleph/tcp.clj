@@ -162,14 +162,16 @@
    | `remote-address`      | a `java.net.SocketAddress` specifying the server's address.
    | `local-address`       | a `java.net.SocketAddress` specifying the local network interface to use.
    | `ssl-context`         | an explicit `io.netty.handler.ssl.SslHandler` or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details) to use. Defers to `ssl?` and `insecure?` configuration if omitted.
+   | `ssl-endpoint-id-alg` | the name of the algorithm to use for SSL endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms), defaults to \"HTTPS\" which is a reasonable default for non-HTTPS uses, too. Only used by SSL connections. Pass `nil` to disable endpoint identification.
    | `ssl?`                | if true, the client attempts to establish a secure connection with the server.
    | `insecure?`           | if true, the client will ignore the server's certificate.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)."
-  [{:keys [host port remote-address local-address ssl-context ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
-    :or {bootstrap-transform identity
+  [{:keys [host port remote-address local-address ssl-context ssl-endpoint-id-alg ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
+    :or {ssl-endpoint-id-alg netty/default-ssl-endpoint-id-alg
+         bootstrap-transform identity
          epoll? false}
     :as options}]
   (let [[s ^ChannelHandler handler] (client-channel-handler options)
@@ -185,7 +187,7 @@
                            (when ssl?
                              (.addLast pipeline
                                        "ssl-handler"
-                                       (netty/ssl-handler (.channel pipeline) ssl-context remote-address)))
+                                       (netty/ssl-handler (.channel pipeline) ssl-context remote-address ssl-endpoint-id-alg)))
                            (.addLast pipeline "handler" handler)
                            (when pipeline-transform
                              (pipeline-transform pipeline)))]

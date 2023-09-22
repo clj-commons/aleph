@@ -683,14 +683,14 @@
 
    Can't use an ApnHandler/ApplicationProtocolNegotiationHandler here,
    because it's tricky to run Manifold code on Netty threads."
-  [{:keys [ssl? remote-address ssl-context]}]
+  [{:keys [ssl? remote-address ssl-context ssl-endpoint-id-alg]}]
   (fn pipeline-builder
     [^ChannelPipeline pipeline]
     (when ssl?
       (do
         (.addLast pipeline
                   "ssl-handler"
-                  (netty/ssl-handler (.channel pipeline) ssl-context remote-address))
+                  (netty/ssl-handler (.channel pipeline) ssl-context remote-address ssl-endpoint-id-alg))
         (.addLast pipeline
                   "pause-handler"
                   ^ChannelHandler (netty/pause-handler))))))
@@ -954,6 +954,7 @@
            keep-alive?
            insecure?
            ssl-context
+           ssl-endpoint-id-alg
            response-buffer-size
            epoll?
            transport
@@ -966,6 +967,7 @@
            bootstrap-transform  identity
            pipeline-transform   identity
            keep-alive?          true
+           ssl-endpoint-id-alg  netty/default-ssl-endpoint-id-alg
            response-buffer-size 65536
            epoll?               false
            name-resolver        :default
@@ -999,6 +1001,7 @@
                            (assoc opts
                                   :ssl? ssl?
                                   :ssl-context ssl-context
+                                  :ssl-endpoint-id-alg ssl-endpoint-id-alg
                                   :remote-address remote-address
                                   :raw-stream? raw-stream?
                                   :response-buffer-size response-buffer-size

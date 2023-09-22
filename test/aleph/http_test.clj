@@ -186,9 +186,16 @@
     (apply concat)
     (partition 2)))
 
+(def default-ssl-server-options
+  {:port port
+   :ssl-context ssl/server-ssl-context})
+
+(def default-ssl-client-options
+  {:ssl-context ssl/client-ssl-context-opts})
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool {:connection-options (merge *connection-options* {:insecure? true})})]
+     (binding [*pool* (http/connection-pool {:connection-options *connection-options*})]
        (try
          ~@body
          (finally
@@ -207,7 +214,7 @@
      (with-server (http/start-server ~handler {:port port :compression-level 3 :shutdown-timeout 0})
        ~@body)))
 
-(def default-ssl-options {:port port, :ssl-context (netty/self-signed-ssl-context)})
+
 
 (defmacro with-handler-options
   [handler options & body]
@@ -247,14 +254,15 @@
 
 
 (deftest test-ssl-response-formats
-  (with-handler-options basic-handler default-ssl-options
-    (doseq [[path result] expected-results]
-      (is
-       (= result
-          (bs/to-string
-           (:body
-            @(http-get (str "https://localhost:" port "/" path)))))
-       (str path "path failed")))))
+  (binding [*connection-options* default-ssl-client-options]
+    (with-handler-options basic-handler default-ssl-server-options
+      (doseq [[path result] expected-results]
+        (is
+         (= result
+            (bs/to-string
+             (:body
+              @(http-get (str "https://localhost:" port "/" path)))))
+         (str path "path failed"))))))
 
 (deftest test-files
   (let [client-url (str "http://localhost:" port)]
@@ -269,20 +277,17 @@
                                 {:body (io/file "test/file.txt")}))))))))
 
 (deftest test-ssl-files
-  (let [client-url (str "https://localhost:" port)
-        client-options {:connection-options {:ssl-context ssl/client-ssl-context}}
-        client-pool    (http/connection-pool client-options)]
-    (with-handler-options identity (merge default-ssl-options {:ssl-context ssl/server-ssl-context})
-      (is (str/blank?
-           (bs/to-string
-            (:body @(http-put client-url
-                              {:body (io/file "test/empty.txt")
-                               :pool client-pool})))))
-      (is (= (slurp "test/file.txt" :encoding "UTF-8")
+  (binding [*connection-options* default-ssl-client-options]
+    (let [client-url (str "https://localhost:" port)]
+      (with-handler-options identity default-ssl-server-options
+        (is (str/blank?
              (bs/to-string
               (:body @(http-put client-url
-                                {:body (io/file "test/file.txt")
-                                 :pool client-pool}))))))))
+                                {:body (io/file "test/empty.txt")})))))
+        (is (= (slurp "test/file.txt" :encoding "UTF-8")
+               (bs/to-string
+                (:body @(http-put client-url
+                                  {:body (io/file "test/file.txt")})))))))))
 
 (defn ssl-session-capture-handler [ssl-session-atom]
   (fn [req]
@@ -290,28 +295,51 @@
     {:status 200 :body "ok"}))
 
 (deftest test-ssl-session-access
-  (let [ssl-session (atom nil)]
-    (with-handler-options
-      (ssl-session-capture-handler ssl-session)
-      default-ssl-options
-      (is (= 200 (:status @(http-get (str "https://localhost:" port)))))
-      (is (some? @ssl-session))
-      (when-let [^SSLSession s @ssl-session]
-        (is (.isValid s))
-        (is (not (str/includes? "NULL" (.getCipherSuite s))))))))
+  (binding [*connection-options* default-ssl-client-options]
+    (let [ssl-session (atom nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        default-ssl-server-options
+        (is (= 200 (:status @(http-get (str "https://localhost:" port)))))
+        (is (some? @ssl-session))
+        (when-let [^SSLSession s @ssl-session]
+          (is (.isValid s))
+          (is (not (str/includes? "NULL" (.getCipherSuite s)))))))))
 
 (deftest test-ssl-with-plain-client-request
-  (let [ssl-session (atom nil)]
-    (with-handler-options
-      (ssl-session-capture-handler ssl-session)
-      default-ssl-options
-      ;; Note the intentionally wrong "http" scheme here
-      (is (some-> (http-get (str "http://localhost:" port))
-                  (d/catch identity)
-                  deref
-                  ex-message
-                  (str/includes? "connection was closed")))
-      (is (nil? @ssl-session)))))
+  (binding [*connection-options* default-ssl-client-options]
+    (let [ssl-session (atom nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        default-ssl-server-options
+        ;; Note the intentionally wrong "http" scheme here
+        (is (some-> (http-get (str "http://localhost:" port))
+                    (d/catch identity)
+                    deref
+                    ex-message
+                    (str/includes? "connection was closed")))
+        (is (nil? @ssl-session))))))
+
+(deftest test-ssl-endpoint-identification
+  (binding [*connection-options* {:ssl-context ssl/wrong-hostname-client-ssl-context-opts}]
+    (let [ssl-session (atom nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        (assoc default-ssl-server-options :ssl-context ssl/wrong-hostname-server-ssl-context-opts)
+        (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
+                              #"^No name matching localhost found$"
+                              @(http-get (str "https://localhost:" port))))
+        (is (nil? @ssl-session))))))
+
+(deftest test-disabling-ssl-endpoint-identification
+  (binding [*connection-options* {:ssl-context ssl/wrong-hostname-client-ssl-context-opts
+                                  :ssl-endpoint-id-alg nil}]
+    (let [ssl-session (atom nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        (assoc default-ssl-server-options :ssl-context ssl/wrong-hostname-server-ssl-context-opts)
+        (is (= 200 (:status @(http-get (str "https://localhost:" port)))))
+        (is (some? @ssl-session))))))
 
 (deftest test-invalid-body
   (let [client-url (str "http://localhost:" port)]
