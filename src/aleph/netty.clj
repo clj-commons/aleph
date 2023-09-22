@@ -1078,10 +1078,12 @@
 
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers."
-  []
-  (let [cert (SelfSignedCertificate.)]
-    (ssl-server-context {:private-key       (.privateKey cert)
-                         :certificate-chain (.certificate cert)})))
+  ([]
+   (self-signed-ssl-context "localhost"))
+  ([hostname]
+   (let [cert (SelfSignedCertificate. hostname)]
+     (ssl-server-context {:private-key       (.privateKey cert)
+                          :certificate-chain (.certificate cert)}))))
 
 (defn insecure-ssl-client-context
   "An insure SSL context for servers."
