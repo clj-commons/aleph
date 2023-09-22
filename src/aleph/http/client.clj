@@ -967,7 +967,7 @@
            bootstrap-transform  identity
            pipeline-transform   identity
            keep-alive?          true
-           ssl-endpoint-id-alg  "HTTPS"
+           ssl-endpoint-id-alg  netty/default-ssl-endpoint-id-alg
            response-buffer-size 65536
            epoll?               false
            name-resolver        :default

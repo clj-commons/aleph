@@ -1374,6 +1374,8 @@ initialize an DnsAddressResolverGroup instance.
   anyway."
   [_])
 
+(def ^:const ^:no-doc default-ssl-endpoint-id-alg "HTTPS")
+
 (defn ssl-handler
   "Generates a new SslHandler for the given SslContext.
 
@@ -1388,7 +1390,7 @@ initialize an DnsAddressResolverGroup instance.
                 (.alloc ch)))
   (^SslHandler
    [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address]
-   (ssl-handler ch ssl-ctx remote-address "HTTPS"))
+   (ssl-handler ch ssl-ctx remote-address default-ssl-endpoint-id-alg))
   (^SslHandler
    [^Channel ch ^SslContext ssl-ctx ^InetSocketAddress remote-address ssl-endpoint-id-alg]
    (let [ssl-handler (.newHandler ssl-ctx
@@ -1489,7 +1491,7 @@ initialize an DnsAddressResolverGroup instance.
     name-resolver]
    (create-client pipeline-builder
                   ssl-context
-                  "HTTPS"
+                  default-ssl-endpoint-id-alg
                   bootstrap-transform
                   remote-address
                   local-address

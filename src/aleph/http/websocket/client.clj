@@ -249,7 +249,7 @@
            pipeline-transform  identity
            raw-stream?         false
            epoll?              false
-           ssl-endpoint-id-alg "HTTPS"
+           ssl-endpoint-id-alg netty/default-ssl-endpoint-id-alg
            sub-protocols       nil
            extensions?         false
            max-frame-payload   65536

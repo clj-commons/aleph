@@ -170,7 +170,7 @@
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)."
   [{:keys [host port remote-address local-address ssl-context ssl-endpoint-id-alg ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
-    :or {ssl-endpoint-id-alg "HTTPS"
+    :or {ssl-endpoint-id-alg netty/default-ssl-endpoint-id-alg
          bootstrap-transform identity
          epoll? false}
     :as options}]
