@@ -1,6 +1,14 @@
 # HTTP
 
-Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/clj-commons/manifold) to represent an eventual response.  This feature may not play nicely with Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://cljdoc.org/d/manifold/manifold/CURRENT/api/manifold.deferred#let-flow) operator.
+Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can 
+be a drop-in replacement for any existing Ring-compliant server.  However, it 
+also allows for the handler function to return a 
+[Manifold deferred](https://github.com/clj-commons/manifold) to represent an 
+eventual response.  This feature may not play nicely with Ring middleware which 
+modifies the response, but this can be easily fixed by reimplementing the 
+middleware using Manifold's 
+[let-flow](https://cljdoc.org/d/manifold/manifold/CURRENT/api/manifold.deferred#let-flow) 
+operator.
 
 ```clj
 (require '[aleph.http :as http])

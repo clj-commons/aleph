@@ -8,17 +8,18 @@ Aleph exposes data from the network as a [Manifold](https://github.com/clj-commo
 
 Leiningen:
 ```clojure
-[aleph "0.7.0-alpha1"]
+[aleph "0.7.0-alpha2"]
 ```
 deps.edn:
 ```clojure
-aleph/aleph {:mvn/version "0.7.0-alpha1"}
+aleph/aleph {:mvn/version "0.7.0-alpha2"}
 ;; alternatively
 io.github.clj-commons/aleph {:git/sha "..."}
 ```
 
 ### HTTP
 
+#### Server
 Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be a drop-in replacement for any existing Ring-compliant server.  However, it also allows for the handler function to return a [Manifold deferred](https://github.com/clj-commons/manifold) to represent an eventual response.  This feature may not play nicely with synchronous Ring middleware which modifies the response, but this can be easily fixed by reimplementing the middleware using Manifold's [let-flow](https://github.com/clj-commons/manifold/blob/master/doc/deferred.md#let-flow) operator. The `aleph.http/wrap-ring-async-handler` helper can be used to convert async 3-arity Ring handler to Aleph-compliant one.
 
 ```clojure
@@ -33,6 +34,8 @@ Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be
 ```
 
 The body of the response may also be a Manifold stream, where each message from the stream is sent as a chunk, allowing for precise control over streamed responses for [server-sent events](http://en.wikipedia.org/wiki/Server-sent_events) and other purposes.
+
+#### Client
 
 For HTTP client requests, Aleph models itself after [clj-http](https://github.com/dakrone/clj-http), except that every request immediately returns a Manifold deferred representing the response.
 
