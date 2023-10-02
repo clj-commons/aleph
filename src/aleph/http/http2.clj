@@ -120,20 +120,26 @@
    (Http2Exception. h2-error msg ^Throwable (ex-info msg m cause))))
 
 (defn stream-ex
-  "Creates a StreamException. If a Throwable `cause` is passed-in, it will
-   be wrapped in an ex-info."
+  "Creates a StreamException. Attaches an ex-info as the cause, so metadata can
+   be associated. If a Throwable `cause` is passed-in, it will be wrapped in that
+   ex-info.
+
+   If `public-error-message` is passed in, it will be available in that
+   ex-info at :aleph/public-error-message. This is designed for automatically
+   sending a 4xx/5xx response in a way that doesn't expose implementation details"
   ([stream-id msg]
    (stream-ex stream-id msg {}))
-  ([stream-id msg m]
-   (stream-ex stream-id msg m Http2Error/PROTOCOL_ERROR))
-  ([stream-id msg m h2-error]
-   (stream-ex stream-id msg m h2-error nil))
-  ([stream-id msg m h2-error ^Throwable cause]
+  ([stream-id msg {:keys [m h2-error public-error-message ^Throwable cause]
+                   :or {m {}
+                        h2-error Http2Error/PROTOCOL_ERROR
+                        public-error-message "Internal Server Error"}}]
    ;; Http2Exception.StreamException constructor isn't public
    (Http2Exception/streamError
      stream-id
      h2-error
-     (ex-info msg m cause)
+     (ex-info msg
+              (assoc m :aleph/public-error-message public-error-message)
+              cause)
      msg
      EmptyArrays/EMPTY_OBJECTS)))
 
@@ -182,7 +188,7 @@
               (str "Received RST_STREAM from peer, stream closing. Error code: " error-code ".")
               (str "Received GOAWAY from peer, connection closing. Error code: " error-code ". Stream " stream-id " was not processed by peer."))]
     (if (instance? Http2ResetFrame evt)
-      (stream-ex stream-id msg {} h2-error)
+      (stream-ex stream-id msg {:h2-error h2-error})
       (conn-ex msg {:on-stream-id stream-id} h2-error))))
 
 (defn add-header
@@ -248,10 +254,16 @@
       (HttpResponseStatus/parseLine ^AsciiString status)
 
       :else
-      (throw (stream-ex m stream-id "Unknown :status class in Ring response map")))
+      (throw (stream-ex stream-id
+                        "Unknown :status class in Ring response map"
+                        {:m m
+                         :public-error-message "Invalid :status pseudo-header"})))
 
     (catch IllegalArgumentException e
-      (throw (stream-ex m stream-id (str "Invalid :status in Ring response map: " (.getMessage e)))))))
+      (throw (stream-ex stream-id
+                        (str "Invalid :status in Ring response map: " (.getMessage e))
+                        {:m m
+                         :public-error-message "Invalid :status pseudo-header"})))))
 
 (defn ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map.
@@ -265,21 +277,33 @@
       (do
         (if-some [request-method (get m :request-method)]
           (.method h2-headers (-> request-method name str/upper-case))
-          (throw (stream-ex stream-id "Missing :request-method in Ring request map" m)))
+          (throw (stream-ex stream-id
+                            "Missing :request-method in Ring request map"
+                            {:m m
+                             :public-error-message "Missing :method pseudo-header"})))
 
         (if-some [scheme (get m :scheme)]
           (.scheme h2-headers (name scheme))
-          (throw (stream-ex stream-id "Missing :scheme in Ring request map" m)))
+          (throw (stream-ex stream-id
+                            "Missing :scheme in Ring request map"
+                            {:m m
+                             :public-error-message "Missing :scheme pseudo-header"})))
 
         (if-some [authority (get m :authority)]
           (.authority h2-headers authority)
-          (throw (stream-ex stream-id "Missing :authority in Ring request map" m)))
+          (throw (stream-ex stream-id
+                            "Missing :authority in Ring request map"
+                            {:m m
+                             :public-error-message "Missing :authority pseudo-header"})))
 
         (if-some [path (str (get m :uri)
                             (when-let [q (get m :query-string)]
                               (str "?" q)))]
           (.path h2-headers path)
-          (throw (stream-ex stream-id "Invalid/missing :uri and/or :query-string in Ring request map" m))))
+          (throw (stream-ex stream-id
+                            "Invalid/missing :uri and/or :query-string in Ring request map"
+                            {:m m
+                             :public-error-message "Invalid or missing :path pseudo-header"}))))
 
       (if-let [status (get m :status)]
         (.status h2-headers (.codeAsText ^HttpResponseStatus (parse-status status m stream-id)))
@@ -287,7 +311,7 @@
 
         ;; NB: a missing status should be an error, but for backwards-
         ;; compatibility with Aleph's http1 code, we set it to 200
-        #_(throw (stream-ex stream-id "Missing :status in Ring response map" m))))
+        ))
 
     ;; Technically, missing :headers is a violation of the Ring SPEC, but kept
     ;; for backwards compatibility
@@ -532,7 +556,7 @@
          (if (or (-> ch (.pipeline) (.get ^Class SslHandler))
                  (some-> ch (.parent) (.pipeline) (.get ^Class SslHandler)))
            (let [emsg (str "FileRegion not supported with SSL in Netty")
-                 e (stream-ex (.id stream) emsg {:ch ch :headers headers :body body})]
+                 e (stream-ex (.id stream) emsg {:m {:ch ch :headers headers :body body}})]
              (log/error e emsg)
              (netty/close ch))
            (send-file-region ch headers body))
@@ -546,7 +570,10 @@
 
        (catch Exception e
          (log/error e "Error sending message")
-         (throw (stream-ex (.id stream) "Error sending message" {:headers headers :body body} e)))))))
+         (throw (stream-ex (.id stream)
+                           "Error sending message"
+                           {:m {:headers headers :body body}
+                            :cause e})))))))
 
 ;; NOTE: can't be as vague about whether we're working with a channel or context in HTTP/2 code,
 ;; because we need access to the .stream method. We have a lot of code in aleph.netty that
@@ -710,7 +737,8 @@
     (throw (stream-ex
              stream-id
              "Missing mandatory pseudo-header in HTTP/2 request"
-             {:headers headers}))
+             {:m                    {:headers headers}
+              :public-error-message "Missing mandatory pseudo-header in HTTP/2 request"}))
     headers))
 
 (defn client-handle-shutdown-frame
