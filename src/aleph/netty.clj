@@ -254,6 +254,7 @@
       :else
       (.writeBytes buf (bs/to-byte-buffer x))))
 
+  ;; TODO: switch to pooled buffers (http://normanmaurer.me/presentations/2014-twitter-meetup-netty/slides.html#12.0)
   (defn ^ByteBuf to-byte-buf
     "Converts `x` into a `io.netty.buffer.ByteBuf`."
     ([x]
@@ -265,7 +266,11 @@
        (Unpooled/copiedBuffer ^bytes x)
 
        (instance? String x)
+       ; do we need ByteBuffer/wrap here? are there endian concerns - quick repl test suggests no
        (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
+
+       (instance? AsciiString x)
+       (-> ^AsciiString x (.toByteArray) Unpooled/wrappedBuffer)
 
        (instance? ByteBuffer x)
        (Unpooled/wrappedBuffer ^ByteBuffer x)
