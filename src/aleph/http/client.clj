@@ -6,7 +6,6 @@
     [aleph.http.multipart :as multipart]
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
-    [clj-commons.primitive-math :as p]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s])
@@ -33,12 +32,6 @@
       HttpUtil
       LastHttpContent)
     (io.netty.handler.codec.http2
-      Http2DataFrame
-      Http2Error
-      Http2Exception
-      Http2GoAwayFrame
-      Http2HeadersFrame
-      Http2ResetFrame
       Http2StreamChannel
       Http2StreamChannelBootstrap)
     (io.netty.handler.logging
@@ -61,8 +54,6 @@
       SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
-    (io.netty.util ReferenceCounted)
-    (io.netty.util.internal EmptyArrays)
     (java.io
       IOException)
     (java.net
@@ -468,99 +459,6 @@
         (common/add-non-http-handlers logger pipeline-transform))))
 
 
-(defn- http2-client-handler
-  "Given a response-stream, returns a ChannelInboundHandler that processes
-   inbound Netty Http2 frames, converts them, and places them on the stream"
-  [^Http2StreamChannel ch response-d raw-stream? ^long buffer-capacity]
-  (let [complete (d/deferred) ; realized when this stream is done; true = close conn, false = keep conn open
-
-        ;; if raw, we're returning ByteBufs, if not, we convert to byte[]'s
-        body-stream
-        (doto (if raw-stream?
-                (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
-                (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
-              (s/on-closed #(d/success! complete true)))
-
-        handle-error
-        (let [close-body-handler (fn [_] (s/close! body-stream))]
-          (fn handle-error [ex]
-            (log/error ex "Exception caught in HTTP/2 stream client handler" {:raw-stream? raw-stream?})
-            ;; if we've already returned a response, best we can do is blow up the
-            ;; body stream and the complete deferred
-            (if-not (d/realized? response-d)
-              (d/error! response-d ex)
-              (do
-                (d/error! complete ex)
-                (-> (s/put! body-stream ex)
-                    (d/on-realized close-body-handler close-body-handler))))))
-
-        handle-shutdown-frame
-        (fn handle-shutdown-frame [evt]
-          (when (or (instance? Http2ResetFrame evt)
-                    (instance? Http2GoAwayFrame evt))
-            (let [stream-id (-> ch (.stream) (.id))
-                  error-code (if (instance? Http2ResetFrame evt)
-                               (.errorCode ^Http2ResetFrame evt)
-                               (.errorCode ^Http2GoAwayFrame evt))
-                  msg (if (instance? Http2ResetFrame evt)
-                        (str "Received RST_STREAM from peer, stream closing. Error code: " error-code ".")
-                        (str "Received GOAWAY from peer, connection closing. Error code: " error-code ". Stream " stream-id " was not processed by peer."))
-                  no-error? (p/== error-code (.code Http2Error/NO_ERROR))]
-              ;; Was there an error, or does the peer just want to shut down the stream/conn?
-              (if no-error?
-                (do
-                  (log/info msg)
-                  (s/close! body-stream))
-                (handle-error (http2/stream-ex stream-id
-                                               msg
-                                               (Http2Error/valueOf error-code)))))))]
-
-    (netty/channel-inbound-handler
-
-      :exception-caught
-      ([_ ctx ex]
-       (handle-error ex))
-
-      :channel-inactive
-      ([_ ctx]
-       (s/close! body-stream)
-       (d/success! complete true)
-       (.fireChannelInactive ctx))
-
-      :channel-read
-      ([_ ctx msg]
-       (cond
-         (instance? Http2HeadersFrame msg)
-         (let [headers (.headers ^Http2HeadersFrame msg)
-               ring-resp {:status            (->> headers (.status) (.convertToInt netty/char-seq-val-converter)) ; might be an AsciiString
-                          :headers           (http2/netty-http2-headers->map headers)
-                          :aleph/keep-alive? true           ; not applicable to HTTP/2, but here for compatibility
-                          :aleph/complete    complete
-                          :body              body-stream}]
-           (d/success! response-d ring-resp)
-           (when (.isEndStream ^Http2HeadersFrame msg)
-             ;; TODO: set complete false here?
-             (s/close! body-stream)))
-
-         (instance? Http2DataFrame msg)
-         (let [content (.content ^Http2DataFrame msg)]
-           (if raw-stream?
-             (netty/put! (.channel ctx) body-stream content)
-             (do
-               (netty/put! (.channel ctx) body-stream (netty/buf->array content))
-               (.release ^ReferenceCounted msg)))
-           (when (.isEndStream ^Http2DataFrame msg)
-             ;; TODO: set complete false here?
-             (s/close! body-stream)))
-
-         :else
-         (.fireChannelRead ctx msg)))
-
-      :user-event-triggered
-      ([_ ctx evt]
-       (handle-shutdown-frame evt)
-       (.fireUserEventTriggered ctx evt)))))
-
 (defn make-pipeline-builder
   "Returns a function that initializes a new conn channel's pipeline.
 
@@ -716,7 +614,17 @@
 (defn- http2-req-handler
   "Returns a fn that takes a Ring request and returns a deferred containing a
    Ring response."
-  [{:keys [authority ch is-server? logger pipeline-transform proxy-options ssl? raw-stream? response-buffer-size]}]
+  [{:keys [authority
+           ch
+           is-server?
+           logger
+           pipeline-transform
+           proxy-options
+           ssl?
+           raw-stream?
+           response-buffer-size
+           stream-go-away-handler
+           reset-stream-handler]}]
   (let [h2-bootstrap (Http2StreamChannelBootstrap. ch)]
     (fn [req]
       (log/trace "http2-req-handler fired")
@@ -743,7 +651,12 @@
 
                         (http2/setup-stream-pipeline
                           (.pipeline out-chan)
-                          (http2-client-handler out-chan resp raw-stream? response-buffer-size)
+                          (http2/client-handler out-chan
+                                                resp
+                                                raw-stream?
+                                                response-buffer-size
+                                                stream-go-away-handler
+                                                reset-stream-handler)
                           is-server?
                           proxy-options
                           logger

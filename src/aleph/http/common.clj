@@ -132,8 +132,8 @@
                    (ex-handler ex ctx)
                    (netty/close ctx)))}))))
 
-(defn error-response
-  "Generic 500 error response"
+(defn ring-error-response
+  "Generic 500 error Ring response"
   [^Throwable e]
   (log/error e "Error in HTTP handler")
   {:status  500

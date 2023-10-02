@@ -33,6 +33,7 @@
       Http2DataFrame
       Http2Error
       Http2Exception
+      Http2Exception$ShutdownHint
       Http2FrameCodec
       Http2FrameCodecBuilder
       Http2FrameLogger
@@ -40,8 +41,10 @@
       Http2GoAwayFrame
       Http2Headers
       Http2HeadersFrame
+      Http2LifecycleManager
       Http2MultiplexHandler
-      Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel Http2ResetFrame
+      Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel
+      Http2ResetFrame
       Http2Settings
       Http2StreamChannel)
     (io.netty.handler.logging LoggingHandler)
@@ -91,7 +94,7 @@
   (ConcurrentHashMap. 128))
 
 
-(defn- illegal-arg
+(defn- throw-illegal-arg-ex
   "Logs an error message, then throws an IllegalArgumentException with that error message."
   [^String emsg]
   (let [ex (IllegalArgumentException. emsg)]
@@ -100,7 +103,11 @@
 
 (defn conn-ex
   "Creates a connection-level Http2Exception. If a Throwable `cause` is
-   passed-in, it will be wrapped in an ex-info."
+   passed-in, it will be wrapped in an ex-info.
+
+   Defaults to a HARD_SHUTDOWN hint. This means the connection will be closed
+   as soon as the GOAWAY is sent. If you want to finish processing any remaining streams,
+   set the hint to GRACEFUL_SHUTDOWN. (NB: that may be impossible.)"
   ([msg]
    (conn-ex msg {}))
   ([msg m]
@@ -108,6 +115,8 @@
   ([msg m h2-error]
    (conn-ex msg m h2-error nil))
   ([^String msg m ^Http2Error h2-error ^Throwable cause]
+   (conn-ex msg m h2-error cause Http2Exception$ShutdownHint/HARD_SHUTDOWN))
+  ([^String msg m ^Http2Error h2-error ^Throwable cause ^Http2Exception$ShutdownHint shutdown-hint]
    (Http2Exception. h2-error msg ^Throwable (ex-info msg m cause))))
 
 (defn stream-ex
@@ -159,6 +168,23 @@
                             (doto (DefaultHttp2GoAwayFrame. h2-error-code)
                                   (.setExtraStreamIds num-extra-streams))))))
 
+(defn ^:no-doc shutdown-frame->h2-exception
+  "Converts an Http2ResetFrame or Http2GoAwayFrame into an Http2Exception or
+   StreamException, respectively."
+  ^Http2Exception
+  [evt stream-id]
+  ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame
+  (let [error-code (if (instance? Http2ResetFrame evt)
+                     (.errorCode ^Http2ResetFrame evt)
+                     (.errorCode ^Http2GoAwayFrame evt))
+        h2-error (Http2Error/valueOf error-code)
+        msg (if (instance? Http2ResetFrame evt)
+              (str "Received RST_STREAM from peer, stream closing. Error code: " error-code ".")
+              (str "Received GOAWAY from peer, connection closing. Error code: " error-code ". Stream " stream-id " was not processed by peer."))]
+    (if (instance? Http2ResetFrame evt)
+      (stream-ex stream-id msg {} h2-error)
+      (conn-ex msg {:on-stream-id stream-id} h2-error))))
+
 (defn add-header
   "Add a single header and value. The value can be a string or a collection of
    strings.
@@ -175,7 +201,7 @@
 
   ;; Also checked by Netty, but we want to avoid work, so we check too
   (if (nil? header-name)
-    (illegal-arg "Header name cannot be nil")
+    (throw-illegal-arg-ex "Header name cannot be nil")
 
     ;; Technically, Ring requires lower-cased headers, but there's no guarantee, and this is
     ;; probably faster, since most users won't be caching.
@@ -190,12 +216,12 @@
         ;;(illegal-arg (str "Invalid nil value for header '" header-name "'"))
 
         (invalid-headers header-name)
-        (illegal-arg (str "Forbidden HTTP/2 header: \"" header-name "\""))
+        (throw-illegal-arg-ex (str "Forbidden HTTP/2 header: \"" header-name "\""))
 
         ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
         (and (.equals te-header-name header-name)
              (not (.equals "trailers" header-value)))
-        (illegal-arg "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed.")
+        (throw-illegal-arg-ex "Invalid value for 'transfer-encoding' header. Only 'trailers' is allowed.")
 
         (sequential? header-value)
         (.add h2-headers ^CharSequence header-name ^Iterable header-value)
@@ -257,13 +283,22 @@
 
       (if-let [status (get m :status)]
         (.status h2-headers (.codeAsText ^HttpResponseStatus (parse-status status m stream-id)))
-        (throw (stream-ex stream-id "Missing :status in Ring response map" m))))
+        (.status h2-headers (.codeAsText HttpResponseStatus/OK))
+
+        ;; NB: a missing status should be an error, but for backwards-
+        ;; compatibility with Aleph's http1 code, we set it to 200
+        #_(throw (stream-ex stream-id "Missing :status in Ring response map" m))))
 
     ;; Technically, missing :headers is a violation of the Ring SPEC, but kept
     ;; for backwards compatibility
     (when-let [headers (get m :headers)]
-      (run! #(add-header h2-headers (key %) (val %))
-            headers))
+      (try
+        (run! #(add-header h2-headers (key %) (val %))
+              headers)
+
+        (catch Exception e
+          (log/error e "Error adding headers to HTTP/2 headers" m)
+          (throw e))))
 
     h2-headers))
 
@@ -519,6 +554,8 @@
 ;; writing to the channel vs the context means different things, anyway, they're not
 ;; usually interchangeable.
 (defn send-request
+  "Converts the Ring request map to Netty Http2Headers, extracts the body,
+   and then sends both to Netty to be sent out over the wire."
   [^Http2StreamChannel ch req response]
   (log/trace "http2 send-request fired")
 
@@ -550,8 +587,8 @@
                       (netty/close ch)))))
 
     ;; this will usually happen because of a malformed request
-    (catch Throwable e
-      (log/error e "Error in http2 req-preprocess")
+    (catch Exception e
+      (log/error e "Error in http2 send-request")
       (d/error! response e)
       (netty/close ch))))
 
@@ -595,8 +632,10 @@
                         (netty/close ch)))))
       (catch Exception e
         (log/error e "Error in http2 send-response")
-        (log/error "Stack trace:" (.printStackTrace e))
-        (throw e)))))
+        (if error-handler
+          ;; try exactly once more with the error-handler's output - remove the error-handler to prevent infinite loops
+          (send-response ch nil head-request? (error-handler e))
+          (throw e))))))
 
 
 
@@ -674,26 +713,40 @@
              {:headers headers}))
     headers))
 
-(defn- handle-shutdown-frame
-  "Common handling for RST_STREAM and GOAWAY frame events"
+(defn client-handle-shutdown-frame
+  "Common handling for RST_STREAM and GOAWAY frame events.
+
+   Closes the body stream, sets the response deferred to an appropriate exception
+   and if a GOAWAY, sets complete to true."
+  [evt stream-id body-stream response-d complete]
+  (let [ex (shutdown-frame->h2-exception evt stream-id)
+        no-error? (identical? (.error ex) Http2Error/NO_ERROR)
+        msg (.getMessage ex)]
+
+    ;; wrap it up
+    (d/error! response-d ex)
+    (s/close! body-stream)
+    (d/success! complete (instance? Http2GoAwayFrame evt)) ; if GOAWAY, the whole conn must be shut down
+
+    (if no-error?
+      (log/info msg)
+      ; only log as warning, since the real error may be on the peer's side
+      (log/warn msg))))
+
+(defn- server-handle-shutdown-frame
+  "Common handling for RST_STREAM and GOAWAY frame events.
+
+   Disables further writes, closes the body stream, and stores the exception
+   in the h2-exception atom for the user handler."
   [evt stream-id body-stream ^AtomicBoolean writable? h2-exception]
 
   ;; disable output - in both cases, we shouldn't send any more frames
   (.set writable? false)
   (s/close! body-stream)
 
-  ;; Sadly no common error parent class for Http2ResetFrame and Http2GoAwayFrame
-  (let [error-code (if (instance? Http2ResetFrame evt)
-                     (.errorCode ^Http2ResetFrame evt)
-                     (.errorCode ^Http2GoAwayFrame evt))
-        h2-error (Http2Error/valueOf error-code)
-        no-error? (p/== error-code (.code Http2Error/NO_ERROR))
-        msg (if (instance? Http2ResetFrame evt)
-              (str "Received RST_STREAM from peer, closing stream " stream-id ". HTTP/2 error code: " error-code ".")
-              (str "Received GOAWAY from peer, initiating shutdown of connection. HTTP/2 error code: " error-code "."))
-        ex (if (instance? Http2ResetFrame evt)
-             (stream-ex stream-id msg {} h2-error)
-             (conn-ex msg {} h2-error))]
+  (let [ex (shutdown-frame->h2-exception evt stream-id)
+        no-error? (identical? (.error ex) Http2Error/NO_ERROR)
+        msg (.getMessage ex)]
 
     ;; store in case user handler can do something with it
     (reset! h2-exception ex)
@@ -712,18 +765,18 @@
    handler
    raw-stream?
    rejected-handler
-   error-handler
+   error-handler                                            ; user error handler, returns ring map
    executor
    buffer-capacity
    stream-go-away-handler
    reset-stream-handler]
   (log/trace "server-handler")
-  #_(log/debug "server-handler args" {:ch ch
-                                    :handler handler
-                                    :raw-stream? raw-stream?
-                                    :rejected-handler rejected-handler
-                                    :error-handler error-handler
-                                    :executor executor
+  #_(log/debug "server-handler args" {:ch               ch
+                                      :handler          handler
+                                      :raw-stream?      raw-stream?
+                                      :rejected-handler rejected-handler
+                                      :error-handler    error-handler
+                                      :executor executor
                                     :buffer-capacity buffer-capacity})
   (let [stream-id (-> ch (.stream) (.id))
         buffer-capacity (long buffer-capacity)
@@ -736,18 +789,25 @@
           (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
           (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
 
-        ;; TODO: passing errors to the stream is problematic
-        ;; Not clear how byte-streams will propagate errors when converting for
-        ;; non-raw streams (what happens when bs gets an Exception? Should it
-        ;; close the stream? Throw mysterious IOExceptions?)
-        ;; A user-supplied error handler may be better, either in here, or as part of the netty pipeline
-        handle-error
-        (let [close-body-handler (fn [_] (s/close! body-stream))]
-          (fn handle-error [ex]
-            (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
-            (s/close! body-stream)
-            #_(-> (s/put! body-stream ex)                     ; FIXME?
-                  (d/on-realized close-body-handler close-body-handler))))]
+        lifecycle-manager (delay (let [parent-pipeline (-> ch .parent .pipeline)
+                                       codec-handler-ctx (.context parent-pipeline ^Class Http2FrameCodec)]
+                                   (.handler codec-handler-ctx)))
+
+        ;; Can't place exceptions on body-stream for client, since non-raw streams
+        ;; will attempt to convert it to bytes for an InputStream, which will blow up
+        ;; elsewhere
+        aleph-error-handler
+        (fn handle-error [ctx ex]
+          (.set writable? false)                            ; disable send-response
+          (s/close! body-stream)
+          (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
+
+          ;; If stream error, sends a RST_STREAM and closes stream.
+          ;; If conn error, sends GOAWAY, and closes conn.
+          (.onError ^Http2LifecycleManager @lifecycle-manager
+                    ctx
+                    false
+                    ex))]
 
     (netty/channel-inbound-handler
       ;;:channel-active
@@ -757,7 +817,8 @@
 
       :exception-caught
       ([_ ctx ex]
-       (handle-error ex))
+       (log/trace ":exception-caught fired")
+       (aleph-error-handler ctx ex))
 
       :channel-inactive
       ([_ ctx]
@@ -766,6 +827,17 @@
 
       :channel-read
       ([_ ctx msg]
+       (log/trace ":channel-read fired")
+       #_(let [parent-pipeline (-> ch .parent .pipeline)
+               codec-handler-ctx (.context parent-pipeline ^Class Http2FrameCodec)
+               ^Http2FrameCodec codec-handler (.handler codec-handler-ctx)]
+           (.resetStream codec-handler
+                         codec-handler-ctx
+                         (-> ch (.stream) (.id))
+                         (.code Http2Error/ENHANCE_YOUR_CALM)
+                         (.voidPromise parent-pipeline)))
+
+
        (cond
          (instance? Http2HeadersFrame msg)
          ;; TODO: support trailers?
@@ -821,7 +893,7 @@
                                       (map? ring-resp)
                                       ring-resp
 
-                                    (nil? ring-resp)
+                                      (nil? ring-resp)
                                       {:status 204}
 
                                       :else
@@ -862,14 +934,120 @@
          (do
            (when (fn? stream-go-away-handler)
              (stream-go-away-handler ctx evt))
-           (handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
+           (server-handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
            (.release ^ReferenceCounted evt))
 
          Http2ResetFrame
          (do
            (when (fn? reset-stream-handler)
              (reset-stream-handler ctx evt))
-           (handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
+           (server-handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
+           (.release ^ReferenceCounted evt))
+
+         ;; else
+         (.fireUserEventTriggered ctx evt))))))
+
+(defn client-handler
+  "Given a response deferred and a Http2StreamChannel, returns a
+   ChannelInboundHandler that processes inbound Netty Http2 frames, converts
+   them into a response, and places it in the deferred"
+  [^Http2StreamChannel ch
+   response-d
+   raw-stream?
+   buffer-capacity
+   stream-go-away-handler
+   reset-stream-handler]
+  (let [stream-id (-> ch (.stream) (.id))
+        complete (d/deferred) ; realized when this stream is done; true = close conn, false = keep conn open
+
+        ;; if raw, we're returning ByteBufs, if not, we convert to byte[]'s
+        body-stream
+        (if raw-stream?
+          (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
+          (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
+
+        lifecycle-manager (delay (let [parent-pipeline (-> ch .parent .pipeline)
+                                       codec-handler-ctx (.context parent-pipeline ^Class Http2FrameCodec)]
+                                   (.handler codec-handler-ctx)))
+
+        aleph-error-handler
+        (fn handle-error [ctx ex]
+          (log/error ex
+                     "Exception caught in HTTP/2 stream client handler"
+                     {:stream-id   stream-id
+                      :raw-stream? raw-stream?})
+          (d/error! response-d ex)
+          (d/success! complete true)
+          (s/close! body-stream)
+
+          ;; If stream error, sends a RST_STREAM and closes stream.
+          ;; If conn error, sends GOAWAY, and closes conn.
+          (.onError ^Http2LifecycleManager @lifecycle-manager
+                    ctx
+                    false
+                    ex))]
+
+    (netty/channel-inbound-handler
+
+      :exception-caught
+      ([_ ctx ex]
+       (log/trace ":exception-caught fired")
+       (aleph-error-handler ctx ex))
+
+      :channel-inactive
+      ([_ ctx]
+       (s/close! body-stream)
+       (d/success! complete true)
+       (.fireChannelInactive ctx))
+
+      :channel-read
+      ([_ ctx msg]
+       (cond
+         (instance? Http2HeadersFrame msg)
+         (let [headers (.headers ^Http2HeadersFrame msg)
+               body (if raw-stream?
+                      body-stream
+                      (bs/to-input-stream body-stream))
+               ring-resp {:status            (->> headers (.status) (.convertToInt netty/char-seq-val-converter)) ; might be an AsciiString
+                          :headers           (netty-http2-headers->map headers)
+                          :aleph/keep-alive? true           ; not applicable to HTTP/2, but here for compatibility
+                          :aleph/complete    complete
+                          :body              body}]
+           (d/success! response-d ring-resp)
+           (when (.isEndStream ^Http2HeadersFrame msg)
+             (d/success! complete false)
+             (s/close! body-stream)))
+
+         (instance? Http2DataFrame msg)
+         (let [content (.content ^Http2DataFrame msg)]
+           (if raw-stream?
+             (netty/put! (.channel ctx) body-stream content)
+             (do
+               (netty/put! (.channel ctx) body-stream (netty/buf->array content))
+               (.release ^ReferenceCounted msg)))
+           (when (.isEndStream ^Http2DataFrame msg)
+             (d/success! complete false)
+             (s/close! body-stream)))
+
+         :else
+         (.fireChannelRead ctx msg)))
+
+      :user-event-triggered
+      ([_ ctx evt]
+       (condp instance? evt
+
+         Http2GoAwayFrame
+         (do
+           (when (fn? stream-go-away-handler)
+             (stream-go-away-handler ctx evt))
+           (client-handle-shutdown-frame evt stream-id body-stream response-d complete)
+           (.release ^ReferenceCounted evt))
+
+         Http2ResetFrame
+         (do
+           (when (fn? reset-stream-handler)
+             (reset-stream-handler ctx evt))
+           (client-handle-shutdown-frame evt stream-id body-stream response-d complete)
            (.release ^ReferenceCounted evt))
 
          ;; else
@@ -900,9 +1078,9 @@
   (when (some? proxy-options)
     (throw (IllegalArgumentException. "Proxying HTTP/2 messages not supported yet")))
 
-  (common/add-non-http-handlers p logger pipeline-transform)
-
-  (common/add-exception-handler p "stream-ex-handler")
+  (-> p
+      (common/add-non-http-handlers logger pipeline-transform)
+      #_(common/add-exception-handler "stream-ex-handler"))
 
   (log/trace "Added all stream handlers")
   (log/debug "Stream chan pipeline:" p)
@@ -932,7 +1110,8 @@
      raw-stream?
      rejected-handler
      error-handler
-     goaway-handler
+     conn-go-away-handler
+     stream-go-away-handler
      reset-stream-handler
      executor
      http2-settings
@@ -944,7 +1123,7 @@
      http2-settings      (Http2Settings/defaultSettings)
      pipeline-transform  identity
      request-buffer-size 16384
-     error-handler       common/error-response}
+     error-handler       common/ring-error-response}
     :as opts}]
   (log/trace "setup-conn-pipeline fired")
   (let [
@@ -970,8 +1149,8 @@
                                                                              error-handler
                                                                              executor
                                                                              request-buffer-size
-                                                                             nil
-                                                                             nil)
+                                                                             stream-go-away-handler
+                                                                             reset-stream-handler)
                                                              client-inbound-handler)
                                                            is-server?
                                                            proxy-options
@@ -983,7 +1162,14 @@
         (common/add-idle-handlers idle-timeout)
         (.addLast "http2-frame-codec" http2-frame-codec)
         (.addLast "multiplex" multiplex-handler)
-        ;; TODO: add handler for conn-level frames?
+        ;; FIXME: don't add a handler at all if conn-go-away-handler is nil
+        (.addLast "conn-go-away-handler"
+                  (netty/channel-inbound-handler
+                    :channel-read ([_ ctx msg]
+                                   (when (and (fn? conn-go-away-handler)
+                                              (instance? Http2GoAwayFrame msg))
+                                     (conn-go-away-handler ctx msg))
+                                   (.fireChannelRead ctx msg))))
         (common/add-exception-handler "conn-ex-handler"))
 
     (log/debug "Conn chan pipeline:" pipeline)

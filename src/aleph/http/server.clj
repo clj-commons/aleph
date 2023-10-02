@@ -557,7 +557,7 @@
      allow-duplicate-content-lengths false
      compression?                    false
      idle-timeout                    0
-     error-handler                   common/error-response}}]
+     error-handler                   common/ring-error-response}}]
   (log/trace "setup-http1-pipeline")
   (let [handler (if raw-stream?
                   (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
@@ -821,7 +821,8 @@
                  (InetSocketAddress. "aleph.localhost" (int port))
                  true
                  {:on-closed     #(log/debug "http conn closed")
-                  :http-versions [:http2]}))
+                  :http-versions [:http2]
+                  :insecure? true}))
 
     (def result @(d/timeout! (conn {:request-method :get})
                              2000
