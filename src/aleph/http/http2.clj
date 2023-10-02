@@ -756,6 +756,27 @@
       ; only log as warning, since the real error may be on the peer's side
       (log/warn msg))))
 
+(defn- handle-user-event-triggered
+  [ctx evt stream-go-away-handler reset-stream-handler shutdown-frame-handler]
+  (condp instance? evt
+
+    Http2GoAwayFrame
+    (do
+      (when (fn? stream-go-away-handler)
+        (stream-go-away-handler ctx evt))
+      (shutdown-frame-handler)
+      (.release ^ReferenceCounted evt))
+
+    Http2ResetFrame
+    (do
+      (when (fn? reset-stream-handler)
+        (reset-stream-handler ctx evt))
+      (shutdown-frame-handler)
+      (.release ^ReferenceCounted evt))
+
+    ;; else
+    (.fireUserEventTriggered ctx evt)))
+
 (defn- server-handler
   "Returns a ChannelInboundHandler that processes inbound Netty HTTP2 stream
    frames, converts them, and calls the user handler with them. It then
@@ -928,24 +949,9 @@
 
       :user-event-triggered
       ([_ ctx evt]
-       (condp instance? evt
-
-         Http2GoAwayFrame
-         (do
-           (when (fn? stream-go-away-handler)
-             (stream-go-away-handler ctx evt))
-           (server-handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
-           (.release ^ReferenceCounted evt))
-
-         Http2ResetFrame
-         (do
-           (when (fn? reset-stream-handler)
-             (reset-stream-handler ctx evt))
-           (server-handle-shutdown-frame evt stream-id body-stream writable? h2-exception)
-           (.release ^ReferenceCounted evt))
-
-         ;; else
-         (.fireUserEventTriggered ctx evt))))))
+       (handle-user-event-triggered
+         ctx evt stream-go-away-handler reset-stream-handler
+         #(server-handle-shutdown-frame evt stream-id body-stream writable? h2-exception))))))
 
 (defn client-handler
   "Given a response deferred and a Http2StreamChannel, returns a
@@ -1034,24 +1040,9 @@
 
       :user-event-triggered
       ([_ ctx evt]
-       (condp instance? evt
-
-         Http2GoAwayFrame
-         (do
-           (when (fn? stream-go-away-handler)
-             (stream-go-away-handler ctx evt))
-           (client-handle-shutdown-frame evt stream-id body-stream response-d complete)
-           (.release ^ReferenceCounted evt))
-
-         Http2ResetFrame
-         (do
-           (when (fn? reset-stream-handler)
-             (reset-stream-handler ctx evt))
-           (client-handle-shutdown-frame evt stream-id body-stream response-d complete)
-           (.release ^ReferenceCounted evt))
-
-         ;; else
-         (.fireUserEventTriggered ctx evt))))))
+       (handle-user-event-triggered
+         ctx evt stream-go-away-handler reset-stream-handler
+         #(client-handle-shutdown-frame evt stream-id body-stream response-d complete))))))
 
 (defn setup-stream-pipeline
   "Set up the pipeline for an HTTP/2 stream channel"
