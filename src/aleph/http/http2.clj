@@ -18,6 +18,7 @@
     (io.netty.channel
       Channel
       ChannelHandler
+      ChannelHandlerContext
       ChannelOutboundInvoker
       ChannelPipeline
       FileRegion)
@@ -92,6 +93,24 @@
 (def ^:private ^ConcurrentHashMap cached-header-names
   "No point in lower-casing the same strings over and over again."
   (ConcurrentHashMap. 128))
+
+(defn- send-http-error-response
+  "Writes and flushes a normal 4xx/5xx HTTP response. Defaults to 400."
+  ([^ChannelOutboundInvoker out ^Http2FrameStream frame-stream public-error-msg]
+   (send-http-error-response out frame-stream public-error-msg "400"))
+  ([^ChannelOutboundInvoker out ^Http2FrameStream frame-stream public-error-msg status]
+   (let [headers (doto (DefaultHttp2Headers. false)
+                       (.status status))
+         header-frame (-> headers
+                          (DefaultHttp2HeadersFrame. false)
+                          (.stream frame-stream))
+         body-byte-buf (netty/to-byte-buf public-error-msg)
+         body-frame (-> body-byte-buf
+                        (DefaultHttp2DataFrame. true)
+                        (.stream frame-stream))]
+     (netty/write out header-frame)
+     (netty/write out body-frame)
+     (netty/flush out))))
 
 
 (defn- throw-illegal-arg-ex
@@ -785,7 +804,7 @@
       (log/warn msg))))
 
 (defn- handle-user-event-triggered
-  [ctx evt stream-go-away-handler reset-stream-handler shutdown-frame-handler]
+  [^ChannelHandlerContext ctx evt stream-go-away-handler reset-stream-handler shutdown-frame-handler]
   (condp instance? evt
 
     Http2GoAwayFrame
@@ -846,10 +865,16 @@
         ;; will attempt to convert it to bytes for an InputStream, which will blow up
         ;; elsewhere
         aleph-error-handler
-        (fn handle-error [ctx ex]
+        (fn handle-error [ctx ^Throwable ex]
           (.set writable? false)                            ; disable send-response
           (s/close! body-stream)
           (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
+
+          ;; Send an HTTP response before closing if it's a stream error
+          (when (Http2Exception/isStreamError ex)
+            (let [public-error-msg (or (some-> ex (.getCause) ex-data :aleph/public-error-message)
+                                       "Internal Server Error")]
+              (send-http-error-response ctx (.stream ch) public-error-msg)))
 
           ;; If stream error, sends a RST_STREAM and closes stream.
           ;; If conn error, sends GOAWAY, and closes conn.
