@@ -300,13 +300,12 @@
    https://github.com/clj-commons/aleph/issues/603."
   []
   (let [thread (Thread/currentThread)
-        context-class-loader (.getContextClassLoader thread)
-        compiler-class-loader (.getClassLoader clojure.lang.Compiler)]
+        context-class-loader (.getContextClassLoader thread)]
     (when-not (instance? DynamicClassLoader context-class-loader)
       (.setContextClassLoader
         thread
         (DynamicClassLoader. (or context-class-loader
-                                 compiler-class-loader))))))
+                                 (.getClassLoader clojure.lang.Compiler)))))))
 
 (defn- operation-complete [^Future f d]
   (cond
