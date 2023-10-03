@@ -110,7 +110,7 @@
 (defn add-exception-handler
   "Set up the pipeline with an exception handler. Takes an optional name and
    handler, which will be passed (1) the exception and (2) the context. By
-   default, it logs the error and closes the channel.
+   default, it just logs the error, and lets Netty handle it.
 
    NB: This is for the *final* handler in a pipeline. Any supplied ex-handler gets
    full control. Ring is not involved; if you wish to send something, use Netty.
@@ -130,7 +130,7 @@
                  (log/error ex (str "Exception in channel (" handler-name ")."))
                  (if ex-handler
                    (ex-handler ex ctx)
-                   (netty/close ctx)))}))))
+                   (.fireExceptionCaught ctx ex)))}))))
 
 (defn ring-error-response
   "Generic 500 error Ring response"
