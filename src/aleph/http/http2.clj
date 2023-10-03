@@ -30,6 +30,7 @@
       DefaultHttp2GoAwayFrame
       DefaultHttp2Headers
       DefaultHttp2HeadersFrame
+      DefaultHttp2ResetFrame
       Http2DataChunkedInput
       Http2DataFrame
       Http2Error
@@ -94,10 +95,12 @@
   "No point in lower-casing the same strings over and over again."
   (ConcurrentHashMap. 128))
 
-(defn- send-http-error-response
-  "Writes and flushes a normal 4xx/5xx HTTP response. Defaults to 400."
+(defn- write-http-error-response
+  "Writes and flushes a normal 4xx/5xx HTTP response. Defaults to 400.
+
+   Returns a future on the write of the body DATA frame"
   ([^ChannelOutboundInvoker out ^Http2FrameStream frame-stream public-error-msg]
-   (send-http-error-response out frame-stream public-error-msg "400"))
+   (write-http-error-response out frame-stream public-error-msg "400"))
   ([^ChannelOutboundInvoker out ^Http2FrameStream frame-stream public-error-msg status]
    (let [headers (doto (DefaultHttp2Headers. false)
                        (.status status))
@@ -109,8 +112,7 @@
                         (DefaultHttp2DataFrame. true)
                         (.stream frame-stream))]
      (netty/write out header-frame)
-     (netty/write out body-frame)
-     (netty/flush out))))
+     (netty/write-fut out body-frame))))
 
 
 (defn- throw-illegal-arg-ex
@@ -183,8 +185,7 @@
    (go-away out h2-error-code 0))
   ([^ChannelOutboundInvoker out ^long h2-error-code num-extra-streams]
    (log/trace (str "Sent GOAWAY(" h2-error-code ") on " out))
-   (condp instance? out
-     Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel
+   (if (instance? Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel out)
      (go-away (.parent ^Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel out)
               h2-error-code
               num-extra-streams)
@@ -192,6 +193,22 @@
      (netty/write-and-flush out
                             (doto (DefaultHttp2GoAwayFrame. h2-error-code)
                                   (.setExtraStreamIds num-extra-streams))))))
+
+#_(defn- reset-stream
+  [^ChannelHandlerContext lifecycle-manager-ctx stream-id ^long h2-error-code]
+  (log/trace (str "Resetting stream " stream-id " with error code " h2-error-code))
+  (let [^Http2LifecycleManager lifecycle-manager (.handler lifecycle-manager-ctx)
+        prom (.newPromise lifecycle-manager-ctx)]
+    (.resetStream lifecycle-manager lifecycle-manager-ctx stream-id h2-error-code prom)
+    prom))
+
+(defn- reset-stream
+  [^ChannelOutboundInvoker out ^Http2FrameStream stream ^long h2-error-code]
+  (log/trace (str "Resetting stream " (.id stream) " with error code " h2-error-code))
+  (netty/write-and-flush out
+                         (doto (DefaultHttp2ResetFrame. h2-error-code)
+                               (.stream stream))))
+
 
 (defn ^:no-doc shutdown-frame->h2-exception
   "Converts an Http2ResetFrame or Http2GoAwayFrame into an Http2Exception or
@@ -760,6 +777,32 @@
               :public-error-message "Missing mandatory pseudo-header in HTTP/2 request"}))
     headers))
 
+(defn- handle-exception*
+  [^ChannelHandlerContext ctx ^Throwable ex h2-stream]
+  ;; NB: cannot use Http2FrameCodec.onError() here, because it
+  ;; just creates a new Http2FrameStreamException, and forwards
+  ;; it along for the Http2MultiplexHandler to broadcast...would
+  ;; lead to an infinite loop if we did that
+
+  (let [h2-error-code (if (instance? Http2Exception ex)
+                        (-> ^Http2Exception ex (.error) (.code))
+                        (.code Http2Error/PROTOCOL_ERROR))]
+    ;; Send an HTTP response before closing if it's not a conn error
+    (if (or (Http2Exception/isStreamError ex)
+            (not (instance? Http2Exception ex)))
+      (let [public-error-msg (or (some-> ex (.getCause) ex-data :aleph/public-error-message)
+                                 "Internal Server Error")]
+        (-> (write-http-error-response ctx h2-stream public-error-msg)
+            netty/wrap-future
+            ;; chain because otherwise reset-stream will close chan before the
+            ;; response DATA frame is on the wire
+            (d/chain' (fn [_]
+                        (reset-stream ctx h2-stream h2-error-code)
+                        (netty/flush ctx)))))
+      (let [frame-codec-ctx (-> ctx .channel .parent .pipeline (.context ^Class Http2FrameCodec))]
+        ;; can't write GOAWAY on stream channels, only conn channel
+        (go-away frame-codec-ctx h2-error-code)))))
+
 (defn client-handle-shutdown-frame
   "Common handling for RST_STREAM and GOAWAY frame events.
 
@@ -838,15 +881,10 @@
    buffer-capacity
    stream-go-away-handler
    reset-stream-handler]
+
   (log/trace "server-handler")
-  #_(log/debug "server-handler args" {:ch               ch
-                                      :handler          handler
-                                      :raw-stream?      raw-stream?
-                                      :rejected-handler rejected-handler
-                                      :error-handler    error-handler
-                                      :executor executor
-                                    :buffer-capacity buffer-capacity})
-  (let [stream-id (-> ch (.stream) (.id))
+  (let [h2-stream (.stream ch)
+        h2-stream-id (.id h2-stream)
         buffer-capacity (long buffer-capacity)
         writable? (AtomicBoolean. true)                     ; can we still write out?
         h2-exception (atom nil)                             ; atom, because we want to switch values
@@ -857,10 +895,6 @@
           (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
           (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
 
-        lifecycle-manager (delay (let [parent-pipeline (-> ch .parent .pipeline)
-                                       codec-handler-ctx (.context parent-pipeline ^Class Http2FrameCodec)]
-                                   (.handler codec-handler-ctx)))
-
         ;; Can't place exceptions on body-stream for client, since non-raw streams
         ;; will attempt to convert it to bytes for an InputStream, which will blow up
         ;; elsewhere
@@ -870,18 +904,7 @@
           (s/close! body-stream)
           (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
 
-          ;; Send an HTTP response before closing if it's a stream error
-          (when (Http2Exception/isStreamError ex)
-            (let [public-error-msg (or (some-> ex (.getCause) ex-data :aleph/public-error-message)
-                                       "Internal Server Error")]
-              (send-http-error-response ctx (.stream ch) public-error-msg)))
-
-          ;; If stream error, sends a RST_STREAM and closes stream.
-          ;; If conn error, sends GOAWAY, and closes conn.
-          (.onError ^Http2LifecycleManager @lifecycle-manager
-                    ctx
-                    false
-                    ex))]
+          (handle-exception* ctx ex h2-stream))]
 
     (netty/channel-inbound-handler
       ;;:channel-active
@@ -902,21 +925,12 @@
       :channel-read
       ([_ ctx msg]
        (log/trace ":channel-read fired")
-       #_(let [parent-pipeline (-> ch .parent .pipeline)
-               codec-handler-ctx (.context parent-pipeline ^Class Http2FrameCodec)
-               ^Http2FrameCodec codec-handler (.handler codec-handler-ctx)]
-           (.resetStream codec-handler
-                         codec-handler-ctx
-                         (-> ch (.stream) (.id))
-                         (.code Http2Error/ENHANCE_YOUR_CALM)
-                         (.voidPromise parent-pipeline)))
-
 
        (cond
          (instance? Http2HeadersFrame msg)
          ;; TODO: support trailers?
          (let [headers (-> (.headers ^Http2HeadersFrame msg)
-                           (validate-netty-req-headers stream-id))
+                           (validate-netty-req-headers h2-stream-id))
                body (if raw-stream?
                       body-stream
                       (bs/to-input-stream body-stream))
@@ -1004,7 +1018,7 @@
       ([_ ctx evt]
        (handle-user-event-triggered
          ctx evt stream-go-away-handler reset-stream-handler
-         #(server-handle-shutdown-frame evt stream-id body-stream writable? h2-exception))))))
+         #(server-handle-shutdown-frame evt h2-stream-id body-stream writable? h2-exception))))))
 
 (defn client-handler
   "Given a response deferred and a Http2StreamChannel, returns a
@@ -1016,7 +1030,8 @@
    buffer-capacity
    stream-go-away-handler
    reset-stream-handler]
-  (let [stream-id (-> ch (.stream) (.id))
+  (let [h2-stream (.stream ch)
+        h2-stream-id (.id h2-stream)
         complete (d/deferred) ; realized when this stream is done; true = close conn, false = keep conn open
 
         ;; if raw, we're returning ByteBufs, if not, we convert to byte[]'s
@@ -1025,26 +1040,17 @@
           (netty/buffered-source ch #(.readableBytes ^ByteBuf %) buffer-capacity)
           (netty/buffered-source ch #(alength ^bytes %) buffer-capacity))
 
-        lifecycle-manager (delay (let [parent-pipeline (-> ch .parent .pipeline)
-                                       codec-handler-ctx (.context parent-pipeline ^Class Http2FrameCodec)]
-                                   (.handler codec-handler-ctx)))
-
         aleph-error-handler
         (fn handle-error [ctx ex]
           (log/error ex
                      "Exception caught in HTTP/2 stream client handler"
-                     {:stream-id   stream-id
+                     {:stream-id   h2-stream-id
                       :raw-stream? raw-stream?})
           (d/error! response-d ex)
           (d/success! complete true)
           (s/close! body-stream)
 
-          ;; If stream error, sends a RST_STREAM and closes stream.
-          ;; If conn error, sends GOAWAY, and closes conn.
-          (.onError ^Http2LifecycleManager @lifecycle-manager
-                    ctx
-                    false
-                    ex))]
+          (handle-exception* ctx ex h2-stream))]
 
     (netty/channel-inbound-handler
 
@@ -1061,6 +1067,8 @@
 
       :channel-read
       ([_ ctx msg]
+       (log/trace ":channel-read fired")
+
        (cond
          (instance? Http2HeadersFrame msg)
          (let [headers (.headers ^Http2HeadersFrame msg)
@@ -1095,7 +1103,7 @@
       ([_ ctx evt]
        (handle-user-event-triggered
          ctx evt stream-go-away-handler reset-stream-handler
-         #(client-handle-shutdown-frame evt stream-id body-stream response-d complete))))))
+         #(client-handle-shutdown-frame evt h2-stream-id body-stream response-d complete))))))
 
 (defn setup-stream-pipeline
   "Set up the pipeline for an HTTP/2 stream channel"
@@ -1182,7 +1190,6 @@
                                 (.validateHeaders true)
                                 (.build)))
         stream-chan-initializer (AlephChannelInitializer.
-                                  #_netty/ensure-dynamic-classloader
                                   (fn [^Channel ch]
                                     (setup-stream-pipeline (.pipeline ch)
                                                            (if is-server?

@@ -341,9 +341,16 @@
     (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
 ;; TODO: inline or macroize
-(defn ^:no-doc write [^ChannelOutboundInvoker x msg]
+(defn ^:no-doc write
+  "Writes with a void promise for speed"
+  [^ChannelOutboundInvoker x msg]
   (.write x msg (.voidPromise x))
   nil)
+
+(defn ^:no-doc write-fut
+  "Writes and returns a ChannelFuture"
+  [^ChannelOutboundInvoker x msg]
+  (.write x msg))
 
 ;; TODO: inline or macroize
 (defn ^:no-doc write-and-flush
