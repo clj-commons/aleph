@@ -1099,6 +1099,11 @@
          :else
          (.fireChannelRead ctx msg)))
 
+      :channel-read-complete
+      ([_ ctx]
+       (log/trace ":channel-read-complete fired")
+       (netty/flush ctx))
+
       :user-event-triggered
       ([_ ctx evt]
        (handle-user-event-triggered
