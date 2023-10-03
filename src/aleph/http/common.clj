@@ -95,14 +95,14 @@
     (log/trace "Adding activity logger")
     (.addFirst p "activity-logger" ^ChannelHandler logger)
 
-    ;; TODO: remove me
-    (.addLast p
-              "debug"
-              ^ChannelHandler
-              (netty/channel-inbound-handler
-                :channel-read ([_ ctx msg]
-                               (log/debug "received msg of class" (StringUtil/simpleClassName ^Object msg))
-                               (log/debug "msg:" msg)))))
+    (when (log/enabled? :debug)
+      (.addLast p
+                "debug"
+                ^ChannelHandler
+                (netty/channel-inbound-handler
+                  :channel-read ([_ ctx msg]
+                                 (log/debug "received msg of class" (StringUtil/simpleClassName ^Object msg))
+                                 (log/debug "msg:" msg))))))
 
   (pipeline-transform p)
   p)
