@@ -812,8 +812,8 @@
                         (-> ^Http2Exception ex (.error) (.code))
                         (.code Http2Error/PROTOCOL_ERROR))]
 
-    (if (or (Http2Exception/isStreamError ex)
-            (not (instance? Http2Exception ex)))
+    (if (or (not (instance? Http2Exception ex))
+            (Http2Exception/isStreamError ex))
       (if is-server?
         (let [exdata (some-> ex (.getCause) ex-data)
               resp-status (parse-status (get exdata :aleph/response-status HttpResponseStatus/INTERNAL_SERVER_ERROR))
