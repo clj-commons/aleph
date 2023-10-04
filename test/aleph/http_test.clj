@@ -168,10 +168,7 @@
       {:status 200 :body "ok"}
       {:status  302
        :headers {"location" (str (if *use-tls?* "https://" "http://")
-                                 (if (= "localhost" host)
-                                   "127.0.0.1"
-                                   "localhost")
-                                 ":" port
+                                 "localhost:" port
                                  "/redirect?count=" (dec count))}
        :body    "redirected!"})))
 
@@ -460,6 +457,7 @@
                  :body
                  bs/to-string)))))
 
+
   (testing "works with :method as well as :request-method"
     (with-handler
       (fn [{:keys [uri]}]
@@ -467,9 +465,12 @@
           "/200" {:status 200}
           "/301" {:status  301
                   :headers {"Location" "/200"}}))
-      (is (= 200 (:status @(http/request {:method            :get
-                                          :url               (make-url "/301")
-                                          :follow-redirects? true})))))))
+      (is (= 200 (:status @(http/request
+                             (merge (default-options)
+                                    {:method            :get
+                                     :url               (make-url "/301")
+                                     :follow-redirects? true
+                                     :pool *pool*}))))))))
 
 (deftest test-middleware
   (with-both-handlers basic-handler
