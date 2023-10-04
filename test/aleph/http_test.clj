@@ -783,7 +783,8 @@
 
         (let [rsp @(http-put "/echo"
                              {:body "hello"
-                              :pool (http/connection-pool {:connection-options {:transport :epoll}})})]
+                              :pool (http/connection-pool {:connection-options {:transport :epoll
+                                                                                :insecure? true}})})]
           (is (= 200 (:status rsp)))
           (is (= "hello" (bs/to-string (:body rsp))))))
       (catch Exception _
@@ -799,7 +800,8 @@
 
         (let [rsp @(http-put "/echo"
                              {:body "hello"
-                              :pool (http/connection-pool {:connection-options {:transport :kqueue}})})]
+                              :pool (http/connection-pool {:connection-options {:transport :kqueue
+                                                                                :insecure? true}})})]
           (is (= 200 (:status rsp)))
           (is (= "hello" (bs/to-string (:body rsp))))))
       (catch Exception _
@@ -815,7 +817,8 @@
 
         (let [rsp @(http-put "/echo"
                              {:body "hello"
-                              :pool (http/connection-pool {:connection-options {:transport :io-uring}})})]
+                              :pool (http/connection-pool {:connection-options {:transport :io-uring
+                                                                                :insecure? true}})})]
           (is (= 200 (:status rsp)))
           (is (= "hello" (bs/to-string (:body rsp))))))
       (catch Exception _
