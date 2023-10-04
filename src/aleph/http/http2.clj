@@ -95,24 +95,29 @@
   "No point in lower-casing the same strings over and over again."
   (ConcurrentHashMap. 128))
 
-(defn- write-http-error-response
-  "Writes and flushes a normal 4xx/5xx HTTP response. Defaults to 400.
+(defn- write-simple-http-mesg
+  "Writes and flushes a simple HTTP request/response. Designed for sending
+   small error responses.
 
-   Returns a future on the write of the body DATA frame"
-  ([^ChannelOutboundInvoker out ^Http2FrameStream frame-stream public-error-msg]
-   (write-http-error-response out frame-stream public-error-msg "400"))
-  ([^ChannelOutboundInvoker out ^Http2FrameStream frame-stream public-error-msg status]
-   (let [headers (doto (DefaultHttp2Headers. false)
-                       (.status status))
-         header-frame (-> headers
-                          (DefaultHttp2HeadersFrame. false)
-                          (.stream frame-stream))
-         body-byte-buf (netty/to-byte-buf public-error-msg)
-         body-frame (-> body-byte-buf
-                        (DefaultHttp2DataFrame. true)
-                        (.stream frame-stream))]
-     (netty/write out header-frame)
-     (netty/write-fut out body-frame))))
+   If `body-text` is passed in, it will be sent as the body of the response in
+   a DATA frame. Otherwise, just a HEADERS frame will be sent.
+
+   Returns a ChannelFuture on the write operation."
+  [^ChannelOutboundInvoker out ^Http2FrameStream frame-stream status body-text]
+  (let [send-body? (some? body-text)
+        headers (doto (DefaultHttp2Headers. false)
+                      (.status status))
+        header-frame (-> headers
+                         (DefaultHttp2HeadersFrame. (not send-body?))
+                         (.stream frame-stream))]
+    (if send-body?
+      (let [body-byte-buf (netty/to-byte-buf body-text)
+            body-frame (-> body-byte-buf
+                           (DefaultHttp2DataFrame. true)
+                           (.stream frame-stream))]
+        (netty/write out header-frame)
+        (netty/write-fut out body-frame))
+      (netty/write-fut out header-frame))))
 
 
 (defn- throw-illegal-arg-ex
@@ -150,16 +155,20 @@
    sending a 4xx/5xx response in a way that doesn't expose implementation details"
   ([stream-id msg]
    (stream-ex stream-id msg {}))
-  ([stream-id msg {:keys [m h2-error public-error-message ^Throwable cause]
+  ([stream-id msg {:keys [m h2-error public-error-message response-status ^Throwable cause]
                    :or {m {}
-                        h2-error Http2Error/PROTOCOL_ERROR
-                        public-error-message "Internal Server Error"}}]
+                        h2-error Http2Error/PROTOCOL_ERROR}}]
    ;; Http2Exception.StreamException constructor isn't public
    (Http2Exception/streamError
      stream-id
      h2-error
      (ex-info msg
-              (assoc m :aleph/public-error-message public-error-message)
+              (cond-> m
+                      response-status
+                      (assoc :aleph/response-status response-status)
+
+                      public-error-message
+                      (assoc :aleph/public-error-message public-error-message))
               cause)
      msg
      EmptyArrays/EMPTY_OBJECTS)))
@@ -210,6 +219,7 @@
                                (.stream stream))))
 
 
+;; TODO: make stackless? Or consider if/when we need an exception
 (defn ^:no-doc shutdown-frame->h2-exception
   "Converts an Http2ResetFrame or Http2GoAwayFrame into an Http2Exception or
    StreamException, respectively."
@@ -275,33 +285,26 @@
 (defn parse-status
   "Parses the HTTP status of a ring response map. Returns an HttpResponseStatus"
   ^HttpResponseStatus
-  [status m stream-id]
-  (try
-    (cond
-      (or (instance? Long status)
-          (instance? Integer status)
-          (instance? Short status))
-      (HttpResponseStatus/valueOf status)
+  [status]
+  (cond
+    (or (instance? Long status)
+        (instance? Integer status)
+        (instance? Short status))
+    (HttpResponseStatus/valueOf status)
 
-      (instance? String status)
-      (HttpResponseStatus/parseLine ^String status)
+    (instance? String status)
+    (HttpResponseStatus/parseLine ^String status)
 
-      (instance? AsciiString status)
-      (HttpResponseStatus/parseLine ^AsciiString status)
+    (instance? AsciiString status)
+    (HttpResponseStatus/parseLine ^AsciiString status)
 
-      :else
-      (throw (stream-ex stream-id
-                        "Unknown :status class in Ring response map"
-                        {:m m
-                         :status status
-                         :public-error-message "Invalid HTTP response status"})))
+    (instance? HttpResponseStatus status)
+    status
 
-    (catch IllegalArgumentException e
-      (throw (stream-ex stream-id
-                        (str "Invalid :status in Ring response map: " (.getMessage e))
-                        {:m m
-                         :status status
-                         :public-error-message "Invalid HTTP response status"})))))
+    :else
+    (throw-illegal-arg-ex (str "Unknown status class in Ring response map: " (if-some [klass (class nil)]
+                                                                               (StringUtil/simpleClassName klass)
+                                                                               "nil")))))
 
 (defn ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map.
@@ -346,7 +349,16 @@
       ;; NB: a missing status should be an error, but for backwards-
       ;; compatibility with Aleph's http1 code, we set it to 200
       (if-let [status (get m :status)]
-        (.status h2-headers (.codeAsText ^HttpResponseStatus (parse-status status m stream-id)))
+        (try
+          (.status h2-headers (.codeAsText ^HttpResponseStatus (parse-status status)))
+
+          (catch IllegalArgumentException e
+            (throw (stream-ex stream-id
+                              (str "Invalid :status in Ring response map: " (.getMessage e))
+                              {:m m
+                               :cause e
+                               :status status
+                               :public-error-message "Invalid HTTP response status"}))))
         (.status h2-headers (.codeAsText HttpResponseStatus/OK))))
 
     ;; Technically, missing :headers is a violation of the Ring SPEC, but kept
@@ -536,6 +548,7 @@
     ;; otherwise, no data left in body', so just send an empty data frame
     (netty/write-and-flush ch (end-of-stream-frame stream))))
 
+;; TODO: (minor) switch to sending over Context? should avoid tail and error-handler, anyway
 (defn- send-message
   "Given Http2Headers and a body, determines the best way to write the body to the stream channel"
   ([^Http2StreamChannel ch ^Http2Headers headers body]
@@ -772,13 +785,24 @@
           (nil? (.path headers)))
     (throw (stream-ex
              stream-id
-             "Missing mandatory pseudo-header in HTTP/2 request"
+             (str "Missing mandatory pseudo-header(s) in HTTP/2 request:"
+                  (when-not (.method headers) " method")
+                  (when-not (.scheme headers) " scheme")
+                  (when-not (.path headers) " path"))
              {:m                    {:headers headers}
               :public-error-message "Missing mandatory pseudo-header in HTTP/2 request"}))
     headers))
 
 (defn- handle-exception*
-  [^ChannelHandlerContext ctx ^Throwable ex h2-stream]
+  "Common handling for exceptions in stream pipeline.
+
+   If a conn exception, sends a GOAWAY. If a stream or generic exception, sends
+   a 400 response (server only), followed by a RST_STREAM.
+
+   You can set the response status and the body text by adding
+   :aleph/response-status and :aleph/public-error-message keys to the ex-data
+   of the exception."
+  [^ChannelHandlerContext ctx ^Throwable ex is-server? h2-stream]
   ;; NB: cannot use Http2FrameCodec.onError() here, because it
   ;; just creates a new Http2FrameStreamException, and forwards
   ;; it along for the Http2MultiplexHandler to broadcast...would
@@ -787,18 +811,25 @@
   (let [h2-error-code (if (instance? Http2Exception ex)
                         (-> ^Http2Exception ex (.error) (.code))
                         (.code Http2Error/PROTOCOL_ERROR))]
-    ;; Send an HTTP response before closing if it's not a conn error
+
     (if (or (Http2Exception/isStreamError ex)
             (not (instance? Http2Exception ex)))
-      (let [public-error-msg (or (some-> ex (.getCause) ex-data :aleph/public-error-message)
-                                 "Internal Server Error")]
-        (-> (write-http-error-response ctx h2-stream public-error-msg)
-            netty/wrap-future
-            ;; chain because otherwise reset-stream will close chan before the
-            ;; response DATA frame is on the wire
-            (d/chain' (fn [_]
-                        (reset-stream ctx h2-stream h2-error-code)
-                        (netty/flush ctx)))))
+      (if is-server?
+        (let [exdata (some-> ex (.getCause) ex-data)
+              resp-status (parse-status (get exdata :aleph/response-status HttpResponseStatus/INTERNAL_SERVER_ERROR))
+              public-error-msg (get exdata :aleph/public-error-message)]
+          ;; Send an HTTP response before closing if it's not a conn error
+          (-> (write-simple-http-mesg ctx h2-stream (.codeAsText resp-status) public-error-msg)
+              netty/wrap-future
+              ;; chain because otherwise reset-stream will close chan before the
+              ;; response DATA frame is on the wire
+              (d/chain' (fn [_]
+                          (reset-stream ctx h2-stream h2-error-code)
+                          (netty/flush ctx)))))
+        (do
+          (reset-stream ctx h2-stream h2-error-code)
+          (netty/flush ctx)))
+
       (let [frame-codec-ctx (-> ctx .channel .parent .pipeline (.context ^Class Http2FrameCodec))]
         ;; can't write GOAWAY on stream channels, only conn channel
         (go-away frame-codec-ctx h2-error-code)))))
@@ -904,7 +935,7 @@
           (s/close! body-stream)
           (log/error ex "Exception caught in HTTP/2 stream server handler" {:raw-stream? raw-stream?})
 
-          (handle-exception* ctx ex h2-stream))]
+          (handle-exception* ctx ex true h2-stream))]
 
     (netty/channel-inbound-handler
       ;;:channel-active
@@ -1050,7 +1081,7 @@
           (d/success! complete true)
           (s/close! body-stream)
 
-          (handle-exception* ctx ex h2-stream))]
+          (handle-exception* ctx ex false h2-stream))]
 
     (netty/channel-inbound-handler
 
