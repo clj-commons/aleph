@@ -45,7 +45,7 @@
    | `request-buffer-size`             | The maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384` . This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance. |
    | `raw-stream?`                     | If `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream` . This will minimize copying, but means that care must be taken with Netty's buffer reference counting. Only recommended for advanced users. |
    | `rejected-handler`                | A spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed. Defaults to a `503` response. |
-   | `max-request-body-size`           | The maximum length of the request body in bytes. Implicitly adds `io.netty.handler.codec.http.HttpObjectAggregator` on the pipeline. Unspecified and thus disabled by default. |
+   | `max-request-body-size`           | The maximum length of the request body in bytes. Requires queuing up content until the request is finished, and thus creates a delay. Unlimited by default. |
    | `max-initial-line-length`         | The maximum characters that can be in the initial line of the request, defaults to `8192` |
    | `max-header-size`                 | The maximum characters that can be in a single header entry of a request, defaults to `8192` |
    | `max-chunk-size`                  | The maximum characters that can be in a single chunk of a streamed request, defaults to `16384` |

@@ -19,6 +19,7 @@
       Channel
       ChannelHandler
       ChannelHandlerContext
+      ChannelInboundHandler
       ChannelOutboundInvoker
       ChannelPipeline
       FileRegion)
@@ -75,7 +76,9 @@
     (java.util.concurrent
       ConcurrentHashMap
       RejectedExecutionException)
-    (java.util.concurrent.atomic AtomicBoolean)))
+    (java.util.concurrent.atomic
+      AtomicBoolean
+      AtomicLong)))
 
 (set! *warn-on-reflection* true)
 
@@ -797,7 +800,7 @@
   "Common handling for exceptions in stream pipeline.
 
    If a conn exception, sends a GOAWAY. If a stream or generic exception, sends
-   a 400 response (server only), followed by a RST_STREAM.
+   an error response (server only), followed by a RST_STREAM.
 
    You can set the response status and the body text by adding
    :aleph/response-status and :aleph/public-error-message keys to the ex-data
@@ -1141,9 +1144,57 @@
          ctx evt stream-go-away-handler reset-stream-handler
          #(client-handle-shutdown-frame evt h2-stream-id body-stream response-d complete))))))
 
+(defn- max-size-handler
+  "Returns a ChannelHandler that buffers all inbound HEADERS and DATA frames until
+   either (1) end-of-stream appears, or (2) the total DATA frame size exceeds the limit.
+
+   This is for supporting the :max-request-body-size option.
+
+   NB: This delays the entire request body until it's been completely read
+   before any processing can occur. This is not ideal, but it's the only way
+   to return a 413 before the user handler starts processing."
+  ^ChannelInboundHandler
+  [max-request-body-size]
+  (let [byte-count (AtomicLong. 0)
+        frame-list (atom [])]
+    (netty/channel-inbound-handler
+      :channel-read ([_ ctx msg]
+                     (condp instance? msg
+                       Http2DataFrame
+                       ;; check if we're over the limit
+                       (if (p/> (.addAndGet byte-count
+                                            (.readableBytes ^ByteBuf (.content ^Http2DataFrame msg)))
+                                ^long max-request-body-size)
+                         (do
+                           ;;(.touch msg)
+                           (netty/release msg)
+                           (run! netty/release @frame-list)
+
+                           (throw (stream-ex
+                                    (-> ctx ^Http2StreamChannel (.channel) (.stream) (.id))
+                                    (str "Request body too large. Max size: " max-request-body-size " bytes")
+                                    {:m                    {:accumulated-body-size (.get byte-count)
+                                                            :max-request-body-size max-request-body-size}
+                                     :response-status      HttpResponseStatus/REQUEST_ENTITY_TOO_LARGE
+                                     :public-error-message "Request body too large"})))
+                         (if (.isEndStream ^Http2DataFrame msg)
+                           (do
+                             (run! #(.fireChannelRead ctx %) @frame-list)
+                             (.fireChannelRead ctx msg))
+                           (swap! frame-list conj msg)))
+
+                       Http2HeadersFrame
+                       (if (.isEndStream ^Http2HeadersFrame msg)
+                         (do
+                           (run! #(.fireChannelRead ctx %) @frame-list)
+                           (.fireChannelRead ctx msg))
+                         (swap! frame-list conj msg))
+
+                       (.fireChannelRead ctx msg))))))
+
 (defn setup-stream-pipeline
   "Set up the pipeline for an HTTP/2 stream channel"
-  [^ChannelPipeline p handler is-server? proxy-options logger pipeline-transform]
+  [^ChannelPipeline p handler is-server? proxy-options logger pipeline-transform max-request-body-size]
   (log/trace "setup-stream-pipeline called")
 
   ;; necessary for multipart support in HTTP/2?
@@ -1155,6 +1206,11 @@
             ^ChannelHandler (ChunkedWriteHandler.))
 
   (when is-server?
+    (when max-request-body-size
+      (.addLast p
+                "max-request-body-size"
+                (max-size-handler max-request-body-size)))
+
     ;; TODO: add continue handler for server-side
     )
 
@@ -1205,7 +1261,8 @@
      http2-settings
      request-buffer-size
      proxy-options
-     pipeline-transform]
+     pipeline-transform
+     max-request-body-size]
     :or
     {idle-timeout        0
      http2-settings      (Http2Settings/defaultSettings)
@@ -1242,7 +1299,8 @@
                                                            is-server?
                                                            proxy-options
                                                            logger
-                                                           pipeline-transform)))
+                                                           pipeline-transform
+                                                           max-request-body-size)))
         multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)]
 
     (-> pipeline

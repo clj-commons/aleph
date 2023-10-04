@@ -660,7 +660,8 @@
                           is-server?
                           proxy-options
                           logger
-                          pipeline-transform)
+                          pipeline-transform
+                          nil)
                         out-chan))
             (d/chain' (fn [^Http2StreamChannel out-chan]
                         (log/debug "New outbound HTTP/2 channel's pipeline configured.")
