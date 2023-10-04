@@ -293,13 +293,15 @@
       (throw (stream-ex stream-id
                         "Unknown :status class in Ring response map"
                         {:m m
-                         :public-error-message "Invalid :status pseudo-header"})))
+                         :status status
+                         :public-error-message "Invalid HTTP response status"})))
 
     (catch IllegalArgumentException e
       (throw (stream-ex stream-id
                         (str "Invalid :status in Ring response map: " (.getMessage e))
                         {:m m
-                         :public-error-message "Invalid :status pseudo-header"})))))
+                         :status status
+                         :public-error-message "Invalid HTTP response status"})))))
 
 (defn ring-map->netty-http2-headers
   "Builds a Netty Http2Headers object from a Ring map.
@@ -341,13 +343,11 @@
                             {:m m
                              :public-error-message "Invalid or missing :path pseudo-header"}))))
 
+      ;; NB: a missing status should be an error, but for backwards-
+      ;; compatibility with Aleph's http1 code, we set it to 200
       (if-let [status (get m :status)]
         (.status h2-headers (.codeAsText ^HttpResponseStatus (parse-status status m stream-id)))
-        (.status h2-headers (.codeAsText HttpResponseStatus/OK))
-
-        ;; NB: a missing status should be an error, but for backwards-
-        ;; compatibility with Aleph's http1 code, we set it to 200
-        ))
+        (.status h2-headers (.codeAsText HttpResponseStatus/OK))))
 
     ;; Technically, missing :headers is a violation of the Ring SPEC, but kept
     ;; for backwards compatibility
