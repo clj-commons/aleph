@@ -318,21 +318,21 @@
           (throw (stream-ex stream-id
                             "Missing :request-method in Ring request map"
                             {:m m
-                             :public-error-message "Missing :method pseudo-header"})))
+                             :public-error-message "Missing HTTP method (GET, POST, etc)"})))
 
         (if-some [scheme (get m :scheme)]
           (.scheme h2-headers (name scheme))
           (throw (stream-ex stream-id
                             "Missing :scheme in Ring request map"
                             {:m m
-                             :public-error-message "Missing :scheme pseudo-header"})))
+                             :public-error-message "Missing HTTP scheme (http, https)"})))
 
         (if-some [authority (get m :authority)]
           (.authority h2-headers authority)
           (throw (stream-ex stream-id
                             "Missing :authority in Ring request map"
                             {:m m
-                             :public-error-message "Missing :authority pseudo-header"})))
+                             :public-error-message "Missing authority/host header"})))
 
         (if-some [path (str (get m :uri)
                             (when-let [q (get m :query-string)]
@@ -341,7 +341,7 @@
           (throw (stream-ex stream-id
                             "Invalid/missing :uri and/or :query-string in Ring request map"
                             {:m m
-                             :public-error-message "Invalid or missing :path pseudo-header"}))))
+                             :public-error-message "Invalid or missing path"}))))
 
       ;; NB: a missing status should be an error, but for backwards-
       ;; compatibility with Aleph's http1 code, we set it to 200
