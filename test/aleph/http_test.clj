@@ -133,8 +133,9 @@
    :body   (bs/to-input-stream stream-response)})
 
 (defn slow-handler [_request]
+  (Thread/sleep 500)
   {:status 200
-   :body   (cons "1" (lazy-seq (do (Thread/sleep 500) '("2"))))})
+   :body   "slow"})
 
 (defn manifold-handler [_request]
   {:status 200

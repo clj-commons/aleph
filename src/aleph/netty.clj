@@ -1640,7 +1640,9 @@ initialize an DnsAddressResolverGroup instance.
                    (d/finally'
                      ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
                      ;;    in flight pending requests.
-                     #(.shutdownGracefully group 0 0 TimeUnit/SECONDS)))
+                     ;;    We still wait 1.5s to graceully end repeating tasks
+                     ;;    like the date-header-value.
+                     #(.shutdownGracefully group 1500 1500 TimeUnit/MILLISECONDS)))
                (when on-close
                  (d/chain'
                    (wrap-future (.terminationFuture group))
