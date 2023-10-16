@@ -30,7 +30,7 @@
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
-   via `java.io.Closeable.close()`, and whose port can be discovered with `aleph.netty/port`.
+   via `java.io.Closeable.close()`, and whose port can be discovered with `aleph.netty/port` if not set.
 
    | Param key                         | Description |
    | ---                               | --- |
@@ -42,29 +42,33 @@
    | `pipeline-transform`              | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it. |
    | `executor`                        | A `java.util.concurrent.Executor` which is used to handle individual requests. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-executor?`              | If `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true` . |
-   | `request-buffer-size`             | The maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384` . This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance. |
+   | `request-buffer-size`             | The maximum body size, in bytes, that the server will allow to accumulate before placing on the body stream, defaults to `16384` . This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance. |
    | `raw-stream?`                     | If `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream` . This will minimize copying, but means that care must be taken with Netty's buffer reference counting. Only recommended for advanced users. |
    | `rejected-handler`                | A spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed. Defaults to a `503` response. |
-   | `max-request-body-size`           | The maximum length of the request body in bytes. Requires queuing up content until the request is finished, and thus creates a delay. Unlimited by default. |
-   | `max-initial-line-length`         | The maximum characters that can be in the initial line of the request, defaults to `8192` |
-   | `max-header-size`                 | The maximum characters that can be in a single header entry of a request, defaults to `8192` |
-   | `max-chunk-size`                  | The maximum characters that can be in a single chunk of a streamed request, defaults to `16384` |
+   | `max-request-body-size`           | The maximum length of the request body in bytes. If set, requires queuing up content until the request is finished, and thus delays processing. Unlimited by default. |
    | `validate-headers`                | If `true`, validates the headers when decoding the request, defaults to `false` |
-   | `initial-buffer-size`             | The initial buffer size of characters when decoding the request, defaults to `128` |
-   | `allow-duplicate-content-lengths` | If `true`, allows duplicate `Content-Length` headers, defaults to true |
    | `transport`                       | The transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio` ) |
-   | `compression?`                    | When `true` enables http compression, defaults to `false` |
+   | `compression?`                    | When `true`, enables http compression, defaults to `false` |
    | `compression-level`               | Optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6` . When set, enables http content compression regardless of the `compression?` flag value |
    | `idle-timeout`                    | When set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time). |
    | `continue-handler`                | Optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those. |
    | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-timeout`                | Interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of `0` bypasses waiting entirely. |
 
+   HTTP/1-specific options
+   | Param key                         | Description |
+   | ---                               | --- |
+   | `allow-duplicate-content-lengths` | If `true`, allows duplicate `Content-Length` headers, defaults to true. Always true for HTTP/2 |
+   | `max-initial-line-length`         | The maximum characters that can be in the initial line of the request, defaults to `8192` |
+   | `max-header-size`                 | The maximum characters that can be in a single header entry of a request, defaults to `8192` |
+   | `max-chunk-size`                  | The maximum characters that can be in a single chunk of a streamed request, defaults to `16384` |
+   | `initial-buffer-size`             | The initial buffer size of characters when decoding the request, defaults to `128` |
+
    HTTP/2-specific options
    | Param key                         | Description |
    | ---                               | --- |
-   | `use-h2c?`                        | If `true`, uses HTTP/2 for insecure servers. Has no effect on secure servers, and upgrades are not allowed. Defaults to false|
-   | `conn-go-away-handler`            | A connection-level cleanup handler for when a GOAWAY is received. Indicates the client has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
+   | `use-h2c?`                        | If `true`, uses HTTP/2 for insecure servers. Has no effect on secure servers, and upgrades are not allowed. Defaults to false. |
+   | `conn-go-away-handler`            | A connection-level cleanup handler for when a GOAWAY is received. Indicates the peer has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
    | `stream-go-away-handler`          | A stream-level cleanup handler called for streams above the last-stream-id in a GOAWAY frame. Indicates the stream will not be processed. Called with the context and the Http2GoAwayFrame. |
    | `reset-stream-handler`            | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |"
   [handler options]
