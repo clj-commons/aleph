@@ -72,6 +72,10 @@
     (io.netty.handler.ssl.util
       InsecureTrustManagerFactory
       SelfSignedCertificate)
+    (io.netty.handler.timeout
+      IdleState
+      IdleStateEvent
+      IdleStateHandler)
     (io.netty.incubator.channel.uring
       IOUring
       IOUringDatagramChannel
@@ -1549,6 +1553,23 @@ initialize an DnsAddressResolverGroup instance.
                           :transport           (if epoll? :epoll :nio)
                           :name-resolver       name-resolver}))))
 
+(defn- close-on-idle-handler []
+  (channel-handler
+    :user-event-triggered
+    ([_ ctx evt]
+     (if (and (instance? IdleStateEvent evt)
+              (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
+       (close ctx)
+       (.fireUserEventTriggered ctx evt)))))
+
+(defn add-idle-handlers
+  ^ChannelPipeline
+  [^ChannelPipeline pipeline idle-timeout]
+  (if (pos? idle-timeout)
+    (doto pipeline
+          (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
+          (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
+    pipeline))
 
 (defn- add-channel-tracker-handler
   "Wraps the pipeline-builder fn with a handler that adds a newly-active

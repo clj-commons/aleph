@@ -1304,7 +1304,7 @@
         multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)]
 
     (-> pipeline
-        (common/add-idle-handlers idle-timeout)
+        (netty/add-idle-handlers idle-timeout)
         (.addLast "http2-frame-codec" http2-frame-codec)
         (.addLast "multiplex" multiplex-handler)
         ;; FIXME: don't add a handler at all if conn-go-away-handler is nil

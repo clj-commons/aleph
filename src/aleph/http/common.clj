@@ -14,10 +14,6 @@
       DateFormatter
       DecoderResult
       DecoderResultProvider)
-    (io.netty.handler.timeout
-      IdleState
-      IdleStateEvent
-      IdleStateHandler)
     (io.netty.util AsciiString)
     (io.netty.util.concurrent
       EventExecutorGroup
@@ -67,24 +63,6 @@
                    nil))))))
     (netty/to-byte-buf-stream body chunk-size)))
 
-
-(defn close-on-idle-handler []
-  (netty/channel-handler
-    :user-event-triggered
-    ([_ ctx evt]
-     (if (and (instance? IdleStateEvent evt)
-              (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-       (netty/close ctx)
-       (.fireUserEventTriggered ctx evt)))))
-
-(defn add-idle-handlers
-  ^ChannelPipeline
-  [^ChannelPipeline pipeline idle-timeout]
-  (if (pos? idle-timeout)
-    (doto pipeline
-          (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
-          (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
-    pipeline))
 
 (defn add-non-http-handlers
   "Set up the pipeline with HTTP-independent handlers.

@@ -445,7 +445,7 @@
                   (http1-client-handler responses response-buffer-size))]
 
     (-> pipeline
-        (common/add-idle-handlers idle-timeout)
+        (netty/add-idle-handlers idle-timeout)
         (.addLast "http-client"
                   (HttpClientCodec.
                     max-initial-line-length

@@ -569,7 +569,7 @@
                                                  continue-executor
                                                  ssl?))]
     (doto pipeline
-          (common/add-idle-handlers idle-timeout)
+          (netty/add-idle-handlers idle-timeout)
           (.addLast "http-server"
                     (HttpServerCodec.
                       max-initial-line-length
