@@ -193,6 +193,7 @@
 
       :channel-inactive
       ([_ ctx]
+       (log/trace "http1-client-handler channel-inactive fired")
        (when-let [s @body-stream]
          (s/close! s))
        (doseq [b @buffer]
@@ -509,7 +510,7 @@
       (instance? Throwable rsp)
       (d/error-deferred rsp)
 
-      (identical? ::closed rsp)
+      (identical? :aleph/closed rsp)
       (d/error-deferred
         (ex-info
           (format "connection was closed after %.3f seconds" (/ (- (System/nanoTime) t0) 1e9))
@@ -546,7 +547,7 @@
     (log/trace "http1-req-handler fired")
     (let [resp (locking ch
                 (s/put! requests req)
-                (s/take! responses ::closed))]
+                (s/take! responses :aleph/closed))]
       (log/debug "http1-req-handler - response: " resp)
       resp)))
 

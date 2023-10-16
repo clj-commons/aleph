@@ -1559,16 +1559,20 @@ initialize an DnsAddressResolverGroup instance.
     ([_ ctx evt]
      (if (and (instance? IdleStateEvent evt)
               (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
-       (close ctx)
+       (do
+         (log/trace "Closing idle channel")
+         (close ctx))
        (.fireUserEventTriggered ctx evt)))))
 
 (defn add-idle-handlers
   ^ChannelPipeline
   [^ChannelPipeline pipeline idle-timeout]
   (if (pos? idle-timeout)
-    (doto pipeline
-          (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
-          (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler)))
+    (do
+      (log/trace "Adding idle handlers with" idle-timeout "ms timeout")
+      (doto pipeline
+            (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
+            (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler))))
     pipeline))
 
 (defn- add-channel-tracker-handler

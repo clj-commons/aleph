@@ -953,6 +953,7 @@
 
       :channel-inactive
       ([_ ctx]
+       (log/trace "http2/server-handler :channel-inactive fired")
        (s/close! body-stream)
        (.fireChannelInactive ctx))
 
@@ -1095,6 +1096,8 @@
 
       :channel-inactive
       ([_ ctx]
+       (log/trace "http2/client-handler :channel-inactive fired")
+       (d/success! response-d :aleph/closed)
        (s/close! body-stream)
        (d/success! complete true)
        (.fireChannelInactive ctx))

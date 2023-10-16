@@ -652,7 +652,7 @@
   (let [path "/"
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
-    (testing "Server is slow to write"
+    (testing "Server is slow to write, but has time"
       (with-handler-options slow-handler {:idle-timeout 200
                                           :port         port}
                             (is (= "012345" (bs/to-string (:body @(http-get path)))))))
@@ -661,7 +661,7 @@
                                           :port         port}
                             (is (= ""
                                    (bs/to-string (:body @(http-get path)))))))
-    (testing "Client is slow to write"
+    (testing "Client is slow to write, but has time"
       (with-handler-options echo-handler {:idle-timeout 200
                                           :port         port
                                           :raw-stream?  true}
