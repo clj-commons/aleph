@@ -356,6 +356,7 @@
   (.write x msg))
 
 ;; TODO: inline or macroize
+;; TODO: check to see if we can pass in a void promise
 (defn ^:no-doc write-and-flush
   [^ChannelOutboundInvoker x msg]
   (.writeAndFlush x msg))
@@ -382,6 +383,7 @@
   []
   (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
 
+;; TODO: is this necessary? don't the netty executors check this already?
 (defmacro ^:no-doc safe-execute
   "Executes the body on the event-loop (an executor service) associated with
    the Netty channel or context.
@@ -1742,6 +1744,9 @@ initialize an DnsAddressResolverGroup instance.
   [^Http2StreamChannel chan ^java.io.Writer writer]
   (let [sb (StringBuilder.)]
     (.append sb (StringUtil/simpleClassName (class chan)))
+    (.append sb " [")
+    (.append sb (.id chan))
+    (.append sb "]")
     (.append sb " - stream ID: ")
     (.append sb (-> chan .stream .id))
     (append-chan-status* chan sb)
@@ -1753,6 +1758,9 @@ initialize an DnsAddressResolverGroup instance.
   [^Channel chan ^java.io.Writer writer]
   (let [sb (StringBuilder.)]
     (.append sb (StringUtil/simpleClassName (class chan)))
+    (.append sb " [")
+    (.append sb (.id chan))
+    (.append sb "]")
     (append-chan-status* chan sb)
     (.append sb ":\n")
     (append-pipeline* sb (.pipeline chan))

@@ -64,8 +64,7 @@
 (def port 8082)
 
 (defn default-options []
-  {:socket-timeout    1e3
-   :pool-timeout      1e4
+  {:pool-timeout      1e4
    :request-timeout   1e4
    :throw-exceptions? false})
 
@@ -710,6 +709,7 @@
     (.close ^Closeable server)))
 
 
+;; TODO: add Http2 version
 (deftest test-pipeline-header-alteration
   (let [test-header-name "aleph-test"
         test-header-val "MOOP"]
@@ -1076,6 +1076,7 @@
        "content-length: 0"]
       (is (.startsWith *response* "HTTP/1.1 414 Request-URI Too Long"))))
 
+  ;; TODO: make an H2 version
   (testing "reading invalid request message: header is too large"
     (with-tcp-request
       {:max-header-size 5}
@@ -1106,7 +1107,6 @@
           (fn [{:keys [body]}]
             (when (some? body) (bs/to-string body))
             {:status  1045
-             ;; this leads to `NullPointerException` in `http.core/normalize-header-key`
              :headers {nil "not such header"}
              :body    "there's no such status"})]
       (with-handler invalid-status-handler

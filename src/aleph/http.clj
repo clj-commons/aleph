@@ -392,6 +392,7 @@
                                      ;; request failed, dispose of the connection
                                      (d/catch'
                                        (fn [e]
+                                         (log/trace "Request failed. Disposing of connection...")
                                          (flow/dispose pool k conn)
                                          (d/error-deferred e)))
 
@@ -405,6 +406,7 @@
 
                                              (d/catch' TimeoutException
                                                (fn [^Throwable e]
+                                                 (log/trace "Request timed out. Disposing of connection...")
                                                  (flow/dispose pool k conn)
                                                  (d/error-deferred (ReadTimeoutException. e))))
 
@@ -413,7 +415,9 @@
                                                  (if (or early?
                                                          (not (:aleph/keep-alive? rsp))
                                                          (<= 400 (:status rsp)))
-                                                   (flow/dispose pool k conn)
+                                                   (do
+                                                     (log/trace "Connection finished. Disposing...")
+                                                     (flow/dispose pool k conn))
                                                    (flow/release pool k conn)))))
                                          (-> rsp
                                              (dissoc :aleph/complete)

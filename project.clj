@@ -42,7 +42,8 @@
                                "-Dorg.slf4j.simpleLogger.showLogName=false"
                                "-Dorg.slf4j.simpleLogger.showShortLogName=true"
                                "-Dorg.slf4j.simpleLogger.showDateTime=true"
-                               "-Dorg.slf4j.simpleLogger.log.io.netty.util=error"]}
+                               "-Dorg.slf4j.simpleLogger.log.io.netty.util=error"
+                               "-Dorg.slf4j.simpleLogger.log.io.netty.channel=warn"]}
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
              :pedantic {:pedantic? :abort}

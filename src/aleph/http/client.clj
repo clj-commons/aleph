@@ -923,6 +923,7 @@
 
                           (if (or (not (.isActive ch))
                                   (not (.isOpen ch)))
+
                             (d/error-deferred
                               (ex-info "Channel is inactive/closed."
                                        {:req     req
