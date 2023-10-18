@@ -483,7 +483,7 @@
 (defn close-connection [f]
   (f
     {:method :get
-     :url    "http://example.com"
+     :url    "http://closing.aleph.invalid"
      :aleph/close true}))
 
 ;; includes host into URI for requests that go through proxy
@@ -887,26 +887,29 @@
                     (fn http-req-fn
                       [req]
                       (log/trace "http-req-fn fired")
-                      (let [t0 (System/nanoTime)
-                            ;; I suspect the below is an error for http1
-                            ;; since the shared handler might not match.
-                            ;; Should work for HTTP2, though
-                            raw-stream? (get req :raw-stream? raw-stream?)]
+                      (log/debug "client request:" req)
 
-                        (if (or (not (.isActive ch))
-                                (not (.isOpen ch)))
-                          (d/error-deferred
-                            (ex-info "Channel is inactive/closed."
-                                     {:req     req
-                                      :ch      ch
-                                      :open?   (.isOpen ch)
-                                      :active? (.isActive ch)}))
+                      ;; If :aleph/close is set in the req, closes the channel and
+                      ;; returns a deferred containing the result.
+                      (if (or (contains? req :aleph/close)
+                              (contains? req ::close))
+                        (-> ch (netty/close) (netty/wrap-future))
 
-                          ;; If :aleph/close is set in the req, closes the channel and
-                          ;; returns a deferred containing the result.
-                          (if (or (contains? req :aleph/close)
-                                  (contains? req ::close))
-                            (netty/wrap-future (netty/close ch))
+                        (let [t0 (System/nanoTime)
+                              ;; I suspect the below is an error for http1
+                              ;; since the shared handler might not match.
+                              ;; Should work for HTTP2, though
+                              raw-stream? (get req :raw-stream? raw-stream?)]
+
+                          (if (or (not (.isActive ch))
+                                  (not (.isOpen ch)))
+                            (d/error-deferred
+                              (ex-info "Channel is inactive/closed."
+                                       {:req     req
+                                        :ch      ch
+                                        :open?   (.isOpen ch)
+                                        :active? (.isActive ch)}))
+
                             (-> (http-req-handler req)
                                 (d/chain' (rsp-handler
                                             {:ch                   ch
