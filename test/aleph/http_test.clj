@@ -4,7 +4,7 @@
     [aleph.http :as http]
     [aleph.http.core :as http.core]
     [aleph.netty :as netty]
-    [aleph.ssl :as ssl]
+    [aleph.ssl :as test-ssl]
     [aleph.tcp :as tcp]
     [clj-commons.byte-streams :as bs]
     [clojure.java.io :as io]
@@ -227,7 +227,7 @@
 (def http1-ssl-server-options {:port        port
                                :ssl-context (netty/self-signed-ssl-context)})
 (def http2-server-options {:port        port
-                           :ssl-context ssl/http2-only-ssl-context})
+                           :ssl-context test-ssl/http2-only-ssl-context})
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -260,7 +260,7 @@
   `(let [handler# ~handler
          server-options# ~server-options]
      (with-http2-server handler# server-options# ~@body)
-     #_(with-http1-server handler# server-options# ~@body)))
+     (with-http1-server handler# server-options# ~@body)))
 
 (defmacro with-handler [handler & body]
   `(with-http-servers ~handler {:port port :shutdown-timeout 0}
@@ -341,20 +341,22 @@
 (deftest test-ssl-files
   (with-redefs [*use-tls?* true]
     (let [client-path "/"
-          client-options {:connection-options {:ssl-context ssl/client-ssl-context}}
+          client-options {:connection-options {:ssl-context test-ssl/client-ssl-context}}
           client-pool (http/connection-pool client-options)]
       (with-handler-options echo-handler
-                            (merge http1-ssl-server-options {:ssl-context ssl/server-ssl-context})
-                            (is (str/blank?
-                                  (bs/to-string
-                                    (:body @(http-put client-path
-                                                      {:body (io/file "test/empty.txt")
-                                                       :pool client-pool})))))
-                            (is (= (slurp "test/file.txt" :encoding "UTF-8")
-                                   (bs/to-string
-                                     (:body @(http-put client-path
-                                                       {:body (io/file "test/file.txt")
-                                                        :pool client-pool})))))))))
+                            (merge http1-ssl-server-options {:ssl-context test-ssl/server-ssl-context})
+                              (is (str/blank?
+                                    (-> @(http-put client-path
+                                                   {:body (io/file "test/empty.txt")
+                                                    :pool client-pool})
+                                        :body
+                                        bs/to-string)))
+                              (is (= (slurp "test/file.txt" :encoding "UTF-8")
+                                     (-> @(http-put client-path
+                                                    {:body (io/file "test/file.txt")
+                                                     :pool client-pool})
+                                         :body
+                                       bs/to-string)))))))
 
 (defn ssl-session-capture-handler [ssl-session-atom]
   (fn [req]

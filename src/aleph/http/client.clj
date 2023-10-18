@@ -746,6 +746,23 @@
     ;; requests stream
     (http1-req-handler opts)))
 
+(defn- attach-on-close-handler
+  "If an on-closed fn is provided, attach it to the channel's close future."
+  [ch-d on-closed]
+  (when on-closed
+    (log/trace "Attaching chan close handler")
+    (d/chain' ch-d
+              (fn setup-chan-close
+                [^Channel ch]
+                (let [on-closed* (fn [_] (on-closed))
+                      chan-close-d (-> ch (.closeFuture) (netty/wrap-future))]
+                  (d/on-realized chan-close-d on-closed* on-closed*)
+
+                  (when (log/enabled? :trace)
+                    (d/on-realized chan-close-d
+                                   #(log/trace "Channel closed normally." %)
+                                   #(log/trace "Channel closed w/ error." %))))))))
+
 (defn http-connection
   "Returns a deferred containing a fn that accepts a Ring request and returns
    a deferred containing a Ring response."
@@ -765,7 +782,8 @@
            pipeline-transform
            log-activity
            http-versions
-           force-h2c?]
+           force-h2c?
+           on-closed]
     :or   {raw-stream?          false
            bootstrap-transform  identity
            pipeline-transform   identity
@@ -809,15 +827,17 @@
                                   :logger logger
                                   :pipeline-transform pipeline-transform))
 
-        ch (netty/create-client-chan
-             {:pipeline-builder    pipeline-builder
-              :bootstrap-transform bootstrap-transform
-              :remote-address      remote-address
-              :local-address       local-address
-              :transport           (netty/determine-transport transport epoll?)
-              :name-resolver       name-resolver})]
+        ch-d (netty/create-client-chan
+              {:pipeline-builder    pipeline-builder
+               :bootstrap-transform bootstrap-transform
+               :remote-address      remote-address
+               :local-address       local-address
+               :transport           (netty/determine-transport transport epoll?)
+               :name-resolver       name-resolver})]
 
-    (d/chain' ch
+    (attach-on-close-handler ch-d on-closed)
+
+    (d/chain' ch-d
               (fn setup-client
                 [^Channel ch]
                 (log/debug "Channel:" ch)
