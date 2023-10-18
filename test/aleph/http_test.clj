@@ -222,7 +222,7 @@
     (partition 2)))
 
 
-(def http1-server-options {:port port})
+(def http-server-options {:port port})
 (def http1-ssl-server-options {:port        port
                                :ssl-context (netty/self-signed-ssl-context)})
 (def http2-server-options {:port        port
@@ -344,17 +344,17 @@
           client-pool (http/connection-pool client-options)]
       (with-handler-options echo-handler
                             (merge http1-ssl-server-options {:ssl-context test-ssl/server-ssl-context})
-                              (is (str/blank?
-                                    (-> @(http-put client-path
-                                                   {:body (io/file "test/empty.txt")
-                                                    :pool client-pool})
-                                        :body
-                                        bs/to-string)))
-                              (is (= (slurp "test/file.txt" :encoding "UTF-8")
-                                     (-> @(http-put client-path
-                                                    {:body (io/file "test/file.txt")
-                                                     :pool client-pool})
-                                         :body
+                            (is (str/blank?
+                                  (-> @(http-put client-path
+                                                 {:body (io/file "test/empty.txt")
+                                                  :pool client-pool})
+                                      :body
+                                      bs/to-string)))
+                            (is (= (slurp "test/file.txt" :encoding "UTF-8")
+                                   (-> @(http-put client-path
+                                                  {:body (io/file "test/file.txt")
+                                                   :pool client-pool})
+                                       :body
                                        bs/to-string)))))))
 
 (defn ssl-session-capture-handler [ssl-session-atom]
@@ -365,7 +365,7 @@
 (deftest test-ssl-session-access
   (with-redefs [*use-tls?* true]
     (let [ssl-session (atom nil)]
-      (with-handler-options
+      (with-http1-server
         (ssl-session-capture-handler ssl-session)
         http1-ssl-server-options
         (is (= 200 (:status @(http-get "/"))))
@@ -412,20 +412,20 @@
            deref))))
 
 (deftest test-overly-long-url
-  (let [long-url (apply str "/" (repeat (long 1e4) "a"))]
-    (with-handler basic-handler
-      (is (= 414 (:status @(http-get long-url)))))))
+  (let [long-url (apply str "/" (repeat (long 1e5) "a"))]
+    (with-http1-server basic-handler http-server-options
+                       (is (= 414 (:status @(http-get long-url)))))))
 
 (deftest test-overly-long-header
   (let [url "/"
         long-header-value (apply str (repeat (long 1e5) "a"))
         opts {:headers {"X-Long" long-header-value}}]
-    (with-handler basic-handler
-      (is (= 431 (:status @(http-get url opts)))))))
+    (with-http1-server basic-handler http-server-options
+                       (is (= 431 (:status @(http-get url opts)))))))
 
 (deftest test-invalid-http-version-format
-  (with-http1-server basic-handler http1-server-options
-    (let [client @(tcp/client {:host "localhost" :port port})
+  (with-http1-server basic-handler http-server-options
+                     (let [client @(tcp/client {:host "localhost" :port port})
           _ @(s/put! client "GET / HTTP-1,1\r\n\r\n")
           response (bs/to-string @(s/take! client))]
       (is (str/starts-with? response "HTTP/1.1 400"))
@@ -713,7 +713,7 @@
 (deftest test-pipeline-header-alteration
   (let [test-header-name "aleph-test"
         test-header-val "MOOP"]
-    (with-http-servers basic-handler {:port             port
+    (with-http1-server basic-handler {:port             port
                                       :shutdown-timeout 0
                                       :pipeline-transform
                                       (fn [^ChannelPipeline pipeline]
