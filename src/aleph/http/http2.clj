@@ -1197,7 +1197,7 @@
 
 (defn setup-stream-pipeline
   "Set up the pipeline for an HTTP/2 stream channel"
-  [^ChannelPipeline p handler is-server? proxy-options logger pipeline-transform max-request-body-size]
+  [^ChannelPipeline p handler is-server? proxy-options logger http2-stream-pipeline-transform max-request-body-size]
   (log/trace "setup-stream-pipeline called")
 
   ;; necessary for multipart support in HTTP/2?
@@ -1226,7 +1226,7 @@
     (throw (IllegalArgumentException. "Proxying HTTP/2 messages not supported yet")))
 
   (-> p
-      (common/add-non-http-handlers logger pipeline-transform)
+      (common/add-non-http-handlers logger http2-stream-pipeline-transform)
       #_(common/add-exception-handler "stream-ex-handler"))
 
   (log/trace "Added all stream handlers")
@@ -1264,14 +1264,16 @@
      http2-settings
      request-buffer-size
      proxy-options
-     pipeline-transform
+     http2-conn-pipeline-transform
+     http2-stream-pipeline-transform
      max-request-body-size]
     :or
-    {idle-timeout        0
-     http2-settings      (Http2Settings/defaultSettings)
-     pipeline-transform  identity
-     request-buffer-size 16384
-     error-handler       common/ring-error-response}
+    {idle-timeout                    0
+     http2-settings                  (Http2Settings/defaultSettings)
+     http2-conn-pipeline-transform   identity
+     http2-stream-pipeline-transform identity
+     request-buffer-size             16384
+     error-handler                   common/ring-error-response}
     :as opts}]
   (log/trace "setup-conn-pipeline fired")
   (let [
@@ -1302,7 +1304,7 @@
                                                            is-server?
                                                            proxy-options
                                                            logger
-                                                           pipeline-transform
+                                                           http2-stream-pipeline-transform
                                                            max-request-body-size)))
         multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)]
 
@@ -1318,7 +1320,8 @@
                                               (instance? Http2GoAwayFrame msg))
                                      (conn-go-away-handler ctx msg))
                                    (.fireChannelRead ctx msg))))
-        (common/add-exception-handler "conn-ex-handler"))
+        (common/add-exception-handler "conn-ex-handler")
+        http2-conn-pipeline-transform)
 
     (log/debug "Conn chan pipeline:" pipeline)
     pipeline))

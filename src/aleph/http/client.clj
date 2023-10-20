@@ -457,7 +457,11 @@
         (.addLast "streamer" ^ChannelHandler (ChunkedWriteHandler.))
         (.addLast "handler" ^ChannelHandler handler)
         (add-proxy-handlers responses proxy-options ssl?)
-        (common/add-non-http-handlers logger pipeline-transform))))
+        (common/add-non-http-handlers logger pipeline-transform))
+
+    (log/debug "http1 client pipeline" pipeline)
+
+    pipeline))
 
 
 (defn make-pipeline-builder
@@ -690,11 +694,7 @@
     (if ssl-context
       (let [^SslContext ssl-ctx (netty/coerce-ssl-client-context ssl-context)]
         ;; check that ALPN is set up if HTTP/2 is requested (https://www.rfc-editor.org/rfc/rfc9113.html#section-3.3)_
-        (if (and (-> ssl-ctx
-                     (.applicationProtocolNegotiator)
-                     (.protocols)
-                     (.contains ApplicationProtocolNames/HTTP_2)
-                     not)
+        (if (and (not (common/ssl-ctx-supports-http2? ssl-ctx))
                  (some #(= ApplicationProtocolNames/HTTP_2 %) desired-protocols))
           (let [emsg "HTTP/2 has been requested, but the required ALPN is not configured properly."
                 ex (ex-info emsg {:ssl-context ssl-context})]
@@ -703,15 +703,7 @@
           ssl-ctx))
 
       ;; otherwise, use a good default
-      (let [ssl-ctx-opts {:application-protocol-config
-                          (ApplicationProtocolConfig.
-                            ApplicationProtocolConfig$Protocol/ALPN
-                            ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
-                            ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
-                            ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
-                            ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
-                            ^"[Ljava.lang.String;"
-                            (into-array String desired-protocols))}]
+      (let [ssl-ctx-opts {:application-protocol-config (netty/application-protocol-config desired-protocols)}]
         (if insecure?
           (netty/insecure-ssl-client-context ssl-ctx-opts)
           (netty/ssl-client-context ssl-ctx-opts))))
@@ -719,7 +711,7 @@
 
 (defn- setup-http1-client
   [{:keys [on-closed response-executor]
-    :as opts}]
+    :as   opts}]
   (let [requests (doto (s/stream 1024 nil nil)
                        (s/on-closed #(log/debug "requests stream closed.")))
         responses (doto (s/stream 1024 nil response-executor)
@@ -792,7 +784,7 @@
            epoll?               false
            name-resolver        :default
            log-activity         :debug
-           http-versions        [:http2 :http1]
+           http-versions        [:http2 :http1]             ; FIXME set to HTTP1
            force-h2c?           false}
     :as   opts}]
 

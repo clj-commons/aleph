@@ -546,7 +546,7 @@
      idle-timeout
      continue-handler
      continue-executor
-     pipeline-transform]
+     http1-pipeline-transform]
     :or
     {request-buffer-size             16384
      max-initial-line-length         8192
@@ -557,7 +557,8 @@
      allow-duplicate-content-lengths false
      compression?                    false
      idle-timeout                    0
-     error-handler                   common/ring-error-response}}]
+     error-handler                   common/ring-error-response
+     http1-pipeline-transform        identity}}]
   (log/trace "setup-http1-pipeline")
   (let [handler (if raw-stream?
                   (raw-ring-handler ssl? handler rejected-handler error-handler executor request-buffer-size)
@@ -593,14 +594,18 @@
               (let [compressor (HttpContentCompressor. (int (or compression-level 6)))]
                 (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
               (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
-          pipeline-transform)))
+          http1-pipeline-transform)
+
+    (log/debug "http1 server pipeline" pipeline)
+
+    pipeline))
 
 (defn ^:deprecated ^:no-doc pipeline-builder
   [handler pipeline-transform opts]
   #(setup-http1-pipeline (assoc opts
                                 :pipeline %
                                 :handler handler
-                                :pipeline-transform pipeline-transform)))
+                                :http1-pipeline-transform pipeline-transform)))
 
 (defn make-pipeline-builder
   "Returns a function that initializes a new server channel's pipeline."
@@ -643,7 +648,7 @@
 
             use-h2c?
             (do
-              (log/warn "Setting up insecure HTTP/2 server pipeline.")
+              (log/warn "Setting up cleartext HTTP/2 server pipeline.")
               (http2/setup-conn-pipeline setup-opts))
 
             :else
@@ -701,29 +706,28 @@
    {:keys [port
            socket-address
            executor
-           bootstrap-transform
-           pipeline-transform
            ssl-context
            manual-ssl?
            shutdown-executor?
            epoll?
            transport
            continue-executor
-           shutdown-timeout]
-    :or   {bootstrap-transform identity
-           pipeline-transform  identity
-           shutdown-executor?  true
-           epoll?              false
-           shutdown-timeout    netty/default-shutdown-timeout}
+           shutdown-timeout
+           bootstrap-transform]
+    :or   {bootstrap-transform             identity
+           shutdown-executor?              true
+           epoll?                          false
+           shutdown-timeout                netty/default-shutdown-timeout}
     :as   opts}]
-  (let [executor (setup-executor executor)
+  (let [http1-pipeline-transform (common/validate-http1-pipeline-xform opts)
+        executor (setup-executor executor)
         continue-executor (setup-continue-executor executor continue-executor)
         pipeline-builder (make-pipeline-builder
                            handler
                            (assoc opts
                                   :executor executor
                                   :ssl? (or manual-ssl? (boolean ssl-context))
-                                  :pipeline-transform pipeline-transform
+                                  :http1-pipeline-transform http1-pipeline-transform
                                   :continue-executor continue-executor))]
     (netty/start-server
       {:pipeline-builder    pipeline-builder

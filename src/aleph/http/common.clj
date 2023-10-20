@@ -14,6 +14,7 @@
       DateFormatter
       DecoderResult
       DecoderResultProvider)
+    (io.netty.handler.ssl ApplicationProtocolNames SslContext)
     (io.netty.util AsciiString)
     (io.netty.util.concurrent
       EventExecutorGroup
@@ -109,6 +110,43 @@
                  (if ex-handler
                    (ex-handler ex ctx)
                    (.fireExceptionCaught ctx ex)))}))))
+
+(defn ssl-ctx-supports-http2?
+  "Does this SslContext have an ALPN that supports HTTP/2?"
+  [^SslContext ssl-context]
+  (some-> ssl-context
+          (.applicationProtocolNegotiator)
+          (.protocols)
+          (.contains ApplicationProtocolNames/HTTP_2)))
+
+(defn validate-http1-pipeline-xform
+  "Checks that :pipeline-transform is not being used with HTTP/2, since Netty
+   H2 code uses multiple pipelines instead of one.
+
+   If both :pipeline-transform and :http1-pipeline-transform are set, prefers
+   :http1-pipeline-transform.
+
+   Returns the chosen transform fn."
+  [{:keys [ssl-context
+           use-h2c?
+           pipeline-transform
+           http1-pipeline-transform]}]
+  ;; throw when using http2 and :pipeline-transform
+  (when (and (or use-h2c? (ssl-ctx-supports-http2? ssl-context))
+             (not (contains? #{nil identity} pipeline-transform)))
+    (throw (IllegalArgumentException.
+             "Cannot use :pipeline-transform with HTTP/2. If this is intended to be HTTP/1-only, please use :http1-pipeline-transform. If you need to adjust the pipeline for HTTP/2, please see :http2-conn-pipeline-transform and :http2-stream-pipeline-transform.")))
+
+  (cond
+    (and (contains? #{nil identity} http1-pipeline-transform)
+         (contains? #{nil identity} pipeline-transform))
+    identity
+
+    (contains? #{nil identity} http1-pipeline-transform)
+    pipeline-transform
+
+    :else
+    http1-pipeline-transform))
 
 (defn ring-error-response
   "Generic 500 error Ring response"

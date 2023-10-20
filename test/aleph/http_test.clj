@@ -29,12 +29,7 @@
     (io.netty.handler.codec.http
       HttpMessage
       HttpObjectAggregator)
-    (io.netty.handler.ssl
-      ApplicationProtocolConfig
-      ApplicationProtocolConfig$Protocol
-      ApplicationProtocolConfig$SelectedListenerFailureBehavior
-      ApplicationProtocolConfig$SelectorFailureBehavior
-      ApplicationProtocolNames)
+    (io.netty.handler.codec.http2 Http2HeadersFrame)
     (java.io
       Closeable
       File)
@@ -709,7 +704,6 @@
     (.close ^Closeable server)))
 
 
-;; TODO: add Http2 version
 (deftest test-pipeline-header-alteration
   (let [test-header-name "aleph-test"
         test-header-val "MOOP"]
@@ -732,6 +726,99 @@
                                                         (.write ctx msg p)))))}
                        (let [resp @(http-get "/string")]
                          (is (= test-header-val (get (:headers resp) test-header-name)))))))
+
+(deftest test-pipeline-transforms
+  (let [header-name "aleph-foo"
+        foo-header-adder
+        (netty/channel-inbound-handler
+          :channel-read
+          ([_ ctx msg]
+           (cond
+             (instance? HttpMessage msg)
+             (let [^HttpMessage http-msg msg]
+               (-> http-msg
+                   (.headers)
+                   (.set header-name "foo")))
+
+             (instance? Http2HeadersFrame msg)
+             (let [h2-headers-frame ^Http2HeadersFrame msg]
+               (-> h2-headers-frame
+                   (.headers)
+                   (.add header-name "foo"))))
+
+           (.fireChannelRead ctx msg)))
+
+        create-handler
+        (fn [found?]
+          (fn [request]
+            (reset! found? (-> request :headers (contains? header-name)))
+            {:status 200
+             :body   "moop"}))
+
+        http1-test
+        (fn [base-handler-name xform-key expected-val]
+          (testing (str " - :" xform-key)
+            (let [found? (atom nil)]
+              (with-http1-server (create-handler found?)
+                                 (assoc http-server-options
+                                        :shutdown-timeout 0
+                                        xform-key #(.addBefore % base-handler-name "foo-adder" foo-header-adder))
+                                 @(http-get "/")
+
+                                 (is (= expected-val @found?))))))
+
+        http2-test
+        (fn [base-handler-name xform-key expected-val]
+          (testing (str " - " xform-key)
+            (let [found? (atom nil)]
+              (with-http2-server
+                (create-handler found?)
+                (assoc http2-server-options
+                       :shutdown-timeout 0
+                       xform-key #(.addBefore % base-handler-name "foo-adder" foo-header-adder))
+
+                @(http-get "/")
+                (is (= expected-val @found?))))))]
+
+
+    (testing "server"
+      (testing " - http1 only"
+        (let [base-handler-name "request-handler"]
+          (http1-test base-handler-name :pipeline-transform true)
+          (http1-test base-handler-name :http1-pipeline-transform true)
+          (http1-test base-handler-name :http2-stream-pipeline-transform false)
+          (http1-test base-handler-name :http2-conn-pipeline-transform false)))
+
+      (testing " - http2 only"
+        (testing "- :pipeline-transform"
+          (is (thrown? Exception
+                       (with-http2-server
+                         (create-handler (atom :irrelevant))
+                         (assoc http2-server-options
+                                :shutdown-timeout 0
+                                :pipeline-transform #(.addBefore % "request-handler" "foo-adder" foo-header-adder))
+
+                         @(http-get "/")
+                         ;; should never get here
+                         (is (= true false))))))
+
+        (http2-test "request-handler" :http1-pipeline-transform false)
+        (http2-test "handler" :http2-stream-pipeline-transform true)
+        (http2-test "multiplex" :http2-conn-pipeline-transform true)
+
+        (testing "multiple xforms"
+          (is (thrown? Exception
+                (with-http2-server
+                  (create-handler (atom :irrelevant))
+                  (assoc http2-server-options
+                         :shutdown-timeout 0
+                         :pipeline-transform #(.addBefore % "request-handler" "foo-adder" foo-header-adder)
+                         :http2-stream-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder)
+                         :http2-conn-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder))
+
+                  @(http-get "/")
+                  ;; should never get here
+                  (is (= true false))))))))))
 
 (defn add-http-object-aggregator [^ChannelPipeline pipeline]
   (let [max-content-length 5]
@@ -1127,3 +1214,4 @@
                        deref)]
           (is (= 200 (:status resp)))
           (is (= "" (bs/to-string (:body resp)))))))))
+

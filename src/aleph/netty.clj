@@ -64,6 +64,10 @@
       LoggingHandler)
     (io.netty.handler.ssl
       ApplicationProtocolConfig
+      ApplicationProtocolConfig$Protocol
+      ApplicationProtocolConfig$SelectedListenerFailureBehavior
+      ApplicationProtocolConfig$SelectorFailureBehavior
+      ApplicationProtocolNames
       ClientAuth
       SslContext
       SslContextBuilder
@@ -918,22 +922,43 @@
             (IllegalArgumentException.
               "ssl context arguments invalid"))))
 
+  (let [->alpn-name {:http1                            ApplicationProtocolNames/HTTP_1_1
+                     :http2                            ApplicationProtocolNames/HTTP_2
+                     ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_1_1
+                     ApplicationProtocolNames/HTTP_2   ApplicationProtocolNames/HTTP_2}]
+
+    (defn application-protocol-config
+      "Creates a default config for Application-Layer Protocol Negotiation (ALPN),
+       which TLS uses to negotiate which HTTP version to use during the handshake.
+
+       Takes a vector of HTTP versions, in order of preference. E.g., `[:http2 :http1]`"
+      ^ApplicationProtocolConfig
+      [protocols]
+      (ApplicationProtocolConfig.
+        ApplicationProtocolConfig$Protocol/ALPN
+        ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+        ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+        ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+        ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+        ^"[Ljava.lang.String;"
+        (into-array String (mapv ->alpn-name protocols)))))
+
   (defn ssl-client-context
     "Creates a new client SSL context.
      Keyword arguments are:
 
-     Param key                | Description
-     | ---                    | ---
-     | `private-key`          | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
-     | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
-     | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store`          | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider`         | `SslContext` implementation to use, one of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL-based implementations, the library should be installed and linked properly.
-     | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
-     | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
-     | `session-cache-size`   | the size of the cache used for storing SSL session objects.
-     | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
-     | `application-protocol-config` | an `ApplicationProtocolConfig` instance to configure ALPN.
+     Param key                       | Description
+     | ---                           | ---
+     | `private-key`                 | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
+     | `certificate-chain`           | A `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
+     | `private-key-password`        | A string, the private key's password (optional).
+     | `trust-store`                 | A `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider`                | `SslContext` implementation to use, one of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL-based implementations, the library should be installed and linked properly.
+     | `ciphers`                     | A sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols`                   | A sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size`          | The size of the cache used for storing SSL session objects.
+     | `session-timeout`             | The timeout for the cached SSL session objects, in seconds.
+     | `application-protocol-config` | An `ApplicationProtocolConfig` instance to configure ALPN. See the `application-protocol-config` function.
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
     (^SslContext
      []
@@ -1014,20 +1039,20 @@
     "Creates a new server SSL context.
      Keyword arguments are:
 
-     Param key                | Description
-     | ---                    | ---
-     | `private-key`          | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
-     | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
-     | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store`          | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider`         | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
-     | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
-     | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
-     | `session-cache-size`   | the size of the cache used for storing SSL session objects.
-     | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
-     | `start-tls`            | if the first write request shouldn't be encrypted.
-     | `client-auth`          | the client authentication mode, one of `:none`, `:optional` or `:require`.
-     | `application-protocol-config` | an `ApplicationProtocolConfig` instance to configure ALPN.
+     Param key                       | Description
+     | ---                           | ---
+     | `private-key`                 | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
+     | `certificate-chain`           | A `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
+     | `private-key-password`        | A string, the private key's password (optional).
+     | `trust-store`                 | A `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider`                | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers`                     | A sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols`                   | A sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size`          | The size of the cache used for storing SSL session objects.
+     | `session-timeout`             | The timeout for the cached SSL session objects, in seconds.
+     | `start-tls`                   | If the first write request shouldn't be encrypted.
+     | `client-auth`                 | The client authentication mode, one of `:none`, `:optional` or `:require`.
+     | `application-protocol-config` | An `ApplicationProtocolConfig` instance to configure ALPN. See the `application-protocol-config` function.`
 
      Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either
      both input streams, both files, or a private key and an array of certificates."

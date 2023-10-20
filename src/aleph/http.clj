@@ -29,8 +29,16 @@
       TimeoutException)))
 
 (defn start-server
-  "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
-   via `java.io.Closeable.close()`, and whose port can be discovered with `aleph.netty/port` if not set.
+  "Starts an HTTP server using the provided Ring `handler`.  Returns a server
+   object which can be stopped via `java.io.Closeable.close()`, and whose port
+   can be discovered with `aleph.netty/port` if not set.
+
+   Defaults to HTTP/1.1-only.
+
+   To enable HTTP/2, you must supply an SslContext with ALPN support for HTTP/2.
+   See `aleph.netty/ssl-server-context` and `aleph.netty/application-protocol-config`
+   for more details. (You can also set `use-h2c?` to force HTTP/2 cleartext, but
+   this is strongly discouraged.)
 
    | Param key                         | Description |
    | ---                               | --- |
@@ -39,7 +47,6 @@
    | `bootstrap-transform`             | A function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it. |
    | `ssl-context`                     | An `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
    | `manual-ssl?`                     | Set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform` ) to select the SSL context based on the client's indicated host name. |
-   | `pipeline-transform`              | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it. |
    | `executor`                        | A `java.util.concurrent.Executor` which is used to handle individual requests. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-executor?`              | If `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true` . |
    | `request-buffer-size`             | The maximum body size, in bytes, that the server will allow to accumulate before placing on the body stream, defaults to `16384` . This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance. |
@@ -63,6 +70,8 @@
    | `max-header-size`                 | The maximum characters that can be in a single header entry of a request, defaults to `8192` |
    | `max-chunk-size`                  | The maximum characters that can be in a single chunk of a streamed request, defaults to `16384` |
    | `initial-buffer-size`             | The initial buffer size of characters when decoding the request, defaults to `128` |
+   | `pipeline-transform`              | (DEPRECATED: Use `:http1-pipeline-transform` instead.) A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it. |
+   | `http1-pipeline-transform`        | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/1 connection, and modifies it. Contains the user handler at \"request-handler\". |
 
    HTTP/2-specific options
    | Param key                         | Description |
@@ -70,7 +79,11 @@
    | `use-h2c?`                        | If `true`, uses HTTP/2 for insecure servers. Has no effect on secure servers, and upgrades are not allowed. Defaults to false. |
    | `conn-go-away-handler`            | A connection-level cleanup handler for when a GOAWAY is received. Indicates the peer has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
    | `stream-go-away-handler`          | A stream-level cleanup handler called for streams above the last-stream-id in a GOAWAY frame. Indicates the stream will not be processed. Called with the context and the Http2GoAwayFrame. |
-   | `reset-stream-handler`            | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |"
+   | `reset-stream-handler`            | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |
+   | `http2-conn-pipeline-transform`   | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/2 connection, and modifies it. |
+   | `http2-stream-pipeline-transform` | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a single HTTP/2 stream, and modifies it. Contains the user handler at \"handler\". |
+
+   "
   [handler options]
   (server/start-server handler options))
 
