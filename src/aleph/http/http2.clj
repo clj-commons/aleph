@@ -44,7 +44,6 @@
       Http2GoAwayFrame
       Http2Headers
       Http2HeadersFrame
-      Http2LifecycleManager
       Http2MultiplexHandler
       Http2MultiplexHandler$Http2MultiplexHandlerStreamChannel
       Http2ResetFrame
@@ -205,14 +204,6 @@
      (netty/write-and-flush out
                             (doto (DefaultHttp2GoAwayFrame. h2-error-code)
                                   (.setExtraStreamIds num-extra-streams))))))
-
-#_(defn- reset-stream
-  [^ChannelHandlerContext lifecycle-manager-ctx stream-id ^long h2-error-code]
-  (log/trace (str "Resetting stream " stream-id " with error code " h2-error-code))
-  (let [^Http2LifecycleManager lifecycle-manager (.handler lifecycle-manager-ctx)
-        prom (.newPromise lifecycle-manager-ctx)]
-    (.resetStream lifecycle-manager lifecycle-manager-ctx stream-id h2-error-code prom)
-    prom))
 
 (defn- reset-stream
   [^ChannelOutboundInvoker out ^Http2FrameStream stream ^long h2-error-code]
@@ -396,10 +387,13 @@
   "Attempts to set the `content-length` header if not already set.
 
    Will skip if it's a response and the status code is 1xx or 204. (RFC 9110 §8.6)
-   Negative length values are ignored."
+   Negative length values will throw an IllegalArgumentException."
   ^Http2Headers
   [^Http2Headers headers ^long length]
-  (when-not (.get headers "content-length")
+  (when (nil? (.get headers "content-length"))
+    (when (p/< length 0)
+      (throw-illegal-arg-ex (str "content-length header value cannot be negative: " length)))
+
     (if (some? (.status headers))
       ;; TODO: consider switching to netty's HttpResponseStatus and HttpStatusClass for clarity
       (let [code (-> headers (.status) (.toString) (Long/parseLong))]
@@ -745,7 +739,6 @@
 (defn- netty->ring-request
   "Given Netty Http2Headers and a body stream, returns a Ring request map.
 
-
    For advanced users only:
    - :aleph/writable? is an AtomicBoolean indicating whether the stream can
      still be written to. In case of error, RST_STREAM, or GOAWAY, it will be
@@ -771,7 +764,7 @@
      :remote-addr           (netty/channel-remote-address ch)
      :headers               (netty-http2-headers->map headers)
      :body                  body
-     ;;:trailers          (d/deferred)
+     ;;:trailers          (d/deferred) ; TODO add trailer support
 
      :protocol              "HTTP/2.0"
 
@@ -1244,6 +1237,7 @@
      ([_ ctx]
       (log/error "Cannot currently handle peer-initiated streams. (You must override this handler if receiving server-pushed streams.) Closing channel.")
       (netty/close ctx))}))
+
 
 (defn setup-conn-pipeline
   "Set up pipeline for an HTTP/2 connection channel. Works for both server
