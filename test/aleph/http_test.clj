@@ -58,7 +58,7 @@
 
 (def port 8082)
 
-(defn default-options []
+(defn default-request-options []
   {:pool-timeout      1e4
    :request-timeout   1e4
    :throw-exceptions? false})
@@ -73,25 +73,25 @@
   ([path]
    (http-get path nil))
   ([path options]
-   (http/get (make-url path) (merge (default-options) {:pool *pool*} options))))
+   (http/get (make-url path) (merge (default-request-options) {:pool *pool*} options))))
 
 (defn http-post
   ([path]
    (http-post path nil))
   ([path options]
-   (http/post (make-url path) (merge (default-options) {:pool *pool*} options))))
+   (http/post (make-url path) (merge (default-request-options) {:pool *pool*} options))))
 
 (defn http-put
   ([path]
    (http-put path nil))
   ([path options]
-   (http/put (make-url path) (merge (default-options) {:pool *pool*} options))))
+   (http/put (make-url path) (merge (default-request-options) {:pool *pool*} options))))
 
 (defn http-trace
   ([path]
    (http-trace path nil))
   ([path options]
-   (http/trace (make-url path) (merge (default-options) {:pool *pool*} options))))
+   (http/trace (make-url path) (merge (default-request-options) {:pool *pool*} options))))
 
 (def ^String filepath (str (System/getProperty "user.dir") "/test/file.txt"))
 
@@ -225,7 +225,9 @@
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool {:connection-options (merge *connection-options* {:insecure? true})})]
+     (binding [*pool* (http/connection-pool {:connection-options
+                                             (merge *connection-options* {:insecure?     true
+                                                                          :http-versions [:http2 :http1]})})]
        (try
          ~@body
          (finally
@@ -463,7 +465,7 @@
           "/301" {:status  301
                   :headers {"Location" "/200"}}))
       (is (= 200 (:status @(http/request
-                             (merge (default-options)
+                             (merge (default-request-options)
                                     {:method            :get
                                      :url               (make-url "/301")
                                      :follow-redirects? true
@@ -500,12 +502,12 @@
   (with-handler basic-handler
     (is (thrown? TimeoutException
                  @(http/get "http://192.0.2.0"              ;; "TEST-NET" in RFC 5737
-                            (merge (default-options) {:pool *pool* :connection-timeout 2})))))
+                            (merge (default-request-options) {:pool *pool* :connection-timeout 2})))))
 
   (with-handler basic-handler
     (is (thrown? ConnectionTimeoutException
                  @(http/get "http://192.0.2.0"              ;; "TEST-NET" in RFC 5737
-                            (merge (default-options) {:pool *pool* :connection-timeout 2}))))))
+                            (merge (default-request-options) {:pool *pool* :connection-timeout 2}))))))
 
 (deftest test-request-timeout
   (with-handler basic-handler
@@ -1090,7 +1092,7 @@
 
   (testing "unknown host with custom DNS client"
     (let [pool (http/connection-pool
-                 {:connection-options (assoc (default-options) :insecure? true)
+                 {:connection-options (assoc (default-request-options) :insecure? true)
                   :dns-options        {:name-servers ["1.1.1.1"]}})]
       (try
         (is (thrown? UnknownHostException

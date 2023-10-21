@@ -784,7 +784,7 @@
            epoll?               false
            name-resolver        :default
            log-activity         :debug
-           http-versions        [:http2 :http1]             ; FIXME set to HTTP1
+           http-versions        [:http1]
            force-h2c?           false}
     :as   opts}]
 
