@@ -4,6 +4,7 @@
     [aleph.http.core :as http1]
     [aleph.http.http2 :as http2]
     [aleph.http.multipart :as multipart]
+    [aleph.http.websocket.client :as ws.client]
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
@@ -168,6 +169,7 @@
 
          :else
          (.fireChannelRead ctx msg))))))
+
 
 (defn http1-client-handler
   "Given a response-stream, returns a ChannelInboundHandler that processes
@@ -463,7 +465,6 @@
 
     pipeline))
 
-
 (defn make-pipeline-builder
   "Returns a function that initializes a new conn channel's pipeline.
 
@@ -473,7 +474,7 @@
    Can't use an ApnHandler/ApplicationProtocolNegotiationHandler here,
    because it's tricky to run Manifold code on Netty threads."
   [{:keys [ssl? remote-address ssl-context]}]
-  (fn pipeline-builder
+  (fn make-pipeline-builder*
     [^ChannelPipeline pipeline]
     (when ssl?
       (do
@@ -931,6 +932,32 @@
                                              :req                  req
                                              :response-buffer-size response-buffer-size
                                              :t0                   t0})))))))))))))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; backwards compatibility
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(def ^:deprecated ^:no-doc client-handler http1-client-handler)
+(def ^:deprecated ^:no-doc raw-client-handler http1-raw-client-handler)
+(def ^:deprecated ^:no-doc websocket-client-handler ws.client/websocket-client-handler)
+(def ^:deprecated ^:no-doc websocket-connection ws.client/websocket-connection)
+(def ^:deprecated ^:no-doc websocket-frame-size ws.client/websocket-frame-size)
+(def ^:deprecated ^:no-doc websocket-handshaker ws.client/websocket-handshaker)
+
+(defn ^:deprecated ^:no-doc pipeline-builder
+  [response-stream
+   {:keys
+    [pipeline-transform]
+    :or
+    {pipeline-transform identity}
+    :as opts}]
+  #(setup-http1-pipeline (-> opts
+                             (dissoc :pipeline-transform)
+                             (assoc :responses response-stream
+                                    :http1-pipeline-transform pipeline-transform))))
+
+
 
 
 

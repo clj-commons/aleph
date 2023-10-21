@@ -1,5 +1,8 @@
 (ns ^:no-doc aleph.http.core
-  "HTTP/1.1 functionality"
+  "HTTP/1.1 functionality. Despite the name, this is only for HTTP/1, and
+   kept for backwards compatibility. HTTP/2 is in aleph.http.http2. Shared
+   code is in aleph.http.common. Shared client and server code can be found
+   in their respective namespaces."
   (:require
     [aleph.http.common :as common]
     [aleph.http.file :as file]
@@ -74,10 +77,12 @@
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap. 128))
 
-(defn normalize-header-key
+(defn ^:deprecated normalize-header-key
   "Normalizes a header key to `Ab-Cd` format.
 
-   NB: This is illegal for HTTP/2, which requires all header names be lower-case."
+   NB: This is illegal for HTTP/2+, which requires all header names be
+   lower-case. Technically, the Ring spec also requires lower-cased headers,
+   but this is kept for backwards-compatibility."
   [s]
   (if-let [s' (.get cached-header-keys s)]
     s'
@@ -85,9 +90,9 @@
           s' (or
                (non-standard-keys s')
                (->> (str/split s' #"-")
-                 (map str/capitalize)
-                 (str/join "-")
-                 (AsciiString.)))]
+                    (map str/capitalize)
+                    (str/join "-")
+                    (AsciiString.)))]
 
       ;; in practice this should never happen, so we
       ;; can be stupid about cache expiration
@@ -167,6 +172,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defn ring-response->netty-response
   "Turns a Ring response into a Netty HTTP/1.1 DefaultHttpResponse"
+  ^DefaultHttpResponse
   [rsp]
   (let [status (get rsp :status 200)
         headers (get rsp :headers)
@@ -180,7 +186,8 @@
 
 (defn ring-request->netty-request
   "Turns a Ring request into a Netty HTTP/1.1 DefaultHttpRequest"
-  ^DefaultHttpRequest [req]
+  ^DefaultHttpRequest
+  [req]
   (let [headers (get req :headers)
         netty-req (DefaultHttpRequest.
                     HttpVersion/HTTP_1_1
@@ -194,7 +201,8 @@
 
 (defn ring-request->full-netty-request
   "Turns a Ring request into a Netty HTTP/1.1 DefaultFullHttpRequest"
-  ^DefaultFullHttpRequest [req]
+  ^DefaultFullHttpRequest
+  [req]
   (let [headers (get req :headers)
         netty-req (DefaultFullHttpRequest.
                     HttpVersion/HTTP_1_1
@@ -509,6 +517,14 @@
         (s/close! s))
       (send-response-decoder-failure ctx msg response-stream))
     (send-response-decoder-failure ctx msg response-stream)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; backwards compatibility
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(def ^:deprecated ^:no-doc attach-idle-handlers netty/add-idle-handlers)
+(def ^:deprecated ^:no-doc close-on-idle-handler netty/close-on-idle-handler)
+(def ^:deprecated ^:no-doc coerce-element common/coerce-element)
 
 
 (comment

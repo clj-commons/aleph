@@ -947,7 +947,7 @@
     "Creates a new client SSL context.
      Keyword arguments are:
 
-     Param key                       | Description
+     | Param key                     | Description
      | ---                           | ---
      | `private-key`                 | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
      | `certificate-chain`           | A `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
@@ -959,7 +959,10 @@
      | `session-cache-size`          | The size of the cache used for storing SSL session objects.
      | `session-timeout`             | The timeout for the cached SSL session objects, in seconds.
      | `application-protocol-config` | An `ApplicationProtocolConfig` instance to configure ALPN. See the `application-protocol-config` function.
-     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+
+     Note that if specified, the types of `private-key` and `certificate-chain`
+     must be compatible: either both input streams, both files, or a private key
+     and an array of certificates."
     (^SslContext
      []
      (ssl-client-context {}))
@@ -1267,25 +1270,25 @@
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
-(def ^:private epoll-client-group
+(def ^:no-doc epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:private nio-client-group
+(def ^:no-doc nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:private kqueue-client-group
+(def ^:no-doc kqueue-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (KQueueEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:private io-uring-client-group
+(def ^:no-doc io-uring-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
@@ -1358,8 +1361,8 @@
     :nio NioSocketChannel))
 
 (defn dns-resolver-group-builder
-  "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and
-initialize an DnsAddressResolverGroup instance.
+  "Creates an instance of DnsAddressResolverGroupBuilder that is used to
+   configure and initialize an DnsAddressResolverGroup instance.
 
    DNS options are a map of:
 
@@ -1580,7 +1583,7 @@ initialize an DnsAddressResolverGroup instance.
                           :transport           (if epoll? :epoll :nio)
                           :name-resolver       name-resolver}))))
 
-(defn- close-on-idle-handler []
+(defn close-on-idle-handler []
   (channel-handler
     :user-event-triggered
     ([_ ctx evt]
@@ -1714,6 +1717,19 @@ initialize an DnsAddressResolverGroup instance.
          @(.shutdownGracefully group)
          (throw e))))))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; backwards compatibility
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:deprecated ^:no-doc array-class byte-array-class)
+(defn ^{:deprecated true
+        :no-doc true
+        :superseded-by "aleph.http.core/headers->map"}
+  headers [_]
+  (let [emsg "headers is no longer supported, use headers->map instead. It cannot be supported without causing a circular dependency."]
+    (log/error emsg)
+    (throw (UnsupportedOperationException. emsg))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
