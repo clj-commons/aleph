@@ -21,12 +21,12 @@
       ReadTimeoutException
       RequestTimeoutException)
     (io.aleph.dirigiste Pools)
+    (io.netty.handler.codec Headers)
     (io.netty.handler.codec.http HttpHeaders)
     (java.net
       InetSocketAddress
       URI)
-    (java.util.concurrent
-      TimeoutException)))
+    (java.util.concurrent TimeoutException)))
 
 (defn start-server
   "Starts an HTTP server using the provided Ring `handler`.  Returns a server
@@ -492,10 +492,14 @@
 (def-http-method connect)
 
 (defn get-all
-  "Given a header map from an HTTP request or response, returns a collection of values associated with the key,
-   rather than a comma-delimited string."
-  [^aleph.http.core.HeaderMap headers ^String k]
-  (-> headers ^HttpHeaders (.headers) (.getAll k)))
+  "Given a header map from an HTTP request or response, returns a collection of
+   values associated with the key, rather than a comma-delimited string."
+  [header-m ^String k]
+  (let [raw-headers (.headers header-m)]
+    (condp instance? raw-headers
+      HttpHeaders (.getAll ^HttpHeaders raw-headers k)
+      Headers (.getAll ^Headers raw-headers k)
+      (throw (IllegalArgumentException. (str "Unknown headers type: " (class raw-headers)))))))
 
 (defn wrap-ring-async-handler
   "Converts given asynchronous Ring handler to Aleph-compliant handler.

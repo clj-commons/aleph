@@ -6,10 +6,12 @@
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p]
+    [clojure.set :as set]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [potemkin :refer [def-map-type]])
   (:import
     (aleph.http AlephChannelInitializer)
     (aleph.http.file HttpFile)
@@ -23,6 +25,7 @@
       ChannelOutboundInvoker
       ChannelPipeline
       FileRegion)
+    (io.netty.handler.codec Headers)
     (io.netty.handler.codec.http
       HttpResponseStatus
       QueryStringDecoder)
@@ -368,20 +371,61 @@
 
     h2-headers))
 
-(defn netty-http2-headers->map
-  "Returns a map of Ring headers from a Netty Http2Headers object.
+;; case-insensitive for backwards compatibility with early Aleph
+;; ~10x faster than Clojure maps in many cases
+;; Copied from core, because unfortunately, Netty's HttpHeaders class does not
+;; implement Headers! (See https://github.com/netty/netty/issues/8528)
+(def-map-type HeaderMap
+  [^Headers headers
+   added
+   removed
+   mta]
+  (meta [_]
+        mta)
+  (with-meta [_ m]
+             (HeaderMap.
+               headers
+               added
+               removed
+               m))
+  (keys [_]
+        (set/difference
+          (set/union
+            (set (map str/lower-case (.names headers)))
+            (set (keys added)))
+          (set removed)))
+  (assoc [_ k v]
+         (HeaderMap.
+           headers
+           (assoc added k v)
+           (disj removed k)
+           mta))
+  (dissoc [_ k]
+          (HeaderMap.
+            headers
+            (dissoc added k)
+            (conj (or removed #{}) k)
+            mta))
+  (get [_ k default-value]
+       (if (contains? removed k)
+         default-value
+         (if-let [e (find added k)]
+           (val e)
+           (let [k' (str/lower-case (if (keyword? k) (name k) k))
+                 vs (.getAll headers k')]
+             (if (.isEmpty vs)
+               default-value
+               (if (== 1 (.size vs))
+                 (.toString (.get vs 0))
+                 (str/join "," vs))))))))
+
+(defn headers->map
+  "Returns a map of Ring headers from a Netty Headers object.
 
    Includes pseudo-headers."
-  [^Http2Headers headers]
-  (loop [iter (.iterator headers)
-         result {}]
-    (if (.hasNext iter)
-      (let [entry (.next iter)]
-        (recur iter
-               (assoc result
-                      (.toString ^CharSequence (key entry))
-                      (.toString ^CharSequence (val entry)))))
-      result)))
+  [^Headers h]
+  (HeaderMap. h nil nil nil))
+
 
 (defn- try-set-content-length!
   "Attempts to set the `content-length` header if not already set.
@@ -762,7 +806,7 @@
      :server-name           (netty/channel-server-name ch)  ; is this best?
      :server-port           (netty/channel-server-port ch)
      :remote-addr           (netty/channel-remote-address ch)
-     :headers               (netty-http2-headers->map headers)
+     :headers               (headers->map headers)
      :body                  body
      ;;:trailers          (d/deferred) ; TODO add trailer support
 
@@ -1106,7 +1150,7 @@
                       body-stream
                       (bs/to-input-stream body-stream))
                ring-resp {:status            (->> headers (.status) (.convertToInt netty/char-seq-val-converter)) ; might be an AsciiString
-                          :headers           (netty-http2-headers->map headers)
+                          :headers           (headers->map headers)
                           :aleph/keep-alive? true           ; not applicable to HTTP/2, but here for compatibility
                           :aleph/complete    complete
                           :body              body}]

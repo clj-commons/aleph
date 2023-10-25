@@ -12,7 +12,7 @@
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s]
-    [potemkin :as p])
+    [potemkin :as p :refer [def-map-type]])
   (:import
     (aleph.http.file
       HttpFile)
@@ -102,7 +102,8 @@
       (.put cached-header-keys s s')
       s')))
 
-(p/def-map-type HeaderMap
+;; About 10x faster than using Clojure maps, and handles more keys
+(def-map-type HeaderMap
   [^HttpHeaders headers
    added
    removed
@@ -138,15 +139,17 @@
       default-value
       (if-let [e (find added k)]
         (val e)
-        (let [k' (str/lower-case (name k))
+        (let [k' (str/lower-case (if (keyword? k) (name k) k))
               vs (.getAll headers k')]
           (if (.isEmpty vs)
             default-value
             (if (== 1 (.size vs))
-              (.get vs 0)
+              (.toString (.get vs 0))
               (str/join "," vs))))))))
 
-(defn headers->map [^HttpHeaders h]
+(defn headers->map
+  "Returns a map of Ring headers from a Netty HttpHeaders object."
+  [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
 (defn map->headers!

@@ -2,7 +2,9 @@
   (:require [aleph.http.http2 :refer :all]
             [clojure.test :refer :all])
   (:import (io.netty.handler.codec.http HttpResponseStatus)
-           (io.netty.handler.codec.http2 DefaultHttp2Headers)
+           (io.netty.handler.codec.http2
+             DefaultHttp2Headers
+             Http2Headers)
            (io.netty.util AsciiString)))
 
 (def ^:private str= "AsciiString-aware equals" #(AsciiString/contentEquals %1 %2))
@@ -188,3 +190,16 @@
         (.scheme headers "http")
         (is (thrown? Exception
                      (validate-netty-req-headers headers stream-id)))))))
+
+
+(deftest test-HeaderMap-keys
+  (let [^Http2Headers h2-headers (DefaultHttp2Headers.)
+        _ (run! #(apply add-header h2-headers %)
+                {"Accept"                "text/html"
+                 "Authorization"         "Basic narfdorfle"
+                 :Content                "text/test"})
+        m (headers->map h2-headers)
+        changed-map (-> m
+                        (assoc "x-tra" "foobar")
+                        (dissoc "authorization" "content"))]
+    (is (= #{"accept" "x-tra"} (-> changed-map keys set)))))
