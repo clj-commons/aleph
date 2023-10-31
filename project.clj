@@ -1,5 +1,7 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
 (def netty-version "4.1.100.Final")
+(def brotli-version "1.12.0")
+
 
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.7.0-alpha1")
   :description "A framework for asynchronous communication"
@@ -35,7 +37,17 @@
                                    [org.bouncycastle/bcprov-jdk18on "1.75"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.75"]
                                    ;;[org.bouncycastle/bctls-jdk18on "1.75"]
-                                   [io.netty/netty-tcnative-boringssl-static "2.0.61.Final"]]
+                                   [io.netty/netty-tcnative-boringssl-static "2.0.61.Final"]
+                                   ;;[com.aayushatharva.brotli4j/all ~brotli-version]
+                                   [com.aayushatharva.brotli4j/brotli4j ~brotli-version]
+                                   [com.aayushatharva.brotli4j/service ~brotli-version]
+                                   [com.aayushatharva.brotli4j/native-linux-aarch64 ~brotli-version]
+                                   [com.aayushatharva.brotli4j/native-linux-armv7 ~brotli-version]
+                                   [com.aayushatharva.brotli4j/native-linux-x86_64 ~brotli-version]
+                                   [com.aayushatharva.brotli4j/native-osx-aarch64 ~brotli-version]
+                                   [com.aayushatharva.brotli4j/native-osx-x86_64 ~brotli-version]
+                                   [com.aayushatharva.brotli4j/native-windows-x86_64 ~brotli-version]
+                                   [com.github.luben/zstd-jni "1.5.5-7"]]
                     :jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                "-Dorg.slf4j.simpleLogger.showThreadId=true"
