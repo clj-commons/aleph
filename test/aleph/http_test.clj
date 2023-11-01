@@ -18,6 +18,8 @@
     (aleph.utils
       ConnectionTimeoutException
       RequestTimeoutException)
+    (com.aayushatharva.brotli4j.decoder BrotliInputStream)
+    (com.github.luben.zstd ZstdInputStream)
     (io.aleph.dirigiste
       IPool
       Pool)
@@ -27,6 +29,9 @@
       ChannelPipeline
       ChannelPromise)
     (io.netty.handler.codec TooLongFrameException)
+    (io.netty.handler.codec.compression
+      CompressionOptions
+      StandardCompressionOptions)
     (io.netty.handler.codec.http
       HttpMessage
       HttpObjectAggregator)
@@ -43,7 +48,7 @@
       TimeoutException)
     (java.util.zip
       GZIPInputStream
-      ZipException)
+      InflaterInputStream)
     (javax.net.ssl SSLSession)))
 
 ;;;
@@ -263,14 +268,6 @@
   `(with-http-servers ~handler {:port port :shutdown-timeout 0}
                       ~@body))
 
-(defmacro with-compressed-handler [handler & body]
-  `(do
-     (with-http1-server ~handler {:port port :compression? true :shutdown-timeout 0}
-                        ~@body)
-     (with-http1-server ~handler {:port port :compression-level 3 :shutdown-timeout 0}
-                        ~@body)))
-
-
 ;; FIXME redundant
 (defmacro with-handler-options
   [handler options & body]
@@ -299,30 +296,120 @@
                (:body
                  @(http-get (str "/" path)))))))))
 
-;; FIXME when http2 support added
 (deftest test-compressed-response
-  (with-compressed-handler basic-handler
-    (doseq [[path result] expected-results
-            :let [resp @(http-get (str "/" path)
-                                  {:headers {:accept-encoding "gzip"}})
-                  unzipped (try
-                             (bs/to-string (GZIPInputStream. (:body resp)))
-                             (catch ZipException _ nil))]]
-      (is (= "gzip" (get-in resp [:headers :content-encoding])) 'content-encoding-header-is-set)
-      (is (some? unzipped) 'should-be-valid-gzip)
-      (is (= result unzipped) 'decompressed-body-is-correct))))
+  (let [long-ass-timeout 600000
+        expected-results
+        [["string" string-response]
+         ["stream" stream-response]
+         ["manifold" stream-response]
+         ["file" "this is a file"]
+         ["httpfile" "this is a file"]
+         ["httpfileregion" "is a"]
+         ["seq" (apply str seq-response)]]]
+    (binding [*connection-options* {:connection-timeout long-ass-timeout}]
+
+      (doseq [{:keys [phrase opts encs]}
+              [{:phrase "All"
+                :opts   {:port             port
+                         :compression?     true
+                         :shutdown-timeout 0
+                         :idle-timeout     600000}
+                :encs   [{:accept-encoding  "gzip"
+                          :content-encoding "gzip"
+                          :stream-ctor      #(GZIPInputStream. %)}
+                         {:accept-encoding  "deflate"
+                          :content-encoding "deflate"
+                          :stream-ctor      #(InflaterInputStream. %)}
+                         {:accept-encoding  "br"
+                          :content-encoding "br"
+                          :stream-ctor      #(BrotliInputStream. %)}
+                         {:accept-encoding  "zstd"
+                          :content-encoding "zstd"
+                          :stream-ctor      #(ZstdInputStream. %)}]}
+
+               {:phrase "Gzip only"
+                :opts   {:port                port
+                         :compression?        true
+                         :compression-options (into-array CompressionOptions [(StandardCompressionOptions/gzip)])
+                         :shutdown-timeout    0
+                         :idle-timeout        600000}
+                :encs   [{:accept-encoding  "gzip"
+                          :content-encoding "gzip"
+                          :stream-ctor      #(GZIPInputStream. %)}
+                         {:accept-encoding  "deflate"
+                          :content-encoding nil
+                          :stream-ctor      identity}
+                         {:accept-encoding  "br"
+                          :content-encoding nil
+                          :stream-ctor      identity}]}]]
+
+        (testing phrase
+          (doseq [{:keys [accept-encoding content-encoding stream-ctor]} encs]
+            (testing (str " - " accept-encoding "-> " content-encoding)
+              (with-http-servers basic-handler opts
+                (doseq [[path result] expected-results]
+                  (testing (str "/" path)
+                    (let [resp @(http-get (str "/" path)
+                                          {:headers         {:accept-encoding accept-encoding}
+                                           :request-timeout long-ass-timeout})]
+                      (is (str= content-encoding (get-in resp [:headers :content-encoding]))
+                          (str "Content-encoding header should be \"" content-encoding "\""))
+
+                      (let [body (:body resp)
+                            unzipped (bs/to-string (stream-ctor body))]
+                        ;; FIXME: need a TeeInputStream or some way to copy it for the below test
+                        ;;(is (not (str= result body)) "Compressed body should not match original uncompressed")
+                        (is (some? unzipped) "Unzipped content should not be nil.")
+                        (is (str= result unzipped) "Decompressed body should match original"))))))))))
+
+      (testing ":compression-level"
+        (doseq [{:keys [phrase opts encs]}
+                [{:phrase "Gzip and deflate only for :compression-level"
+                  :opts   {:port                port
+                           :compression?        true
+                           :shutdown-timeout    0
+                           :idle-timeout        600000}
+                  :encs   [{:accept-encoding  "gzip"
+                            :content-encoding "gzip"
+                            :stream-ctor      #(GZIPInputStream. %)}
+                           {:accept-encoding  "deflate"
+                            :content-encoding "deflate"
+                            :stream-ctor      #(InflaterInputStream. %)}
+                           {:accept-encoding  "br"
+                            :content-encoding nil
+                            :stream-ctor      identity}]}]]
+          (testing phrase
+            (doseq [{:keys [accept-encoding content-encoding stream-ctor]} encs]
+              (testing (str " - " accept-encoding "-> " content-encoding)
+                (with-http1-server basic-handler {:port              port
+                                                  :compression-level 3
+                                                  :shutdown-timeout  0}
+                  (doseq [[path result] expected-results]
+                    (testing (str "/" path)
+                      (let [resp @(http-get (str "/" path)
+                                            {:headers         {:accept-encoding accept-encoding}
+                                             :request-timeout long-ass-timeout})]
+                        (is (str= content-encoding (get-in resp [:headers :content-encoding]))
+                            (str "Content-encoding header should be \"" content-encoding "\""))
+
+                        (let [body (:body resp)
+                              unzipped (bs/to-string (stream-ctor body))]
+                          ;; FIXME: need a TeeInputStream or some way to copy it for the below test
+                          ;;(is (not (str= result body)) "Compressed body should not match original uncompressed")
+                          (is (some? unzipped) "Unzipped content should not be nil.")
+                          (is (str= result unzipped) "Decompressed body should match original"))))))))))))))
 
 
 (deftest test-ssl-response-formats
   (with-redefs [*use-tls?* true]
     (with-handler-options basic-handler http1-ssl-server-options
-                          (doseq [[path result] expected-results]
-                            (is
-                              (= result
-                                 (bs/to-string
-                                   (:body
-                                     @(http-get (str "/" path)))))
-                              (str path "path failed"))))))
+      (doseq [[path result] expected-results]
+        (is
+          (= result
+             (bs/to-string
+               (:body
+                 @(http-get (str "/" path)))))
+          (str path "path failed"))))))
 
 (deftest test-files
   (with-handler echo-handler
@@ -341,19 +428,19 @@
           client-options {:connection-options {:ssl-context test-ssl/client-ssl-context}}
           client-pool (http/connection-pool client-options)]
       (with-handler-options echo-handler
-                            (merge http1-ssl-server-options {:ssl-context test-ssl/server-ssl-context})
-                            (is (str/blank?
-                                  (-> @(http-put client-path
-                                                 {:body (io/file "test/empty.txt")
-                                                  :pool client-pool})
-                                      :body
-                                      bs/to-string)))
-                            (is (= (slurp "test/file.txt" :encoding "UTF-8")
-                                   (-> @(http-put client-path
-                                                  {:body (io/file "test/file.txt")
-                                                   :pool client-pool})
-                                       :body
-                                       bs/to-string)))))))
+        (merge http1-ssl-server-options {:ssl-context test-ssl/server-ssl-context})
+        (is (str/blank?
+              (-> @(http-put client-path
+                             {:body (io/file "test/empty.txt")
+                              :pool client-pool})
+                  :body
+                  bs/to-string)))
+        (is (= (slurp "test/file.txt" :encoding "UTF-8")
+               (-> @(http-put client-path
+                              {:body (io/file "test/file.txt")
+                               :pool client-pool})
+                   :body
+                   bs/to-string)))))))
 
 (defn ssl-session-capture-handler [ssl-session-atom]
   (fn [req]
@@ -373,7 +460,7 @@
           (is (not (str/includes? "NULL" (.getCipherSuite s)))))))))
 
 (deftest test-ssl-with-plain-client-request
-  (with-redefs [*use-tls?* false]                               ; intentionally wrong
+  (with-redefs [*use-tls?* false]                           ; intentionally wrong
     (let [ssl-session (atom nil)]
       (with-http1-server
         (ssl-session-capture-handler ssl-session)
@@ -412,18 +499,18 @@
 (deftest test-overly-long-url
   (let [long-url (apply str "/" (repeat (long 1e5) "a"))]
     (with-http1-server basic-handler http-server-options
-                       (is (= 414 (:status @(http-get long-url)))))))
+      (is (= 414 (:status @(http-get long-url)))))))
 
 (deftest test-overly-long-header
   (let [url "/"
         long-header-value (apply str (repeat (long 1e5) "a"))
         opts {:headers {"X-Long" long-header-value}}]
     (with-http1-server basic-handler http-server-options
-                       (is (= 431 (:status @(http-get url opts)))))))
+      (is (= 431 (:status @(http-get url opts)))))))
 
 (deftest test-invalid-http-version-format
   (with-http1-server basic-handler http-server-options
-                     (let [client @(tcp/client {:host "localhost" :port port})
+    (let [client @(tcp/client {:host "localhost" :port port})
           _ @(s/put! client "GET / HTTP-1,1\r\n\r\n")
           response (bs/to-string @(s/take! client))]
       (is (str/starts-with? response "HTTP/1.1 400"))
@@ -470,7 +557,7 @@
                                     {:method            :get
                                      :url               (make-url "/301")
                                      :follow-redirects? true
-                                     :pool *pool*}))))))))
+                                     :pool              *pool*}))))))))
 
 (deftest test-middleware
   (with-both-handlers basic-handler
@@ -528,7 +615,7 @@
                                        :server-name     "localhost"
                                        :server-port     port
                                        :request-timeout 1e3
-                                       :pool *pool*})
+                                       :pool            *pool*})
                        :body
                        bs/to-string)))))
 
@@ -654,23 +741,23 @@
     (testing "Server is slow to write, but has time"
       (with-handler-options slow-handler {:idle-timeout 200
                                           :port         port}
-                            (is (= "012345" (bs/to-string (:body @(http-get path)))))))
+        (is (= "012345" (bs/to-string (:body @(http-get path)))))))
     (testing "Server is too slow to write"
       (with-handler-options slow-handler {:idle-timeout 30
                                           :port         port}
-                            (is (= ""
-                                   (bs/to-string (:body @(http-get path)))))))
+        (is (= ""
+               (bs/to-string (:body @(http-get path)))))))
     (testing "Client is slow to write, but has time"
       (with-handler-options echo-handler {:idle-timeout 200
                                           :port         port
                                           :raw-stream?  true}
-                            (is (= "012345" (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))
+        (is (= "012345" (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))
     (testing "Client is too slow to write"
       (with-handler-options echo-handler {:idle-timeout 30
                                           :port         port
                                           :raw-stream?  true}
-                            (is (thrown-with-msg? Exception #"connection was close"
-                                                  (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
+        (is (thrown-with-msg? Exception #"connection was close"
+                              (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
 ;;;
 
 (deftest test-large-responses
@@ -727,8 +814,8 @@
                                                                 (.headers)
                                                                 (.set test-header-name test-header-val))))
                                                         (.write ctx msg p)))))}
-                       (let [resp @(http-get "/string")]
-                         (is (= test-header-val (get (:headers resp) test-header-name)))))))
+      (let [resp @(http-get "/string")]
+        (is (= test-header-val (get (:headers resp) test-header-name)))))))
 
 (deftest test-pipeline-transforms
   (let [header-name "aleph-foo"
@@ -763,12 +850,12 @@
           (testing (str " - :" xform-key)
             (let [found? (atom nil)]
               (with-http1-server (create-handler found?)
-                                 (assoc http-server-options
-                                        :shutdown-timeout 0
-                                        xform-key #(.addBefore % base-handler-name "foo-adder" foo-header-adder))
-                                 @(http-get "/")
+                (assoc http-server-options
+                       :shutdown-timeout 0
+                       xform-key #(.addBefore % base-handler-name "foo-adder" foo-header-adder))
+                @(http-get "/")
 
-                                 (is (= expected-val @found?))))))
+                (is (= expected-val @found?))))))
 
         http2-test
         (fn [base-handler-name xform-key expected-val]
@@ -811,17 +898,17 @@
 
         (testing "multiple xforms"
           (is (thrown? Exception
-                (with-http2-server
-                  (create-handler (atom :irrelevant))
-                  (assoc http2-server-options
-                         :shutdown-timeout 0
-                         :pipeline-transform #(.addBefore % "request-handler" "foo-adder" foo-header-adder)
-                         :http2-stream-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder)
-                         :http2-conn-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder))
+                       (with-http2-server
+                         (create-handler (atom :irrelevant))
+                         (assoc http2-server-options
+                                :shutdown-timeout 0
+                                :pipeline-transform #(.addBefore % "request-handler" "foo-adder" foo-header-adder)
+                                :http2-stream-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder)
+                                :http2-conn-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder))
 
-                  @(http-get "/")
-                  ;; should never get here
-                  (is (= true false))))))))))
+                         @(http-get "/")
+                         ;; should never get here
+                         (is (= true false))))))))))
 
 (defn add-http-object-aggregator [^ChannelPipeline pipeline]
   (let [max-content-length 5]
@@ -920,27 +1007,27 @@
 (deftest test-max-request-body-size
   (testing "max-request-body-size of 0"
     (with-handler-options (constantly {:body "OK" :status 200})
-                          {:port                  port
-                           :max-request-body-size 0}
-                          (let [resp @(http-put "/"
-                                                {:body "hello"})]
-                            (is (= 413 (:status resp))))))
+      {:port                  port
+       :max-request-body-size 0}
+      (let [resp @(http-put "/"
+                            {:body "hello"})]
+        (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 1"
     (with-handler-options (constantly {:body "OK" :status 200})
-                          {:port                  port
-                           :max-request-body-size 1}
-                          (let [resp @(http-put "/"
-                                                {:body "hello"})]
-                            (is (= 413 (:status resp))))))
+      {:port                  port
+       :max-request-body-size 1}
+      (let [resp @(http-put "/"
+                            {:body "hello"})]
+        (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 6"
     (with-handler-options (constantly {:body "OK" :status 200})
-                          {:port                  port
-                           :max-request-body-size 6}
-                          (let [resp @(http-put "/"
-                                                {:body "hello"})]
-                            (is (= 200 (:status resp)))))))
+      {:port                  port
+       :max-request-body-size 6}
+      (let [resp @(http-put "/"
+                            {:body "hello"})]
+        (is (= 200 (:status resp)))))))
 
 (deftest test-text-plain-charset
   (with-http-servers

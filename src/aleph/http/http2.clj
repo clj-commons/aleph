@@ -2,6 +2,7 @@
   "HTTP/2 functionality"
   (:require
     [aleph.http.common :as common]
+    [aleph.http.compression :as compress]
     [aleph.http.file :as file]
     [aleph.netty :as netty]
     [clj-commons.byte-streams :as bs]
@@ -13,7 +14,9 @@
     [manifold.stream :as s]
     [potemkin :refer [def-map-type]])
   (:import
-    (aleph.http AlephChannelInitializer)
+    (aleph.http
+      AlephChannelInitializer
+      AlephHttp2FrameCodecBuilder)
     (aleph.http.file HttpFile)
     (clojure.lang IPending)
     (io.netty.buffer ByteBuf)
@@ -41,7 +44,6 @@
       Http2Exception
       Http2Exception$ShutdownHint
       Http2FrameCodec
-      Http2FrameCodecBuilder
       Http2FrameLogger
       Http2FrameStream
       Http2GoAwayFrame
@@ -246,7 +248,6 @@
    invalid connection-related headers. Throws on nil header values. Throws if
    `transfer-encoding` is present, but is not equal to 'trailers'."
   [^Http2Headers h2-headers ^String header-name header-value]
-  (log/debug (str "Adding HTTP header: " header-name ": " header-value))
 
   ;; Also checked by Netty, but we want to avoid work, so we check too
   (if (nil? header-name)
@@ -259,6 +260,8 @@
                         (let [lower-cased (-> header-name (name) (AsciiString.) (.toLowerCase))]
                           (.put cached-header-names header-name lower-cased)
                           lower-cased))]
+      (log/trace (str "Adding HTTP header: " header-name ": " header-value))
+
       (cond
         ;; Will be checked by Netty
         ;;(nil? header-value)
@@ -373,7 +376,7 @@
 
 ;; case-insensitive for backwards compatibility with early Aleph
 ;; ~10x faster than Clojure maps in many cases
-;; Copied from core, because unfortunately, Netty's HttpHeaders class does not
+;; Copied from core, because unfortunately, Netty's H1 HttpHeaders class does not
 ;; implement Headers! (See https://github.com/netty/netty/issues/8528)
 (def-map-type HeaderMap
   [^Headers headers
@@ -740,7 +743,7 @@
         (when (.equals "text/plain" (.get headers ^CharSequence content-type))
           (.set headers ^CharSequence content-type "text/plain; charset=UTF-8"))
 
-        (log/debug "Sending to Netty. Headers:" (pr-str headers) " - Body class:" (class body))
+        (log/debug "Passing response to Netty. Headers:" (pr-str headers) " - Body class:" (class body))
 
         (-> (netty/safe-execute ch
               (send-message ch headers body chunk-size file-chunk-size))
@@ -1020,7 +1023,7 @@
                  (try
                    (d/future-with executor
                      (log/debug "Dispatching request to user handler"
-                                (assoc ring-req :body (class (:body ring-req))))
+                                (pr-str (assoc ring-req :body (class (:body ring-req)))))
                      (handler ring-req))
                    (catch RejectedExecutionException e
                      (if rejected-handler
@@ -1234,42 +1237,55 @@
 
 (defn setup-stream-pipeline
   "Set up the pipeline for an HTTP/2 stream channel"
-  [^ChannelPipeline p handler is-server? proxy-options logger http2-stream-pipeline-transform max-request-body-size]
+  [{:keys [^ChannelPipeline pipeline
+           handler
+           is-server?
+           proxy-options
+           logger
+           http2-stream-pipeline-transform
+           max-request-body-size
+           compression?
+           compression-options]}]
   (log/trace "setup-stream-pipeline called")
-
-  ;; necessary for multipart support in HTTP/2?
-  #_(.addLast p
-              "stream-frame-to-http-object"
-              ^ChannelHandler stream-frame->http-object-codec)
-  (.addLast p
-            "streamer"
-            ^ChannelHandler (ChunkedWriteHandler.))
-
-  (when is-server?
-    (when max-request-body-size
-      (.addLast p
-                "max-request-body-size"
-                (max-size-handler max-request-body-size)))
-
-    ;; TODO: add continue handler for server-side
-    )
-
-  (.addLast p
-            "handler"
-            ^ChannelHandler
-            handler)
 
   (when (some? proxy-options)
     (throw (IllegalArgumentException. "Proxying HTTP/2 messages not supported yet")))
 
-  (-> p
-      (common/add-non-http-handlers logger http2-stream-pipeline-transform)
-      #_(common/add-exception-handler "stream-ex-handler"))
+  (cond-> pipeline
+
+          ;; necessary for multipart support in HTTP/2?
+          #_true
+          #_(.addLast "stream-frame-to-http-object"
+                      ^ChannelHandler stream-frame->http-object-codec)
+          true
+          (.addLast "streamer"
+                    ^ChannelHandler (ChunkedWriteHandler.))
+
+          (and is-server? max-request-body-size)
+          (.addLast "max-request-body-size"
+                    (max-size-handler max-request-body-size))
+
+          ;; TODO: add continue handler for server-side
+
+          compression?
+          (.addLast "compression-header-handler"
+                    (compress/h2-compression-handler compression-options))
+
+          true
+          (.addLast "handler"
+                    ^ChannelHandler
+                    handler)
+
+          true
+          (common/add-non-http-handlers logger http2-stream-pipeline-transform)
+
+          #_true
+          #_(common/add-exception-handler "stream-ex-handler"))
 
   (log/trace "Added all stream handlers")
-  (log/debug "Stream chan pipeline:" p)
+  (log/debug "Stream chan pipeline:" pipeline)
 
-  p)
+  pipeline)
 
 (def ^:private client-inbound-handler
   "For the client, the inbound handler will probably never get used.
@@ -1304,64 +1320,80 @@
      proxy-options
      http2-conn-pipeline-transform
      http2-stream-pipeline-transform
-     max-request-body-size]
+     max-request-body-size
+     compression?
+     compression-options]
     :or
     {idle-timeout                    0
      http2-settings                  (Http2Settings/defaultSettings)
      http2-conn-pipeline-transform   identity
      http2-stream-pipeline-transform identity
      request-buffer-size             16384
-     error-handler                   common/ring-error-response}
+     error-handler                   common/ring-error-response
+     compression?                    false
+     compression-options             compress/available-compressor-options}
     :as opts}]
   (log/trace "setup-conn-pipeline fired")
   (let [
         log-level (some-> logger (.level))
-        http2-frame-codec (let [builder (if is-server?
-                                          (Http2FrameCodecBuilder/forServer)
-                                          (Http2FrameCodecBuilder/forClient))]
+        http2-frame-codec (let [builder (AlephHttp2FrameCodecBuilder. is-server?)]
                             (when log-level
                               (.frameLogger builder (Http2FrameLogger. log-level)))
                             (-> builder
+                                (.setCompression compression? compression-options)
                                 (.initialSettings ^Http2Settings http2-settings)
                                 (.validateHeaders true)
                                 (.build)))
         stream-chan-initializer (AlephChannelInitializer.
                                   (fn [^Channel ch]
-                                    (setup-stream-pipeline (.pipeline ch)
-                                                           (if is-server?
-                                                             (server-handler ch
-                                                                             handler
-                                                                             raw-stream?
-                                                                             rejected-handler
-                                                                             error-handler
-                                                                             executor
-                                                                             request-buffer-size
-                                                                             stream-go-away-handler
-                                                                             reset-stream-handler)
-                                                             client-inbound-handler)
-                                                           is-server?
-                                                           proxy-options
-                                                           logger
-                                                           http2-stream-pipeline-transform
-                                                           max-request-body-size)))
+                                    (setup-stream-pipeline
+                                      {:pipeline                        (.pipeline ch)
+                                       :handler                         (if is-server?
+                                                                          (server-handler ch
+                                                                                          handler
+                                                                                          raw-stream?
+                                                                                          rejected-handler
+                                                                                          error-handler
+                                                                                          executor
+                                                                                          request-buffer-size
+                                                                                          stream-go-away-handler
+                                                                                          reset-stream-handler)
+                                                                          client-inbound-handler)
+                                       :is-server?                      is-server?
+                                       :proxy-options                   proxy-options
+                                       :logger                          logger
+                                       :http2-stream-pipeline-transform http2-stream-pipeline-transform
+                                       :max-request-body-size           max-request-body-size
+                                       :compression?                    compression?
+                                       :compression-options             compression-options})))
         multiplex-handler (Http2MultiplexHandler. stream-chan-initializer)]
 
-    (-> pipeline
-        (netty/add-idle-handlers idle-timeout)
-        (.addLast "http2-frame-codec" http2-frame-codec)
-        (.addLast "multiplex" multiplex-handler)
-        ;; FIXME: don't add a handler at all if conn-go-away-handler is nil
-        (.addLast "conn-go-away-handler"
-                  (netty/channel-inbound-handler
-                    :channel-read ([_ ctx msg]
-                                   (when (and (fn? conn-go-away-handler)
-                                              (instance? Http2GoAwayFrame msg))
-                                     (conn-go-away-handler ctx msg))
-                                   (.fireChannelRead ctx msg))))
-        (common/add-exception-handler "conn-ex-handler")
-        http2-conn-pipeline-transform)
+    (cond-> pipeline
+
+            true
+            (netty/add-idle-handlers idle-timeout)
+
+            true
+            (.addLast "http2-frame-codec" http2-frame-codec)
+
+            true
+            (.addLast "multiplex" multiplex-handler)
+
+            (fn? conn-go-away-handler)
+            (.addLast "conn-go-away-handler"
+                      (netty/channel-inbound-handler
+                        :channel-read ([_ ctx msg]
+                                       (when (instance? Http2GoAwayFrame msg)
+                                         (conn-go-away-handler ctx msg))
+                                       (.fireChannelRead ctx msg))))
+            true
+            (common/add-exception-handler "conn-ex-handler")
+
+            true
+            http2-conn-pipeline-transform)
 
     (log/debug "Conn chan pipeline:" pipeline)
+
     pipeline))
 
 

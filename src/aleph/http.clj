@@ -55,8 +55,8 @@
    | `max-request-body-size`           | The maximum length of the request body in bytes. If set, requires queuing up content until the request is finished, and thus delays processing. Unlimited by default. |
    | `validate-headers`                | If `true`, validates the headers when decoding the request, defaults to `false` |
    | `transport`                       | The transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio` ) |
-   | `compression?`                    | When `true`, enables http compression, defaults to `false` |
-   | `compression-level`               | Optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6` . When set, enables http content compression regardless of the `compression?` flag value |
+   | `compression?`                    | When `true`, enables HTTP body compression, defaults to `false` |
+   | `compression-options`             | An optional Java array of CompressionOptions. If supplied, any codec options not passed in will be unavailable. Otherwise, uses default options for all available codecs. For Brotli/Zstd, be sure to guard your use with their `.isAvailable()` methods and add their deps to your classpath. |
    | `idle-timeout`                    | When set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time). |
    | `continue-handler`                | Optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those. |
    | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
@@ -72,6 +72,7 @@
    | `initial-buffer-size`             | The initial buffer size of characters when decoding the request, defaults to `128` |
    | `pipeline-transform`              | (DEPRECATED: Use `:http1-pipeline-transform` instead.) A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it. |
    | `http1-pipeline-transform`        | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/1 connection, and modifies it. Contains the user handler at \"request-handler\". |
+   | `compression-level`               | (DEPRECATED: Use `compression-options` or leave unset.) Optional gzip/deflate compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6` . When set, ONLY older gzip and deflate codecs are available. Overridden by `compression-options`. |
 
    HTTP/2-specific options
    | Param key                         | Description |
@@ -82,7 +83,6 @@
    | `reset-stream-handler`            | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |
    | `http2-conn-pipeline-transform`   | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/2 connection, and modifies it. |
    | `http2-stream-pipeline-transform` | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a single HTTP/2 stream, and modifies it. Contains the user handler at \"handler\". |
-
    "
   [handler options]
   (server/start-server handler options))

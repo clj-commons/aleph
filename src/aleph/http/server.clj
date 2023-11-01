@@ -2,6 +2,7 @@
   (:require
     [aleph.flow :as flow]
     [aleph.http.common :as common]
+    [aleph.http.compression :as compress]
     [aleph.http.core :as http1]
     [aleph.http.http2 :as http2]
     [aleph.http.websocket.server :as ws.server]
@@ -564,6 +565,7 @@
      ssl?
      compression?
      compression-level
+     compression-options
      idle-timeout
      continue-handler
      continue-executor
@@ -577,6 +579,7 @@
      initial-buffer-size             128
      allow-duplicate-content-lengths false
      compression?                    false
+     compression-options             compress/available-compressor-options
      idle-timeout                    0
      error-handler                   common/ring-error-response
      http1-pipeline-transform        identity}}]
@@ -589,13 +592,14 @@
                            (HttpServerExpectContinueHandler.)
                            (new-continue-handler continue-handler
                                                  continue-executor
-                                                 ssl?))]
+                                                 ssl?))
+        compression? (or compression? (some? compression-level))]
     (doto pipeline
-          (netty/add-idle-handlers idle-timeout)
-          (.addLast "http-server"
-                    (HttpServerCodec.
-                      max-initial-line-length
-                      max-header-size
+      (netty/add-idle-handlers idle-timeout)
+      (.addLast "http-server"
+                (HttpServerCodec.
+                  max-initial-line-length
+                  max-header-size
                       max-chunk-size
                       validate-headers
                       initial-buffer-size
@@ -610,9 +614,11 @@
           (.addLast "continue-handler" continue-handler)
           (.addLast "request-handler" ^ChannelHandler handler)
 
-          ;; HTTP1 - HTTP2 code uses decorating coders/decoders passed to the Builder.build() call
-          (#(when (or compression? (some? compression-level))
-              (let [compressor (HttpContentCompressor. (int (or compression-level 6)))]
+          ;; HTTP1 - HTTP2 code uses decorating coders/decoders
+          (#(when compression?
+              (let [compressor (if compression-level
+                                 (HttpContentCompressor. (int compression-level))
+                                 (HttpContentCompressor. ^"[Lio.netty.handler.codec.compression.CompressionOptions;" compression-options))]
                 (.addAfter ^ChannelPipeline %1 "http-server" "deflater" compressor))
               (.addAfter ^ChannelPipeline %1 "deflater" "streamer" (ChunkedWriteHandler.))))
           http1-pipeline-transform)

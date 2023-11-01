@@ -656,18 +656,19 @@
                         (log/debug "New outbound HTTP/2 channel available.")
 
                         (http2/setup-stream-pipeline
-                          (.pipeline out-chan)
-                          (http2/client-handler out-chan
-                                                resp
-                                                raw-stream?
-                                                response-buffer-size
-                                                stream-go-away-handler
-                                                reset-stream-handler)
-                          is-server?
-                          proxy-options
-                          logger
-                          pipeline-transform
-                          nil)
+                          {:pipeline                        (.pipeline out-chan)
+                           :handler                         (http2/client-handler
+                                                              out-chan
+                                                              resp
+                                                              raw-stream?
+                                                              response-buffer-size
+                                                              stream-go-away-handler
+                                                              reset-stream-handler)
+                           :is-server?                      is-server?
+                           :proxy-options                   proxy-options
+                           :logger                          logger
+                           :http2-stream-pipeline-transform pipeline-transform
+                           :max-request-body-size           nil})
                         out-chan))
             (d/chain' (fn [^Http2StreamChannel out-chan]
                         (log/debug "New outbound HTTP/2 channel's pipeline configured.")
@@ -900,7 +901,7 @@
                     (fn http-req-fn
                       [req]
                       (log/trace "http-req-fn fired")
-                      (log/debug "client request:" req)
+                      (log/debug "client request:" (pr-str req))
 
                       ;; If :aleph/close is set in the req, closes the channel and
                       ;; returns a deferred containing the result.
