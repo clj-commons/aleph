@@ -1,13 +1,12 @@
 (ns aleph.http.http2-test
   (:require [aleph.http.http2 :refer :all]
-            [clojure.test :refer :all])
+            [clojure.test :refer :all]
+            [aleph.testutils :refer [str=]])
   (:import (io.netty.handler.codec.http HttpResponseStatus)
            (io.netty.handler.codec.http2
              DefaultHttp2Headers
              Http2Headers)
            (io.netty.util AsciiString)))
-
-(def ^:private str= "AsciiString-aware equals" #(AsciiString/contentEquals %1 %2))
 
 (deftest test-add-header
   (testing "add single header"

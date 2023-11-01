@@ -6,6 +6,7 @@
     [aleph.netty :as netty]
     [aleph.ssl :as test-ssl]
     [aleph.tcp :as tcp]
+    [aleph.testutils :refer [str=]]
     [clj-commons.byte-streams :as bs]
     [clojure.java.io :as io]
     [clojure.string :as str]
