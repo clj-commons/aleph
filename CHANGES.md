@@ -1,3 +1,9 @@
+### 0.7.0-alpha2
+
+* Enable SSL/TLS certificate hostname verification by default in the client. (Warning: This is a BREAKING change for those with misconfigured server certificates.)
+
+Contribution by Moritz Heidkamp.
+
 ### 0.7.0-alpha1
 
 * Add support for HTTP/2 in the client.

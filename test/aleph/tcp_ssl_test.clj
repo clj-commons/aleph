@@ -77,6 +77,19 @@
           ;; TODO: enforce use of BoringSSL or OpenSSL?
           )))))
 
+(deftest test-failed-endpoint-identification
+  (let [ssl-session (atom nil)]
+    (with-server (tcp/start-server (ssl-echo-handler ssl-session)
+                                   {:port 10001
+                                    :shutdown-timeout 0
+                                    :ssl-context ssl/wrong-hostname-server-ssl-context-opts})
+      (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
+                            #"^No name matching localhost found$"
+                            @(tcp/client {:host "localhost"
+                                          :port 10001
+                                          :ssl-context ssl/wrong-hostname-client-ssl-context-opts})))
+      (is (nil? @ssl-session) "SSL session should be undefined"))))
+
 (deftest test-connection-close-during-ssl-handshake
   (let [ssl-session (atom nil)
         connection-closed (promise)

@@ -76,12 +76,9 @@
   (log/error e "error in HTTP handler")
   {:status 500
    :headers {"content-type" "text/plain"}
-   :body (let [w (java.io.StringWriter.)]
-           (.printStackTrace e (java.io.PrintWriter. w))
-           (str w))})
+   :body "Internal Server Error"})
 
 (def apn-fallback-protocol ApplicationProtocolNames/HTTP_1_1)
-;;(def apn-fallback-protocol ApplicationProtocolNames/HTTP_2)
 
 (let [[server-name
        connection-name

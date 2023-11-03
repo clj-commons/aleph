@@ -144,6 +144,7 @@
    Param key                   | Description
    | ---                       | ---
    | `ssl-context`             | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details), only required if a custom context is required
+   | `ssl-endpoint-id-alg`     | the name of the algorithm to use for SSL endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms), defaults to \"HTTPS\". Only used for HTTPS connections. Pass `nil` to disable endpoint identification.
    | `local-address`           | an optional `java.net.SocketAddress` describing which local interface should be used
    | `bootstrap-transform`     | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `pipeline-transform`      | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
@@ -260,6 +261,7 @@
    | `raw-stream?`         | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `insecure?`           | if `true`, the certificates for `wss://` will be ignored.
    | `ssl-context`         | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
+   | `ssl-endpoint-id-alg` | the name of the algorithm to use for SSL endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms), defaults to \"HTTPS\". Only used for WSS connections. Pass `nil` to disable endpoint identification.
    | `extensions?`         | if `true`, the websocket extensions will be supported.
    | `sub-protocols`       | a string with a comma seperated list of supported sub-protocols.
    | `headers`             | the headers that should be included in the handshake

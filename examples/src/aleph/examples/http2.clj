@@ -40,6 +40,7 @@
 
    NB: Do not use self-signed certs in production. See aleph.netty/ssl-server-context."
   (netty/self-signed-ssl-context
+    "localhost"
     {:application-protocol-config (netty/application-protocol-config [:http2 :http1])}))
 
 

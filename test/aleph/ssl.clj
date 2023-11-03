@@ -8,6 +8,7 @@
       ApplicationProtocolConfig$SelectedListenerFailureBehavior
       ApplicationProtocolConfig$SelectorFailureBehavior
       ApplicationProtocolNames)
+    (io.netty.handler.ssl.util SelfSignedCertificate)
     (java.io ByteArrayInputStream)
     (java.security KeyFactory PrivateKey)
     (java.security.cert CertificateFactory X509Certificate)
@@ -88,3 +89,14 @@
 
 (def client-ssl-context
   (netty/ssl-client-context client-ssl-context-opts))
+
+(def wrong-hostname-cert
+  (SelfSignedCertificate. "some-random-hostname"))
+
+(def wrong-hostname-server-ssl-context-opts
+  {:private-key       (.privateKey wrong-hostname-cert)
+   :certificate-chain (.certificate wrong-hostname-cert)})
+
+(def wrong-hostname-client-ssl-context-opts
+  (assoc client-ssl-context-opts
+         :trust-store (.certificate wrong-hostname-cert)))

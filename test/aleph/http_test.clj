@@ -229,6 +229,13 @@
 (def http2-server-options {:port        port
                            :ssl-context test-ssl/http2-only-ssl-context})
 
+(def default-ssl-server-options
+  {:port port
+   :ssl-context test-ssl/server-ssl-context})
+
+(def default-ssl-client-options
+  {:ssl-context test-ssl/client-ssl-context-opts})
+
 (defmacro with-server [server & body]
   `(let [server# ~server]
      (binding [*pool* (http/connection-pool {:connection-options
@@ -472,6 +479,28 @@
                     ex-message
                     (str/includes? "connection was closed")))
         (is (nil? @ssl-session))))))
+
+(deftest test-ssl-endpoint-identification
+  (binding [*use-tls?* true
+            *connection-options* {:ssl-context (test-ssl/client-ssl-context test-ssl/wrong-hostname-client-ssl-context-opts)}]
+    (let [ssl-session (atom nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        (assoc default-ssl-server-options :ssl-context (test-ssl/client-ssl-context test-ssl/wrong-hostname-server-ssl-context-opts))
+        (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
+                              #"^No name matching localhost found$"
+                              @(http-get "/")))
+        (is (nil? @ssl-session))))))
+
+(deftest test-disabling-ssl-endpoint-identification
+  (binding [*connection-options* {:ssl-context         (test-ssl/client-ssl-context test-ssl/wrong-hostname-client-ssl-context-opts)
+                                  :ssl-endpoint-id-alg nil}]
+    (let [ssl-session (atom nil)]
+      (with-handler-options
+        (ssl-session-capture-handler ssl-session)
+        (assoc default-ssl-server-options :ssl-context (test-ssl/server-ssl-context test-ssl/wrong-hostname-server-ssl-context-opts))
+        (is (= 200 (:status @(http-get "/"))))
+        (is (some? @ssl-session))))))
 
 (deftest test-invalid-body
   (let [client-url "/"]
