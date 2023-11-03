@@ -642,8 +642,7 @@
                             :is-server? true
                             :pipeline pipeline)]
       (cond ssl?
-            (let [^SslContext ssl-context (netty/coerce-ssl-server-context ssl-context)
-                  ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]
+            (let [ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]
               (log/info "Setting up secure HTTP server pipeline.")
               (log/info "Available HTTP versions:" (mapv str (.nextProtocols ssl-context)))
 
@@ -743,7 +742,9 @@
            epoll?                          false
            shutdown-timeout                netty/default-shutdown-timeout}
     :as   opts}]
-  (let [http1-pipeline-transform (common/validate-http1-pipeline-xform opts)
+  (let [^SslContext ssl-context (netty/coerce-ssl-server-context ssl-context)
+        opts (assoc opts :ssl-context ssl-context)
+        http1-pipeline-transform (common/validate-http1-pipeline-xform opts)
         executor (setup-executor executor)
         continue-executor (setup-continue-executor executor continue-executor)
         pipeline-builder (make-pipeline-builder
