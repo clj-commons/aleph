@@ -59,7 +59,9 @@
              :test {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
              :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
              :pedantic {:pedantic? :abort}
-             :trace {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}}
+             :trace {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}
+             :profile {:dependencies [[com.clojure-goes-fast/clj-async-profiler "1.1.1"]]
+                       :jvm-opts ["-Djdk.attach.allowAttachSelf"]}}
   :java-source-paths ["src-java"]
   :test-selectors {:default   #(not
                                  (some #{:benchmark :stress}
