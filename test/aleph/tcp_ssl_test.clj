@@ -78,16 +78,31 @@
           )))))
 
 (deftest test-failed-endpoint-identification
-  (let [ssl-session (atom nil)]
+  (let [port 10001
+        ssl-session (atom nil)]
     (with-server (tcp/start-server (ssl-echo-handler ssl-session)
-                                   {:port 10001
+                                   {:port             port
                                     :shutdown-timeout 0
-                                    :ssl-context ssl/wrong-hostname-server-ssl-context-opts})
-      (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
-                            #"^No name matching localhost found$"
-                            @(tcp/client {:host "localhost"
-                                          :port 10001
-                                          :ssl-context ssl/wrong-hostname-client-ssl-context-opts})))
+                                    :ssl-context      ssl/wrong-hostname-server-ssl-context-opts})
+      (try
+        @(tcp/client {:host        "localhost"
+                      :port        port
+                      :ssl-context ssl/wrong-hostname-client-ssl-context-opts})
+        (is (= true false) "Should have thrown an exception")
+
+        (catch Exception e
+          (is (= SSLHandshakeException
+                 (class e)))
+
+          ;; Should have a hostname mismatch cause in the ex chain
+          (is (loop [^Exception ex e]
+                (if ex
+                  (if (re-find #"(?i:No name matching localhost found)"
+                               (.getMessage ex))
+                    true
+                    (recur (.getCause ex)))
+                  false))
+              "No hostname mismatch cause found in exception chain")))
       (is (nil? @ssl-session) "SSL session should be undefined"))))
 
 (deftest test-connection-close-during-ssl-handshake

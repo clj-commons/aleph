@@ -49,7 +49,9 @@
     (java.util.zip
       GZIPInputStream
       InflaterInputStream)
-    (javax.net.ssl SSLSession)))
+    (javax.net.ssl
+      SSLHandshakeException
+      SSLSession)))
 
 ;;;
 
@@ -229,18 +231,13 @@
 (def http2-server-options {:port        port
                            :ssl-context test-ssl/http2-only-ssl-context})
 
-(def default-ssl-server-options
-  {:port port
-   :ssl-context test-ssl/server-ssl-context})
-
-(def default-ssl-client-options
-  {:ssl-context test-ssl/client-ssl-context-opts})
-
 (defmacro with-server [server & body]
   `(let [server# ~server]
-     (binding [*pool* (http/connection-pool {:connection-options
-                                             (merge *connection-options* {:insecure?     true
-                                                                          :http-versions [:http2 :http1]})})]
+     (binding [*pool* (http/connection-pool
+                        {:connection-options
+                         (merge {:insecure? true
+                                 :http-versions [:http2 :http1]}
+                                *connection-options*)})]
        (try
          ~@body
          (finally
@@ -251,7 +248,7 @@
 (defmacro with-http1-server
   [handler server-options & body]
   `(testing "- http1"
-     (with-server (http/start-server ~handler ~server-options)
+     (with-server (http/start-server ~handler (merge http-server-options ~server-options))
        ~@body)))
 
 (defmacro with-http2-server
@@ -259,9 +256,8 @@
   ;; with-redefs used so clj fns running on netty threads will work
   `(testing "- http2"
      (with-redefs [*use-tls?* true]
-       (let [server-options# ~server-options]
-         (with-server (http/start-server ~handler (merge server-options# http2-server-options))
-           ~@body)))))
+       (with-server (http/start-server ~handler (merge http2-server-options ~server-options))
+         ~@body))))
 
 (defmacro with-http-servers
   "Run the same body of tests for each HTTP version"
@@ -273,17 +269,17 @@
 
 (defmacro with-handler [handler & body]
   `(with-http-servers ~handler {:port port :shutdown-timeout 0}
-                      ~@body))
+     ~@body))
 
 ;; FIXME redundant
 (defmacro with-handler-options
   [handler options & body]
   `(with-http-servers ~handler (assoc ~options :shutdown-timeout 0)
-                      ~@body))
+     ~@body))
 
 (defmacro with-raw-handler [handler & body]
   `(with-http-servers ~handler {:port port, :raw-stream? true :shutdown-timeout 0}
-                      ~@body))
+     ~@body))
 
 (defmacro with-both-handlers [handler & body]
   `(do
@@ -481,26 +477,45 @@
         (is (nil? @ssl-session))))))
 
 (deftest test-ssl-endpoint-identification
-  (binding [*use-tls?* true
-            *connection-options* {:ssl-context (test-ssl/client-ssl-context test-ssl/wrong-hostname-client-ssl-context-opts)}]
-    (let [ssl-session (atom nil)]
-      (with-handler-options
-        (ssl-session-capture-handler ssl-session)
-        (assoc default-ssl-server-options :ssl-context (test-ssl/client-ssl-context test-ssl/wrong-hostname-server-ssl-context-opts))
-        (is (thrown-with-msg? javax.net.ssl.SSLHandshakeException
-                              #"^No name matching localhost found$"
-                              @(http-get "/")))
-        (is (nil? @ssl-session))))))
+  (with-redefs [*use-tls?* true]                            ; with-redefs for non-clj threads
+    (binding [*connection-options* {:insecure?   false
+                                    :ssl-context test-ssl/wrong-hostname-client-ssl-context-opts}]
+      (let [ssl-session (atom nil)]
+        (with-http1-server
+          (ssl-session-capture-handler ssl-session)
+          (assoc http-server-options :ssl-context test-ssl/wrong-hostname-server-ssl-context-opts)
+
+          (try
+            @(http-get "/")
+            (is (= true false) "Should have thrown an exception")
+
+            (catch Exception e
+              (is (= SSLHandshakeException
+                     (class e)))
+
+              ;; Should have a hostname mismatch cause in the ex chain
+              (is (loop [^Exception ex e]
+                    (if ex
+                      (if (re-find #"(?i:No name matching localhost found)"
+                                   (.getMessage ex))
+                        true
+                        (recur (.getCause ex)))
+                      false))
+                  "No hostname mismatch cause found in exception chain")))
+          (is (nil? @ssl-session)))))))
 
 (deftest test-disabling-ssl-endpoint-identification
-  (binding [*connection-options* {:ssl-context         (test-ssl/client-ssl-context test-ssl/wrong-hostname-client-ssl-context-opts)
-                                  :ssl-endpoint-id-alg nil}]
-    (let [ssl-session (atom nil)]
-      (with-handler-options
-        (ssl-session-capture-handler ssl-session)
-        (assoc default-ssl-server-options :ssl-context (test-ssl/server-ssl-context test-ssl/wrong-hostname-server-ssl-context-opts))
-        (is (= 200 (:status @(http-get "/"))))
-        (is (some? @ssl-session))))))
+  (with-redefs [*use-tls?* true]                            ; with-redefs for non-clj threads
+    (binding [*connection-options* {:insecure?           false
+                                    :ssl-context         test-ssl/wrong-hostname-client-ssl-context-opts
+                                    :ssl-endpoint-id-alg nil}]
+      (let [ssl-session (atom nil)]
+        (with-http1-server
+          (ssl-session-capture-handler ssl-session)
+          (assoc http-server-options :ssl-context test-ssl/wrong-hostname-server-ssl-context-opts)
+
+          (is (= 200 (:status @(http-get "/"))))
+          (is (some? @ssl-session)))))))
 
 (deftest test-invalid-body
   (let [client-url "/"]
@@ -1065,7 +1080,6 @@
      :shutdown-timeout 0}
 
     (let [resp @(http-get "/text_plain")]
-      (prn resp)
       (is (= "text/plain; charset=UTF-8" (-> resp :headers (get "content-type"))))
       (is (= 200 (:status resp)))
       (is (= "Hello" (bs/to-string (:body resp)))))))
