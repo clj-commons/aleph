@@ -9,10 +9,10 @@
   :license {:name "MIT License"}
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
-                 [manifold "0.3.0" :exclusions [org.clojure/tools.logging]]
+                 [manifold "0.4.1" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.4"]
                  [org.clj-commons/dirigiste "1.0.3"]
-                 [org.clj-commons/primitive-math "1.0.0"]
+                 [org.clj-commons/primitive-math "1.0.1"]
                  [potemkin "0.4.6"]
                  [io.netty/netty-transport ~netty-version]
                  [io.netty/netty-transport-native-epoll ~netty-version :classifier "linux-x86_64"]

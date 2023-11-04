@@ -5,10 +5,10 @@
   org.clojure/tools.logging
   {:mvn/version "1.2.4", :exclusions [org.clojure/clojure]},
   manifold/manifold
-  {:mvn/version "0.3.0", :exclusions [org.clojure/tools.logging]},
+  {:mvn/version "0.4.1", :exclusions [org.clojure/tools.logging]},
   org.clj-commons/byte-streams {:mvn/version "0.3.4"},
   org.clj-commons/dirigiste {:mvn/version "1.0.3"},
-  org.clj-commons/primitive-math {:mvn/version "1.0.0"},
+  org.clj-commons/primitive-math {:mvn/version "1.0.1"},
   potemkin/potemkin {:mvn/version "0.4.6"},
   io.netty/netty-transport {:mvn/version "4.1.100.Final"},
   io.netty/netty-transport-native-epoll$linux-x86_64
