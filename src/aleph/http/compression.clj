@@ -17,15 +17,14 @@
     [clj-commons.primitive-math :as p]
     [clojure.tools.logging :as log])
   (:import
+    (aleph.http AlephCompressionOptions)
     (io.netty.channel ChannelHandler)
     (io.netty.handler.codec.compression
       Brotli
-      BrotliOptions
-      CompressionOptions
+      BrotliOptions CompressionOptions
       DeflateOptions
       GzipOptions
       SnappyOptions
-      StandardCompressionOptions
       Zstd ZstdOptions)
     (io.netty.handler.codec.http HttpHeaderNames)
     (io.netty.handler.codec.http2 Http2HeadersFrame)
@@ -52,11 +51,12 @@
   available-compressor-options
   "A Java array of all available compressor options"
   (into-array CompressionOptions
-              (cond-> [(StandardCompressionOptions/deflate)
-                       (StandardCompressionOptions/gzip)
-                       (StandardCompressionOptions/snappy)]
-                      (Brotli/isAvailable) (conj (StandardCompressionOptions/brotli))
-                      (Zstd/isAvailable) (conj (StandardCompressionOptions/zstd)))))
+              (cond-> [(AlephCompressionOptions/deflate)
+                       (AlephCompressionOptions/gzip)
+                       (AlephCompressionOptions/snappy)]
+                      (Brotli/isAvailable) (conj (AlephCompressionOptions/brotli))
+                      (Zstd/isAvailable) (conj (AlephCompressionOptions/zstd)))))
+
 
 (defn- qvalue
   "Parses qvalue from an accept-encoding header. Defaults to 1.0 if not
