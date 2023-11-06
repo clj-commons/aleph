@@ -36,7 +36,8 @@
    the order indicates the preference; in this example, HTTP/2 is preferred over
    HTTP/1 if the client supports both.
 
-   NB: Do not use self-signed certs in production. See aleph.netty/ssl-server-context."
+   NB: Avoid self-signed certs unless you control the clients, too. Browsers
+   will not accept them. See aleph.netty/ssl-server-context."
   (netty/self-signed-ssl-context
     "localhost"
     {:application-protocol-config (netty/application-protocol-config [:http2 :http1])}))
