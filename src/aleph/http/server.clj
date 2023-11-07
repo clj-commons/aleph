@@ -639,7 +639,7 @@
     (log/trace "pipeline-builder*" pipeline opts)
     (let [setup-opts (assoc opts
                             :handler handler
-                            :is-server? true
+                            :server? true
                             :pipeline pipeline)]
       (cond ssl?
             (let [ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]

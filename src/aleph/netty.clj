@@ -387,7 +387,6 @@
   []
   (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
 
-;; TODO: is this necessary? don't the netty executors check this already?
 (defmacro ^:no-doc safe-execute
   "Executes the body on the event-loop (an executor service) associated with
    the Netty channel or context.
@@ -1733,7 +1732,7 @@
                    (d/finally'
                      ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
                      ;;    in flight pending requests.
-                     ;;    We still wait 1.5s to graceully end repeating tasks
+                     ;;    We still wait 1.5s to gracefully end repeating tasks
                      ;;    like the date-header-value.
                      #(.shutdownGracefully group 1500 1500 TimeUnit/MILLISECONDS)))
                (when on-close

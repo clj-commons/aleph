@@ -77,6 +77,7 @@
       OpenOption
       Path
       StandardOpenOption)
+    (java.util Collection HashSet)
     (java.util.concurrent
       ConcurrentHashMap
       RejectedExecutionException)
@@ -91,11 +92,15 @@
 (def ^:const max-allowed-frame-size 16777215) ; 2^24 - 1, see RFC 9113, SETTINGS_MAX_FRAME_SIZE
 (def ^:dynamic *default-chunk-size* 16384) ; same as default SETTINGS_MAX_FRAME_SIZE
 
-;; TODO: optimize. Either non-concurrent HashMap, regex, or with a fn
 ;; See https://httpwg.org/specs/rfc9113.html#ConnectionSpecific
-;;(def invalid-headers #{"connection" "proxy-connection" "keep-alive" "upgrade"})
-(def ^:private invalid-headers (set (map #(AsciiString/cached ^String %)
-                                         ["connection" "proxy-connection" "keep-alive" "upgrade"])))
+(def ^:private ^HashSet invalid-headers
+  "HashSet faster than clj collections, and invalid-headers is in a hot spot.
+   It's never changed after init, so no need to synchronize."
+  (HashSet.
+    ^Collection
+    (map #(AsciiString/cached ^String %)
+         ["connection" "proxy-connection" "keep-alive" "upgrade"])))
+
 (def ^:private ^AsciiString te-header-name (AsciiString/cached "transfer-encoding"))
 
 (def ^:private ^ConcurrentHashMap cached-header-names
@@ -263,11 +268,9 @@
       (log/trace (str "Adding HTTP header: " header-name ": " header-value))
 
       (cond
-        ;; Will be checked by Netty
-        ;;(nil? header-value)
-        ;;(illegal-arg (str "Invalid nil value for header '" header-name "'"))
+        ;; nil values are checked by Netty
 
-        (invalid-headers header-name)
+        (.contains invalid-headers header-name)
         (throw-illegal-arg-ex (str "Forbidden HTTP/2 header: \"" header-name "\""))
 
         ;; See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
@@ -845,7 +848,7 @@
    You can set the response status and the body text by adding
    :aleph/response-status and :aleph/public-error-message keys to the ex-data
    of the exception."
-  [^ChannelHandlerContext ctx ^Throwable ex is-server? h2-stream]
+  [^ChannelHandlerContext ctx ^Throwable ex server? h2-stream]
   ;; NB: cannot use Http2FrameCodec.onError() here, because it
   ;; just creates a new Http2FrameStreamException, and forwards
   ;; it along for the Http2MultiplexHandler to broadcast...would
@@ -857,7 +860,7 @@
 
     (if (or (not (instance? Http2Exception ex))
             (Http2Exception/isStreamError ex))
-      (if is-server?
+      (if server?
         (let [exdata (some-> ex (.getCause) ex-data)
               resp-status (parse-status (get exdata :aleph/response-status HttpResponseStatus/INTERNAL_SERVER_ERROR))
               public-error-msg (get exdata :aleph/public-error-message)]
@@ -981,11 +984,6 @@
           (handle-exception* ctx ex true h2-stream))]
 
     (netty/channel-inbound-handler
-      ;;:channel-active
-      ;;([_ ctx]
-      ;; (netty/ensure-dynamic-classloader)
-      ;; (.fireChannelActive ctx))
-
       :exception-caught
       ([_ ctx ex]
        (log/trace ":exception-caught fired")
@@ -1239,7 +1237,7 @@
   "Set up the pipeline for an HTTP/2 stream channel"
   [{:keys [^ChannelPipeline pipeline
            handler
-           is-server?
+           server?
            proxy-options
            logger
            http2-stream-pipeline-transform
@@ -1261,7 +1259,7 @@
           (.addLast "streamer"
                     ^ChannelHandler (ChunkedWriteHandler.))
 
-          (and is-server? max-request-body-size)
+          (and server? max-request-body-size)
           (.addLast "max-request-body-size"
                     (max-size-handler max-request-body-size))
 
@@ -1307,7 +1305,7 @@
      ^LoggingHandler logger
      idle-timeout
      ^ChannelHandler handler
-     is-server?
+     server?
      raw-stream?
      rejected-handler
      error-handler
@@ -1336,7 +1334,7 @@
   (log/trace "setup-conn-pipeline fired")
   (let [
         log-level (some-> logger (.level))
-        http2-frame-codec (let [builder (AlephHttp2FrameCodecBuilder. is-server?)]
+        http2-frame-codec (let [builder (AlephHttp2FrameCodecBuilder. server?)]
                             (when log-level
                               (.frameLogger builder (Http2FrameLogger. log-level)))
                             (-> builder
@@ -1348,7 +1346,7 @@
                                   (fn [^Channel ch]
                                     (setup-stream-pipeline
                                       {:pipeline                        (.pipeline ch)
-                                       :handler                         (if is-server?
+                                       :handler                         (if server?
                                                                           (server-handler ch
                                                                                           handler
                                                                                           raw-stream?
@@ -1359,7 +1357,7 @@
                                                                                           stream-go-away-handler
                                                                                           reset-stream-handler)
                                                                           client-inbound-handler)
-                                       :is-server?                      is-server?
+                                       :server?                      server?
                                        :proxy-options                   proxy-options
                                        :logger                          logger
                                        :http2-stream-pipeline-transform http2-stream-pipeline-transform

@@ -622,7 +622,7 @@
    Ring response."
   [{:keys [authority
            ch
-           is-server?
+           server?
            logger
            pipeline-transform
            proxy-options
@@ -664,7 +664,7 @@
                                                               response-buffer-size
                                                               stream-go-away-handler
                                                               reset-stream-handler)
-                           :is-server?                      is-server?
+                           :server?                      server?
                            :proxy-options                   proxy-options
                            :logger                          logger
                            :http2-stream-pipeline-transform pipeline-transform
@@ -860,7 +860,7 @@
                       setup-opts (assoc opts
                                         :authority authority
                                         :ch ch
-                                        :is-server? false
+                                        :server? false
                                         :keep-alive? keep-alive?
                                         :keep-alive?' keep-alive?'
                                         :logger logger

@@ -743,7 +743,6 @@
 
 ;; we might want to use here http/get-all helper,
 ;; but it would result in circular dependencies
-;; TODO: move http/get-all to common?
 (defn ^:no-doc extract-cookies-from-response-headers
   ([headers]
    (extract-cookies-from-response-headers default-cookie-spec headers))

@@ -54,7 +54,7 @@
 ;; way to do this is to set {:connection-options {:http-versions [:http2 :http1]}}
 ;; when setting up a connection-pool. At the moment, Aleph's default connection
 ;; pool is still HTTP/1-only, so you must specify a custom connection pool. This
-;; will change in a future version of Aleph.
+;; will probably change in a future version of Aleph.
 
 ;; ### Basic H2 client
 
