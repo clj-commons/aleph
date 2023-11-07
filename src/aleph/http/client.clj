@@ -114,17 +114,17 @@
   "Make a new HTTP/1 raw client handler. Shared across all requests for one TCP conn."
   [response-stream buffer-capacity]
   (let [body-stream (atom nil)
-        ;; complete holds latest deferred indicating overall TCP conn status
+        ;; destroy-conn? holds latest deferred indicating overall TCP conn status
         ;; Each returned response indicates whether TCP channel was closed or not.
         ;; Used as early? param when deciding whether to dispose or release of conn.
-        complete (atom nil)
+        destroy-conn? (atom nil)
 
         handle-response
-        (fn [response complete body]
+        (fn [response destroy-conn? body]
           (s/put! response-stream
                   (http1/netty-response->ring-response
                     response
-                    complete
+                    destroy-conn?
                     body)))]
 
     (netty/channel-inbound-handler
@@ -144,7 +144,7 @@
       ([_ ctx msg]
        (cond
          (common/decoder-failed? msg)
-         (http1/handle-decoder-failure ctx msg body-stream complete response-stream)
+         (http1/handle-decoder-failure ctx msg body-stream destroy-conn? response-stream)
 
          ;; new response coming in
          (instance? HttpResponse msg)
@@ -153,8 +153,8 @@
                c (d/deferred)]
 
            (reset! body-stream s)
-           (reset! complete c)
-           ; if stream closed for some reason, set complete true to indicate early termination
+           (reset! destroy-conn? c)
+           ; if stream closed early for some reason, destroy the connection
            (s/on-closed s #(d/success! c true))
            (handle-response rsp c s))
 
@@ -164,7 +164,7 @@
            (netty/put! (.channel ctx) @body-stream content)
            (when (instance? LastHttpContent msg)
              ; false => conn not ended early, we got all the data
-             (d/success! @complete false)
+             (d/success! @destroy-conn? false)
              (s/close! @body-stream)))
 
          :else
@@ -179,12 +179,12 @@
         buffer (atom [])
         buffer-size (AtomicInteger. 0)
         body-stream (atom nil)
-        complete (atom nil)
-        handle-response (fn [rsp complete body]
+        destroy-conn? (atom nil)
+        handle-response (fn [rsp destroy-conn? body]
                           (s/put! response-stream
                                   (http1/netty-response->ring-response
                                     rsp
-                                    complete
+                                    destroy-conn?
                                     body)))]
 
     (netty/channel-inbound-handler
@@ -207,7 +207,7 @@
       ([_ ctx msg]
        (cond
          (common/decoder-failed? msg)
-         (http1/handle-decoder-failure ctx msg body-stream complete response-stream)
+         (http1/handle-decoder-failure ctx msg body-stream destroy-conn? response-stream)
 
          ;; happens when io.netty.handler.codec.http.HttpObjectAggregator is part of the pipeline
          (instance? FullHttpResponse msg)
@@ -225,7 +225,7 @@
              (let [s (netty/buffered-source (netty/channel ctx) #(alength ^bytes %) buffer-capacity)
                    c (d/deferred)]
                (reset! body-stream s)
-               (reset! complete c)
+               (reset! destroy-conn? c)
                (s/on-closed s #(d/success! c true))
                (handle-response rsp c s))
              (reset! response rsp)))
@@ -242,7 +242,7 @@
                  (do
                    (s/put! s (netty/buf->array content))
                    (netty/release content)
-                   (d/success! @complete false)
+                   (d/success! @destroy-conn? false)
                    (s/close! s))
 
                  (let [bufs (conj @buffer content)
@@ -279,7 +279,7 @@
 
                        (reset! buffer [])
                        (reset! body-stream s)
-                       (reset! complete c)
+                       (reset! destroy-conn? c)
 
                        (s/on-closed s #(d/success! c true))
 
@@ -664,7 +664,7 @@
                                                               response-buffer-size
                                                               stream-go-away-handler
                                                               reset-stream-handler)
-                           :server?                      server?
+                           :server?                         server?
                            :proxy-options                   proxy-options
                            :logger                          logger
                            :http2-stream-pipeline-transform pipeline-transform

@@ -415,8 +415,8 @@
                                      (d/chain'
                                        (fn cleanup-conn [rsp]
 
-                                         ;; only release the connection back once the conn is "complete"
-                                         (-> (:aleph/complete rsp)
+                                         ;; either destroy/dispose of the conn, or release it back for reuse
+                                         (-> (:aleph/destroy-conn? rsp)
                                              (maybe-timeout! read-timeout)
 
                                              (d/catch' TimeoutException
@@ -435,7 +435,7 @@
                                                      (flow/dispose pool k conn))
                                                    (flow/release pool k conn)))))
                                          (-> rsp
-                                             (dissoc :aleph/complete)
+                                             (dissoc :aleph/destroy-conn?)
                                              (assoc :connection-time (- end start)))))))))
 
                            (fn handle-response [rsp]

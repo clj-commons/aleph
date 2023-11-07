@@ -245,12 +245,11 @@
   :aleph/request-arrived request-arrived
   :protocol "HTTP/1.1")
 
-(p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
+(p/def-derived-map NettyResponse [^HttpResponse rsp destroy-conn? body]
   :status (-> rsp .status .code)
   :aleph/keep-alive? (HttpUtil/isKeepAlive rsp)
   :headers (-> rsp .headers headers->map)
-  ;; Terrible name. It means, did the conn end unexpectedly early?
-  :aleph/complete complete
+  :aleph/destroy-conn? destroy-conn?
   :body body)
 
 (defn netty-request->ring-request
@@ -265,8 +264,8 @@
    (System/nanoTime)))
 
 (defn netty-response->ring-response
-  [rsp complete body]
-  (->NettyResponse rsp complete body))
+  [rsp destroy-conn? body]
+  (->NettyResponse rsp destroy-conn? body))
 
 (defn ring-request-ssl-session [^NettyRequest req]
   (netty/channel-ssl-session (.ch req)))
@@ -509,14 +508,14 @@
     (s/put! response-stream ex)
     (netty/close ctx)))
 
-(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream complete response-stream]
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream destroy-conn? response-stream]
   (if (instance? HttpContent msg)
     ;; note that we are most likely to get this when dealing
     ;; with transfer encoding chunked
     (if-let [s @stream]
       (do
         ;; flag that connection was terminated early
-        (d/success! @complete true)
+        (d/success! @destroy-conn? true)
         (s/close! s))
       (send-response-decoder-failure ctx msg response-stream))
     (send-response-decoder-failure ctx msg response-stream)))

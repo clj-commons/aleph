@@ -884,8 +884,8 @@
   "Common handling for RST_STREAM and GOAWAY frame events.
 
    Closes the body stream, sets the response deferred to an appropriate exception
-   and if a GOAWAY, sets complete to true."
-  [evt stream-id body-stream response-d complete]
+   and if a GOAWAY, sets destroy-conn? to true."
+  [evt stream-id body-stream response-d destroy-conn?]
   (let [ex (shutdown-frame->h2-exception evt stream-id)
         no-error? (identical? (.error ex) Http2Error/NO_ERROR)
         msg (.getMessage ex)]
@@ -893,7 +893,7 @@
     ;; wrap it up
     (d/error! response-d ex)
     (s/close! body-stream)
-    (d/success! complete (instance? Http2GoAwayFrame evt)) ; if GOAWAY, the whole conn must be shut down
+    (d/success! destroy-conn? (instance? Http2GoAwayFrame evt)) ; if GOAWAY, the whole conn must be shut down
 
     (if no-error?
       (log/info msg)
@@ -1105,7 +1105,7 @@
    reset-stream-handler]
   (let [h2-stream (.stream ch)
         h2-stream-id (.id h2-stream)
-        complete (d/deferred) ; realized when this stream is done; true = close conn, false = keep conn open
+        destroy-conn? (d/deferred) ; realized when this stream is done
 
         ;; if raw, we're returning ByteBufs, if not, we convert to byte[]'s
         body-stream
@@ -1120,7 +1120,7 @@
                      {:stream-id   h2-stream-id
                       :raw-stream? raw-stream?})
           (d/error! response-d ex)
-          (d/success! complete true)
+          (d/success! destroy-conn? true)
           (s/close! body-stream)
 
           (handle-exception* ctx ex false h2-stream))]
@@ -1137,7 +1137,7 @@
        (log/trace "http2/client-handler :channel-inactive fired")
        (d/success! response-d :aleph/closed)
        (s/close! body-stream)
-       (d/success! complete true)
+       (d/success! destroy-conn? true)
        (.fireChannelInactive ctx))
 
       :channel-read
@@ -1150,14 +1150,14 @@
                body (if raw-stream?
                       body-stream
                       (bs/to-input-stream body-stream))
-               ring-resp {:status            (->> headers (.status) (.convertToInt netty/char-seq-val-converter)) ; might be an AsciiString
-                          :headers           (headers->map headers)
-                          :aleph/keep-alive? true           ; not applicable to HTTP/2, but here for compatibility
-                          :aleph/complete    complete
-                          :body              body}]
+               ring-resp {:status              (->> headers (.status) (.convertToInt netty/char-seq-val-converter)) ; might be an AsciiString
+                          :headers             (headers->map headers)
+                          :aleph/keep-alive?   true         ; not applicable to HTTP/2, but here for compatibility
+                          :aleph/destroy-conn? destroy-conn?
+                          :body                body}]
            (d/success! response-d ring-resp)
            (when (.isEndStream ^Http2HeadersFrame msg)
-             (d/success! complete false)
+             (d/success! destroy-conn? false)
              (s/close! body-stream)))
 
          (instance? Http2DataFrame msg)
@@ -1168,7 +1168,7 @@
                (netty/put! (.channel ctx) body-stream (netty/buf->array content))
                (.release ^ReferenceCounted msg)))
            (when (.isEndStream ^Http2DataFrame msg)
-             (d/success! complete false)
+             (d/success! destroy-conn? false)
              (s/close! body-stream)))
 
          :else
@@ -1183,7 +1183,7 @@
       ([_ ctx evt]
        (handle-user-event-triggered
          ctx evt stream-go-away-handler reset-stream-handler
-         #(client-handle-shutdown-frame evt h2-stream-id body-stream response-d complete))))))
+         #(client-handle-shutdown-frame evt h2-stream-id body-stream response-d destroy-conn?))))))
 
 (defn- max-size-handler
   "Returns a ChannelHandler that buffers all inbound HEADERS and DATA frames until
@@ -1357,7 +1357,7 @@
                                                                                           stream-go-away-handler
                                                                                           reset-stream-handler)
                                                                           client-inbound-handler)
-                                       :server?                      server?
+                                       :server?                         server?
                                        :proxy-options                   proxy-options
                                        :logger                          logger
                                        :http2-stream-pipeline-transform http2-stream-pipeline-transform
