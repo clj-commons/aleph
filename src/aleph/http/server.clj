@@ -744,7 +744,7 @@
     :as   opts}]
   (let [^SslContext ssl-context (netty/coerce-ssl-server-context ssl-context)
         opts (assoc opts :ssl-context ssl-context)
-        http1-pipeline-transform (common/validate-http1-pipeline-xform opts)
+        http1-pipeline-transform (common/validate-http1-pipeline-transform opts)
         executor (setup-executor executor)
         continue-executor (setup-continue-executor executor continue-executor)
         pipeline-builder (make-pipeline-builder

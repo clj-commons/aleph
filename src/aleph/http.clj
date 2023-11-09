@@ -56,7 +56,7 @@
    | `validate-headers`                | If `true`, validates the headers when decoding the request, defaults to `false` |
    | `transport`                       | The transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio` ) |
    | `compression?`                    | When `true`, enables HTTP body compression, defaults to `false` |
-   | `compression-options`             | An optional Java array of CompressionOptions. If supplied, any codec options not passed in will be unavailable. Otherwise, uses default options for all available codecs. For Brotli/Zstd, be sure to guard your use with their `.isAvailable()` methods and add their deps to your classpath. |
+   | `compression-options`             | An optional Java array of `io.netty.handler.codec.compression.CompressionOptions`. If supplied, any codec options not passed in will be unavailable. Otherwise, uses default options for all available codecs. For Brotli/Zstd, be sure to guard your use with their `.isAvailable()` methods and add their deps to your classpath. |
    | `idle-timeout`                    | When set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time). |
    | `continue-handler`                | Optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those. |
    | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
@@ -136,8 +136,8 @@
    | `control-period`             | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
    | `dns-options`                | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instance
    | `middleware`                 | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`
-   | `pool-builder-fn`            | an optional one arity function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
-   | `pool-controller-builder-fn` | an optional zero arity function which returns a `io.aleph.dirigiste.IPool$Controller`.
+   | `pool-builder-fn`            | an optional 1-ary function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
+   | `pool-controller-builder-fn` | an optional 0-ary function which returns a `io.aleph.dirigiste.IPool$Controller`.
 
    the `connection-options` are a map describing behavior across all connections:
 

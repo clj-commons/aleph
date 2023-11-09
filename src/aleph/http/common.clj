@@ -119,7 +119,7 @@
           (.protocols)
           (.contains ApplicationProtocolNames/HTTP_2)))
 
-(defn validate-http1-pipeline-xform
+(defn validate-http1-pipeline-transform
   "Checks that :pipeline-transform is not being used with HTTP/2, since Netty
    H2 code uses multiple pipelines instead of one.
 

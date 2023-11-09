@@ -814,12 +814,11 @@
 (defn pipeline-initializer
   "Returns a ChannelInitializer which builds the pipeline.
 
-   `pipeline-builder` is a 1-arity fn that takes a ChannelPipeline and
+   `pipeline-builder` is a 1-ary fn that takes a ChannelPipeline and
    configures it."
   ^ChannelInitializer
   [pipeline-builder]
-  (AlephChannelInitializer. #_ensure-dynamic-classloader
-                            #(pipeline-builder (.pipeline ^Channel %))))
+  (AlephChannelInitializer. #(pipeline-builder (.pipeline ^Channel %))))
 
 (defn remove-if-present
   "Convenience function to remove a handler from a netty pipeline."
@@ -1147,7 +1146,9 @@
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers.
 
-   Never use in production."
+   Never use in production. Even if you control all clients, and want to use
+   a self-signed cert internally, do not use this fn, because Netty's
+   SelfSignedCertificate class is only for testing, and uses an insecure PRNG."
   ([]
    (self-signed-ssl-context "localhost"))
   ([hostname]
@@ -1155,8 +1156,8 @@
   ([hostname opts]
    (let [cert (SelfSignedCertificate. hostname)]
      (ssl-server-context (assoc opts
-                           :private-key (.privateKey cert)
-                           :certificate-chain (.certificate cert))))))
+                                :private-key (.privateKey cert)
+                                :certificate-chain (.certificate cert))))))
 
 
 (defn insecure-ssl-client-context
@@ -1242,17 +1243,6 @@
   []
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
-
-#_(defn ^:no-doc enumerating-thread-factory
-  ^ThreadFactory
-  [prefix daemon?]
-  (let [num-threads (atom 0)]
-    (e/thread-factory
-      #(str prefix "-" (swap! num-threads inc))
-      (deliver (promise) nil)
-      nil
-      daemon?
-      (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
 
 (defn ^:no-doc enumerating-thread-factory
   "Sets the ThreadFactory used by Netty EventLoopGroups.
@@ -1476,14 +1466,14 @@
 (defn ssl-handler
   "Generates a new SslHandler for the given SslContext.
 
-   The 2-arity version is for servers.
+   The 2-ary version is for servers.
 
-   The 3- and 4-arity versions are for clients. For these, the `remote-address`
+   The 3- and 4-ary versions are for clients. For these, the `remote-address`
    must be provided.
 
    The `ssl-endpoint-id-alg` is the name of the algorithm to use for endpoint
    identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms).
-   It defaults to \"HTTPS\" in the 3-arity version which is a reasonable default
+   It defaults to \"HTTPS\" in the 3-ary version which is a reasonable default
    for non-HTTPS uses, too. Pass `nil` to disable endpoint identification."
   (^SslHandler
    [^Channel ch ^SslContext ssl-ctx]

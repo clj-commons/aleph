@@ -65,7 +65,11 @@
   (let [equals-idx (.indexOf enc "=")]
     (if (p/not== equals-idx -1)
       (try
-        (Double/parseDouble (.substring enc (inc equals-idx)))
+        (let [n (Double/parseDouble (.substring enc (inc equals-idx)))]
+          (if (and (p/>= n 0.0)
+                   (p/<= n 1.0))
+            n
+            0.0))
         (catch NumberFormatException e
           0.0))
       1.0)))

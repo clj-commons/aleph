@@ -22,4 +22,9 @@
       (is (str= content (->> accept
                              parse-accept-encoding
                              (choose-codec available-compressor-options)))
-          (str "Accept-Encoding \"" accept "\" should have chosen \"" content "\"")))))
+          (str "Accept-Encoding \""
+               accept
+               "\" should have chosen "
+               (if (some? content)
+                 (str "\"" content "\"")
+                 "nil"))))))
