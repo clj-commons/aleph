@@ -1,3 +1,9 @@
+### 0.6.4
+
+* Bump Netty to 4.1.100.Final for CVE-2023-44487
+
+Contributions by Matthew Davidson and Stefan van den Oord.
+
 ### 0.6.3
 
 * Bump Netty to 4.1.94.Final for CVE-2023-34462
