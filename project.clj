@@ -33,7 +33,7 @@
                                    [org.slf4j/slf4j-simple "1.7.30"]
                                    [com.cognitect/transit-clj "1.0.324"]
                                    [spootnik/signal "0.2.4"]
-                                   ;; This is for dev and testing ONLY:
+                                   ;; This is for dev and testing ONLY, not recommended for prod
                                    [org.bouncycastle/bcprov-jdk18on "1.75"]
                                    [org.bouncycastle/bcpkix-jdk18on "1.75"]
                                    ;;[org.bouncycastle/bctls-jdk18on "1.75"]
