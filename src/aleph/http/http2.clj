@@ -185,7 +185,7 @@
      msg
      EmptyArrays/EMPTY_OBJECTS)))
 
-(defn- go-away
+(defn go-away
   "Sends a GOAWAY frame with the given error code (see Http2Error enums) to
    shut down the entire connection. Does not automatically close the channel,
    since you may want to keep processing other streams during
@@ -215,7 +215,7 @@
                             (doto (DefaultHttp2GoAwayFrame. h2-error-code)
                                   (.setExtraStreamIds num-extra-streams))))))
 
-(defn- reset-stream
+(defn reset-stream
   [^ChannelOutboundInvoker out ^Http2FrameStream stream ^long h2-error-code]
   (log/trace (str "Resetting stream " (.id stream) " with error code " h2-error-code))
   (netty/write-and-flush out
@@ -595,7 +595,11 @@
     ;; otherwise, no data left in body', so just send an empty data frame
     (netty/write-and-flush ch (end-of-stream-frame stream))))
 
-;; TODO: (minor) switch to sending over Context? should avoid tail and error-handler, anyway
+;; TODO: (minor) switch to sending over Context? should avoid tail and
+;; error-handler, anyway. We need the Http2StreamChannel because we frequently
+;; need the stream obj or its ID, but it's more efficient to send from the
+;; context, since sending over the context starts from the handler, while
+;; sending over the channel starts from the tail.
 (defn- send-message
   "Given Http2Headers and a body, determines the best way to write the body to the stream channel"
   ([^Http2StreamChannel ch ^Http2Headers headers body]
@@ -983,6 +987,8 @@
 
           (handle-exception* ctx ex true h2-stream))]
 
+    (when-not executor (log/warn "Running user handlers inline (hope you know what you're doing!)"))
+
     (netty/channel-inbound-handler
       :exception-caught
       ([_ ctx ex]
@@ -1035,10 +1041,10 @@
 
                  ;; else handle it inline (hope you know what you're doing!)
                  (try
-                   (log/warn "Running user handler inline")
                    (handler ring-req)
                    (catch Throwable e
                      (error-handler e))))
+
                (d/catch' error-handler)
                (d/chain'
                  (fn send-http-response [ring-resp]
@@ -1197,7 +1203,7 @@
   ^ChannelInboundHandler
   [max-request-body-size]
   (let [byte-count (AtomicLong. 0)
-        frame-list (atom [])]
+        frame-list (volatile! [])]
     (netty/channel-inbound-handler
       :channel-read ([_ ctx msg]
                      (condp instance? msg
@@ -1222,14 +1228,14 @@
                            (do
                              (run! #(.fireChannelRead ctx %) @frame-list)
                              (.fireChannelRead ctx msg))
-                           (swap! frame-list conj msg)))
+                           (vswap! frame-list conj msg)))
 
                        Http2HeadersFrame
                        (if (.isEndStream ^Http2HeadersFrame msg)
                          (do
                            (run! #(.fireChannelRead ctx %) @frame-list)
                            (.fireChannelRead ctx msg))
-                         (swap! frame-list conj msg))
+                         (vswap! frame-list conj msg))
 
                        (.fireChannelRead ctx msg))))))
 
