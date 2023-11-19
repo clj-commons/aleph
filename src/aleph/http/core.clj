@@ -1,5 +1,8 @@
 (ns ^:no-doc aleph.http.core
-  "HTTP/1.1 functionality"
+  "HTTP/1.1 functionality. Despite the name, this is only for HTTP/1, and
+   kept for backwards compatibility. HTTP/2 is in aleph.http.http2. Shared
+   code is in aleph.http.common. Shared client and server code can be found
+   in their respective namespaces."
   (:require
     [aleph.http.common :as common]
     [aleph.http.file :as file]
@@ -9,7 +12,7 @@
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s]
-    [potemkin :as p])
+    [potemkin :as p :refer [def-map-type]])
   (:import
     (aleph.http.file
       HttpFile)
@@ -42,6 +45,7 @@
       ChunkedFile
       ChunkedInput
       ChunkedWriteHandler)
+    (io.netty.util AsciiString)
     (io.netty.util.internal StringUtil)
     (java.io
       Closeable
@@ -69,14 +73,16 @@
             "TE"]]
     (zipmap
       (map str/lower-case ks)
-      (map #(HttpHeaders/newEntity %) ks))))
+      (map #(AsciiString. ^CharSequence %) ks))))
 
 (def ^ConcurrentHashMap cached-header-keys (ConcurrentHashMap. 128))
 
-(defn normalize-header-key
+(defn ^:deprecated normalize-header-key
   "Normalizes a header key to `Ab-Cd` format.
 
-   NB: This is illegal for HTTP/2, which requires all header names be lower-case."
+   NB: This is illegal for HTTP/2+, which requires all header names be
+   lower-case. Technically, the Ring spec also requires lower-cased headers,
+   but this is kept for backwards-compatibility."
   [s]
   (if-let [s' (.get cached-header-keys s)]
     s'
@@ -84,9 +90,9 @@
           s' (or
                (non-standard-keys s')
                (->> (str/split s' #"-")
-                 (map str/capitalize)
-                 (str/join "-")
-                 HttpHeaders/newEntity))]
+                    (map str/capitalize)
+                    (str/join "-")
+                    (AsciiString.)))]
 
       ;; in practice this should never happen, so we
       ;; can be stupid about cache expiration
@@ -96,7 +102,8 @@
       (.put cached-header-keys s s')
       s')))
 
-(p/def-map-type HeaderMap
+;; About 10x faster than using Clojure maps, and handles more keys
+(def-map-type HeaderMap
   [^HttpHeaders headers
    added
    removed
@@ -132,15 +139,17 @@
       default-value
       (if-let [e (find added k)]
         (val e)
-        (let [k' (str/lower-case (name k))
+        (let [k' (str/lower-case (if (keyword? k) (name k) k))
               vs (.getAll headers k')]
           (if (.isEmpty vs)
             default-value
             (if (== 1 (.size vs))
-              (.get vs 0)
+              (.toString (.get vs 0))
               (str/join "," vs))))))))
 
-(defn headers->map [^HttpHeaders h]
+(defn headers->map
+  "Returns a map of Ring headers from a Netty HttpHeaders object."
+  [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
 (defn map->headers!
@@ -166,6 +175,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defn ring-response->netty-response
   "Turns a Ring response into a Netty HTTP/1.1 DefaultHttpResponse"
+  ^DefaultHttpResponse
   [rsp]
   (let [status (get rsp :status 200)
         headers (get rsp :headers)
@@ -179,7 +189,8 @@
 
 (defn ring-request->netty-request
   "Turns a Ring request into a Netty HTTP/1.1 DefaultHttpRequest"
-  ^DefaultHttpRequest [req]
+  ^DefaultHttpRequest
+  [req]
   (let [headers (get req :headers)
         netty-req (DefaultHttpRequest.
                     HttpVersion/HTTP_1_1
@@ -193,7 +204,8 @@
 
 (defn ring-request->full-netty-request
   "Turns a Ring request into a Netty HTTP/1.1 DefaultFullHttpRequest"
-  ^DefaultFullHttpRequest [req]
+  ^DefaultFullHttpRequest
+  [req]
   (let [headers (get req :headers)
         netty-req (DefaultFullHttpRequest.
                     HttpVersion/HTTP_1_1
@@ -216,8 +228,8 @@
    request-arrived]
   :uri (let [idx (long question-mark-index)]
          (if (neg? idx)
-           (.getUri req)
-           (.substring (.getUri req) 0 idx)))
+           (.uri req)
+           (.substring (.uri req) 0 idx)))
   :query-string (let [uri (.uri req)]
                   (if (neg? question-mark-index)
                     nil
@@ -230,13 +242,14 @@
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
   :remote-addr (netty/channel-remote-address ch)
-  :aleph/request-arrived request-arrived)
+  :aleph/request-arrived request-arrived
+  :protocol "HTTP/1.1")
 
-(p/def-derived-map NettyResponse [^HttpResponse rsp complete body]
+(p/def-derived-map NettyResponse [^HttpResponse rsp destroy-conn? body]
   :status (-> rsp .status .code)
   :aleph/keep-alive? (HttpUtil/isKeepAlive rsp)
   :headers (-> rsp .headers headers->map)
-  :aleph/complete complete
+  :aleph/destroy-conn? destroy-conn?
   :body body)
 
 (defn netty-request->ring-request
@@ -251,8 +264,8 @@
    (System/nanoTime)))
 
 (defn netty-response->ring-response
-  [rsp complete body]
-  (->NettyResponse rsp complete body))
+  [rsp destroy-conn? body]
+  (->NettyResponse rsp destroy-conn? body))
 
 (defn ring-request-ssl-session [^NettyRequest req]
   (netty/channel-ssl-session (.ch req)))
@@ -446,8 +459,8 @@
             (d/catch' (fn [_]))))]
 
   (defn send-message
-    "Write an HttpMessage and body to a Netty channel. Returns a ChannelFuture
-     for the status of the write/flush operations.
+    "Write an HttpMessage and body to a Netty channel or context. Returns a
+     ChannelFuture for the status of the write/flush operations.
 
      Accepts Strings, ByteBuffers, ByteBufs, byte[], ChunkedInputs,
      Files, Paths, HttpFiles, seqs and streams for bodies.
@@ -495,17 +508,25 @@
     (s/put! response-stream ex)
     (netty/close ctx)))
 
-(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream complete response-stream]
+(defn handle-decoder-failure [^ChannelHandlerContext ctx msg stream destroy-conn? response-stream]
   (if (instance? HttpContent msg)
     ;; note that we are most likely to get this when dealing
     ;; with transfer encoding chunked
     (if-let [s @stream]
       (do
-        ;; flag that body was not completed succesfully
-        (d/success! @complete true)
+        ;; flag that connection was terminated early
+        (d/success! @destroy-conn? true)
         (s/close! s))
       (send-response-decoder-failure ctx msg response-stream))
     (send-response-decoder-failure ctx msg response-stream)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; backwards compatibility
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(def ^:deprecated ^:no-doc attach-idle-handlers netty/add-idle-handlers)
+(def ^:deprecated ^:no-doc close-on-idle-handler netty/close-on-idle-handler)
+(def ^:deprecated ^:no-doc coerce-element common/coerce-element)
 
 
 (comment

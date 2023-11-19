@@ -56,4 +56,4 @@
     ;; "binary" effectively means "do nothing"
     :binary val
     (throw (IllegalArgumentException.
-             (str "unsupported encodiing given:" (pr-str encoding))))))
+             (str "unsupported encoding given:" (pr-str encoding))))))

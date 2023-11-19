@@ -5,9 +5,9 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 
 public class AlephChannelInitializer extends ChannelInitializer<Channel> {
-    
+
     private final IFn chanBuilderFn;
-    
+
     public AlephChannelInitializer(IFn chanBuilderFn) {
         this.chanBuilderFn = chanBuilderFn;
     }

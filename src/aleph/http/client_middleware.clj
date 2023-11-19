@@ -17,17 +17,25 @@
     (io.netty.buffer
       ByteBuf
       Unpooled)
+    (io.netty.handler.codec Headers)
     (io.netty.handler.codec.base64 Base64)
     (io.netty.handler.codec.http
-      HttpHeaders
-      HttpHeaderNames)
+      HttpHeaderNames
+      HttpHeaders)
     (io.netty.handler.codec.http.cookie
       ClientCookieDecoder
       ClientCookieEncoder
       DefaultCookie)
-    (java.io InputStream ByteArrayOutputStream ByteArrayInputStream)
-    (java.nio.charset StandardCharsets)
-    (java.net IDN URL URLEncoder URLDecoder)))
+    (java.io
+      ByteArrayInputStream
+      ByteArrayOutputStream
+      InputStream)
+    (java.net
+      IDN
+      URL
+      URLDecoder
+      URLEncoder)
+    (java.nio.charset StandardCharsets)))
 
 ;; Cheshire is an optional dependency, so we check for it at compile time.
 (def ^:no-doc json-enabled?
@@ -167,7 +175,7 @@
      :uri          path
      :path         path
      :user-info    (when-let [user-info (.getUserInfo url-parsed)]
-                     (URLDecoder/decode user-info))
+                     (URLDecoder/decode user-info "UTF-8"))
      :query-string (url-encode-illegal-characters (.getQuery url-parsed))}))
 
 (defn- nest-params
@@ -738,9 +746,12 @@
 (defn ^:no-doc extract-cookies-from-response-headers
   ([headers]
    (extract-cookies-from-response-headers default-cookie-spec headers))
-  ([cookie-spec ^aleph.http.core.HeaderMap headers]
-   (let [^HttpHeaders raw-headers (.headers headers)]
-     (->> (.getAll raw-headers set-cookie-header-name)
+  ([cookie-spec header-m]
+   (let [raw-headers (.headers header-m)]
+     (->> (condp instance? raw-headers
+            HttpHeaders (.getAll ^HttpHeaders raw-headers set-cookie-header-name)
+            Headers (.getAll ^Headers raw-headers set-cookie-header-name)
+            (throw (IllegalArgumentException. (str "Unknown headers type: " (class raw-headers)))))
           (map (partial decode-set-cookie-header cookie-spec))))))
 
 (defn ^:no-doc handle-cookies [{:keys [cookie-store cookie-spec]

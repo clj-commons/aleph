@@ -21,45 +21,69 @@
       ReadTimeoutException
       RequestTimeoutException)
     (io.aleph.dirigiste Pools)
+    (io.netty.handler.codec Headers)
     (io.netty.handler.codec.http HttpHeaders)
     (java.net
       InetSocketAddress
       URI)
-    (java.util.concurrent
-      TimeoutException)))
+    (java.util.concurrent TimeoutException)))
 
 (defn start-server
-  "Starts an HTTP server using the provided Ring `handler`.  Returns a server object which can be stopped
-   via `java.io.Closeable.close()`, and whose port can be discovered with `aleph.netty/port`.
+  "Starts an HTTP server using the provided Ring `handler`.  Returns a server
+   object which can be stopped via `java.io.Closeable.close()`, and whose port
+   can be discovered with `aleph.netty/port` if not set.
 
+   Defaults to HTTP/1.1-only.
 
-   Param key                           | Description
-   | ---                               | ---
-   | `port`                            | the port the server will bind to.  If `0`, the server will bind to a random port.
-   | `socket-address`                  |  a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `bootstrap-transform`             | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
-   | `ssl-context`                     | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
-   | `manual-ssl?`                     | set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform`) to select the SSL context based on the client's indicated host name. |
-   | `pipeline-transform`              | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
-   | `executor`                        | a `java.util.concurrent.Executor` which is used to handle individual requests.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `shutdown-executor?`              | if `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true`.
-   | `request-buffer-size`             | the maximum body size, in bytes, which the server will allow to accumulate before invoking the handler, defaults to `16384`.  This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance.
-   | `raw-stream?`                     | if `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
-   | `rejected-handler`                | a spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed.  Defaults to a `503` response.
-   | `max-request-body-size`           | the maximum length of the request body in bytes. Implcitly adds `io.netty.handler.codec.http.HttpObjectAggregator` on the pipeline. Unspecified and thus disabled by default.
-   | `max-initial-line-length`         | the maximum characters that can be in the initial line of the request, defaults to `8192`
-   | `max-header-size`                 | the maximum characters that can be in a single header entry of a request, defaults to `8192`
-   | `max-chunk-size`                  | the maximum characters that can be in a single chunk of a streamed request, defaults to `16384`
-   | `validate-headers`                | if `true`, validates the headers when decoding the request, defaults to `false`
-   | `initial-buffer-size`             | the initial buffer size of characters when decoding the request, defaults to `128`
-   | `allow-duplicate-content-lengths` | if `true`, allows duplicate `Content-Length` headers, defaults to true
-   | `transport`                       | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)
-   | `compression?`                    | when `true` enables http compression, defaults to `false`
-   | `compression-level`               | optional compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. When set, enables http content compression regardless of the `compression?` flag value
-   | `idle-timeout`                    | when set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time).
-   | `continue-handler`                | optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those.
-   | `continue-executor`               | optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler.  To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread.
-   | `shutdown-timeout`                | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely."
+   To enable HTTP/2, you must supply an SslContext with ALPN support for HTTP/2.
+   See `aleph.netty/ssl-server-context` and `aleph.netty/application-protocol-config`
+   for more details. (You can also set `use-h2c?` to force HTTP/2 cleartext, but
+   this is strongly discouraged.)
+
+   | Param key                         | Description |
+   | ---                               | --- |
+   | `port`                            | The port the server will bind to. If `0`, the server will bind to a random port. |
+   | `socket-address`                  | A `java.net.SocketAddress` specifying both the port and interface to bind to. |
+   | `bootstrap-transform`             | A function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it. |
+   | `ssl-context`                     | An `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
+   | `manual-ssl?`                     | Set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform` ) to select the SSL context based on the client's indicated host name. |
+   | `executor`                        | A `java.util.concurrent.Executor` which is used to handle individual requests. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
+   | `shutdown-executor?`              | If `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true` . |
+   | `request-buffer-size`             | The maximum body size, in bytes, that the server will allow to accumulate before placing on the body stream, defaults to `16384` . This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance. |
+   | `raw-stream?`                     | If `true`, bodies of requests will not be buffered at all, and will be represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream` . This will minimize copying, but means that care must be taken with Netty's buffer reference counting. Only recommended for advanced users. |
+   | `rejected-handler`                | A spillover request-handler which is invoked when the executor's queue is full, and the request cannot be processed. Defaults to a `503` response. |
+   | `max-request-body-size`           | The maximum length of the request body in bytes. If set, requires queuing up content until the request is finished, and thus delays processing. Unlimited by default. |
+   | `validate-headers`                | If `true`, validates the headers when decoding the request, defaults to `false` |
+   | `transport`                       | The transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio` ) |
+   | `compression?`                    | When `true`, enables HTTP body compression, defaults to `false` |
+   | `compression-options`             | An optional Java array of `io.netty.handler.codec.compression.CompressionOptions`. If supplied, any codec options not passed in will be unavailable. Otherwise, uses default options for all available codecs. For Brotli/Zstd, be sure to guard your use with their `.isAvailable()` methods and add their deps to your classpath. |
+   | `idle-timeout`                    | When set, connections are closed after not having performed any I/O operations for the given duration, in milliseconds. Defaults to `0` (infinite idle time). |
+   | `continue-handler`                | Optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those. |
+   | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
+   | `shutdown-timeout`                | Interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of `0` bypasses waiting entirely. |
+
+   HTTP/1-specific options
+   | Param key                         | Description |
+   | ---                               | --- |
+   | `allow-duplicate-content-lengths` | If `true`, allows duplicate `Content-Length` headers, defaults to true. Always true for HTTP/2 |
+   | `max-initial-line-length`         | The maximum characters that can be in the initial line of the request, defaults to `8192` |
+   | `max-header-size`                 | The maximum characters that can be in a single header entry of a request, defaults to `8192` |
+   | `max-chunk-size`                  | The maximum characters that can be in a single chunk of a streamed request, defaults to `16384` |
+   | `initial-buffer-size`             | The initial buffer size of characters when decoding the request, defaults to `128` |
+   | `pipeline-transform`              | (DEPRECATED: Use `:http1-pipeline-transform` instead.) A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it. |
+   | `http1-pipeline-transform`        | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/1 connection, and modifies it. Contains the user handler at \"request-handler\". |
+   | `compression-level`               | (DEPRECATED: Use `compression-options` or leave unset.) Optional gzip/deflate compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6` . When set, ONLY older gzip and deflate codecs are available. Overridden by `compression-options`. |
+
+   HTTP/2-specific options
+   | Param key                         | Description |
+   | ---                               | --- |
+   | `use-h2c?`                        | If `true`, uses HTTP/2 for insecure servers. Has no effect on secure servers, and upgrades are not allowed. Defaults to false. |
+   | `conn-go-away-handler`            | A connection-level cleanup handler for when a GOAWAY is received. Indicates the peer has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
+   | `stream-go-away-handler`          | A stream-level cleanup handler called for streams above the last-stream-id in a GOAWAY frame. Indicates the stream will not be processed. Called with the context and the Http2GoAwayFrame. |
+   | `reset-stream-handler`            | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |
+   | `http2-conn-pipeline-transform`   | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/2 connection, and modifies it. |
+   | `http2-stream-pipeline-transform` | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a single HTTP/2 stream, and modifies it. Contains the user handler at \"handler\". |
+   "
   [handler options]
   (server/start-server handler options))
 
@@ -112,8 +136,8 @@
    | `control-period`             | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
    | `dns-options`                | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instance
    | `middleware`                 | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`
-   | `pool-builder-fn`            | an optional one arity function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
-   | `pool-controller-builder-fn` | an optional zero arity function which returns a `io.aleph.dirigiste.IPool$Controller`.
+   | `pool-builder-fn`            | an optional 1-ary function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
+   | `pool-controller-builder-fn` | an optional 0-ary function which returns a `io.aleph.dirigiste.IPool$Controller`.
 
    the `connection-options` are a map describing behavior across all connections:
 
@@ -137,8 +161,15 @@
    | `proxy-options`           | a map to specify proxy settings. HTTP, SOCKS4 and SOCKS5 proxies are supported. Note, that when using proxy `connections-per-host` configuration is still applied to the target host disregarding tunneling settings. If you need to limit number of connections to the proxy itself use `total-connections` setting.
    | `response-executor`       | optional `java.util.concurrent.Executor` that will execute response callbacks
    | `log-activity`            | when set, logs all events on each channel (connection) with a log level given. Accepts one of `:trace`, `:debug`, `:info`, `:warn`, `:error` or an instance of `io.netty.handler.logging.LogLevel`. Note, that this setting *does not* enforce any changes to the logging configuration (default configuration is `INFO`, so you won't see any `DEBUG` or `TRACE` level messages, unless configured explicitly)
-   | `http-versions`           | an optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http2 :http1]`.
+   | `http-versions`           | an optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http1]`.
+
+   HTTP/2-specific options
+   | Param key                 | Description |
+   | ---                       | --- |
    | `force-h2c?`              | an optional boolean indicating you wish to force the use of insecure HTTP/2 cleartext (h2c) for `http://` URLs. Not recommended, and unsupported by most servers in the wild. Only do this with infrastructure you control. Defaults to `false`.
+   | `conn-go-away-handler`    | A connection-level cleanup handler for when a GOAWAY is received. Indicates the server has, or soon will, close the TCP connection. Contains the last-processed stream ID.|
+   | `stream-go-away-handler`  | A stream-level cleanup handler called for streams above the last-stream-id in a GOAWAY frame. Indicates the stream will not be processed. Called with the context and the Http2GoAwayFrame. |
+   | `reset-stream-handler`    | A stream-level cleanup handler called for streams that have been sent RST_STREAM. Called with the context and the Http2ResetFrame. |
 
    Supported `proxy-options` are
 
@@ -376,6 +407,7 @@
                                      ;; request failed, dispose of the connection
                                      (d/catch'
                                        (fn [e]
+                                         (log/trace "Request failed. Disposing of connection...")
                                          (flow/dispose pool k conn)
                                          (d/error-deferred e)))
 
@@ -383,12 +415,13 @@
                                      (d/chain'
                                        (fn cleanup-conn [rsp]
 
-                                         ;; only release the connection back once the response is complete
-                                         (-> (:aleph/complete rsp)
+                                         ;; either destroy/dispose of the conn, or release it back for reuse
+                                         (-> (:aleph/destroy-conn? rsp)
                                              (maybe-timeout! read-timeout)
 
                                              (d/catch' TimeoutException
                                                (fn [^Throwable e]
+                                                 (log/trace "Request timed out. Disposing of connection...")
                                                  (flow/dispose pool k conn)
                                                  (d/error-deferred (ReadTimeoutException. e))))
 
@@ -397,10 +430,12 @@
                                                  (if (or early?
                                                          (not (:aleph/keep-alive? rsp))
                                                          (<= 400 (:status rsp)))
-                                                   (flow/dispose pool k conn)
+                                                   (do
+                                                     (log/trace "Connection finished. Disposing...")
+                                                     (flow/dispose pool k conn))
                                                    (flow/release pool k conn)))))
                                          (-> rsp
-                                             (dissoc :aleph/complete)
+                                             (dissoc :aleph/destroy-conn?)
                                              (assoc :connection-time (- end start)))))))))
 
                            (fn handle-response [rsp]
@@ -433,13 +468,19 @@
                   :doc ~(str "Makes a " (str/upper-case (str method)) " request, returns a deferred representing
    the response.
 
-   Param key      | Description
-   | ---          | ---
-   | `pool`       | the `connection-pool` that should be used, defaults to the `default-connection-pool`
-   | `middleware` | any additional middleware that should be used for handling requests and responses
-   | `headers`    | the HTTP headers for the request
-   | `body`       | an optional body, which should be coerce-able to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
-   | `multipart`  | a vector of bodies")
+   Param key              | Description
+   | ---                  | ---
+   | `headers`            | the HTTP headers for the request
+   | `body`               | an optional body, which should be coerce-able to a byte representation via [byte-streams](https://github.com/clj-commons/byte-streams)
+   | `middleware`         | any additional middleware that should be used for handling requests and responses
+   | `multipart`          | a vector of bodies
+   | `follow-redirects?`  | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`
+   | `pool`               | a custom connection pool
+   | `pool-timeout`       | timeout in milliseconds for the pool to generate a connection
+   | `connection-timeout` | timeout in milliseconds for the connection to become established
+   | `request-timeout`    | timeout in milliseconds for the arrival of a response over the established connection
+   | `read-timeout`       | timeout in milliseconds for the response to be completed
+   | `response-executor`  | optional `java.util.concurrent.Executor` that will handle the requests (defaults to a `flow/utilization-executor` of 256 `max-threads` and a `queue-length` of 0)")
                   :arglists arglists)))
 
 (def-http-method get)
@@ -453,10 +494,14 @@
 (def-http-method connect)
 
 (defn get-all
-  "Given a header map from an HTTP request or response, returns a collection of values associated with the key,
-   rather than a comma-delimited string."
-  [^aleph.http.core.HeaderMap headers ^String k]
-  (-> headers ^HttpHeaders (.headers) (.getAll k)))
+  "Given a header map from an HTTP request or response, returns a collection of
+   values associated with the key, rather than a comma-delimited string."
+  [header-m ^String k]
+  (let [raw-headers (.headers header-m)]
+    (condp instance? raw-headers
+      HttpHeaders (.getAll ^HttpHeaders raw-headers k)
+      Headers (.getAll ^Headers raw-headers k)
+      (throw (IllegalArgumentException. (str "Unknown headers type: " (class raw-headers)))))))
 
 (defn wrap-ring-async-handler
   "Converts given asynchronous Ring handler to Aleph-compliant handler.
@@ -495,14 +540,17 @@
             '(java.nio.file Files OpenOption Path Paths)
             '(java.nio.file.attribute FileAttribute)))
 
-  ;; basic test
-  (let [pool (connection-pool
-               {:connection-options
-                {:http-versions [:http2]}})]
-    (def result @(get "https://postman-echo.com?hand=wave" {:pool pool})))
+  (def pool (connection-pool
+              {:connection-options
+               {:http-versions [:http2]}}))
 
-  (-> @(get "https://google.com" {})
-      :body bs/to-string)
+  ;; basic test
+  (def result @(get "https://postman-echo.com?hand=wave" {:pool pool}))
+
+  ;; aleph.localhost
+  (-> @(get "https://aleph.localhost:11256/" {:pool pool})
+      :body
+      bs/to-string)
 
 
   ;; basic file post test

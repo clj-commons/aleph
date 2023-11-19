@@ -51,15 +51,28 @@
 (def client-key (gen-key 65537 (read-string (slurp "test/client_key.edn"))))
 
 (def server-ssl-context-opts
-  {:private-key server-key
+  {:private-key                 server-key
    ;; See https://github.com/clj-commons/aleph/issues/647
-   :protocols ["TLSv1.2" "TLSv1.3"]
-   :certificate-chain [server-cert]
-   :trust-store [ca-cert]
-   :client-auth :optional})
+   :protocols                   ["TLSv1.2" "TLSv1.3"]
+   :certificate-chain           [server-cert]
+   :trust-store                 [ca-cert]
+   :client-auth                 :optional
+   :application-protocol-config (netty/application-protocol-config
+                                  [ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_2])})
 
 (def server-ssl-context
   (netty/ssl-server-context server-ssl-context-opts))
+
+(def http1-only-ssl-context
+  (netty/ssl-server-context (assoc server-ssl-context-opts
+                                   :application-protocol-config
+                                   (netty/application-protocol-config [:http1]))))
+
+(def http2-only-ssl-context
+  "Well, minus the HTTP/1 fallback if ALPN isn't being used at all..."
+  (netty/ssl-server-context (assoc server-ssl-context-opts
+                                   :application-protocol-config
+                                   (netty/application-protocol-config [:http2]))))
 
 (def client-ssl-context-opts
   {:private-key                 client-key

@@ -52,7 +52,7 @@
   (let [req {:request-method :get
              :query-params {:foo {:bar "baz"}}}
         {:keys [query-string]} (reduce #(%2 %1) req middleware/default-middleware)]
-    (is (= "foo[bar]=baz" (URLDecoder/decode query-string)))))
+    (is (= "foo[bar]=baz" (URLDecoder/decode query-string "UTF-8")))))
 
 (deftest test-cookie-store
   (let [c1 {:name "id"
@@ -125,14 +125,14 @@
 
 (defn req->query-string [req]
   (-> (reduce #(%2 %1) req middleware/default-middleware)
-    :query-string
-    URLDecoder/decode))
+      :query-string
+      (URLDecoder/decode "UTF-8")))
 
 (defn req->body-raw [req]
   (:body (reduce #(%2 %1) req middleware/default-middleware)))
 
 (defn req->body-decoded [req]
-  (URLDecoder/decode (req->body-raw req)))
+  (URLDecoder/decode (req->body-raw req) "UTF-8"))
 
 (deftest test-nested-params
   (is (= "foo[bar]=baz" (req->query-string {:request-method :get

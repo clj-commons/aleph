@@ -1,0 +1,2 @@
+# Set this to a local file for curl to write premaster secrets to for Wireshark
+SSLKEYLOGFILE=

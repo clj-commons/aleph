@@ -3,6 +3,7 @@
   (:require
     [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p]
+    [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.executor :as e]
@@ -63,6 +64,10 @@
       LoggingHandler)
     (io.netty.handler.ssl
       ApplicationProtocolConfig
+      ApplicationProtocolConfig$Protocol
+      ApplicationProtocolConfig$SelectedListenerFailureBehavior
+      ApplicationProtocolConfig$SelectorFailureBehavior
+      ApplicationProtocolNames
       ClientAuth
       SslContext
       SslContextBuilder
@@ -71,6 +76,10 @@
     (io.netty.handler.ssl.util
       InsecureTrustManagerFactory
       SelfSignedCertificate)
+    (io.netty.handler.timeout
+      IdleState
+      IdleStateEvent
+      IdleStateHandler)
     (io.netty.incubator.channel.uring
       IOUring
       IOUringDatagramChannel
@@ -88,6 +97,7 @@
       SequentialDnsServerAddressStreamProvider
       SingletonDnsServerAddressStreamProvider)
     (io.netty.util
+      AsciiString
       Attribute
       AttributeKey
       ResourceLeakDetector
@@ -107,6 +117,7 @@
       Log4JLoggerFactory
       Slf4JLoggerFactory)
     (java.io
+      Closeable
       File
       IOException
       InputStream)
@@ -129,6 +140,8 @@
       SSLHandshakeException
       TrustManager
       TrustManagerFactory)))
+
+(set! *warn-on-reflection* true)
 
 (def ^:no-doc ^CharSequenceValueConverter char-seq-val-converter CharSequenceValueConverter/INSTANCE)
 
@@ -166,13 +179,13 @@
 ;;;
 
 (defn ^:no-doc channel-server-name [^Channel ch]
-  (some-> ch ^InetSocketAddress (.localAddress) .getHostName))
+  (some-> ch ^InetSocketAddress (.localAddress) (.getHostName)))
 
 (defn ^:no-doc channel-server-port [^Channel ch]
-  (some-> ch ^InetSocketAddress (.localAddress) .getPort))
+  (some-> ch ^InetSocketAddress (.localAddress) (.getPort)))
 
 (defn ^:no-doc channel-remote-address [^Channel ch]
-  (some-> ch ^InetSocketAddress (.remoteAddress) .getAddress .getHostAddress))
+  (some-> ch ^InetSocketAddress (.remoteAddress) (.getAddress) (.getHostAddress)))
 
 ;;; Defaults defined here since they are not publically exposed by Netty
 
@@ -249,6 +262,7 @@
       :else
       (.writeBytes buf (bs/to-byte-buffer x))))
 
+  ;; TODO: switch to pooled buffers (http://normanmaurer.me/presentations/2014-twitter-meetup-netty/slides.html#12.0)
   (defn ^ByteBuf to-byte-buf
     "Converts `x` into a `io.netty.buffer.ByteBuf`."
     ([x]
@@ -260,7 +274,11 @@
        (Unpooled/copiedBuffer ^bytes x)
 
        (instance? String x)
+       ; do we need ByteBuffer/wrap here? are there endian concerns - quick repl test suggests no
        (-> ^String x (.getBytes charset) ByteBuffer/wrap Unpooled/wrappedBuffer)
+
+       (instance? AsciiString x)
+       (-> ^AsciiString x (.toByteArray) Unpooled/wrappedBuffer)
 
        (instance? ByteBuffer x)
        (Unpooled/wrappedBuffer ^ByteBuffer x)
@@ -290,13 +308,12 @@
    https://github.com/clj-commons/aleph/issues/603."
   []
   (let [thread (Thread/currentThread)
-        context-class-loader (.getContextClassLoader thread)
-        compiler-class-loader (.getClassLoader clojure.lang.Compiler)]
+        context-class-loader (.getContextClassLoader thread)]
     (when-not (instance? DynamicClassLoader context-class-loader)
       (.setContextClassLoader
         thread
         (DynamicClassLoader. (or context-class-loader
-                                 compiler-class-loader))))))
+                                 (.getClassLoader clojure.lang.Compiler)))))))
 
 (defn- operation-complete [^Future f d]
   (cond
@@ -330,23 +347,30 @@
     (-> ^Channel x .alloc .ioBuffer)
     (-> ^ChannelHandlerContext x .alloc .ioBuffer)))
 
-(defn ^:no-doc write [x msg]
-  (if (instance? Channel x)
-    (.write ^Channel x msg (.voidPromise ^Channel x))
-    (.write ^ChannelHandlerContext x msg (.voidPromise ^ChannelHandlerContext x)))
+;; TODO: inline or macroize
+(defn ^:no-doc write
+  "Writes with a void promise for speed"
+  [^ChannelOutboundInvoker x msg]
+  (.write x msg (.voidPromise x))
   nil)
 
+(defn ^:no-doc write-fut
+  "Writes and returns a ChannelFuture"
+  [^ChannelOutboundInvoker x msg]
+  (.write x msg))
+
+;; TODO: inline or macroize
+;; TODO: check to see if we can pass in a void promise
 (defn ^:no-doc write-and-flush
-  [x msg]
-  (if (instance? Channel x)
-    (.writeAndFlush ^Channel x msg)
-    (.writeAndFlush ^ChannelHandlerContext x msg)))
+  [^ChannelOutboundInvoker x msg]
+  (.writeAndFlush x msg))
 
-(defn ^:no-doc flush [x]
-  (if (instance? Channel x)
-    (.flush ^Channel x)
-    (.flush ^ChannelHandlerContext x)))
+;; TODO: inline or macroize
+(defn ^:no-doc flush
+  [^ChannelOutboundInvoker x]
+  (.flush x))
 
+;; TODO: inline or macroize
 (defn ^:no-doc close
   [^ChannelOutboundInvoker x]
   (.close x))
@@ -364,10 +388,11 @@
   (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
 
 (defmacro ^:no-doc safe-execute
-  "Executes the body on the event-loop (an executor service) associated with the Netty channel.
+  "Executes the body on the event-loop (an executor service) associated with
+   the Netty channel or context.
 
-   Executes immediately if current thread is in the event loop. Otherwise, returns a deferred
-   that will hold the result once done."
+   Executes immediately if current thread is in the event loop. Otherwise,
+   returns a deferred that will hold the result once done."
   [ch & body]
   `(let [f# (fn [] ~@body)
          event-loop# (-> ~ch aleph.netty/channel .eventLoop)]
@@ -539,6 +564,7 @@
   "A buffered Manifold stream with the originating Channel attached to the
    stream's metadata"
   [^Channel ch metric capacity]
+  (log/debug "Creating buffered source with capacity:" capacity)
   (let [src (s/buffered-stream
               metric
               capacity
@@ -788,7 +814,7 @@
 (defn pipeline-initializer
   "Returns a ChannelInitializer which builds the pipeline.
 
-   `pipeline-builder` is a 1-arity fn that takes a ChannelPipeline and
+   `pipeline-builder` is a 1-ary fn that takes a ChannelPipeline and
    configures it."
   ^ChannelInitializer
   [pipeline-builder]
@@ -806,11 +832,11 @@
   (if-let [^Channel ch (->> stream meta :aleph/channel)]
     (do
       (safe-execute ch
-                    (let [pipeline (.pipeline ch)]
-                      (when (and
-                              (.isActive ch)
-                              (nil? (.get pipeline "bandwidth-tracker")))
-                        (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
+        (let [pipeline (.pipeline ch)]
+          (when (and
+                  (.isActive ch)
+                  (nil? (.get pipeline "bandwidth-tracker")))
+            (.addFirst pipeline "bandwidth-tracker" (bandwidth-tracker ch)))))
       true)
     false))
 
@@ -894,23 +920,47 @@
             (IllegalArgumentException.
               "ssl context arguments invalid"))))
 
+  (let [->alpn-name {:http1                            ApplicationProtocolNames/HTTP_1_1
+                     :http2                            ApplicationProtocolNames/HTTP_2
+                     ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_1_1
+                     ApplicationProtocolNames/HTTP_2   ApplicationProtocolNames/HTTP_2}]
+
+    (defn application-protocol-config
+      "Creates a default config for Application-Layer Protocol Negotiation (ALPN),
+       which TLS uses to negotiate which HTTP version to use during the handshake.
+
+       Takes a vector of HTTP versions, in order of preference. E.g., `[:http2 :http1]`"
+      ^ApplicationProtocolConfig
+      [protocols]
+      (ApplicationProtocolConfig.
+        ApplicationProtocolConfig$Protocol/ALPN
+        ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+        ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
+        ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+        ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
+        ^"[Ljava.lang.String;"
+        (into-array String (mapv ->alpn-name protocols)))))
+
   (defn ssl-client-context
     "Creates a new client SSL context.
      Keyword arguments are:
 
-     Param key                | Description
-     | ---                    | ---
-     | `private-key`          | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
-     | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
-     | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store`          | a `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider`         | `SslContext` implementation to use, one of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL-based implementations, the library should be installed and linked properly.
-     | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
-     | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
-     | `session-cache-size`   | the size of the cache used for storing SSL session objects.
-     | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
-     | `application-protocol-config` | an `ApplicationProtocolConfig` instance to configure ALPN.
-     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
+     | Param key                     | Description
+     | ---                           | ---
+     | `private-key`                 | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the client-side private key.
+     | `certificate-chain`           | A `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`, or array of `java.security.cert.X509Certificate` containing the client's certificate chain.
+     | `private-key-password`        | A string, the private key's password (optional).
+     | `trust-store`                 | A `java.io.File`, `java.io.InputStream`, array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider`                | `SslContext` implementation to use, one of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL-based implementations, the library should be installed and linked properly.
+     | `ciphers`                     | A sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols`                   | A sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size`          | The size of the cache used for storing SSL session objects.
+     | `session-timeout`             | The timeout for the cached SSL session objects, in seconds.
+     | `application-protocol-config` | An `ApplicationProtocolConfig` instance to configure ALPN. See the `application-protocol-config` function.
+
+     Note that if specified, the types of `private-key` and `certificate-chain`
+     must be compatible: either both input streams, both files, or a private key
+     and an array of certificates."
     (^SslContext
      []
      (ssl-client-context {}))
@@ -990,23 +1040,28 @@
     "Creates a new server SSL context.
      Keyword arguments are:
 
-     Param key                | Description
-     | ---                    | ---
-     | `private-key`          | a `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
-     | `certificate-chain`    | a `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
-     | `private-key-password` | a string, the private key's password (optional).
-     | `trust-store`          | a `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
-     | `ssl-provider`         | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
-     | `ciphers`              | a sequence of strings, the cipher suites to enable, in the order of preference.
-     | `protocols`            | a sequence of strings, the TLS protocol versions to enable.
-     | `session-cache-size`   | the size of the cache used for storing SSL session objects.
-     | `session-timeout`      | the timeout for the cached SSL session objects, in seconds.
-     | `start-tls`            | if the first write request shouldn't be encrypted.
-     | `client-auth`          | the client authentication mode, one of `:none`, `:optional` or `:require`.
+     Param key                       | Description
+     | ---                           | ---
+     | `private-key`                 | A `java.io.File`, `java.io.InputStream`, or `java.security.PrivateKey` containing the server-side private key.
+     | `certificate-chain`           | A `java.io.File`, `java.io.InputStream`, or array of `java.security.cert.X509Certificate` containing the server's certificate chain.
+     | `private-key-password`        | A string, the private key's password (optional).
+     | `trust-store`                 | A `java.io.File`, `java.io.InputStream`, sequence of `java.security.cert.X509Certificate`,  array of `java.security.cert.X509Certificate`, `javax.net.ssl.TrustManager`, or a `javax.net.ssl.TrustManagerFactory` to initialize the context's trust manager.
+     | `ssl-provider`                | `SslContext` implementation to use, on of `:jdk`, `:openssl` or `:openssl-refcnt`. Note, that when using OpenSSL based implementations, the library should be installed and linked properly.
+     | `ciphers`                     | A sequence of strings, the cipher suites to enable, in the order of preference.
+     | `protocols`                   | A sequence of strings, the TLS protocol versions to enable.
+     | `session-cache-size`          | The size of the cache used for storing SSL session objects.
+     | `session-timeout`             | The timeout for the cached SSL session objects, in seconds.
+     | `start-tls`                   | If the first write request shouldn't be encrypted.
+     | `client-auth`                 | The client authentication mode, one of `:none`, `:optional` or `:require`.
+     | `application-protocol-config` | An `ApplicationProtocolConfig` instance to configure ALPN. See the `application-protocol-config` function.`
 
-     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either both input streams, both files, or a private key and an array of certificates."
-    ([] (ssl-server-context {}))
-    ([{:keys [private-key
+     Note that if specified, the types of `private-key` and `certificate-chain` must be \"compatible\": either
+     both input streams, both files, or a private key and an array of certificates."
+    (^SslContext
+     []
+     (ssl-server-context {}))
+    (^SslContext
+     [{:keys [private-key
               ^String private-key-password
               certificate-chain
               trust-store
@@ -1016,9 +1071,15 @@
               ^long session-cache-size
               ^long session-timeout
               start-tls
-              client-auth]}]
+              client-auth
+              ^ApplicationProtocolConfig application-protocol-config]}]
      (let [^SslContextBuilder
-           b (cond (and (instance? File private-key)
+           b (cond (and (instance? String private-key)
+                        (instance? String certificate-chain))
+                   (SslContextBuilder/forServer ^File (File. ^String certificate-chain)
+                                                ^File (File. ^String private-key)
+                                                private-key-password)
+                   (and (instance? File private-key)
                         (instance? File certificate-chain))
                    (SslContextBuilder/forServer ^File certificate-chain
                                                 ^File private-key
@@ -1073,26 +1134,42 @@
                      (.clientAuth (case client-auth
                                     :none ClientAuth/NONE
                                     :optional ClientAuth/OPTIONAL
-                                    :require ClientAuth/REQUIRE)))]
+                                    :require ClientAuth/REQUIRE))
+
+                     (some? application-protocol-config)
+                     (.applicationProtocolConfig application-protocol-config))]
+       (when application-protocol-config
+         (log/info "Application protocol config supports protocols:"
+                   (str/join ", " (.supportedProtocols application-protocol-config))))
        (.build b)))))
 
 (defn self-signed-ssl-context
-  "A self-signed SSL context for servers."
+  "A self-signed SSL context for servers.
+
+   Never use in production. Even if you control all clients, and want to use
+   a self-signed cert internally, do not use this fn, because Netty's
+   SelfSignedCertificate class is only for testing, and uses an insecure PRNG."
   ([]
    (self-signed-ssl-context "localhost"))
   ([hostname]
+   (self-signed-ssl-context hostname {}))
+  ([hostname opts]
    (let [cert (SelfSignedCertificate. hostname)]
-     (ssl-server-context {:private-key       (.privateKey cert)
-                          :certificate-chain (.certificate cert)}))))
+     (ssl-server-context (assoc opts
+                                :private-key (.privateKey cert)
+                                :certificate-chain (.certificate cert))))))
+
 
 (defn insecure-ssl-client-context
-  "An insure SSL context for servers."
+  "An insecure client SSL context."
   ([]
    (ssl-client-context {:trust-store InsecureTrustManagerFactory/INSTANCE}))
   ([opts]
    (ssl-client-context (assoc opts :trust-store InsecureTrustManagerFactory/INSTANCE))))
 
-(defn- coerce-ssl-context [options->context ssl-context]
+(defn- coerce-ssl-context
+  ^SslContext
+  [options->context ssl-context]
   (cond
     (instance? SslContext ssl-context)
     ssl-context
@@ -1167,36 +1244,44 @@
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
-(defn ^:no-doc ^ThreadFactory enumerating-thread-factory [prefix daemon?]
+(defn ^:no-doc enumerating-thread-factory
+  "Sets the ThreadFactory used by Netty EventLoopGroups.
+
+   Sets the ClassLoader to the Clojure DynamicClassLoader for any clj
+   code that could be loaded by Netty."
+  ^ThreadFactory
+  [prefix daemon?]
   (let [num-threads (atom 0)]
     (e/thread-factory
       #(str prefix "-" (swap! num-threads inc))
       (deliver (promise) nil)
       nil
       daemon?
-      (fn [group target name stack-size] (FastThreadLocalThread. group target name stack-size)))))
+      (fn [group target name stack-size]
+        (doto (FastThreadLocalThread. group target name stack-size)
+              (.setContextClassLoader (DynamicClassLoader.)))))))
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
-(def ^:private epoll-client-group
+(def ^:no-doc epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (EpollEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:private nio-client-group
+(def ^:no-doc nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (NioEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:private kqueue-client-group
+(def ^:no-doc kqueue-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
       (KQueueEventLoopGroup. (long thread-count) thread-factory))))
 
-(def ^:private io-uring-client-group
+(def ^:no-doc io-uring-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
@@ -1216,7 +1301,7 @@
     :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
     :nio (NioEventLoopGroup. num-threads thread-factory)))
 
-(defn ^:no-doc transport-server-channel [transport]
+(defn ^:no-doc transport-server-channel-class [transport]
   (case transport
     :epoll EpollServerSocketChannel
     :kqueue KQueueServerSocketChannel
@@ -1269,8 +1354,8 @@
     :nio NioSocketChannel))
 
 (defn dns-resolver-group-builder
-  "Creates an instance of DnsAddressResolverGroupBuilder that is used to configure and
-initialize an DnsAddressResolverGroup instance.
+  "Creates an instance of DnsAddressResolverGroupBuilder that is used to
+   configure and initialize an DnsAddressResolverGroup instance.
 
    DNS options are a map of:
 
@@ -1383,9 +1468,13 @@ initialize an DnsAddressResolverGroup instance.
 
    The 2-ary version is for servers.
 
-   The 3- and 4-ary version are for clients.
-   For these, the `remote-address` must be provided.
-   The `ssl-endpoint-id-alg` is the name of the algorithm to use for endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms). It defaults to \"HTTPS\" in the 3-ary version which is a reasonable default for non-HTTPS uses, too. Pass `nil` to disable endpoint identification."
+   The 3- and 4-ary versions are for clients. For these, the `remote-address`
+   must be provided.
+
+   The `ssl-endpoint-id-alg` is the name of the algorithm to use for endpoint
+   identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms).
+   It defaults to \"HTTPS\" in the 3-ary version which is a reasonable default
+   for non-HTTPS uses, too. Pass `nil` to disable endpoint identification."
   (^SslHandler
    [^Channel ch ^SslContext ssl-ctx]
    (.newHandler ssl-ctx
@@ -1521,8 +1610,33 @@ initialize an DnsAddressResolverGroup instance.
                           :transport           (if epoll? :epoll :nio)
                           :name-resolver       name-resolver}))))
 
+(defn close-on-idle-handler []
+  (channel-handler
+    :user-event-triggered
+    ([_ ctx evt]
+     (if (and (instance? IdleStateEvent evt)
+              (= IdleState/ALL_IDLE (.state ^IdleStateEvent evt)))
+       (do
+         (log/trace "Closing idle channel")
+         (close ctx))
+       (.fireUserEventTriggered ctx evt)))))
+
+(defn add-idle-handlers
+  ^ChannelPipeline
+  [^ChannelPipeline pipeline idle-timeout]
+  (if (pos? idle-timeout)
+    (do
+      (log/trace "Adding idle handlers with" idle-timeout "ms timeout")
+      (doto pipeline
+            (.addLast "idle" ^ChannelHandler (IdleStateHandler. 0 0 idle-timeout TimeUnit/MILLISECONDS))
+            (.addLast "idle-close" ^ChannelHandler (close-on-idle-handler))))
+    pipeline))
 
 (defn- add-channel-tracker-handler
+  "Wraps the pipeline-builder fn with a handler that adds a newly-active
+   channel to the common ChannelGroup.
+
+   Useful for things like broadcasting messages to all connected clients."
   [pipeline-builder chan-group]
   (fn [^ChannelPipeline pipeline]
     (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
@@ -1548,20 +1662,22 @@ initialize an DnsAddressResolverGroup instance.
             ^SocketAddress socket-address
             transport
             shutdown-timeout]
-     :or   {shutdown-timeout default-shutdown-timeout}}]
+     :or   {shutdown-timeout default-shutdown-timeout}
+     :as   opts}]
    (ensure-transport-available! transport)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
-         thread-factory (enumerating-thread-factory "aleph-netty-server-event-pool" false)
+         thread-factory (enumerating-thread-factory "aleph-server-pool" false)
          closed? (atom false)
-         chan-group (make-channel-group)
+         chan-group (make-channel-group)                    ; a ChannelGroup for all active server Channels
 
          ^EventLoopGroup group (transport-event-loop-group transport num-threads thread-factory)
 
-         ^Class channel (transport-server-channel transport)
+         ^Class channel-class (transport-server-channel-class transport)
 
          ^SslContext
          ssl-context (when (some? ssl-context)
+                       (log/warn "The :ssl-context option to `start-server` is discouraged, set up SSL with :pipeline-builder instead.")
                        (coerce-ssl-server-context ssl-context))
 
          pipeline-builder
@@ -1574,7 +1690,8 @@ initialize an DnsAddressResolverGroup instance.
                      (.option ChannelOption/SO_REUSEADDR true)
                      (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
-                     (.channel channel)
+                     (.channel channel-class)
+                     ;;TODO: add a server (.handler) call to the bootstrap, for logging or something
                      (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
                      (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
@@ -1582,8 +1699,9 @@ initialize an DnsAddressResolverGroup instance.
 
              ^ServerSocketChannel
              ch (-> b (.bind socket-address) .sync .channel)]
+
          (reify
-           java.io.Closeable
+           Closeable
            (close [_]
              (when (compare-and-set! closed? false true)
                ;; This is the three step closing sequence:
@@ -1604,7 +1722,9 @@ initialize an DnsAddressResolverGroup instance.
                    (d/finally'
                      ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
                      ;;    in flight pending requests.
-                     #(.shutdownGracefully group 0 0 TimeUnit/SECONDS)))
+                     ;;    We still wait 1.5s to gracefully end repeating tasks
+                     ;;    like the date-header-value.
+                     #(.shutdownGracefully group 1500 1500 TimeUnit/MILLISECONDS)))
                (when on-close
                  (d/chain'
                    (wrap-future (.terminationFuture group))
@@ -1625,10 +1745,29 @@ initialize an DnsAddressResolverGroup instance.
          (throw e))))))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; backwards compatibility
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:deprecated ^:no-doc array-class byte-array-class)
+(defn ^{:deprecated true
+        :no-doc true
+        :superseded-by "aleph.http.core/headers->map"}
+  headers [_]
+  (let [emsg "headers is no longer supported, use headers->map instead. It cannot be supported without causing a circular dependency."]
+    (log/error emsg)
+    (throw (UnsupportedOperationException. emsg))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; prn support for Netty for debugging
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod print-method AsciiString
+  [^AsciiString ascii-string ^java.io.Writer writer]
+  (.write writer "AS\"")
+  (.write writer (.toString ascii-string))
+  (.write writer "\""))
 
 (defn- ^:no-doc append-pipeline*
   [^StringBuilder sb ^ChannelPipeline pipeline]
@@ -1673,6 +1812,9 @@ initialize an DnsAddressResolverGroup instance.
   [^Http2StreamChannel chan ^java.io.Writer writer]
   (let [sb (StringBuilder.)]
     (.append sb (StringUtil/simpleClassName (class chan)))
+    (.append sb " [")
+    (.append sb (.id chan))
+    (.append sb "]")
     (.append sb " - stream ID: ")
     (.append sb (-> chan .stream .id))
     (append-chan-status* chan sb)
@@ -1684,6 +1826,9 @@ initialize an DnsAddressResolverGroup instance.
   [^Channel chan ^java.io.Writer writer]
   (let [sb (StringBuilder.)]
     (.append sb (StringUtil/simpleClassName (class chan)))
+    (.append sb " [")
+    (.append sb (.id chan))
+    (.append sb "]")
     (append-chan-status* chan sb)
     (.append sb ":\n")
     (append-pipeline* sb (.pipeline chan))
