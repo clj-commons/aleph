@@ -691,21 +691,13 @@
   "Returns a client SslContext, or nil if none is requested.
    Validates the ALPN setup."
   ^SslContext
-  [ssl? ssl-context desired-protocols insecure?]
+  [ssl? ssl-context http-versions insecure?]
   (if ssl?
     (if ssl-context
-      (let [^SslContext ssl-ctx (netty/coerce-ssl-client-context ssl-context)]
-        ;; check that ALPN is set up if HTTP/2 is requested (https://www.rfc-editor.org/rfc/rfc9113.html#section-3.3)_
-        (if (and (not (common/ssl-ctx-supports-http2? ssl-ctx))
-                 (some #(= ApplicationProtocolNames/HTTP_2 %) desired-protocols))
-          (let [emsg "HTTP/2 has been requested, but the required ALPN is not configured properly."
-                ex (ex-info emsg {:ssl-context ssl-context})]
-            (log/error ex emsg)
-            (throw ex))
-          ssl-ctx))
-
-      ;; otherwise, use a good default
-      (let [ssl-ctx-opts {:application-protocol-config (netty/application-protocol-config desired-protocols)}]
+      (-> ssl-context
+          (common/ensure-consistent-alpn-config http-versions)
+          (netty/coerce-ssl-client-context))
+      (let [ssl-ctx-opts {:application-protocol-config (netty/application-protocol-config http-versions)}]
         (if insecure?
           (netty/insecure-ssl-client-context ssl-ctx-opts)
           (netty/ssl-client-context ssl-ctx-opts))))
@@ -802,11 +794,7 @@
                                                 (get proxy-options :keep-alive? true))))
         authority (str host (when explicit-port? (str ":" port)))
 
-        desired-protocols (mapv {:http1 ApplicationProtocolNames/HTTP_1_1
-                                 :http2 ApplicationProtocolNames/HTTP_2}
-                                http-versions)
-
-        ssl-context (client-ssl-context ssl? ssl-context desired-protocols insecure?)
+        ssl-context (client-ssl-context ssl? ssl-context http-versions insecure?)
 
         logger (cond
                  (instance? LoggingHandler log-activity) log-activity

@@ -18,6 +18,8 @@
     (aleph.utils
       ConnectionTimeoutException
       RequestTimeoutException)
+    (clojure.lang
+      ExceptionInfo)
     (com.aayushatharva.brotli4j.decoder BrotliInputStream)
     (com.github.luben.zstd ZstdInputStream)
     (io.aleph.dirigiste
@@ -228,9 +230,11 @@
 (def http-server-options {:port port
                           :shutdown-timeout 0})
 (def http1-ssl-server-options (assoc http-server-options
-                                     :ssl-context (netty/self-signed-ssl-context)))
+                                     :http-versions [:http1]
+                                     :ssl-context test-ssl/server-ssl-context-opts))
 (def http2-server-options (assoc http-server-options
-                                 :ssl-context test-ssl/http2-only-ssl-context))
+                                 :http-versions [:http2]
+                                 :ssl-context test-ssl/server-ssl-context-opts))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -422,9 +426,9 @@
 
 (deftest test-ssl-files
   (let [client-path "/"
-        client-options {:connection-options {:ssl-context test-ssl/client-ssl-context}}
+        client-options {:connection-options {:ssl-context test-ssl/client-ssl-context-opts}}
         client-pool (http/connection-pool client-options)]
-    (with-http-ssl-servers echo-handler {:ssl-context test-ssl/server-ssl-context}
+    (with-http-ssl-servers echo-handler {}
       (is (str/blank?
            (-> @(http-put client-path
                           {:body (io/file "test/empty.txt")
@@ -1308,3 +1312,107 @@
           (is (= 200 (:status resp)))
           (is (= "" (bs/to-string (:body resp)))))))))
 
+
+(defn test-start-server-options [options]
+  (try
+    (with-server (http/start-server identity (merge http-server-options options))
+      :started)
+    (catch Exception e
+      e)))
+
+(deftest test-http-versions-config
+  (testing "ssl-context as options map"
+    (testing "with different HTTP versions in ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2]
+                     :ssl-context (assoc test-ssl/server-ssl-context-opts
+                                         :application-protocol-config
+                                         (netty/application-protocol-config [:http1]))})]
+        (is (instance? ExceptionInfo result))
+        (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result)))))
+    (testing "with different preference order in ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2 :http1]
+                     :ssl-context (assoc test-ssl/server-ssl-context-opts
+                                         :application-protocol-config
+                                         (netty/application-protocol-config [:http1 :http2]))})]
+        (is (instance? ExceptionInfo result))
+        (is (= "Desired HTTP version preference order differs from ALPN config." (ex-message result)))))
+    (testing "with extra HTTP versions in the ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http1]
+                     :ssl-context (assoc test-ssl/server-ssl-context-opts
+                                         :application-protocol-config
+                                         (netty/application-protocol-config [:http1 :http2]))})]
+        (is (instance? ExceptionInfo result))
+        (is (= "ALPN config contains more HTTP versions than desired." (ex-message result)))))
+    (testing "with matching ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2 :http1]
+                     :ssl-context (assoc test-ssl/server-ssl-context-opts
+                                         :application-protocol-config
+                                         (netty/application-protocol-config [:http2 :http1]))})]
+        (is (= :started result))))
+    (testing "with no ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2 :http1]
+                     :ssl-context test-ssl/server-ssl-context-opts})]
+        (is (= :started result)))))
+  (testing "ssl-context as SslContext instance"
+    (testing "with different HTTP versions in ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2]
+                     :ssl-context (netty/coerce-ssl-server-context
+                                   (assoc test-ssl/server-ssl-context-opts
+                                          :application-protocol-config
+                                          (netty/application-protocol-config [:http1])))})]
+        (is (instance? ExceptionInfo result))
+        (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result)))))
+    (testing "with different preference order in ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2 :http1]
+                     :ssl-context (netty/coerce-ssl-server-context
+                                   (assoc test-ssl/server-ssl-context-opts
+                                          :application-protocol-config
+                                          (netty/application-protocol-config [:http1 :http2])))})]
+        (is (instance? ExceptionInfo result))
+        (is (= "Desired HTTP version preference order differs from ALPN config." (ex-message result)))))
+    (testing "with extra HTTP versions in the ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http1]
+                     :ssl-context (netty/coerce-ssl-server-context
+                                   (assoc test-ssl/server-ssl-context-opts
+                                          :application-protocol-config
+                                          (netty/application-protocol-config [:http1 :http2])))})]
+        (is (instance? ExceptionInfo result))
+        (is (= "ALPN config contains more HTTP versions than desired." (ex-message result)))))
+    (testing "with matching ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2 :http1]
+                     :ssl-context (netty/coerce-ssl-server-context
+                                   (assoc test-ssl/server-ssl-context-opts
+                                          :application-protocol-config
+                                          (netty/application-protocol-config [:http2 :http1])))})]
+        (is (= :started result))))
+    (testing "with no ALPN config"
+      (let [result (test-start-server-options
+                    {:http-versions [:http2 :http1]
+                     :ssl-context test-ssl/server-ssl-context})]
+        (is (instance? ExceptionInfo result))
+        (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result))))))
+  (testing "HTTP/2 without ssl-context"
+    (let [result (test-start-server-options
+                  {:http-versions [:http2]})]
+      ;; TODO: Shouldn't this fail?
+      (is (= :started result))))
+  (testing "HTTP/2 without ssl-context but with h2c"
+    (let [result (test-start-server-options
+                  {:use-h2c? true
+                   :http-versions [:http2]})]
+      (is (= :started result))))
+  (testing "HTTP/2 with ssl-context *and* with h2c (which has no effect then)"
+    (let [result (test-start-server-options
+                  {:use-h2c? true
+                   :http-versions [:http2]
+                   :ssl-context test-ssl/server-ssl-context-opts})]
+      (is (= :started result)))))

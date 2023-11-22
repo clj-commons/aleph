@@ -14,7 +14,7 @@
       DateFormatter
       DecoderResult
       DecoderResultProvider)
-    (io.netty.handler.ssl ApplicationProtocolNames SslContext)
+    (io.netty.handler.ssl ApplicationProtocolConfig ApplicationProtocolNames SslContext)
     (io.netty.util AsciiString)
     (io.netty.util.concurrent
       EventExecutorGroup
@@ -118,6 +118,61 @@
           (.applicationProtocolNegotiator)
           (.protocols)
           (.contains ApplicationProtocolNames/HTTP_2)))
+
+(def supported-http-versions #{:http1 :http2})
+(def supported-http-protocol-names (into #{}
+                                         (map netty/key->application-protocol-name)
+                                         supported-http-versions))
+
+(defn- assert-consistent-alpn-config! [alpn-protocols desired-http-versions]
+  (let [desired-http-protocols (map netty/key->application-protocol-name desired-http-versions)
+        alpn-http-protocols (filter supported-http-protocol-names alpn-protocols)]
+    (when-not (= desired-http-protocols alpn-http-protocols)
+      (let [emsg (if-let [missing-http-protocols (seq (remove (set alpn-http-protocols) desired-http-protocols))]
+                   "Some desired HTTP versions are not part of ALPN config."
+                   (if (= (count alpn-http-protocols) (count desired-http-protocols))
+                     "Desired HTTP version preference order differs from ALPN config."
+                     "ALPN config contains more HTTP versions than desired."))]
+        (throw (ex-info emsg
+                        {:desired-http-versions desired-http-versions
+                         :alpn-protocols alpn-protocols}))))))
+
+(defn ensure-consistent-alpn-config
+  "Ensures that `ssl-context` has an ALPN config that matches the `desired-http-versions`.
+
+   `desired-http-versions` is a sequence of keywords from `supported-http-versions`.
+
+   `ssl-context` is either an SSL context options map (see `aleph.netty/ssl-client-context` and
+   `aleph.netty/ssl-server-context`) or an `io.netty.handler.ssl.SslContext` instance.
+
+   Returns `ssl-context` (potentially updated, see below).
+
+   If `ssl-context` is nil, returns nil.
+
+   If `ssl-context` is an options map and it contains no `:application-protocol-config` key, a
+   matching `:application-protocol-config` is added (based on `desired-http-versoins`)
+
+   If `ssl-context` is an options map and it does contain an `:application-protocol-config` key, its
+   supported protocols are validated to match `desired-http-versions`.
+
+   Otherwise, if `ssl-context` is an `io.netty.handler.ssl.SslContext` instance, its supported
+   protocols are validated to match `desired-http-versions`."
+  [ssl-context desired-http-versions]
+  (when-let [unsupported-http-versions (seq (remove supported-http-versions desired-http-versions))]
+    (throw (ex-info "Unsupported desired HTTP versions"
+                    {:unsupported-http-versions unsupported-http-versions})))
+  (if (map? ssl-context)
+    (if-let [apc ^ApplicationProtocolConfig (:application-protocol-config ssl-context)]
+      (do (assert-consistent-alpn-config! (.supportedProtocols apc) desired-http-versions)
+          ssl-context)
+      (assoc ssl-context
+             :application-protocol-config
+             (netty/application-protocol-config desired-http-versions)))
+    (do (some-> ^SslContext ssl-context
+                (.applicationProtocolNegotiator)
+                (.protocols)
+                (assert-consistent-alpn-config! desired-http-versions))
+        ssl-context)))
 
 (defn validate-http1-pipeline-transform
   "Checks that :pipeline-transform is not being used with HTTP/2, since Netty
