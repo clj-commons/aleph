@@ -2,12 +2,6 @@
   (:require
     [aleph.netty :as netty])
   (:import
-    (io.netty.handler.ssl
-      ApplicationProtocolConfig
-      ApplicationProtocolConfig$Protocol
-      ApplicationProtocolConfig$SelectedListenerFailureBehavior
-      ApplicationProtocolConfig$SelectorFailureBehavior
-      ApplicationProtocolNames)
     (io.netty.handler.ssl.util SelfSignedCertificate)
     (java.io ByteArrayInputStream)
     (java.security KeyFactory PrivateKey)
@@ -56,36 +50,15 @@
    :protocols                   ["TLSv1.2" "TLSv1.3"]
    :certificate-chain           [server-cert]
    :trust-store                 [ca-cert]
-   :client-auth                 :optional
-   :application-protocol-config (netty/application-protocol-config
-                                  [ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_2])})
+   :client-auth                 :optional})
 
 (def server-ssl-context
   (netty/ssl-server-context server-ssl-context-opts))
 
-(def http1-only-ssl-context
-  (netty/ssl-server-context (assoc server-ssl-context-opts
-                                   :application-protocol-config
-                                   (netty/application-protocol-config [:http1]))))
-
-(def http2-only-ssl-context
-  "Well, minus the HTTP/1 fallback if ALPN isn't being used at all..."
-  (netty/ssl-server-context (assoc server-ssl-context-opts
-                                   :application-protocol-config
-                                   (netty/application-protocol-config [:http2]))))
-
 (def client-ssl-context-opts
   {:private-key                 client-key
    :certificate-chain           [client-cert]
-   :trust-store                 [ca-cert]
-   :application-protocol-config (ApplicationProtocolConfig.
-                                  ApplicationProtocolConfig$Protocol/ALPN
-                                  ;; NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
-                                  ApplicationProtocolConfig$SelectorFailureBehavior/NO_ADVERTISE
-                                  ;; ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
-                                  ApplicationProtocolConfig$SelectedListenerFailureBehavior/ACCEPT
-                                  ^"[Ljava.lang.String;"
-                                  (into-array String [ApplicationProtocolNames/HTTP_1_1 ApplicationProtocolNames/HTTP_2]))})
+   :trust-store                 [ca-cert]})
 
 (def client-ssl-context
   (netty/ssl-client-context client-ssl-context-opts))

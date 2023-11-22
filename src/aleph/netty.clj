@@ -900,6 +900,10 @@
     :openssl SslProvider/OPENSSL
     :openssl-refcnt SslProvider/OPENSSL_REFCNT))
 
+(def key->application-protocol-name
+  {:http1 ApplicationProtocolNames/HTTP_1_1
+   :http2 ApplicationProtocolNames/HTTP_2})
+
 (let [cert-array-class (class (into-array X509Certificate []))]
   (defn- add-ssl-trust-manager! ^SslContextBuilder [^SslContextBuilder builder trust-store]
     (cond (instance? File trust-store)

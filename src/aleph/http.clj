@@ -35,16 +35,20 @@
 
    Defaults to HTTP/1.1-only.
 
-   To enable HTTP/2, you must supply an SslContext with ALPN support for HTTP/2.
-   See `aleph.netty/ssl-server-context` and `aleph.netty/application-protocol-config`
-   for more details. (You can also set `use-h2c?` to force HTTP/2 cleartext, but
-   this is strongly discouraged.)
+   To enable HTTP/2, add `:http2` to the `http-versions` option. This requires you to also enable
+   SSL via the `ssl-context` option. If you supply an `io.netty.handler.ssl.SslContext` instance, you
+   have to set it up with ALPN support for HTTP/2.  See `aleph.netty/ssl-server-context` and
+   `aleph.netty/application-protocol-config` for more details. If you supply an SSL options map
+   without an `:application-protocol-config` key instead, the necessary ALPN configuration will be
+   set up automatically. (You can also set `use-h2c?` to force HTTP/2 cleartext, but this is strongly
+   discouraged.)
 
    | Param key                         | Description |
    | ---                               | --- |
    | `port`                            | The port the server will bind to. If `0`, the server will bind to a random port. |
    | `socket-address`                  | A `java.net.SocketAddress` specifying both the port and interface to bind to. |
    | `bootstrap-transform`             | A function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it. |
+   | `http-versions`                   | An optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http1]`. |
    | `ssl-context`                     | An `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired |
    | `manual-ssl?`                     | Set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform` ) to select the SSL context based on the client's indicated host name. |
    | `executor`                        | A `java.util.concurrent.Executor` which is used to handle individual requests. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |

@@ -729,6 +729,7 @@
    {:keys [port
            socket-address
            executor
+           http-versions
            ssl-context
            manual-ssl?
            shutdown-executor?
@@ -742,7 +743,9 @@
            epoll?                          false
            shutdown-timeout                netty/default-shutdown-timeout}
     :as   opts}]
-  (let [^SslContext ssl-context (netty/coerce-ssl-server-context ssl-context)
+  (let [^SslContext ssl-context (-> ssl-context
+                                    (common/ensure-consistent-alpn-config http-versions)
+                                    (netty/coerce-ssl-server-context))
         opts (assoc opts :ssl-context ssl-context)
         http1-pipeline-transform (common/validate-http1-pipeline-transform opts)
         executor (setup-executor executor)
