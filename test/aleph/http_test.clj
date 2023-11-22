@@ -272,12 +272,6 @@
   `(with-http-servers ~handler {}
      ~@body))
 
-;; FIXME redundant
-(defmacro with-handler-options
-  [handler options & body]
-  `(with-http-servers ~handler ~options
-     ~@body))
-
 (defmacro with-raw-handler [handler & body]
   `(with-http-servers ~handler {:raw-stream? true}
      ~@body))
@@ -398,7 +392,7 @@
 
 (deftest test-ssl-response-formats
   (with-redefs [*use-tls?* true]
-    (with-handler-options basic-handler http1-ssl-server-options
+    (with-http-servers basic-handler http1-ssl-server-options
       (doseq [[path result] expected-results]
         (is
           (= result
@@ -423,7 +417,7 @@
     (let [client-path "/"
           client-options {:connection-options {:ssl-context test-ssl/client-ssl-context}}
           client-pool (http/connection-pool client-options)]
-      (with-handler-options echo-handler
+      (with-http-servers echo-handler
         (merge http1-ssl-server-options {:ssl-context test-ssl/server-ssl-context})
         (is (str/blank?
               (-> @(http-put client-path
@@ -774,18 +768,18 @@
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
     (testing "Server is slow to write, but has time"
-      (with-handler-options slow-handler {:idle-timeout 200}
+      (with-http-servers slow-handler {:idle-timeout 200}
         (is (= "012345" (bs/to-string (:body @(http-get path)))))))
     (testing "Server is too slow to write"
-      (with-handler-options slow-handler {:idle-timeout 30}
+      (with-http-servers slow-handler {:idle-timeout 30}
         (is (= ""
                (bs/to-string (:body @(http-get path)))))))
     (testing "Client is slow to write, but has time"
-      (with-handler-options echo-handler {:idle-timeout 200
+      (with-http-servers echo-handler {:idle-timeout 200
                                           :raw-stream?  true}
         (is (= "012345" (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))
     (testing "Client is too slow to write"
-      (with-handler-options echo-handler {:idle-timeout 30
+      (with-http-servers echo-handler {:idle-timeout 30
                                           :raw-stream?  true}
         (is (thrown-with-msg? Exception #"connection was close"
                               (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
@@ -1021,21 +1015,21 @@
 
 (deftest test-max-request-body-size
   (testing "max-request-body-size of 0"
-    (with-handler-options (constantly {:body "OK" :status 200})
+    (with-http-servers (constantly {:body "OK" :status 200})
       {:max-request-body-size 0}
       (let [resp @(http-put "/"
                             {:body "hello"})]
         (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 1"
-    (with-handler-options (constantly {:body "OK" :status 200})
+    (with-http-servers (constantly {:body "OK" :status 200})
       {:max-request-body-size 1}
       (let [resp @(http-put "/"
                             {:body "hello"})]
         (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 6"
-    (with-handler-options (constantly {:body "OK" :status 200})
+    (with-http-servers (constantly {:body "OK" :status 200})
       {:max-request-body-size 6}
       (let [resp @(http-put "/"
                             {:body "hello"})]
