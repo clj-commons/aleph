@@ -225,11 +225,12 @@
     (partition 2)))
 
 
-(def http-server-options {:port port})
-(def http1-ssl-server-options {:port        port
-                               :ssl-context (netty/self-signed-ssl-context)})
-(def http2-server-options {:port        port
-                           :ssl-context test-ssl/http2-only-ssl-context})
+(def http-server-options {:port port
+                          :shutdown-timeout 0})
+(def http1-ssl-server-options (assoc http-server-options
+                                     :ssl-context (netty/self-signed-ssl-context)))
+(def http2-server-options (assoc http-server-options
+                                 :ssl-context test-ssl/http2-only-ssl-context))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -268,17 +269,17 @@
      (with-http1-server handler# server-options# ~@body)))
 
 (defmacro with-handler [handler & body]
-  `(with-http-servers ~handler {:port port :shutdown-timeout 0}
+  `(with-http-servers ~handler {}
      ~@body))
 
 ;; FIXME redundant
 (defmacro with-handler-options
   [handler options & body]
-  `(with-http-servers ~handler (assoc ~options :shutdown-timeout 0)
+  `(with-http-servers ~handler ~options
      ~@body))
 
 (defmacro with-raw-handler [handler & body]
-  `(with-http-servers ~handler {:port port, :raw-stream? true :shutdown-timeout 0}
+  `(with-http-servers ~handler {:raw-stream? true}
      ~@body))
 
 (defmacro with-both-handlers [handler & body]
@@ -313,9 +314,7 @@
 
       (doseq [{:keys [phrase opts encs]}
               [{:phrase "All"
-                :opts   {:port             port
-                         :compression?     true
-                         :shutdown-timeout 0
+                :opts   {:compression?     true
                          :idle-timeout     600000}
                 :encs   [{:accept-encoding  "gzip"
                           :content-encoding "gzip"
@@ -331,10 +330,8 @@
                           :stream-ctor      #(ZstdInputStream. %)}]}
 
                {:phrase "Gzip only"
-                :opts   {:port                port
-                         :compression?        true
+                :opts   {:compression?        true
                          :compression-options (into-array CompressionOptions [(StandardCompressionOptions/gzip)])
-                         :shutdown-timeout    0
                          :idle-timeout        600000}
                 :encs   [{:accept-encoding  "gzip"
                           :content-encoding "gzip"
@@ -368,9 +365,7 @@
       (testing ":compression-level"
         (doseq [{:keys [phrase opts encs]}
                 [{:phrase "Gzip and deflate only for :compression-level"
-                  :opts   {:port                port
-                           :compression?        true
-                           :shutdown-timeout    0
+                  :opts   {:compression?        true
                            :idle-timeout        600000}
                   :encs   [{:accept-encoding  "gzip"
                             :content-encoding "gzip"
@@ -384,9 +379,7 @@
           (testing phrase
             (doseq [{:keys [accept-encoding content-encoding stream-ctor]} encs]
               (testing (str " - " accept-encoding "-> " content-encoding)
-                (with-http1-server basic-handler {:port              port
-                                                  :compression-level 3
-                                                  :shutdown-timeout  0}
+                (with-http1-server basic-handler {:compression-level 3}
                   (doseq [[path result] expected-results]
                     (testing (str "/" path)
                       (let [resp @(http-get (str "/" path)
@@ -454,8 +447,8 @@
   (with-redefs [*use-tls?* true]
     (let [ssl-session (atom nil)]
       (with-http1-server
-        (ssl-session-capture-handler ssl-session)
-        http1-ssl-server-options
+          (ssl-session-capture-handler ssl-session)
+          http1-ssl-server-options
         (is (= 200 (:status @(http-get "/"))))
         (is (some? @ssl-session))
         (when-let [^SSLSession s @ssl-session]
@@ -699,9 +692,7 @@
                    (bs/to-string body)))))
   (testing "custom error handler"
     (with-http-servers invalid-handler
-                       {:port             port
-                        :shutdown-timeout 0
-                        :error-handler    (fn [_]
+                       {:error-handler    (fn [_]
                                             {:status 500
                                              :body   "Internal error"})}
                        (let [{:keys [body status]} @(http-get "/invalid")]
@@ -783,22 +774,18 @@
         echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
     (testing "Server is slow to write, but has time"
-      (with-handler-options slow-handler {:idle-timeout 200
-                                          :port         port}
+      (with-handler-options slow-handler {:idle-timeout 200}
         (is (= "012345" (bs/to-string (:body @(http-get path)))))))
     (testing "Server is too slow to write"
-      (with-handler-options slow-handler {:idle-timeout 30
-                                          :port         port}
+      (with-handler-options slow-handler {:idle-timeout 30}
         (is (= ""
                (bs/to-string (:body @(http-get path)))))))
     (testing "Client is slow to write, but has time"
       (with-handler-options echo-handler {:idle-timeout 200
-                                          :port         port
                                           :raw-stream?  true}
         (is (= "012345" (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))
     (testing "Client is too slow to write"
       (with-handler-options echo-handler {:idle-timeout 30
-                                          :port         port
                                           :raw-stream?  true}
         (is (thrown-with-msg? Exception #"connection was close"
                               (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
@@ -841,9 +828,7 @@
 (deftest test-pipeline-header-alteration
   (let [test-header-name "aleph-test"
         test-header-val "MOOP"]
-    (with-http1-server basic-handler {:port             port
-                                      :shutdown-timeout 0
-                                      :pipeline-transform
+    (with-http1-server basic-handler {:pipeline-transform
                                       (fn [^ChannelPipeline pipeline]
                                         (.addBefore pipeline
                                                     "request-handler"
@@ -895,7 +880,6 @@
             (let [found? (atom nil)]
               (with-http1-server (create-handler found?)
                 (assoc http-server-options
-                       :shutdown-timeout 0
                        xform-key #(.addBefore % base-handler-name "foo-adder" foo-header-adder))
                 @(http-get "/")
 
@@ -908,7 +892,6 @@
               (with-http2-server
                 (create-handler found?)
                 (assoc http2-server-options
-                       :shutdown-timeout 0
                        xform-key #(.addBefore % base-handler-name "foo-adder" foo-header-adder))
 
                 @(http-get "/")
@@ -929,7 +912,6 @@
                        (with-http2-server
                          (create-handler (atom :irrelevant))
                          (assoc http2-server-options
-                                :shutdown-timeout 0
                                 :pipeline-transform #(.addBefore % "request-handler" "foo-adder" foo-header-adder))
 
                          @(http-get "/")
@@ -945,7 +927,6 @@
                        (with-http2-server
                          (create-handler (atom :irrelevant))
                          (assoc http2-server-options
-                                :shutdown-timeout 0
                                 :pipeline-transform #(.addBefore % "request-handler" "foo-adder" foo-header-adder)
                                 :http2-stream-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder)
                                 :http2-conn-pipeline-transform #(.addBefore % "handler" "foo-adder" foo-header-adder))
@@ -964,9 +945,7 @@
 (deftest test-http-object-aggregator-support
   (with-http1-server
     basic-handler
-    {:port               port
-     :shutdown-timeout   0
-     :pipeline-transform add-http-object-aggregator}
+    {:pipeline-transform add-http-object-aggregator}
 
     (let [rsp @(http-put "/echo"
                          {:body "hello"})]
@@ -981,9 +960,7 @@
 (deftest test-http-object-aggregator-raw-stream-support
   (with-http1-server
     basic-handler
-    {:port               port
-     :shutdown-timeout   0
-     :raw-stream?        true
+    {:raw-stream?        true
      :pipeline-transform add-http-object-aggregator}
 
     (let [rsp @(http-put "/echo"
@@ -1001,9 +978,7 @@
     (try
       (with-http-servers
         basic-handler
-        {:port             port
-         :shutdown-timeout 0
-         :transport        :epoll}
+        {:transport        :epoll}
 
         (let [rsp @(http-put "/echo"
                              {:body "hello"
@@ -1018,9 +993,7 @@
     (try
       (with-http-servers
         basic-handler
-        {:port             port
-         :shutdown-timeout 0
-         :transport        :kqueue}
+        {:transport        :kqueue}
 
         (let [rsp @(http-put "/echo"
                              {:body "hello"
@@ -1035,9 +1008,7 @@
     (try
       (with-http-servers
         basic-handler
-        {:port             port
-         :shutdown-timeout 0
-         :transport        :io-uring}
+        {:transport        :io-uring}
 
         (let [rsp @(http-put "/echo"
                              {:body "hello"
@@ -1051,24 +1022,21 @@
 (deftest test-max-request-body-size
   (testing "max-request-body-size of 0"
     (with-handler-options (constantly {:body "OK" :status 200})
-      {:port                  port
-       :max-request-body-size 0}
+      {:max-request-body-size 0}
       (let [resp @(http-put "/"
                             {:body "hello"})]
         (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 1"
     (with-handler-options (constantly {:body "OK" :status 200})
-      {:port                  port
-       :max-request-body-size 1}
+      {:max-request-body-size 1}
       (let [resp @(http-put "/"
                             {:body "hello"})]
         (is (= 413 (:status resp))))))
 
   (testing "max-request-body-size of 6"
     (with-handler-options (constantly {:body "OK" :status 200})
-      {:port                  port
-       :max-request-body-size 6}
+      {:max-request-body-size 6}
       (let [resp @(http-put "/"
                             {:body "hello"})]
         (is (= 200 (:status resp)))))))
@@ -1076,8 +1044,7 @@
 (deftest test-text-plain-charset
   (with-http-servers
     basic-handler
-    {:port             port
-     :shutdown-timeout 0}
+    {}
 
     (let [resp @(http-get "/text_plain")]
       (is (= "text/plain; charset=UTF-8" (-> resp :headers (get "content-type"))))
@@ -1109,11 +1076,12 @@
     (s/put! s (encode-http-object response))))
 
 (defmacro with-tcp-response [response & body]
-  `(with-server (tcp/start-server (tcp-handler ~response) {:port port})
+  `(with-server (tcp/start-server (tcp-handler ~response) {:port port
+                                                           :shutdown-timeout 0})
      ~@body))
 
 (defmacro with-tcp-request-handler [handler options request & body]
-  `(with-server (http/start-server ~handler (assoc ~options :port port))
+  `(with-server (http/start-server ~handler (merge http-server-options ~options))
      (let [conn# @(tcp/client {:host "localhost" :port port})
            decode# (fnil bs/to-string "")]
        (s/put! conn# (encode-http-object ~request))
@@ -1241,10 +1209,8 @@
          d# (d/deferred)]
      (try
        (.execute executor# (fn [] @d#))
-       (with-http-servers echo-handler {:port               port
-                                        :executor           executor#
+       (with-http-servers echo-handler {:executor           executor#
                                         :shutdown-executor? false
-                                        :shutdown-timeout   0
                                         :rejected-handler   handler#}
                           ~@body)
        (finally
