@@ -822,6 +822,7 @@
 
      :protocol              "HTTP/2.0"
 
+     :aleph/channel         ch
      :aleph/writable?       writable?
      :aleph/h2-exception    h2-exception
      :aleph/keep-alive?     true                            ; not applicable to HTTP/2, but here for compatibility
