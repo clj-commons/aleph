@@ -242,6 +242,7 @@
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
   :remote-addr (netty/channel-remote-address ch)
+  :aleph/channel ch
   :aleph/request-arrived request-arrived
   :protocol "HTTP/1.1")
 
@@ -267,8 +268,8 @@
   [rsp destroy-conn? body]
   (->NettyResponse rsp destroy-conn? body))
 
-(defn ring-request-ssl-session [^NettyRequest req]
-  (netty/channel-ssl-session (.ch req)))
+(defn ring-request-ssl-session [req]
+  (netty/channel-ssl-session (:aleph/channel req)))
 
 ;;;
 
