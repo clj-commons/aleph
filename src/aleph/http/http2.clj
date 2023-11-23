@@ -822,6 +822,7 @@
 
      :protocol              "HTTP/2.0"
 
+     ;; These keys are internal to Aleph and should not be relied on
      :aleph/channel         ch
      :aleph/writable?       writable?
      :aleph/h2-exception    h2-exception
