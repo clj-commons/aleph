@@ -1195,6 +1195,7 @@
               ^SslHandler (.get SslHandler)
               .engine
               .getSession)
+      ;; Needed for multiplexed child channels (e.g. as present in HTTP/2)
       (recur (.parent ch))))
 
 (defn ^:no-doc ssl-handshake-error? [^Throwable ex]
