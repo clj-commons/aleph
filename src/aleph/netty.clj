@@ -1190,13 +1190,14 @@
   (partial coerce-ssl-context ssl-client-context))
 
 (defn ^:no-doc channel-ssl-session [^Channel ch]
-  (or (some-> ch
-              ^ChannelPipeline (.pipeline)
-              ^SslHandler (.get SslHandler)
-              .engine
-              .getSession)
-      ;; Needed for multiplexed child channels (e.g. as present in HTTP/2)
-      (recur (.parent ch))))
+  (when ch
+    (or (some-> ch
+                ^ChannelPipeline (.pipeline)
+                ^SslHandler (.get SslHandler)
+                .engine
+                .getSession)
+        ;; Needed for multiplexed child channels (e.g. as present in HTTP/2)
+        (recur (.parent ch)))))
 
 (defn ^:no-doc ssl-handshake-error? [^Throwable ex]
   (and (instance? DecoderException ex)
