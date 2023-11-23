@@ -822,12 +822,13 @@
 
      :protocol              "HTTP/2.0"
 
-     ;; These keys are internal to Aleph and should not be relied on
+     :aleph/keep-alive?     true                            ; not applicable to HTTP/2, but here for compatibility
+     :aleph/request-arrived (System/nanoTime)
+
+     ;; The following keys are internal to Aleph and should not be relied on
      :aleph/channel         ch
      :aleph/writable?       writable?
-     :aleph/h2-exception    h2-exception
-     :aleph/keep-alive?     true                            ; not applicable to HTTP/2, but here for compatibility
-     :aleph/request-arrived (System/nanoTime)}))
+     :aleph/h2-exception    h2-exception}))
 
 (defn- validate-netty-req-headers
   "Netty is not currently checking for missing pseudo-headers, so we do it here."

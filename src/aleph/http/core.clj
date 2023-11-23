@@ -238,14 +238,14 @@
   :request-method (-> req .method .name str/lower-case keyword)
   :body body
   :scheme (if ssl? :https :http)
-  :aleph/keep-alive? (HttpUtil/isKeepAlive req)
   :server-name (netty/channel-server-name ch)
   :server-port (netty/channel-server-port ch)
   :remote-addr (netty/channel-remote-address ch)
   :protocol "HTTP/1.1"
-  ;; These keys are internal to Aleph and should not be relied on
-  :aleph/channel ch
-  :aleph/request-arrived request-arrived)
+  :aleph/keep-alive? (HttpUtil/isKeepAlive req)
+  :aleph/request-arrived request-arrived
+  ;; The following keys are internal to Aleph and should not be relied on
+  :aleph/channel ch)
 
 (p/def-derived-map NettyResponse [^HttpResponse rsp destroy-conn? body]
   :status (-> rsp .status .code)
