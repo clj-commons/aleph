@@ -14,6 +14,8 @@
     [manifold.stream :as s]
     [potemkin :as p])
   (:import
+    (aleph.http.core
+      HeaderMap)
     (io.netty.buffer
       ByteBuf
       Unpooled)
@@ -746,7 +748,7 @@
 (defn ^:no-doc extract-cookies-from-response-headers
   ([headers]
    (extract-cookies-from-response-headers default-cookie-spec headers))
-  ([cookie-spec header-m]
+  ([cookie-spec ^HeaderMap header-m]
    (let [raw-headers (.headers header-m)]
      (->> (condp instance? raw-headers
             HttpHeaders (.getAll ^HttpHeaders raw-headers set-cookie-header-name)
