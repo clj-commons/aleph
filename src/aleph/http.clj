@@ -15,6 +15,8 @@
     [manifold.deferred :as d]
     [manifold.executor :as executor])
   (:import
+    (aleph.http.core
+      HeaderMap)
     (aleph.utils
       ConnectionTimeoutException
       PoolTimeoutException
@@ -500,7 +502,7 @@
 (defn get-all
   "Given a header map from an HTTP request or response, returns a collection of
    values associated with the key, rather than a comma-delimited string."
-  [header-m ^String k]
+  [^HeaderMap header-m ^String k]
   (let [raw-headers (.headers header-m)]
     (condp instance? raw-headers
       HttpHeaders (.getAll ^HttpHeaders raw-headers k)

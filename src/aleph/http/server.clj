@@ -633,7 +633,7 @@
 
 (defn make-pipeline-builder
   "Returns a function that initializes a new server channel's pipeline."
-  [handler {:keys [ssl? ssl-context use-h2c?] :as opts}]
+  [handler {:keys [ssl? ^SslContext ssl-context use-h2c?] :as opts}]
   (fn pipeline-builder*
     [^ChannelPipeline pipeline]
     (log/trace "pipeline-builder*" pipeline opts)
