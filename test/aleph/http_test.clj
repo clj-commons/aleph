@@ -268,6 +268,15 @@
      (with-http2-server handler# server-options# ~@body)
      (with-http1-server handler# server-options# ~@body)))
 
+(defmacro with-http-ssl-servers
+  "Run the same body of tests for each HTTP version with SSL enabled"
+  [handler server-options & body]
+  `(with-redefs [*use-tls?* true]
+     (let [handler# ~handler
+           server-options# ~server-options]
+       (with-http2-server handler# server-options# ~@body)
+       (with-http1-server handler# (merge http1-ssl-server-options server-options#) ~@body))))
+
 (defmacro with-handler [handler & body]
   `(with-http-servers ~handler {}
      ~@body))
@@ -391,15 +400,14 @@
 
 
 (deftest test-ssl-response-formats
-  (with-redefs [*use-tls?* true]
-    (with-http-servers basic-handler http1-ssl-server-options
-      (doseq [[path result] expected-results]
-        (is
-          (= result
-             (bs/to-string
-               (:body
-                 @(http-get (str "/" path)))))
-          (str path "path failed"))))))
+  (with-http-ssl-servers basic-handler {}
+    (doseq [[path result] expected-results]
+      (is
+       (= result
+          (bs/to-string
+           (:body
+            @(http-get (str "/" path)))))
+       (str path "path failed")))))
 
 (deftest test-files
   (with-handler echo-handler
@@ -413,24 +421,22 @@
                bs/to-string)))))
 
 (deftest test-ssl-files
-  (with-redefs [*use-tls?* true]
-    (let [client-path "/"
-          client-options {:connection-options {:ssl-context test-ssl/client-ssl-context}}
-          client-pool (http/connection-pool client-options)]
-      (with-http-servers echo-handler
-        (merge http1-ssl-server-options {:ssl-context test-ssl/server-ssl-context})
-        (is (str/blank?
-              (-> @(http-put client-path
-                             {:body (io/file "test/empty.txt")
-                              :pool client-pool})
-                  :body
-                  bs/to-string)))
-        (is (= (slurp "test/file.txt" :encoding "UTF-8")
-               (-> @(http-put client-path
-                              {:body (io/file "test/file.txt")
-                               :pool client-pool})
-                   :body
-                   bs/to-string)))))))
+  (let [client-path "/"
+        client-options {:connection-options {:ssl-context test-ssl/client-ssl-context}}
+        client-pool (http/connection-pool client-options)]
+    (with-http-ssl-servers echo-handler {:ssl-context test-ssl/server-ssl-context}
+      (is (str/blank?
+           (-> @(http-put client-path
+                          {:body (io/file "test/empty.txt")
+                           :pool client-pool})
+               :body
+               bs/to-string)))
+      (is (= (slurp "test/file.txt" :encoding "UTF-8")
+             (-> @(http-put client-path
+                            {:body (io/file "test/file.txt")
+                             :pool client-pool})
+                 :body
+                 bs/to-string))))))
 
 (defn ssl-session-capture-handler [ssl-session-atom]
   (fn [req]
@@ -438,71 +444,65 @@
     {:status 200 :body "ok"}))
 
 (deftest test-ssl-session-access
-  (with-redefs [*use-tls?* true]
-    (let [ssl-session (atom nil)]
-      (with-http1-server
-          (ssl-session-capture-handler ssl-session)
-          http1-ssl-server-options
-        (is (= 200 (:status @(http-get "/"))))
-        (is (some? @ssl-session))
-        (when-let [^SSLSession s @ssl-session]
-          (is (.isValid s))
-          (is (not (str/includes? "NULL" (.getCipherSuite s)))))))))
+  (let [ssl-session (atom nil)]
+    (with-http-ssl-servers (ssl-session-capture-handler ssl-session) {}
+      (reset! ssl-session nil)
+      (is (= 200 (:status @(http-get "/"))))
+      (is (some? @ssl-session))
+      (when-let [^SSLSession s @ssl-session]
+        (is (.isValid s))
+        (is (not (str/includes? "NULL" (.getCipherSuite s))))))))
 
 (deftest test-ssl-with-plain-client-request
-  (with-redefs [*use-tls?* false]                           ; intentionally wrong
-    (let [ssl-session (atom nil)]
-      (with-http1-server
-        (ssl-session-capture-handler ssl-session)
-        http1-ssl-server-options
-        ;; Note the intentionally wrong "http" scheme here
+  (let [ssl-session (atom nil)]
+    (with-http-ssl-servers (ssl-session-capture-handler ssl-session) {}
+      (reset! ssl-session nil)
+      (with-redefs [*use-tls?* false] ; will make http-get use http instead of https
         (is (some-> (http-get "/")
                     (d/catch identity)
                     deref
                     ex-message
-                    (str/includes? "connection was closed")))
-        (is (nil? @ssl-session))))))
+                    (str/includes? "connection was closed"))))
+      (is (nil? @ssl-session)))))
 
 (deftest test-ssl-endpoint-identification
-  (with-redefs [*use-tls?* true]                            ; with-redefs for non-clj threads
-    (binding [*connection-options* {:insecure?   false
-                                    :ssl-context test-ssl/wrong-hostname-client-ssl-context-opts}]
-      (let [ssl-session (atom nil)]
-        (with-http1-server
+  (binding [*connection-options* {:insecure?   false
+                                  :ssl-context test-ssl/wrong-hostname-client-ssl-context-opts}]
+    (let [ssl-session (atom nil)]
+      (with-http-ssl-servers
           (ssl-session-capture-handler ssl-session)
-          (assoc http-server-options :ssl-context test-ssl/wrong-hostname-server-ssl-context-opts)
+          {:ssl-context test-ssl/wrong-hostname-server-ssl-context-opts}
+        (reset! ssl-session nil)
+        (try
+          @(http-get "/")
+          (is (= true false) "Should have thrown an exception")
 
-          (try
-            @(http-get "/")
-            (is (= true false) "Should have thrown an exception")
+          (catch Exception e
+            (is (= SSLHandshakeException
+                   (class e)))
 
-            (catch Exception e
-              (is (= SSLHandshakeException
-                     (class e)))
-
-              ;; Should have a hostname mismatch cause in the ex chain
-              (is (loop [^Exception ex e]
-                    (if ex
-                      (if (re-find #"(?i:No name matching localhost found)"
-                                   (.getMessage ex))
-                        true
-                        (recur (.getCause ex)))
-                      false))
-                  "No hostname mismatch cause found in exception chain")))
-          (is (nil? @ssl-session)))))))
+            ;; Should have a hostname mismatch cause in the ex chain
+            (is (loop [^Exception ex e]
+                  (if ex
+                    (if (re-find #"(?i:No name matching localhost found)"
+                                 (.getMessage ex))
+                      true
+                      (recur (.getCause ex)))
+                    false))
+                "No hostname mismatch cause found in exception chain")))
+        (is (nil? @ssl-session))))))
 
 (deftest test-disabling-ssl-endpoint-identification
-  (with-redefs [*use-tls?* true]                            ; with-redefs for non-clj threads
-    (binding [*connection-options* {:insecure?           false
-                                    :ssl-context         test-ssl/wrong-hostname-client-ssl-context-opts
-                                    :ssl-endpoint-id-alg nil}]
-      (let [ssl-session (atom nil)]
-        (with-http1-server
+  (binding [*connection-options* {:insecure?           false
+                                  :ssl-context         test-ssl/wrong-hostname-client-ssl-context-opts
+                                  :ssl-endpoint-id-alg nil}]
+    (let [ssl-session (atom nil)]
+      (with-http-ssl-servers
           (ssl-session-capture-handler ssl-session)
-          (assoc http-server-options :ssl-context test-ssl/wrong-hostname-server-ssl-context-opts)
-
-          (is (= 200 (:status @(http-get "/"))))
-          (is (some? @ssl-session)))))))
+          {:ssl-context test-ssl/wrong-hostname-server-ssl-context-opts}
+        (reset! ssl-session nil)
+        (is (= 200 (:status @(http-get "/"))))
+        (is (some? @ssl-session))))))
 
 (deftest test-invalid-body
   (let [client-url "/"]
