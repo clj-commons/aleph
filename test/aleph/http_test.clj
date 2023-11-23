@@ -61,7 +61,7 @@
 (def ^:dynamic ^IPool *pool* nil)
 (def ^:dynamic *connection-options* nil)
 (def ^:dynamic ^String *response* nil)
-(def ^:dynamic *use-tls?* false)
+(def ^:dynamic *use-tls-requests* false)
 
 
 (def port 8082)
@@ -73,7 +73,7 @@
 
 (defn- make-url
   [path]
-  (if *use-tls?*
+  (if *use-tls-requests*
     (str "https://localhost:" port path)
     (str "http://localhost:" port path)))
 
@@ -170,7 +170,7 @@
     (if (zero? count)
       {:status 200 :body "ok"}
       {:status  302
-       :headers {"location" (str (if *use-tls?* "https://" "http://")
+       :headers {"location" (str (if *use-tls-requests* "https://" "http://")
                                  "localhost:" port
                                  "/redirect?count=" (dec count))}
        :body    "redirected!"})))
@@ -256,7 +256,7 @@
   [handler server-options & body]
   ;; with-redefs used so clj fns running on netty threads will work
   `(testing "- http2"
-     (with-redefs [*use-tls?* true]
+     (with-redefs [*use-tls-requests* true]
        (with-server (http/start-server ~handler (merge http2-server-options ~server-options))
          ~@body))))
 
@@ -271,7 +271,7 @@
 (defmacro with-http-ssl-servers
   "Run the same body of tests for each HTTP version with SSL enabled"
   [handler server-options & body]
-  `(with-redefs [*use-tls?* true]
+  `(with-redefs [*use-tls-requests* true]
      (let [handler# ~handler
            server-options# ~server-options]
        (with-http2-server handler# server-options# ~@body)
@@ -457,7 +457,7 @@
   (let [ssl-session (atom nil)]
     (with-http-ssl-servers (ssl-session-capture-handler ssl-session) {}
       (reset! ssl-session nil)
-      (with-redefs [*use-tls?* false] ; will make http-get use http instead of https
+      (with-redefs [*use-tls-requests* false] ; will make http-get use http instead of https
         (is (some-> (http-get "/")
                     (d/catch identity)
                     deref
@@ -642,7 +642,7 @@
 (deftest test-explicit-url
   (with-handler hello-handler
     (is (= "hello" (-> @(http/request {:method          :get
-                                       :scheme          (if *use-tls?* :https :http)
+                                       :scheme          (if *use-tls-requests* :https :http)
                                        :server-name     "localhost"
                                        :server-port     port
                                        :request-timeout 1e3
