@@ -45,6 +45,7 @@
 
 (def s (http/start-server hello-world-handler
                           {:port        443
+                           :http-versions [:http2 :http1]
                            :ssl-context http2-ssl-ctx}))
 
 ;; ## Clients
@@ -79,6 +80,7 @@
 ;; server
 (def s (http/start-server hello-world-handler
                           {:port         443
+                           :http-versions [:http2 :http1]
                            :ssl-context  http2-ssl-ctx
                            :compression? true}))
 
