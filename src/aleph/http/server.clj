@@ -759,10 +759,12 @@
                                   :http1-pipeline-transform http1-pipeline-transform
                                   :continue-executor continue-executor))]
 
-    (when (and (not ssl-context)
-               (not use-h2c?)
-               (some #{:http2} http-versions))
-      (throw (IllegalArgumentException. "HTTP/2 requires ssl-context to be given or use-h2c? to be true.")))
+    (if (some #{:http2} http-versions)
+      (when (and (not ssl-context)
+                 (not use-h2c?))
+        (throw (IllegalArgumentException. "HTTP/2 requires ssl-context to be given or use-h2c? to be true.")))
+      (when use-h2c?
+        (throw (IllegalArgumentException. "use-h2c? may only be true when HTTP/2 is enabled."))))
 
     (when (and ssl-context
                use-h2c?)
