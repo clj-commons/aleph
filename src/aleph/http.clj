@@ -4,6 +4,7 @@
     [aleph.flow :as flow]
     [aleph.http.client :as client]
     [aleph.http.client-middleware :as middleware]
+    [aleph.http.common :as common]
     [aleph.http.file :as file]
     [aleph.http.server :as server]
     [aleph.http.websocket.client :as ws.client]
@@ -15,8 +16,6 @@
     [manifold.deferred :as d]
     [manifold.executor :as executor])
   (:import
-    (aleph.http.core
-      HeaderMap)
     (aleph.utils
       ConnectionTimeoutException
       PoolTimeoutException
@@ -502,12 +501,8 @@
 (defn get-all
   "Given a header map from an HTTP request or response, returns a collection of
    values associated with the key, rather than a comma-delimited string."
-  [^HeaderMap header-m ^String k]
-  (let [raw-headers (.headers header-m)]
-    (condp instance? raw-headers
-      HttpHeaders (.getAll ^HttpHeaders raw-headers k)
-      Headers (.getAll ^Headers raw-headers k)
-      (throw (IllegalArgumentException. (str "Unknown headers type: " (class raw-headers)))))))
+  [header-m ^String k]
+  (common/get-header-values header-m k))
 
 (defn wrap-ring-async-handler
   "Converts given asynchronous Ring handler to Aleph-compliant handler.

@@ -29,6 +29,9 @@
 
 (def aleph-server-header "Aleph value for the Server header" (AsciiString. "Aleph/0.7.0-alpha1"))
 
+(defprotocol HeaderMap
+  (get-header-values [m ^String k]))
+
 (defn coerce-element
   "Turns an object into something writable to a Netty channel.
 
