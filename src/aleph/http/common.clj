@@ -153,7 +153,7 @@
    If `ssl-context` is nil, returns nil.
 
    If `ssl-context` is an options map and it contains no `:application-protocol-config` key, a
-   matching `:application-protocol-config` is added (based on `desired-http-versoins`)
+   matching `:application-protocol-config` is added (based on `desired-http-versions`)
 
    If `ssl-context` is an options map and it does contain an `:application-protocol-config` key, its
    supported protocols are validated to match `desired-http-versions`.
@@ -164,18 +164,26 @@
   (when-let [unsupported-http-versions (seq (remove supported-http-versions desired-http-versions))]
     (throw (ex-info "Unsupported desired HTTP versions"
                     {:unsupported-http-versions unsupported-http-versions})))
-  (if (map? ssl-context)
+  (cond
+    (map? ssl-context)
     (if-let [apc ^ApplicationProtocolConfig (:application-protocol-config ssl-context)]
       (do (assert-consistent-alpn-config! (.supportedProtocols apc) desired-http-versions)
           ssl-context)
       (assoc ssl-context
              :application-protocol-config
              (netty/application-protocol-config desired-http-versions)))
-    (do (some-> ^SslContext ssl-context
-                (.applicationProtocolNegotiator)
-                (.protocols)
-                (assert-consistent-alpn-config! desired-http-versions))
-        ssl-context)))
+
+    (nil? ssl-context)
+    nil
+
+    :else
+    (do
+      (assert-consistent-alpn-config!
+       (some-> ^SslContext ssl-context
+               (.applicationProtocolNegotiator)
+               (.protocols))
+       desired-http-versions)
+      ssl-context)))
 
 (defn validate-http1-pipeline-transform
   "Checks that :pipeline-transform is not being used with HTTP/2, since Netty
