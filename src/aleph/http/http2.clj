@@ -423,7 +423,10 @@
                default-value
                (if (== 1 (.size vs))
                  (.toString (.get vs 0))
-                 (str/join "," vs))))))))
+                 (str/join "," vs)))))))
+  common/HeaderMap
+  (get-header-values [_ k]
+                     (.getAll headers ^String k)))
 
 (defn headers->map
   "Returns a map of Ring headers from a Netty Headers object.

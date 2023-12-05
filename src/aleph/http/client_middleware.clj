@@ -2,6 +2,7 @@
   "This middleware is adapted from clj-http, whose license is amenable to this sort of
    copy/pastery"
   (:require
+    [aleph.http.common :as common]
     ;; leave this dependency to make sure that HeaderMap is already compiled
     [aleph.http.core :as http]
     [aleph.http.schema :as schema]
@@ -743,18 +744,12 @@
             (parse-cookie cookie-spec)
             (netty-cookie->cookie))))
 
-;; we might want to use here http/get-all helper,
-;; but it would result in circular dependencies
 (defn ^:no-doc extract-cookies-from-response-headers
   ([headers]
    (extract-cookies-from-response-headers default-cookie-spec headers))
   ([cookie-spec ^HeaderMap header-m]
-   (let [raw-headers (.headers header-m)]
-     (->> (condp instance? raw-headers
-            HttpHeaders (.getAll ^HttpHeaders raw-headers set-cookie-header-name)
-            Headers (.getAll ^Headers raw-headers set-cookie-header-name)
-            (throw (IllegalArgumentException. (str "Unknown headers type: " (class raw-headers)))))
-          (map (partial decode-set-cookie-header cookie-spec))))))
+   (->> (common/get-header-values header-m set-cookie-header-name)
+        (map (partial decode-set-cookie-header cookie-spec)))))
 
 (defn ^:no-doc handle-cookies [{:keys [cookie-store cookie-spec]
                                 :or   {cookie-spec default-cookie-spec}}
