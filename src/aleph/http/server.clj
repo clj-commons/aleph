@@ -764,6 +764,10 @@
                (some #{:http2} http-versions))
       (throw (IllegalArgumentException. "HTTP/2 requires ssl-context to be given or use-h2c? to be true.")))
 
+    (when (and ssl-context
+               use-h2c?)
+      (throw (IllegalArgumentException. "use-h2c? must not be true when ssl-context is given.")))
+
     (netty/start-server
       {:pipeline-builder    pipeline-builder
        :bootstrap-transform bootstrap-transform
