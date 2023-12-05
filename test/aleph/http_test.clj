@@ -1410,9 +1410,10 @@
                   {:use-h2c? true
                    :http-versions [:http2]})]
       (is (= :started result))))
-  (testing "HTTP/2 with ssl-context *and* with h2c (which has no effect then)"
+  (testing "HTTP/2 with ssl-context *and* with h2c"
     (let [result (try-start-server
                   {:use-h2c? true
                    :http-versions [:http2]
                    :ssl-context test-ssl/server-ssl-context-opts})]
-      (is (= :started result)))))
+      (is (instance? IllegalArgumentException result))
+      (is (= "use-h2c? must not be true when ssl-context is given." (ex-message result))))))
