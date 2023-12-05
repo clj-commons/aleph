@@ -1322,6 +1322,7 @@
 
 (deftest test-http-versions-config
   (testing "ssl-context as options map"
+
     (testing "with different HTTP versions in ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2]
@@ -1330,6 +1331,7 @@
                                          (netty/application-protocol-config [:http1]))})]
         (is (instance? ExceptionInfo result))
         (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result)))))
+
     (testing "with different preference order in ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
@@ -1338,6 +1340,7 @@
                                          (netty/application-protocol-config [:http1 :http2]))})]
         (is (instance? ExceptionInfo result))
         (is (= "Desired HTTP version preference order differs from ALPN config." (ex-message result)))))
+
     (testing "with extra HTTP versions in the ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http1]
@@ -1346,6 +1349,7 @@
                                          (netty/application-protocol-config [:http1 :http2]))})]
         (is (instance? ExceptionInfo result))
         (is (= "ALPN config contains more HTTP versions than desired." (ex-message result)))))
+
     (testing "with matching ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
@@ -1353,12 +1357,15 @@
                                          :application-protocol-config
                                          (netty/application-protocol-config [:http2 :http1]))})]
         (is (= :started result))))
+
     (testing "with no ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
                      :ssl-context test-ssl/server-ssl-context-opts})]
         (is (= :started result)))))
+
   (testing "ssl-context as SslContext instance"
+
     (testing "with different HTTP versions in ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2]
@@ -1368,6 +1375,7 @@
                                           (netty/application-protocol-config [:http1])))})]
         (is (instance? ExceptionInfo result))
         (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result)))))
+
     (testing "with different preference order in ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
@@ -1377,6 +1385,7 @@
                                           (netty/application-protocol-config [:http1 :http2])))})]
         (is (instance? ExceptionInfo result))
         (is (= "Desired HTTP version preference order differs from ALPN config." (ex-message result)))))
+
     (testing "with extra HTTP versions in the ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http1]
@@ -1386,6 +1395,7 @@
                                           (netty/application-protocol-config [:http1 :http2])))})]
         (is (instance? ExceptionInfo result))
         (is (= "ALPN config contains more HTTP versions than desired." (ex-message result)))))
+
     (testing "with matching ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
@@ -1394,22 +1404,26 @@
                                           :application-protocol-config
                                           (netty/application-protocol-config [:http2 :http1])))})]
         (is (= :started result))))
+
     (testing "with no ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
                      :ssl-context test-ssl/server-ssl-context})]
         (is (instance? ExceptionInfo result))
         (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result))))))
+
   (testing "HTTP/2 without ssl-context"
     (let [result (try-start-server
                   {:http-versions [:http2]})]
       (is (instance? IllegalArgumentException result))
       (is (= "HTTP/2 requires ssl-context to be given or use-h2c? to be true." (ex-message result)))))
+
   (testing "HTTP/2 without ssl-context but with h2c"
     (let [result (try-start-server
                   {:use-h2c? true
                    :http-versions [:http2]})]
       (is (= :started result))))
+
   (testing "HTTP/2 with ssl-context *and* with h2c"
     (let [result (try-start-server
                   {:use-h2c? true
@@ -1417,6 +1431,7 @@
                    :ssl-context test-ssl/server-ssl-context-opts})]
       (is (instance? IllegalArgumentException result))
       (is (= "use-h2c? must not be true when ssl-context is given." (ex-message result)))))
+
   (testing "h2c without HTTP/2"
     (let [result (try-start-server
                   {:use-h2c? true
