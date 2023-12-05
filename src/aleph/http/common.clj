@@ -124,11 +124,11 @@
 
 (def supported-http-versions #{:http1 :http2})
 (def supported-http-protocol-names (into #{}
-                                         (map netty/key->application-protocol-name)
+                                         (map netty/->application-protocol-name)
                                          supported-http-versions))
 
 (defn- assert-consistent-alpn-config! [alpn-protocols desired-http-versions]
-  (let [desired-http-protocols (map netty/key->application-protocol-name desired-http-versions)
+  (let [desired-http-protocols (map netty/->application-protocol-name desired-http-versions)
         alpn-http-protocols (filter supported-http-protocol-names alpn-protocols)]
     (when-not (= desired-http-protocols alpn-http-protocols)
       (let [emsg (if-let [missing-http-protocols (seq (remove (set alpn-http-protocols) desired-http-protocols))]
