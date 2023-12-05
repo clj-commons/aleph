@@ -732,6 +732,7 @@
            http-versions
            ssl-context
            manual-ssl?
+           use-h2c?
            shutdown-executor?
            epoll?
            transport
@@ -757,6 +758,12 @@
                                   :ssl? (or manual-ssl? (boolean ssl-context))
                                   :http1-pipeline-transform http1-pipeline-transform
                                   :continue-executor continue-executor))]
+
+    (when (and (not ssl-context)
+               (not use-h2c?)
+               (some #{:http2} http-versions))
+      (throw (IllegalArgumentException. "HTTP/2 requires ssl-context to be given or use-h2c? to be true.")))
+
     (netty/start-server
       {:pipeline-builder    pipeline-builder
        :bootstrap-transform bootstrap-transform

@@ -1403,8 +1403,8 @@
   (testing "HTTP/2 without ssl-context"
     (let [result (try-start-server
                   {:http-versions [:http2]})]
-      ;; TODO: Shouldn't this fail?
-      (is (= :started result))))
+      (is (instance? IllegalArgumentException result))
+      (is (= "HTTP/2 requires ssl-context to be given or use-h2c? to be true." (ex-message result)))))
   (testing "HTTP/2 without ssl-context but with h2c"
     (let [result (try-start-server
                   {:use-h2c? true
