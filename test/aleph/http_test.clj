@@ -1362,7 +1362,7 @@
     (testing "with different HTTP versions in ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2]
-                     :ssl-context (netty/coerce-ssl-server-context
+                     :ssl-context (netty/ssl-server-context
                                    (assoc test-ssl/server-ssl-context-opts
                                           :application-protocol-config
                                           (netty/application-protocol-config [:http1])))})]
@@ -1371,7 +1371,7 @@
     (testing "with different preference order in ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
-                     :ssl-context (netty/coerce-ssl-server-context
+                     :ssl-context (netty/ssl-server-context
                                    (assoc test-ssl/server-ssl-context-opts
                                           :application-protocol-config
                                           (netty/application-protocol-config [:http1 :http2])))})]
@@ -1389,7 +1389,7 @@
     (testing "with matching ALPN config"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
-                     :ssl-context (netty/coerce-ssl-server-context
+                     :ssl-context (netty/ssl-server-context
                                    (assoc test-ssl/server-ssl-context-opts
                                           :application-protocol-config
                                           (netty/application-protocol-config [:http2 :http1])))})]
