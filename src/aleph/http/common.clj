@@ -167,8 +167,9 @@
   (cond
     (map? ssl-context)
     (if-let [apc ^ApplicationProtocolConfig (:application-protocol-config ssl-context)]
-      (do (assert-consistent-alpn-config! (.supportedProtocols apc) desired-http-versions)
-          ssl-context)
+      (do
+        (assert-consistent-alpn-config! (.supportedProtocols apc) desired-http-versions)
+        ssl-context)
       (assoc ssl-context
              :application-protocol-config
              (netty/application-protocol-config desired-http-versions)))
