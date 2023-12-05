@@ -900,7 +900,7 @@
     :openssl SslProvider/OPENSSL
     :openssl-refcnt SslProvider/OPENSSL_REFCNT))
 
-(def key->application-protocol-name
+(def ->application-protocol-name
   {:http1 ApplicationProtocolNames/HTTP_1_1
    :http2 ApplicationProtocolNames/HTTP_2})
 
