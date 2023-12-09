@@ -14,3 +14,4 @@ target/**
 .java-version
 **/.clj-kondo/.cache
 **/.lsp
+**/.cpcache
