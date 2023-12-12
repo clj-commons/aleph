@@ -1,3 +1,10 @@
+### 0.7.0-rc1
+
+* Added HTTP/2 server support
+* Support more compression codecs (Brotli, Zstd, and Snappy)
+
+Contributions by Matthew Davidson, Moritz Heidkamp, and Arnaud Geiser.
+
 ### 0.7.0-alpha2
 
 * Enable SSL/TLS certificate hostname verification by default in the client. (Warning: This is a BREAKING change for those with misconfigured server certificates.)
