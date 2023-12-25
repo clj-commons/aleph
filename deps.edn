@@ -29,7 +29,21 @@
   io.netty/netty-resolver {:mvn/version "4.1.100.Final"},
   io.netty/netty-resolver-dns {:mvn/version "4.1.100.Final"},
   metosin/malli
-  {:mvn/version "0.10.4", :exclusions [org.clojure/clojure]}},
+  {:mvn/version "0.10.4", :exclusions [org.clojure/clojure]},
+  com.aayushatharva.brotli4j/brotli4j {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/service {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/native-linux-aarch64
+  {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/native-linux-armv7
+  {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/native-linux-x86_64
+  {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/native-osx-aarch64
+  {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/native-osx-x86_64 {:mvn/version "1.12.0"},
+  com.aayushatharva.brotli4j/native-windows-x86_64
+  {:mvn/version "1.12.0"},
+  com.github.luben/zstd-jni {:mvn/version "1.5.5-7"}},
  :aliases
  {:lein2deps
   {:deps
