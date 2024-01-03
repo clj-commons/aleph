@@ -1,3 +1,9 @@
+### 0.7.0-rc2
+
+* Include Brotli and zstd deps by default, remove code treating them as optional
+
+Contribution by Matthew Davidson. 
+
 ### 0.7.0-rc1
 
 * Added HTTP/2 server support
@@ -7,7 +13,7 @@ Contributions by Matthew Davidson, Moritz Heidkamp, and Arnaud Geiser.
 
 ### 0.7.0-alpha2
 
-* Enable SSL/TLS certificate hostname verification by default in the client. (Warning: This is a BREAKING change for those with misconfigured server certificates.)
+* Enable SSL/TLS certificate hostname verification by default in the client. (Warning: This is a BREAKING change for those with misconfigured server certificat~es.)
 
 Contribution by Moritz Heidkamp.
 

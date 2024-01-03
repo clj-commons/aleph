@@ -27,7 +27,7 @@
 
 (set! *warn-on-reflection* true)
 
-(def aleph-server-header "Aleph value for the Server header" (AsciiString. "Aleph/0.7.0-rc1"))
+(def aleph-server-header "Aleph value for the Server header" (AsciiString. "Aleph/0.7.0-rc2"))
 
 (defprotocol HeaderMap
   (get-header-values [m ^String k]))
