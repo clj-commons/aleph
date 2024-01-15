@@ -8,11 +8,11 @@ Aleph exposes data from the network as a [Manifold](https://github.com/clj-commo
 
 Leiningen:
 ```clojure
-[aleph "0.7.0-rc2"]
+[aleph "0.7.0"]
 ```
 deps.edn:
 ```clojure
-aleph/aleph {:mvn/version "0.7.0-rc2"}
+aleph/aleph {:mvn/version "0.7.0"}
 ;; alternatively
 io.github.clj-commons/aleph {:git/sha "..."}
 ```
@@ -30,10 +30,18 @@ Aleph follows the [Ring](https://github.com/ring-clojure) spec fully, and can be
    :headers {"content-type" "text/plain"}
    :body "hello!"})
 
-(http/start-server handler {:port 8080})
+(http/start-server handler {:port 8080}) ; HTTP/1-only
+
+;; To support HTTP/2, do the following:
+;; (def my-ssl-context ...)
+(http/start-server handler {:port 443
+                            :http-versions [:http2 :http1]
+                            :ssl-context my-ssl-context})
+;; See aleph.examples.http2 for more details
 ```
 
 The body of the response may also be a Manifold stream, where each message from the stream is sent as a chunk, allowing for precise control over streamed responses for [server-sent events](http://en.wikipedia.org/wiki/Server-sent_events) and other purposes.
+
 
 #### Client
 
@@ -41,6 +49,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
 
 ```clojure
 (require
+  '[aleph.http :as http]
   '[manifold.deferred :as d]
   '[clj-commons.byte-streams :as bs])
 
@@ -53,6 +62,12 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
          :body
          bs/to-string
          prn)
+
+;; To support HTTP/2, do the following:
+(def conn-pool
+  (http/connection-pool {:connection-options {:http-versions [:http2 :http1]}}))
+@(http/get "https://google.com" {:pool conn-pool})
+;; See aleph.examples.http2 for more details
 ```
 
 Aleph attempts to mimic the clj-http API and capabilities fully. It supports multipart/form-data requests, cookie stores, proxy servers and requests inspection with a few notable differences:
@@ -76,6 +91,22 @@ Aleph attempts to mimic the clj-http API and capabilities fully. It supports mul
 Aleph client also supports fully async and [highly customizable](https://github.com/clj-commons/aleph/blob/d33c76d6c7d1bf9788369fe6fd9d0e56434c8244/src/aleph/netty.clj#L783-L796) DNS resolver.
 
 To learn more, [read the example code](https://github.com/clj-commons/aleph/blob/master/examples/src/aleph/examples/http.clj).
+
+#### HTTP/2
+
+As of 0.7.0, Aleph supports HTTP/2 in both the client and the server.
+
+For the most part, Aleph's HTTP/2 support is a drop-in replacement for HTTP/1. For backwards compatibility, though, Aleph defaults to HTTP/1-only. See the [the example HTTP/2 code](https://github.com/clj-commons/aleph/blob/master/examples/src/aleph/examples/http2.clj) for a good overview on getting started with HTTP/2.
+
+Things to be aware of:
+
+1. Multipart uploads are not yet supported under HTTP/2, because Netty doesn't support them under HTTP/2. For new development, open a new H2 stream/request for each file instead. (HTTP/2 generally doesn't need multipart, since it doesn't have the same limitations on the number of connections as HTTP/1.) For existing multipart code, stick with HTTP/1. Ideally, this will be added in a future release.
+2. Aleph does not currently support the CONNECT method under HTTP/2. Stick with HTTP/1 if you're using CONNECT.
+3. Aleph will not support HTTP/2 server push, since it's deprecated, and effectively disabled by Chrome.
+4. Aleph does not currently support HTTP/2 trailers (headers arriving after the body).
+5. Aleph does nothing with priority information. We would like to expose an API to support user use of prioritization, but the browsers never agreed on how to interpret them, and some (e.g., Safari) effectively never used them. We think back-porting the HTTP/3 priority headers to HTTP/2 is a better aim.
+6. Aleph currently uses Netty's default flow control. This is a 64 kb window, which with bytes acknowledged as soon they're received. We plan to add support for adjusting the default window size and flow control strategy in a future release.
+7. If you were using `pipeline-transform` to alter the underlying Netty pipeline, you will need to check your usage of it for HTTP/2. Under the hood, the new HTTP/2 code uses Netty's multiplexed pipeline setup, with a shared connection-level pipeline that feeds stream-specific frames to N pipelines created for N individual streams. (A standard HTTP request/response pair maps to a single H2 stream.)
 
 ### WebSockets
 
@@ -136,6 +167,6 @@ Minimal [`tools.deps`](https://github.com/clojure/tools.deps.alpha) support is a
 
 ### License
 
-Copyright © 2010-2023 Zachary Tellman
+Copyright © 2010-2024 Zachary Tellman
 
 Distributed under the MIT License

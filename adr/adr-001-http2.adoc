@@ -5,7 +5,7 @@ Date: 2023-04-10
 
 == Status
 
-#Proposed#
+#Accepted#
 
 A decision may be "proposed" if the project stakeholders haven't agreed with it
 yet, or "accepted" once it is agreed. If a later ADR changes or reverses a
@@ -94,15 +94,11 @@ HTTP/2 supports CONNECT proxying, but over a single HTTP/2 stream, not a whole T
 === Backwards-compatibility mode
 
 We will maintain a backwards-compatible API for the majority of users, where
-their existing handlers will work as is. All streams will have equal priority,
-and flow control will ...
-
-NOTE: What should the default flow control strategy be? An infinitely large
-window? The default 64kb window, that auto-replenishes as soon as bytes are read
-off? Netty offers both of the previous as default strategies available for use.
-
-NOTE: What should a raw stream look like? A sequence of ByteBufs? Or a sequence
-of Frames, which is Netty's "raw" level for HTTP/2?
+their existing Ring handlers will work as is. All streams will have equal
+priority, and flow control will use the default Netty policy of a 64 kb window,
+that auto-replenishes as soon as bytes are read off. Users will be able to
+adjust the initial window size. Ring maps will still be used in the normal mode,
+and ByteBufs will still be used in raw mode.
 
 === HTTP/2 connection mode
 We will NOT support server push, as our resources are too limited relative to

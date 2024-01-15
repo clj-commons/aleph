@@ -1,27 +1,20 @@
-### 0.7.0-rc2
+### 0.7.0
 
-* Include Brotli and zstd deps by default, remove code treating them as optional
-
-Contribution by Matthew Davidson. 
-
-### 0.7.0-rc1
-
-* Added HTTP/2 server support
+* HTTP/2 server support, including ALPN and h2c
+* HTTP/2 client support
 * Support more compression codecs (Brotli, Zstd, and Snappy)
+* Enable SSL/TLS certificate hostname verification by default in the client for 
+  security purposes. (Warning: This is a BREAKING change for those with 
+  misconfigured server certificates.)
+* Bump Manifold dep to 0.4.1, which means Aleph/Manifold deferreds now support 
+  CompletionStage for better Java interop
+* Bump Netty to 4.1.00.Final
+* Improved error logging
 
-Contributions by Matthew Davidson, Moritz Heidkamp, and Arnaud Geiser.
+Contributions by Matthew Davidson, Moritz Heidkamp, and Arnaud Geiser. 
 
-### 0.7.0-alpha2
-
-* Enable SSL/TLS certificate hostname verification by default in the client. (Warning: This is a BREAKING change for those with misconfigured server certificat~es.)
-
-Contribution by Moritz Heidkamp.
-
-### 0.7.0-alpha1
-
-* Add support for HTTP/2 in the client.
-
-Contributions by Matthew Davidson and Arnaud Geiser.
+Manifold contributions by Renan Ribeiro, Ryan Smith, Arnaud Geiser, and Matthew 
+Davidson.
 
 ### 0.6.3
 
