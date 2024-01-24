@@ -11,7 +11,7 @@
                  [org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
                  [manifold "0.4.2" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.4"]
-                 [org.clj-commons/dirigiste "1.0.3"]
+                 [org.clj-commons/dirigiste "1.0.4"]
                  [org.clj-commons/primitive-math "1.0.1"]
                  [potemkin "0.4.6"]
                  [io.netty/netty-transport ~netty-version]
