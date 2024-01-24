@@ -9,7 +9,7 @@
   :license {:name "MIT License"}
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [org.clojure/tools.logging "1.2.4" :exclusions [org.clojure/clojure]]
-                 [manifold "0.4.1" :exclusions [org.clojure/tools.logging]]
+                 [manifold "0.4.2" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.4"]
                  [org.clj-commons/dirigiste "1.0.3"]
                  [org.clj-commons/primitive-math "1.0.1"]

@@ -1456,7 +1456,7 @@
       (doto (-> ssl-handler
                 (.handshakeFuture)
                 wrap-future)
-            (d/on-realized (fn [_] (log/info "SSL handshake completed"))
+            (d/on-realized (fn [_] (log/debug "SSL handshake completed"))
                            (fn [_] (log/warn "SSL handshake failed")))))
     (d/success-deferred ch)))
 
