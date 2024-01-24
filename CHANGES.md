@@ -1,3 +1,11 @@
+### 0.7.1
+
+* Bump Manifold to 0.4.2 to fix Promesa print-method hierarchy bug
+* Bump Dirigiste to 1.0.4
+* Log SSL handshake completion at debug level instead of info level
+  
+Contributions by Matthew Davidson and Eric Dvorsak
+
 ### 0.7.0
 
 * HTTP/2 server support, including ALPN and h2c
