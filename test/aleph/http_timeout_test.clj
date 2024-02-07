@@ -1,5 +1,6 @@
 (ns aleph.http-timeout-test
   (:require [aleph.http :as http]
+            [aleph.resource-leak-detector]
             [clj-commons.byte-streams :as bs]
             [clojure.test :refer [deftest testing is]]
             [manifold.stream :as s])
@@ -95,3 +96,4 @@
         (finally
           (.close ^AutoCloseable server))))))
 
+(aleph.resource-leak-detector/instrument-tests!)

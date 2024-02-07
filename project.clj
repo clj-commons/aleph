@@ -57,17 +57,24 @@
                                                   "-Dorg.slf4j.simpleLogger.log.io.netty.util=error"
                                                   "-Dorg.slf4j.simpleLogger.log.io.netty.channel=warn"]}
              :test                {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=off"]}
-             :leak-level-paranoid {:jvm-opts ["-Dio.netty.leakDetectionLevel=PARANOID"]}
+             :leak-detection {:aot [aleph.resource-leak-detector]
+                              :jvm-opts ["-Dio.netty.leakDetection.level=PARANOID"
+                                         "-Dio.netty.customResourceLeakDetector=aleph.resource_leak_detector"
+                                         "-Dorg.slf4j.simpleLogger.log.aleph.resource-leak-detector=info"
+                                         ;; These settings empirically make leak detection more reliable
+                                         "-Dio.netty.leakDetection.targetRecords=1"
+                                         "-Dio.netty.allocator.type=unpooled"]}
              :pedantic            {:pedantic? :abort}
              :trace               {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}
              :profile             {:dependencies [[com.clojure-goes-fast/clj-async-profiler "1.1.1"]]
                                    :jvm-opts     ["-Djdk.attach.allowAttachSelf"]}}
   :java-source-paths ["src-java"]
   :test-selectors {:default   #(not
-                                 (some #{:benchmark :stress}
+                                 (some #{:benchmark :stress :leak}
                                    (cons (:tag %) (keys %))))
                    :benchmark :benchmark
                    :stress    :stress
+                   :leak      :leak ; requires :leak-detection profile
                    :all       (constantly true)}
   :jvm-opts ^:replace ["-server"
                        "-Xmx2g"

@@ -1,12 +1,11 @@
 (ns aleph.tcp-test
   (:require
    [aleph.netty :as netty]
+   [aleph.resource-leak-detector]
    [aleph.tcp :as tcp]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is]]
    [manifold.stream :as s]))
-
-(netty/leak-detector-level! :paranoid)
 
 (defn echo-handler [s _]
   (s/connect s s))
@@ -55,3 +54,5 @@
             (is (= "foo" (bs/to-string @(s/take! c)))))))
       (catch Exception _
         (is (not (netty/io-uring-available?)))))))
+
+(aleph.resource-leak-detector/instrument-tests!)

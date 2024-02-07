@@ -4,14 +4,13 @@
    [aleph.http.websocket.common :as ws.common]
    [aleph.http.websocket.server :as ws.server]
    [aleph.netty :as netty]
+   [aleph.resource-leak-detector]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest is testing]]
    [clojure.tools.logging :as log]
    [manifold.deferred :as d]
    [manifold.stream :as s]
    [manifold.time :as time]))
-
-(netty/leak-detector-level! :paranoid)
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -325,3 +324,5 @@
              (is (= "hello" @(s/try-take! c 5e3)))))
          (catch Exception _
            (is (not (netty/io-uring-available?)))))))
+
+(aleph.resource-leak-detector/instrument-tests!)

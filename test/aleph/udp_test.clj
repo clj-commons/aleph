@@ -2,13 +2,12 @@
   (:require
    [aleph.netty :as netty]
    [aleph.udp :as udp]
+   [aleph.resource-leak-detector]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [manifold.stream :as s])
   (:import
    (java.net ServerSocket)))
-
-(netty/leak-detector-level! :paranoid)
 
 (def ^:dynamic *port* nil)
 
@@ -73,3 +72,5 @@
             (s/close! s))))
       (catch Exception _
         (is (not (netty/io-uring-available?)))))))
+
+(aleph.resource-leak-detector/instrument-tests!)

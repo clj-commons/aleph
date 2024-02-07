@@ -1,6 +1,7 @@
 (ns aleph.tcp-ssl-test
   (:require
     [aleph.netty :as netty]
+    [aleph.resource-leak-detector]
     [aleph.ssl :as ssl]
     [aleph.tcp :as tcp]
     [aleph.tcp-test :refer [with-server]]
@@ -12,8 +13,6 @@
     (java.security.cert X509Certificate)
     (java.util.concurrent TimeoutException)
     (javax.net.ssl SSLHandshakeException)))
-
-(netty/leak-detector-level! :paranoid)
 
 (set! *warn-on-reflection* false)
 
@@ -148,3 +147,5 @@
         (is (not (d/realized? c)))
         (deliver continue-handshake true)
         (is (deref c 1000 false))))))
+
+(aleph.resource-leak-detector/instrument-tests!)

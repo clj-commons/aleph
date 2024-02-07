@@ -3,6 +3,7 @@
    [aleph.flow :as flow]
    [aleph.http :as http]
    [aleph.netty :as netty]
+   [aleph.resource-leak-detector]
    [aleph.tcp :as tcp]
    [clj-commons.byte-streams :as bs]
    [clojure.string :as str]
@@ -105,3 +106,5 @@
     (test-reject {:continue-handler
                   (constantly (d/success-deferred {:status 401}))}
                  "401 Unauthorized")))
+
+(aleph.resource-leak-detector/instrument-tests!)
