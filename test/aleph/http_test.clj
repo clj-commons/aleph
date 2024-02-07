@@ -4,6 +4,7 @@
     [aleph.http :as http]
     [aleph.http.core :as http.core]
     [aleph.netty :as netty]
+    [aleph.resource-leak-detector]
     [aleph.ssl :as test-ssl]
     [aleph.tcp :as tcp]
     [aleph.testutils :refer [str=]]
@@ -58,7 +59,6 @@
 ;;;
 
 (set! *warn-on-reflection* false)
-(netty/leak-detector-level! :paranoid)
 
 (def ^:dynamic ^IPool *pool* nil)
 (def ^:dynamic *connection-options* nil)
@@ -1438,3 +1438,18 @@
                    :http-versions [:http1]})]
       (is (instance? IllegalArgumentException result))
       (is (= "use-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))
+
+(deftest ^:leak test-leak-in-raw-stream-handler
+  ;; NOTE: Expecting 2 leaks because `with-raw-handler` will run its body for both http1 and
+  ;; http2. It would be nicer to put this assertion into the body but the http1 server seems to
+  ;; only really leak the buffer after shutting down.
+  (aleph.resource-leak-detector/with-expected-leaks 2
+    (with-raw-handler basic-handler
+      (let [resp @(http-put "/string"
+                            ;; NOTE: The request handler doesn't consume this body.
+                            ;; As per the :raw-stream?  contract, this leads to a buffer leak.
+                            {:body "Hello, world!"})]
+        (is (= 200 (:status resp)))
+        (is (= "String!" (bs/to-string (:body resp))))))))
+
+(aleph.resource-leak-detector/instrument-tests!)

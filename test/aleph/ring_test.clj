@@ -2,10 +2,9 @@
   (:require
    [aleph.http :as http]
    [aleph.netty :as netty]
+   [aleph.resource-leak-detector]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest is]]))
-
-(netty/leak-detector-level! :paranoid)
 
 (defn create-url
   ([path]
@@ -92,3 +91,5 @@
 (deftest test-host-header
   (with-server [:headers :host]
     (is (= "localhost:8080" (request)))))
+
+(aleph.resource-leak-detector/instrument-tests!)

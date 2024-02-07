@@ -1,6 +1,7 @@
 (ns aleph.netty-test
   (:require
    [aleph.netty :as netty]
+   [aleph.resource-leak-detector]
    [clojure.test :refer [deftest is]]
    [manifold.stream :as s])
   (:import
@@ -52,3 +53,5 @@
     (is (-> config .isAutoRead))
     (netty/put! channel s 6)
     (is (not (-> config .isAutoRead)))))
+
+(aleph.resource-leak-detector/instrument-tests!)
