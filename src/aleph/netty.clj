@@ -1729,9 +1729,7 @@
                    (d/finally'
                      ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
                      ;;    in flight pending requests.
-                     ;;    We still wait 1.5s to gracefully end repeating tasks
-                     ;;    like the date-header-value.
-                     #(.shutdownGracefully group 1500 1500 TimeUnit/MILLISECONDS)))
+                     #(.shutdownGracefully group 0 0 TimeUnit/MILLISECONDS)))
                (when on-close
                  (d/chain'
                    (wrap-future (.terminationFuture group))
