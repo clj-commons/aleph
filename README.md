@@ -170,3 +170,4 @@ Minimal [`tools.deps`](https://github.com/clojure/tools.deps.alpha) support is a
 Copyright © 2010-2024 Zachary Tellman
 
 Distributed under the MIT License
+
