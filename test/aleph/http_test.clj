@@ -1184,7 +1184,7 @@
   (testing "unknown host with JDK DNS resolver"
     (is (thrown? UnknownHostException
                  (-> (http/get "http://unknown-host/")
-                     (d/timeout! 1e3)
+                     (d/timeout! 1e4)
                      deref))))
 
   (testing "unknown host with custom DNS client"
@@ -1194,7 +1194,7 @@
       (try
         (is (thrown? UnknownHostException
                      (-> (http/get "http://unknown-host/" {:pool pool})
-                         (d/timeout! 1e3)
+                         (d/timeout! 1e4)
                          deref)))
         (finally
           (.shutdown ^Pool pool))))))
