@@ -20,6 +20,7 @@
       ConnectionTimeoutException
       PoolTimeoutException
       ReadTimeoutException
+      RequestCancellationException
       RequestTimeoutException)
     (io.aleph.dirigiste Pools)
     (io.netty.handler.codec Headers)
@@ -336,6 +337,9 @@
      by [clj-http](https://github.com/dakrone/clj-http), and returns a deferred representing
      the HTTP response.  Also allows for a custom `pool` or `middleware` to be defined.
 
+     Putting the returned deferred into an error state will cancel the underlying request if it is
+     still in flight.
+
      Param key            | Description
      -------------------- | -----------------------------------------------------------------------------------------------------------------------------------------------------------------
      `connection-timeout` | timeout in milliseconds for the connection to become established
@@ -358,96 +362,111 @@
              middleware         identity
              connection-timeout 6e4}                        ;; 60 seconds
       :as   req}]
+    (let [dispose-conn! (atom (fn []))
+          result (d/deferred response-executor)
+          response (executor/with-executor response-executor
+                     ((middleware
+                       (fn [req]
+                         (let [k (client/req->domain req)
+                               start (System/currentTimeMillis)]
 
-    (executor/with-executor response-executor
-      ((middleware
-         (fn [req]
-           (let [k (client/req->domain req)
-                 start (System/currentTimeMillis)]
+                           ;; acquire a connection
+                           (-> (flow/acquire pool k)
+                               (maybe-timeout! pool-timeout)
 
-             ;; acquire a connection
-             (-> (flow/acquire pool k)
-                 (maybe-timeout! pool-timeout)
+                               ;; pool timeout triggered
+                               (d/catch' TimeoutException
+                                         (fn [^Throwable e]
+                                           (d/error-deferred (PoolTimeoutException. e))))
 
-                 ;; pool timeout triggered
-                 (d/catch' TimeoutException
-                   (fn [^Throwable e]
-                     (d/error-deferred (PoolTimeoutException. e))))
+                               (d/chain'
+                                (fn [conn]
+                                  ;; NOTE: All error handlers below delegate disposal of the
+                                  ;; connection to the error handler on `result` which uses this
+                                  ;; function.
+                                  (reset! dispose-conn! (fn [] (flow/dispose pool k conn)))
 
-                 (d/chain'
-                   (fn [conn]
+                                  (if (realized? result)
+                                    ;; to account for race condition between setting `dispose-conn!`
+                                    ;; and putting `result` into error state for cancellation
+                                    (@dispose-conn!)
+                                    ;; get the wrapper for the connection, which may or may not be realized yet
+                                    (-> (first conn)
+                                        (maybe-timeout! connection-timeout)
 
-                     ;; get the wrapper for the connection, which may or may not be realized yet
-                     (-> (first conn)
-                         (maybe-timeout! connection-timeout)
+                                        ;; connection timeout triggered
+                                        (d/catch' TimeoutException
+                                                  (fn [^Throwable e]
+                                                    (log/error e "Timed out waiting for connection to be established")
+                                                    (d/error-deferred (ConnectionTimeoutException. e))))
 
-                         ;; connection timeout triggered, dispose of the connetion
-                         (d/catch' TimeoutException
-                           (fn [^Throwable e]
-                             (log/error e "Timed out waiting for connection to be established")
-                             (flow/dispose pool k conn)
-                             (d/error-deferred (ConnectionTimeoutException. e))))
+                                        ;; connection failed, bail out
+                                        (d/catch'
+                                         (fn [e]
+                                           (log/error e "Connection failure")
+                                           (d/error-deferred e)))
 
-                         ;; connection failed, bail out
-                         (d/catch'
-                           (fn [e]
-                             (log/error e "Connection failure")
-                             (flow/dispose pool k conn)
-                             (d/error-deferred e)))
+                                        ;; actually make the request now
+                                        (d/chain'
+                                         (fn [conn']
+                                           (when-not (nil? conn')
+                                             (let [end (System/currentTimeMillis)]
+                                               (-> (conn' req)
+                                                   (maybe-timeout! request-timeout)
 
-                         ;; actually make the request now
-                         (d/chain'
-                           (fn [conn']
-                             (when-not (nil? conn')
-                               (let [end (System/currentTimeMillis)]
-                                 (-> (conn' req)
-                                     (maybe-timeout! request-timeout)
+                                                   ;; request timeout triggered
+                                                   (d/catch' TimeoutException
+                                                             (fn [^Throwable e]
+                                                               (d/error-deferred (RequestTimeoutException. e))))
 
-                                     ;; request timeout triggered, dispose of the connection
-                                     (d/catch' TimeoutException
-                                       (fn [^Throwable e]
-                                         (flow/dispose pool k conn)
-                                         (d/error-deferred (RequestTimeoutException. e))))
+                                                   ;; clean up the connection
+                                                   (d/chain'
+                                                    (fn cleanup-conn [rsp]
 
-                                     ;; request failed, dispose of the connection
-                                     (d/catch'
-                                       (fn [e]
-                                         (log/trace "Request failed. Disposing of connection...")
-                                         (flow/dispose pool k conn)
-                                         (d/error-deferred e)))
+                                                      ;; either destroy/dispose of the conn, or release it back for reuse
+                                                      (-> (:aleph/destroy-conn? rsp)
+                                                          (maybe-timeout! read-timeout)
 
-                                     ;; clean up the connection
-                                     (d/chain'
-                                       (fn cleanup-conn [rsp]
+                                                          ;; read timeout triggered
+                                                          (d/catch' TimeoutException
+                                                                    (fn [^Throwable e]
+                                                                      (log/trace "Request timed out.")
+                                                                      (d/error-deferred (ReadTimeoutException. e))))
 
-                                         ;; either destroy/dispose of the conn, or release it back for reuse
-                                         (-> (:aleph/destroy-conn? rsp)
-                                             (maybe-timeout! read-timeout)
+                                                          (d/chain'
+                                                           (fn [early?]
+                                                             (if (or early?
+                                                                     (not (:aleph/keep-alive? rsp))
+                                                                     (<= 400 (:status rsp)))
+                                                               (do
+                                                                 (log/trace "Connection finished. Disposing...")
+                                                                 (flow/dispose pool k conn))
+                                                               (flow/release pool k conn)))))
+                                                      (-> rsp
+                                                          (dissoc :aleph/destroy-conn?)
+                                                          (assoc :connection-time (- end start)))))))))
 
-                                             (d/catch' TimeoutException
-                                               (fn [^Throwable e]
-                                                 (log/trace "Request timed out. Disposing of connection...")
-                                                 (flow/dispose pool k conn)
-                                                 (d/error-deferred (ReadTimeoutException. e))))
+                                         (fn handle-response [rsp]
+                                           (->> rsp
+                                                (middleware/handle-cookies req)
+                                                (middleware/handle-redirects request req))))))))))))
+                      req))]
+      (d/connect response result)
+      (d/catch' result
+                (fn [e]
+                  (log/trace e "Request failed. Disposing of connection...")
+                  (@dispose-conn!)
+                  (d/error-deferred e)))
+      result)))
 
-                                             (d/chain'
-                                               (fn [early?]
-                                                 (if (or early?
-                                                         (not (:aleph/keep-alive? rsp))
-                                                         (<= 400 (:status rsp)))
-                                                   (do
-                                                     (log/trace "Connection finished. Disposing...")
-                                                     (flow/dispose pool k conn))
-                                                   (flow/release pool k conn)))))
-                                         (-> rsp
-                                             (dissoc :aleph/destroy-conn?)
-                                             (assoc :connection-time (- end start)))))))))
+(defn cancel-request!
+  "Accepts a response deferred as returned by `request` and cancels the underlying request if it is
+  still in flight.
 
-                           (fn handle-response [rsp]
-                             (->> rsp
-                                  (middleware/handle-cookies req)
-                                  (middleware/handle-redirects request req)))))))))))
-       req))))
+  This is done by putting the deferred into error state with an
+  `aleph.utils.RequestCancellationException` instance as its value."
+  [r]
+  (d/error! r (RequestCancellationException. "Request cancelled")))
 
 (defn- req
   ([method url]

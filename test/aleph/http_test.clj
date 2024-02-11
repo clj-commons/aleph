@@ -17,6 +17,7 @@
   (:import
     (aleph.utils
       ConnectionTimeoutException
+      RequestCancellationException
       RequestTimeoutException)
     (clojure.lang
       ExceptionInfo)
@@ -1073,10 +1074,13 @@
     (Thread/sleep 5)
     (s/put! s (encode-http-object response))))
 
-(defmacro with-tcp-response [response & body]
-  `(with-server (tcp/start-server (tcp-handler ~response) {:port port
-                                                           :shutdown-timeout 0})
+(defmacro with-tcp-server [handler & body]
+  `(with-server (tcp/start-server ~handler {:port port
+                                            :shutdown-timeout 0})
      ~@body))
+
+(defmacro with-tcp-response [response & body]
+  `(with-tcp-server (tcp-handler ~response) ~@body))
 
 (defmacro with-tcp-request-handler [handler options request & body]
   `(with-server (http/start-server ~handler (merge http-server-options ~options))
@@ -1438,3 +1442,18 @@
                    :http-versions [:http1]})]
       (is (instance? IllegalArgumentException result))
       (is (= "use-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))
+
+(deftest test-in-flight-request-cancellation
+  (let [conn-established (promise)
+        conn-closed (promise)]
+    (with-tcp-server (fn [s _]
+                       (deliver conn-established true)
+                       ;; Required for the client close to be detected
+                       (s/consume identity s)
+                       (s/on-closed s (fn []
+                                        (deliver conn-closed true))))
+      (let [rsp (http-get "/")]
+        (is (= true (deref conn-established 1000 :timeout)))
+        (http/cancel-request! rsp)
+        (is (= true (deref conn-closed 1000 :timeout)))
+        (is (thrown? RequestCancellationException (deref rsp 1000 :timeout)))))))
