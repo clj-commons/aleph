@@ -57,21 +57,21 @@
             (str "`aleph.resource_leak_detector` requires `-Dio.netty.leakDetection.level=PARANOID`. "
                  "Current level is `" (ResourceLeakDetector/getLevel) "`.")))))
 
-(def +max-probe-gc-runs+
+(def max-probe-gc-runs
   "Maximum number of times the GC will be run to detect a leaked probe."
   10)
 
-(def +probe-hint-marker+
+(def probe-hint-marker
   "ALEPH LEAK DETECTOR PROBE")
 
 (defn hint-record-pattern [hint-pattern]
   (re-pattern (str "(?m)^\\s*Hint: " hint-pattern "$")))
 
-(def +probe-hint-pattern+
-  (hint-record-pattern (str +probe-hint-marker+ " \\d+")))
+(def probe-hint-pattern
+  (hint-record-pattern (str probe-hint-marker " \\d+")))
 
 (defn probe? [leak]
-  (re-find +probe-hint-pattern+ (:records leak)))
+  (re-find probe-hint-pattern (:records leak)))
 
 (defn contains-hint? [hint leak]
   (re-find (hint-record-pattern hint) (:records leak)))
@@ -81,7 +81,7 @@
 
 (let [cnt (atom 0)]
   (defn gen-probe-hint []
-    (str +probe-hint-marker+ " " (swap! cnt inc))))
+    (str probe-hint-marker " " (swap! cnt inc))))
 
 (defn leak-probe! [hint]
   (-> AbstractByteBufAllocator/DEFAULT
@@ -98,10 +98,10 @@
   (-> AbstractByteBufAllocator/DEFAULT (.buffer 1) .release))
 
 (defn await-probe! [probe-hint]
-  (loop [n +max-probe-gc-runs+]
+  (loop [n max-probe-gc-runs]
     (force-leak-detection!)
     (if (zero? n)
-      (throw (RuntimeException. "Gave up awaiting leak probe. Try increasing +max-probe-gc-runs+."))
+      (throw (RuntimeException. "Gave up awaiting leak probe. Try increasing `aleph.resource-leak-detector/max-probe-gc-runs`."))
       (when-not (some (partial contains-hint? probe-hint) @current-leaks)
         (recur (dec n))))))
 
