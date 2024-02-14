@@ -397,14 +397,7 @@
                                         ;; connection timeout triggered
                                         (d/catch' TimeoutException
                                                   (fn [^Throwable e]
-                                                    (log/error e "Timed out waiting for connection to be established")
                                                     (d/error-deferred (ConnectionTimeoutException. e))))
-
-                                        ;; connection failed, bail out
-                                        (d/catch'
-                                         (fn [e]
-                                           (log/error e "Connection failure")
-                                           (d/error-deferred e)))
 
                                         ;; actually make the request now
                                         (d/chain'
