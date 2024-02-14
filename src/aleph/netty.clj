@@ -38,6 +38,8 @@
       EpollEventLoopGroup
       EpollServerSocketChannel
       EpollSocketChannel)
+    (io.netty.channel.embedded
+      EmbeddedChannel)
     (io.netty.channel.group
       ChannelGroup
       DefaultChannelGroup)
@@ -1516,6 +1518,14 @@
                     (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
 
+(def ^:const
+  default-connect-timeout
+  "Netty's default connect timeout."
+  ;; This hack is necessary due to io.netty.channel.DefaultChannelConfig/DEFAULT_CONNECT_TIMEOUT
+  ;; being private.
+  (with-open [c (EmbeddedChannel.)]
+    (.getConnectTimeoutMillis (.config c))))
+
 (defn ^:no-doc create-client-chan
   "Returns a deferred containing a new Channel.
 
@@ -1527,7 +1537,9 @@
            ^SocketAddress remote-address
            ^SocketAddress local-address
            transport
-           name-resolver]
+           name-resolver
+           connect-timeout]
+    :or {connect-timeout default-connect-timeout}
     :as opts}]
   (ensure-transport-available! transport)
 
@@ -1546,6 +1558,7 @@
                           (instance? AddressResolverGroup name-resolver) name-resolver))
             bootstrap (doto (Bootstrap.)
                             (.option ChannelOption/SO_REUSEADDR true)
+                            (.option ChannelOption/CONNECT_TIMEOUT_MILLIS (int connect-timeout))
                             #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
                             (.group client-event-loop-group)
                             (.channel chan-class)

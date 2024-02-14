@@ -770,13 +770,15 @@
            log-activity
            http-versions
            force-h2c?
-           on-closed]
+           on-closed
+           connect-timeout]
     :or   {raw-stream?          false
            bootstrap-transform  identity
            pipeline-transform   identity
            keep-alive?          true
            ssl-endpoint-id-alg  netty/default-ssl-endpoint-id-alg
            response-buffer-size 65536
+           connect-timeout      netty/default-connect-timeout
            epoll?               false
            name-resolver        :default
            log-activity         :debug
@@ -818,7 +820,8 @@
                :remote-address      remote-address
                :local-address       local-address
                :transport           (netty/determine-transport transport epoll?)
-               :name-resolver       name-resolver})]
+               :name-resolver       name-resolver
+               :connect-timeout     connect-timeout})]
 
     (attach-on-close-handler ch-d on-closed)
 

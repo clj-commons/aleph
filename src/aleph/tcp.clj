@@ -165,12 +165,26 @@
    | `ssl-endpoint-id-alg` | the name of the algorithm to use for SSL endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms), defaults to \"HTTPS\" which is a reasonable default for non-HTTPS uses, too. Only used by SSL connections. Pass `nil` to disable endpoint identification.
    | `ssl?`                | if true, the client attempts to establish a secure connection with the server.
    | `insecure?`           | if true, the client will ignore the server's certificate.
+   | `connect-timeout`     | timeout for a connection to be established, in milliseconds. Default determined by Netty, see `aleph.netty/default-connect-timeout`.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.Bootstrap` object, which represents the client, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `raw-stream?`         | if true, messages from the stream will be `io.netty.buffer.ByteBuf` objects rather than byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)."
-  [{:keys [host port remote-address local-address ssl-context ssl-endpoint-id-alg ssl? insecure? pipeline-transform bootstrap-transform epoll? transport]
+  [{:keys [host
+           port
+           remote-address
+           local-address
+           ssl-context
+           ssl-endpoint-id-alg
+           ssl?
+           insecure?
+           connect-timeout
+           pipeline-transform
+           bootstrap-transform
+           epoll?
+           transport]
     :or {ssl-endpoint-id-alg netty/default-ssl-endpoint-id-alg
+         connect-timeout netty/default-connect-timeout
          bootstrap-transform identity
          epoll? false}
     :as options}]
@@ -196,6 +210,7 @@
            :bootstrap-transform bootstrap-transform
            :remote-address      remote-address
            :local-address       local-address
-           :transport           (netty/determine-transport transport epoll?)})
+           :transport           (netty/determine-transport transport epoll?)
+           :connect-timeout     connect-timeout})
         (d/catch' #(d/error! s %)))
     s))
