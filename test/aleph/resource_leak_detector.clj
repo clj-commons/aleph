@@ -7,14 +7,7 @@
   intentional presence of leaks and to check for unintended leaks. The main API entry points for
   this are `with-leak-collection`, `with-expected-leaks` and `instrument-tests!`.
 
-  To enable it, pass `-Dio.netty.customResourceLeakDetector=aleph.resource_leak_detector` to the
-  JVM. You will also have to pass `-Dio.netty.leakDetection.level=PARANOID`.
-
-  Most reliable results are achieved by also passing the following options:
-  `-Dio.netty.leakDetection.targetRecords=1`
-  `-Dio.netty.allocator.type=unpooled`
-
-  All of the above is also provided by the `:leak-detection` Leiningen profile.
+  To enable it, use the `:leak-detection` Leiningen profile.
 
   NOTE: Currently only improves reliability for detecting leaked ByteBufs. Other types of leaked
   resources will still be detected but not with the same reliability. Search Netty's codebase for
@@ -58,7 +51,7 @@
                    "Enable Netty debug logging to diagnose the cause.")))
       (throw (RuntimeException.
               (str "Attempted to use `aleph.resource-leak-detector` API but it is not enabled. "
-                   "Pass `-Dio.netty.customResourceLeakDetector=aleph.resource_leak_detector` to enable.")))))
+                   "To enable it, use the `:leak-detection` Leiningen profile.")))))
   (when-not (= ResourceLeakDetector$Level/PARANOID (ResourceLeakDetector/getLevel))
     (throw (RuntimeException.
             (str "`aleph.resource_leak_detector` requires `-Dio.netty.leakDetection.level=PARANOID`. "
@@ -205,6 +198,6 @@
                  (alter-meta! tv update :test instrument-test-fn))))))
 
 (if (enabled?)
-  (log/info "enabled.")
-  (log/info "disabled. This means resource leaks will be reported less accurately."
-            "Pass `-Dio.netty.customResourceLeakDetector=aleph.resource_leak_detector` to enable."))
+  (log/info "aleph.resource-leak-detector enabled.")
+  (log/info "aleph.resource-leak-detector disabled. This means resource leaks will be reported less accurately."
+            "To enable it, use the `:leak-detection` Leiningen profile."))
