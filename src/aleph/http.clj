@@ -141,7 +141,7 @@
    | `control-period`             | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `60000`
    | `dns-options`                | an optional map with async DNS resolver settings, for more information check `aleph.netty/dns-resolver-group`. When set, ignores `name-resolver` setting from `connection-options` in favor of shared DNS resolver instance
    | `middleware`                 | a function to modify request before sending, defaults to `aleph.http.client-middleware/wrap-request`
-   | `pool-builder-fn`            | an optional 1-ary function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-length` and `stats-callback`.
+   | `pool-builder-fn`            | an optional 1-ary function which returns a `io.aleph.dirigiste.IPool` from a map containing the following keys: `generate`, `destroy`, `control-period`, `max-queue-size` and `stats-callback`.
    | `pool-controller-builder-fn` | an optional 0-ary function which returns a `io.aleph.dirigiste.IPool$Controller`.
 
    the `connection-options` are a map describing behavior across all connections:
