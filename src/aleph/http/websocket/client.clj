@@ -244,7 +244,8 @@
            max-frame-payload
            max-frame-size
            compression?
-           heartbeats]
+           heartbeats
+           connect-timeout]
     :or   {bootstrap-transform identity
            pipeline-transform  identity
            raw-stream?         false
@@ -254,7 +255,8 @@
            extensions?         false
            max-frame-payload   65536
            max-frame-size      1048576
-           compression?        false}
+           compression?        false
+           connect-timeout     netty/default-connect-timeout}
     :as   options}]
 
   (when (and (true? (:compression? options))
@@ -312,5 +314,6 @@
                  :bootstrap-transform bootstrap-transform
                  :remote-address      remote-address
                  :local-address       local-address
-                 :transport           (netty/determine-transport transport epoll?)})
+                 :transport           (netty/determine-transport transport epoll?)
+                 :connect-timeout     connect-timeout})
               (fn [_] s))))
