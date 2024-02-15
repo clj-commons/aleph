@@ -453,11 +453,13 @@
       result)))
 
 (defn cancel-request!
-  "Accepts a response deferred as returned by `request` and cancels the underlying request if it is
-  still in flight.
+  "Accepts a response deferred as returned by `request` and closes the underlying TCP connection. If
+  the request had already completed by the time this function is invoked, it has no effect (as per
+  Manifold deferred semantics). If cancellation succeeded, the deferred will be put into error state
+  with an `aleph.utils.RequestCancellationException` instance.
 
-  This is done by putting the deferred into error state with an
-  `aleph.utils.RequestCancellationException` instance as its value."
+  Note that the request may already have been (partially) processed by the server at the point of
+  cancellation."
   [r]
   (d/error! r (RequestCancellationException. "Request cancelled")))
 
