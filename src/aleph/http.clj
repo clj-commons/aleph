@@ -100,20 +100,23 @@
    will be errors, and a new connection must be created."
   [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
-        ssl? (= "https" scheme)]
-    (-> (client/http-connection
-          (InetSocketAddress/createUnresolved
-            (.getHost uri)
-            (int
-              (or
-                (when (pos? (.getPort uri)) (.getPort uri))
-                (if ssl? 443 80))))
-          ssl?
-          (if on-closed
-            (assoc options :on-closed on-closed)
-            options))
-
-        (d/chain' middleware))))
+        ssl? (= "https" scheme)
+        conn (client/http-connection
+              (InetSocketAddress/createUnresolved
+               (.getHost uri)
+               (int
+                (or
+                 (when (pos? (.getPort uri)) (.getPort uri))
+                 (if ssl? 443 80))))
+              ssl?
+              (if on-closed
+                (assoc options :on-closed on-closed)
+                options))]
+    (doto (d/chain' conn middleware)
+      (d/catch' (fn [e]
+                  (log/trace e "Terminating creation of HTTP connection")
+                  (d/error! conn e)
+                  (d/error-deferred e))))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -388,6 +391,9 @@
                                   ;; connection to the error handler on `result` which uses this
                                   ;; function.
                                   (reset! dispose-conn! (fn [] (flow/dispose pool k conn)))
+
+                                  ;; allow cancellation during connection establishment
+                                  (d/connect result (first conn))
 
                                   (if (realized? result)
                                     ;; to account for race condition between setting `dispose-conn!`
