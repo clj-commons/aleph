@@ -42,6 +42,7 @@
     (java.io
       Closeable
       File)
+    (java.lang ProcessBuilder$Redirect)
     (java.net UnknownHostException)
     (java.util.concurrent
       SynchronousQueue
@@ -1439,6 +1440,52 @@
                    :http-versions [:http1]})]
       (is (instance? IllegalArgumentException result))
       (is (= "use-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))
+
+(deftest test-request-cancellation-during-connection-acquisition
+  (let [starved-pool (http/connection-pool
+                      {:total-connections 0})]
+    (try
+      (let [rsp (http-get "/" {:pool starved-pool
+                               :pool-timeout 500})]
+        (http/cancel-request! rsp)
+        (is (thrown? RequestCancellationException (deref rsp 0 :timeout))))
+      (finally
+        (.shutdown ^Pool starved-pool)))))
+
+(defn passive-tcp-server []
+  (let [p (.. (ProcessBuilder. (into-array String ["test/passive_tcp_server.py" (str port)]))
+              (redirectError ProcessBuilder$Redirect/INHERIT)
+              (start))]
+    (if (= -1 @(d/timeout! (d/future (.read (.getInputStream p))) 500 -1))
+      (do
+        (.destroy p)
+        (let [exit-code (.waitFor p)]
+          (throw (ex-info "passive-tcp-server failed to start (see stderr)" {:exit-code exit-code}))))
+      (.getOutputStream p))))
+
+(deftest test-request-cancellation-during-connection-establishment
+  (let [connect-client @#'aleph.netty/connect-client
+        connect-future (atom nil)]
+    (with-redefs [aleph.netty/connect-client (fn [& args]
+                                               (let [fut (apply connect-client args)]
+                                                 (reset! connect-future fut)
+                                                 fut))]
+      (with-open [server (passive-tcp-server)]
+        (binding [*pool* (http/connection-pool
+                          {:connection-options {:connect-timeout 500}})]
+          (let [rsp (http-get "/" {     ;:connection-timeout 500
+                                   })]
+            (prn :wait)
+            ;;(Thread/sleep 2000)
+            (prn :cancel)
+            (http/cancel-request! rsp)
+            ;;(Thread/sleep 2000)
+            (prn :done)
+            (is (thrown? RequestCancellationException (deref rsp 1000 :timeout)))
+            (some-> @connect-future (.await 2000 TimeUnit/MILLISECONDS))
+            (is (some-> @connect-future .isSuccess false?))
+            (is (some-> @connect-future .isDone))
+            (is (some-> @connect-future .isCancelled))))))))
 
 (deftest test-in-flight-request-cancellation
   (let [conn-established (promise)
