@@ -29,8 +29,7 @@
       ChannelHandlerContext
       ChannelOutboundHandlerAdapter
       ChannelPipeline
-      ChannelPromise
-      ConnectTimeoutException)
+      ChannelPromise)
     (io.netty.handler.codec TooLongFrameException)
     (io.netty.handler.codec.compression
       CompressionOptions
@@ -637,7 +636,7 @@
 (deftest test-pool-connect-timeout
   (binding [*connection-options* {:connect-timeout 2}]
     (with-handler basic-handler
-      (is (thrown? ConnectTimeoutException
+      (is (thrown? ConnectionTimeoutException
                    (deref (http/get "http://192.0.2.0" ;; "TEST-NET" in RFC 5737
                                     (merge (default-request-options) {:pool *pool*
                                                                       :connection-timeout 500}))
