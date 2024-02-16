@@ -38,8 +38,6 @@
       EpollEventLoopGroup
       EpollServerSocketChannel
       EpollSocketChannel)
-    (io.netty.channel.embedded
-      EmbeddedChannel)
     (io.netty.channel.group
       ChannelGroup
       DefaultChannelGroup)
@@ -194,6 +192,11 @@
 (def ^:const ^:no-doc default-shutdown-timeout
   "Default timeout in seconds to wait for graceful shutdown complete"
   15)
+
+(def ^:const default-connect-timeout
+  "Netty's default connect timeout."
+  ;; io.netty.channel.DefaultChannelConfig/DEFAULT_CONNECT_TIMEOUT
+  30000)
 
 (def ^:const ^:no-doc byte-array-class (Class/forName "[B"))
 
@@ -1517,14 +1520,6 @@
                     (ssl-handler ch ssl-ctx remote-address ssl-endpoint-id-alg)
                     (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
-
-(def ^:const
-  default-connect-timeout
-  "Netty's default connect timeout."
-  ;; This hack is necessary due to io.netty.channel.DefaultChannelConfig/DEFAULT_CONNECT_TIMEOUT
-  ;; being private.
-  (with-open [c (EmbeddedChannel.)]
-    (.getConnectTimeoutMillis (.config c))))
 
 (defn ^:no-doc create-client-chan
   "Returns a deferred containing a new Channel.
