@@ -23,6 +23,7 @@
       RequestCancellationException
       RequestTimeoutException)
     (io.aleph.dirigiste Pools)
+    (io.netty.channel ConnectTimeoutException)
     (io.netty.handler.codec Headers)
     (io.netty.handler.codec.http HttpHeaders)
     (java.net
@@ -396,10 +397,18 @@
                                     (-> (first conn)
                                         (maybe-timeout! connection-timeout)
 
-                                        ;; connection timeout triggered
-                                        (d/catch' TimeoutException
-                                                  (fn [^Throwable e]
-                                                    (d/error-deferred (ConnectionTimeoutException. e))))
+                                        ;; connection establishment failed
+                                        (d/catch'
+                                         (fn [e]
+                                           (if (or (instance? TimeoutException e)
+                                                   ;; Unintuitively, this type doesn't inherit from TimeoutException
+                                                   (instance? ConnectTimeoutException e))
+                                             (do
+                                               (log/error e "Timed out waiting for connection to be established")
+                                               (d/error-deferred (ConnectionTimeoutException. ^Throwable e)))
+                                             (do
+                                               (log/error e "Connection failure")
+                                               (d/error-deferred e)))))
 
                                         ;; actually make the request now
                                         (d/chain'
