@@ -345,7 +345,7 @@
 
      Param key            | Description
      -------------------- | -----------------------------------------------------------------------------------------------------------------------------------------------------------------
-     `connection-timeout` | timeout in milliseconds for the connection to become established, defaults to 60s. Note that this timeout will be ineffective if the pool's `connect-timeout` is lower.
+     `connection-timeout` | timeout in milliseconds for the connection to become established, defaults to `aleph.netty/default-connect-timeout`. Note that this timeout will be ineffective if the pool's `connect-timeout` is lower.
      `follow-redirects?`  | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`
      `middleware`         | custom client middleware for the request
      `pool-timeout`       | timeout in milliseconds for the pool to generate a connection
@@ -363,7 +363,7 @@
       :or   {pool               default-connection-pool
              response-executor  default-response-executor
              middleware         identity
-             connection-timeout 6e4}                        ;; 60 seconds
+             connection-timeout aleph.netty/default-connect-timeout}
       :as   req}]
     (let [dispose-conn! (atom (fn []))
           result (d/deferred response-executor)
