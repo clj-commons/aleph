@@ -507,7 +507,7 @@
    | `follow-redirects?`  | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`
    | `pool`               | a custom connection pool
    | `pool-timeout`       | timeout in milliseconds for the pool to generate a connection
-   | `connection-timeout` | timeout in milliseconds for the connection to become established, defaults to 60s. Note that this timeout will be ineffective if the pool's `connect-timeout` is lower.
+     `connection-timeout` | timeout in milliseconds for the connection to become established, defaults to `aleph.netty/default-connect-timeout`. Note that this timeout will be ineffective if the pool's `connect-timeout` is lower.
    | `request-timeout`    | timeout in milliseconds for the arrival of a response over the established connection
    | `read-timeout`       | timeout in milliseconds for the response to be completed
    | `response-executor`  | optional `java.util.concurrent.Executor` that will handle the requests (defaults to a `flow/utilization-executor` of 256 `max-threads` and a `queue-length` of 0)")
