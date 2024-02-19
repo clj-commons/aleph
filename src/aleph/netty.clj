@@ -189,12 +189,12 @@
 
 ;;; Defaults defined here since they are not publically exposed by Netty
 
-(def ^:const ^:no-doc default-shutdown-timeout
-  "Default timeout in seconds to wait for graceful shutdown complete"
+(def ^:const default-shutdown-timeout
+  "Netty's default timeout in seconds to wait for graceful shutdown complete"
   15)
 
 (def ^:const default-connect-timeout
-  "Netty's default connect timeout."
+  "Netty's default connect timeout in milliseconds."
   ;; io.netty.channel.DefaultChannelConfig/DEFAULT_CONNECT_TIMEOUT
   30000)
 
