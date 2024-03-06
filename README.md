@@ -169,4 +169,12 @@ Minimal [`tools.deps`](https://github.com/clojure/tools.deps.alpha) support is a
 
 Copyright © 2010-2024 Zachary Tellman
 
-Distributed under the MIT License
+Distributed under the MIT License.
+
+### Support
+
+Many thanks to YourKit for supporting Aleph. YourKit supports open source projects with innovative and intelligent tools for monitoring and profiling Java and .NET applications.
+
+YourKit is the creator of <a href="https://www.yourkit.com/java/profiler/">YourKit Java Profiler</a>, <a href="https://www.yourkit.com/dotnet-profiler/">YourKit .NET Profiler</a>, and <a href="https://www.yourkit.com/youmonitor/">YourKit YouMonitor</a>.
+
+![](https://www.yourkit.com/images/yklogo.png)
