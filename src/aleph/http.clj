@@ -22,6 +22,7 @@
       ReadTimeoutException
       RequestTimeoutException)
     (io.aleph.dirigiste Pools)
+    (io.netty.channel ConnectTimeoutException)
     (io.netty.handler.codec Headers)
     (io.netty.handler.codec.http HttpHeaders)
     (java.net
@@ -156,6 +157,7 @@
    | `insecure?`               | if `true`, ignores the certificate for any `https://` domains
    | `response-buffer-size`    | the amount of the response, in bytes, that is buffered before the request returns, defaults to `65536`.  This does *not* represent the maximum size response that the client can handle (which is unbounded), and is only a means of maximizing performance.
    | `keep-alive?`             | if `true`, attempts to reuse connections for multiple requests, defaults to `true`.
+   | `connect-timeout`         | timeout for a connection to be established, in milliseconds. Default determined by Netty, see `aleph.netty/default-connect-timeout`.
    | `idle-timeout`            | when set, forces keep-alive connections to be closed after an idle time, in milliseconds.
    | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`).
    | `raw-stream?`             | if `true`, bodies of responses will not be buffered at all, and represented as Manifold streams of `io.netty.buffer.ByteBuf` objects rather than as an `InputStream`.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
@@ -274,6 +276,7 @@
    | `pipeline-transform`  | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload`   | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size`      | maximum aggregate message size, in bytes, defaults to `1048576`.
+   | `connect-timeout`     | timeout for a connection to be established, in milliseconds. Default determined by Netty, see `aleph.netty/default-connect-timeout`.
    | `bootstrap-transform` | an optional function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
    | `transport`               | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`).
    | `heartbeats`          | optional configuration to send Ping frames to the server periodically (if the connection is idle), configuration keys are `:send-after-idle` (in milliseconds), `:payload` (optional, empty frame by default) and `:timeout` (optional, to close the connection if Pong is not received after specified timeout)."
@@ -338,7 +341,7 @@
 
      Param key            | Description
      -------------------- | -----------------------------------------------------------------------------------------------------------------------------------------------------------------
-     `connection-timeout` | timeout in milliseconds for the connection to become established
+     `connection-timeout` | timeout in milliseconds for the connection to become established, defaults to `aleph.netty/default-connect-timeout`. Note that this timeout will be ineffective if the pool's `connect-timeout` is lower.
      `follow-redirects?`  | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`
      `middleware`         | custom client middleware for the request
      `pool-timeout`       | timeout in milliseconds for the pool to generate a connection
@@ -356,7 +359,7 @@
       :or   {pool               default-connection-pool
              response-executor  default-response-executor
              middleware         identity
-             connection-timeout 6e4}                        ;; 60 seconds
+             connection-timeout aleph.netty/default-connect-timeout}
       :as   req}]
 
     (executor/with-executor response-executor
@@ -382,18 +385,18 @@
                          (maybe-timeout! connection-timeout)
 
                          ;; connection timeout triggered, dispose of the connetion
-                         (d/catch' TimeoutException
-                           (fn [^Throwable e]
-                             (log/error e "Timed out waiting for connection to be established")
-                             (flow/dispose pool k conn)
-                             (d/error-deferred (ConnectionTimeoutException. e))))
-
-                         ;; connection failed, bail out
                          (d/catch'
                            (fn [e]
-                             (log/error e "Connection failure")
                              (flow/dispose pool k conn)
-                             (d/error-deferred e)))
+                             (if (or (instance? TimeoutException e)
+                                     ;; Unintuitively, this type doesn't inherit from TimeoutException
+                                     (instance? ConnectTimeoutException e))
+                               (do
+                                 (log/error e "Timed out waiting for connection to be established")
+                                 (d/error-deferred (ConnectionTimeoutException. ^Throwable e)))
+                               (do
+                                 (log/error e "Connection failure")
+                                 (d/error-deferred e)))))
 
                          ;; actually make the request now
                          (d/chain'
@@ -482,7 +485,7 @@
    | `follow-redirects?`  | whether to follow redirects, defaults to `true`; see `aleph.http.client-middleware/handle-redirects`
    | `pool`               | a custom connection pool
    | `pool-timeout`       | timeout in milliseconds for the pool to generate a connection
-   | `connection-timeout` | timeout in milliseconds for the connection to become established
+     `connection-timeout` | timeout in milliseconds for the connection to become established, defaults to `aleph.netty/default-connect-timeout`. Note that this timeout will be ineffective if the pool's `connect-timeout` is lower.
    | `request-timeout`    | timeout in milliseconds for the arrival of a response over the established connection
    | `read-timeout`       | timeout in milliseconds for the response to be completed
    | `response-executor`  | optional `java.util.concurrent.Executor` that will handle the requests (defaults to a `flow/utilization-executor` of 256 `max-threads` and a `queue-length` of 0)")

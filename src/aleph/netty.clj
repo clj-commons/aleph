@@ -189,9 +189,14 @@
 
 ;;; Defaults defined here since they are not publically exposed by Netty
 
-(def ^:const ^:no-doc default-shutdown-timeout
-  "Default timeout in seconds to wait for graceful shutdown complete"
+(def ^:const default-shutdown-timeout
+  "Netty's default timeout in seconds to wait for graceful shutdown complete"
   15)
+
+(def ^:const default-connect-timeout
+  "Netty's default connect timeout in milliseconds."
+  ;; io.netty.channel.DefaultChannelConfig/DEFAULT_CONNECT_TIMEOUT
+  30000)
 
 (def ^:const ^:no-doc byte-array-class (Class/forName "[B"))
 
@@ -1527,7 +1532,9 @@
            ^SocketAddress remote-address
            ^SocketAddress local-address
            transport
-           name-resolver]
+           name-resolver
+           connect-timeout]
+    :or {connect-timeout default-connect-timeout}
     :as opts}]
   (ensure-transport-available! transport)
 
@@ -1546,6 +1553,7 @@
                           (instance? AddressResolverGroup name-resolver) name-resolver))
             bootstrap (doto (Bootstrap.)
                             (.option ChannelOption/SO_REUSEADDR true)
+                            (.option ChannelOption/CONNECT_TIMEOUT_MILLIS (int connect-timeout))
                             #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
                             (.group client-event-loop-group)
                             (.channel chan-class)
