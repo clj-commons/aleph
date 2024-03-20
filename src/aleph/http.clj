@@ -31,7 +31,7 @@
     (java.util.concurrent TimeoutException)))
 
 (defn start-server
-  "Starts an HTTP server using the provided Ring `handler`.  Returns a server
+  "Starts an HTTP server using the provided Ring `handler`. Returns a server
    object which can be stopped via `java.io.Closeable.close()`, and whose port
    can be discovered with `aleph.netty/port` if not set.
 
