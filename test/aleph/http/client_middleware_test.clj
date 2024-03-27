@@ -183,6 +183,12 @@
   (doseq [req (mg/sample schema/ring-request)]
     (is (middleware/wrap-validation req)))
 
+  (testing "Request methods can be strings"
+    (is (middleware/wrap-validation {:remote-addr    "localhost"
+                                     :server-name    "computer"
+                                     :scheme         :http
+                                     :request-method "GET"})))
+
   (is (thrown-with-msg?
         IllegalArgumentException
         #"Invalid spec.*:in \[:request-method\].*:type :malli.core/missing-key"

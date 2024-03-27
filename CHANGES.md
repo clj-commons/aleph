@@ -1,3 +1,7 @@
+### Unreleased
+
+* Loosen `wrap-validation` validation to support strings in :request-method. (See release in 0.6.2 for more information). 
+
 ### 0.7.1
 
 * Bump Manifold to 0.4.2 to fix Promesa print-method hierarchy bug
@@ -34,10 +38,13 @@ Contributions by Matthew Davidson and Stefan van den Oord.
 
 * Fix backwards-compatibility for transport options
 * Bump Netty to 4.1.89.Final, and io_uring to 0.0.18.Final
-* Add `wrap-validation` middleware to validate Ring maps 
 * Bump deps and example deps
 * Upgrade CircleCI instance size
 * Switch to pedantic deps for CircleCI
+
+### Breaking changes
+
+* Add `wrap-validation` middleware to validate Ring maps [#679](https://github.com/clj-commons/aleph/pull/679). This adds a stricter interpretation of the ring spec, which may fail on previously valid input. For example, strings (e.g. `"GET"`) and keywords (e.g. `:get`) were both accepted values for `:request-method`, but now only keywords are accepted. This will be fixed in the release after 0.7.1.
 
 Contributions by Arnaud Geiser, Ertuğrul Çetin, Jeroen van Dijk, David Ongaro, 
 Matthew Davidson, and Moritz Heidkamp.
