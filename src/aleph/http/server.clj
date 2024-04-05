@@ -671,12 +671,12 @@
 
             use-h2c?
             (do
-              (log/warn "Setting up cleartext HTTP/2 server pipeline.")
+              (log/debug "Setting up cleartext HTTP/2 server pipeline.")
               (http2/setup-conn-pipeline setup-opts))
 
             :else
             (do
-              (log/info "Setting up insecure HTTP/1 server pipeline.")
+              (log/debug "Setting up insecure HTTP/1 server pipeline.")
               (setup-http1-pipeline setup-opts))))))
 
 ;;;
