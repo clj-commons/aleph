@@ -404,10 +404,10 @@
                                                    ;; Unintuitively, this type doesn't inherit from TimeoutException
                                                    (instance? ConnectTimeoutException e))
                                              (do
-                                               (log/error e "Timed out waiting for connection to be established")
+                                               (log/trace "Timed out waiting for connection to be established")
                                                (d/error-deferred (ConnectionTimeoutException. ^Throwable e)))
                                              (do
-                                               (log/error e "Connection failure")
+                                               (log/trace "Connection establishment failed")
                                                (d/error-deferred e)))))
 
                                         ;; actually make the request now
