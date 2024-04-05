@@ -75,6 +75,9 @@
                    :benchmark :benchmark
                    :stress    :stress
                    :leak      :leak ; requires :leak-detection profile
+                   :default+leak #(not
+                                   (some #{:benchmark :stress}
+                                         (cons (:tag %) (keys %))))
                    :all       (constantly true)}
   :jvm-opts ^:replace ["-server"
                        "-Xmx2g"
