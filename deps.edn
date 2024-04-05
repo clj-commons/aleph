@@ -1,49 +1,49 @@
 ;; DO NOT EDIT MANUALLY - generated from project.clj via deps/lein-to-deps
 {:paths ["src" "resources" "target/classes"],
  :deps
- {org.clojure/clojure {:mvn/version "1.11.1"},
+ {org.clojure/clojure {:mvn/version "1.11.2"},
   org.clojure/tools.logging
-  {:mvn/version "1.2.4", :exclusions [org.clojure/clojure]},
+  {:mvn/version "1.3.0", :exclusions [org.clojure/clojure]},
   manifold/manifold
   {:mvn/version "0.4.2", :exclusions [org.clojure/tools.logging]},
   org.clj-commons/byte-streams {:mvn/version "0.3.4"},
   org.clj-commons/dirigiste {:mvn/version "1.0.4"},
   org.clj-commons/primitive-math {:mvn/version "1.0.1"},
-  potemkin/potemkin {:mvn/version "0.4.6"},
-  io.netty/netty-transport {:mvn/version "4.1.100.Final"},
+  potemkin/potemkin {:mvn/version "0.4.7"},
+  io.netty/netty-transport {:mvn/version "4.1.108.Final"},
   io.netty/netty-transport-native-epoll$linux-x86_64
-  {:mvn/version "4.1.100.Final"},
+  {:mvn/version "4.1.108.Final"},
   io.netty/netty-transport-native-epoll$linux-aarch_64
-  {:mvn/version "4.1.100.Final"},
+  {:mvn/version "4.1.108.Final"},
   io.netty/netty-transport-native-kqueue$osx-x86_64
-  {:mvn/version "4.1.100.Final"},
+  {:mvn/version "4.1.108.Final"},
   io.netty.incubator/netty-incubator-transport-native-io_uring$linux-x86_64
-  {:mvn/version "0.0.18.Final"},
+  {:mvn/version "0.0.25.Final"},
   io.netty.incubator/netty-incubator-transport-native-io_uring$linux-aarch_64
-  {:mvn/version "0.0.18.Final"},
-  io.netty/netty-codec {:mvn/version "4.1.100.Final"},
-  io.netty/netty-codec-http {:mvn/version "4.1.100.Final"},
-  io.netty/netty-codec-http2 {:mvn/version "4.1.100.Final"},
-  io.netty/netty-handler {:mvn/version "4.1.100.Final"},
-  io.netty/netty-handler-proxy {:mvn/version "4.1.100.Final"},
-  io.netty/netty-resolver {:mvn/version "4.1.100.Final"},
-  io.netty/netty-resolver-dns {:mvn/version "4.1.100.Final"},
+  {:mvn/version "0.0.25.Final"},
+  io.netty/netty-codec {:mvn/version "4.1.108.Final"},
+  io.netty/netty-codec-http {:mvn/version "4.1.108.Final"},
+  io.netty/netty-codec-http2 {:mvn/version "4.1.108.Final"},
+  io.netty/netty-handler {:mvn/version "4.1.108.Final"},
+  io.netty/netty-handler-proxy {:mvn/version "4.1.108.Final"},
+  io.netty/netty-resolver {:mvn/version "4.1.108.Final"},
+  io.netty/netty-resolver-dns {:mvn/version "4.1.108.Final"},
   metosin/malli
-  {:mvn/version "0.10.4", :exclusions [org.clojure/clojure]},
-  com.aayushatharva.brotli4j/brotli4j {:mvn/version "1.12.0"},
-  com.aayushatharva.brotli4j/service {:mvn/version "1.12.0"},
+  {:mvn/version "0.15.0", :exclusions [org.clojure/clojure]},
+  com.aayushatharva.brotli4j/brotli4j {:mvn/version "1.16.0"},
+  com.aayushatharva.brotli4j/service {:mvn/version "1.16.0"},
   com.aayushatharva.brotli4j/native-linux-aarch64
-  {:mvn/version "1.12.0"},
+  {:mvn/version "1.16.0"},
   com.aayushatharva.brotli4j/native-linux-armv7
-  {:mvn/version "1.12.0"},
+  {:mvn/version "1.16.0"},
   com.aayushatharva.brotli4j/native-linux-x86_64
-  {:mvn/version "1.12.0"},
+  {:mvn/version "1.16.0"},
   com.aayushatharva.brotli4j/native-osx-aarch64
-  {:mvn/version "1.12.0"},
-  com.aayushatharva.brotli4j/native-osx-x86_64 {:mvn/version "1.12.0"},
+  {:mvn/version "1.16.0"},
+  com.aayushatharva.brotli4j/native-osx-x86_64 {:mvn/version "1.16.0"},
   com.aayushatharva.brotli4j/native-windows-x86_64
-  {:mvn/version "1.12.0"},
-  com.github.luben/zstd-jni {:mvn/version "1.5.5-7"}},
+  {:mvn/version "1.16.0"},
+  com.github.luben/zstd-jni {:mvn/version "1.5.6-2"}},
  :aliases
  {:lein2deps
   {:deps
