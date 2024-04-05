@@ -44,6 +44,6 @@ jobs:
       - run: deps/ensure-deps-up-to-date
 
       # run tests!
-      - run: lein do clean, test
+      - run: lein do clean, with-profile +leak-detection test
     # The resource_class feature allows configuring CPU and RAM resources for each job. Different resource classes are available for different executors. https://circleci.com/docs/2.0/configuration-reference/#resourceclass
     resource_class: large
