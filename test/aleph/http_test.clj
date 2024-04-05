@@ -791,12 +791,10 @@
         (is (= ""
                (bs/to-string (:body @(http-get path)))))))
     (testing "Client is slow to write, but has time"
-      (with-http-servers echo-handler {:idle-timeout 200
-                                          :raw-stream?  true}
+      (with-http-servers echo-handler {:idle-timeout 200}
         (is (= "012345" (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))
     (testing "Client is too slow to write"
-      (with-http-servers echo-handler {:idle-timeout 30
-                                          :raw-stream?  true}
+      (with-http-servers echo-handler {:idle-timeout 30}
         (is (thrown-with-msg? Exception #"connection was close"
                               (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
 ;;;
