@@ -774,6 +774,10 @@
                       (s/put! "x")
                       s/close!)))
 
+(defn echo-string-handler [{:keys [body]}]
+  {:status 200
+   :body   (bs/to-string body)})
+
 (deftest test-idle-timeout
   ;; Required so that the conversion initialization doesn't count
   ;; toward the idle timeout. See
@@ -781,7 +785,6 @@
   (force-stream-to-string-memoization!)
 
   (let [path "/"
-        echo-handler (fn [{:keys [body]}] {:body (bs/to-string body)})
         slow-handler (fn [_] {:body (slow-stream)})]
     (testing "Server is slow to write, but has time"
       (with-http-servers slow-handler {:idle-timeout 200}
@@ -791,10 +794,10 @@
         (is (= ""
                (bs/to-string (:body @(http-get path)))))))
     (testing "Client is slow to write, but has time"
-      (with-http-servers echo-handler {:idle-timeout 200}
+      (with-http-servers echo-string-handler {:idle-timeout 200}
         (is (= "012345" (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))
     (testing "Client is too slow to write"
-      (with-http-servers echo-handler {:idle-timeout 30}
+      (with-http-servers echo-string-handler {:idle-timeout 30}
         (is (thrown-with-msg? Exception #"connection was close"
                               (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
 ;;;
@@ -1062,10 +1065,6 @@
 ;;;
 ;;; errors processing
 ;;;
-
-(defn echo-string-handler [{:keys [body]}]
-  {:status 200
-   :body   (bs/to-string body)})
 
 (def http-line-delimiter "\r\n")
 
