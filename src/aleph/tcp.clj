@@ -88,19 +88,24 @@
          epoll? false
          shutdown-timeout netty/default-shutdown-timeout}
     :as options}]
-  (netty/start-server
-   {:pipeline-builder (fn [^ChannelPipeline pipeline]
-                        (.addLast pipeline
-                                  "handler"
-                                  (server-channel-handler handler options))
-                        (pipeline-transform pipeline))
-    :ssl-context ssl-context
-    :bootstrap-transform bootstrap-transform
-    :socket-address (if socket-address
-                      socket-address
-                      (InetSocketAddress. port))
-    :transport (netty/determine-transport transport epoll?)
-    :shutdown-timeout shutdown-timeout}))
+  (let [ssl-context (some-> ssl-context netty/coerce-ssl-server-context)]
+    (netty/start-server
+     {:pipeline-builder (fn [^ChannelPipeline pipeline]
+                          (when ssl-context
+                            (.addFirst pipeline
+                                       "ssl-handler"
+                                       (let [ch (.channel pipeline)]
+                                         (netty/ssl-handler ch ssl-context))))
+                          (.addLast pipeline
+                                    "handler"
+                                    (server-channel-handler handler options))
+                          (pipeline-transform pipeline))
+      :bootstrap-transform bootstrap-transform
+      :socket-address (if socket-address
+                        socket-address
+                        (InetSocketAddress. port))
+      :transport (netty/determine-transport transport epoll?)
+      :shutdown-timeout shutdown-timeout})))
 
 (defn- client-channel-handler
   "Returns a vector of `[d handler]`, where `d` is a deferred containing the
