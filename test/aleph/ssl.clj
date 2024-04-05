@@ -7,14 +7,14 @@
     (java.security KeyFactory PrivateKey)
     (java.security.cert CertificateFactory X509Certificate)
     (java.security.spec RSAPrivateCrtKeySpec)
-    (org.apache.commons.codec.binary Base64)))
+    (java.util Base64)))
 
 (set! *warn-on-reflection* false)
 
 (defn gen-cert
   ^X509Certificate [^String pemstr]
   (.generateCertificate (CertificateFactory/getInstance "X.509")
-                        (ByteArrayInputStream. (Base64/decodeBase64 pemstr))))
+                        (ByteArrayInputStream. (.decode (Base64/getDecoder) pemstr))))
 
 (defn gen-key
   ^PrivateKey [public-exponent k]
