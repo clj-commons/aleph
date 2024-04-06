@@ -21,7 +21,8 @@
     (io.netty.channel ChannelHandler)
     (io.netty.handler.codec.compression
       Brotli
-      BrotliOptions CompressionOptions
+      BrotliOptions
+      CompressionOptions
       DeflateOptions
       GzipOptions
       SnappyOptions
@@ -76,6 +77,16 @@
 
 (defrecord Qvals [^double star ^double br ^double snappy ^double zstd ^double gzip ^double deflate])
 
+;; We can't reference these options classes directly in `choose-codec` since the compiler would try
+;; to initialize them even when the necessary dependencies aren't available, resulting in an
+;; error. Indirectly referencing them like this works, though.  See
+;; https://github.com/clj-commons/aleph/issues/703
+(def brotli-options-class
+  BrotliOptions)
+
+(def zstd-options-class
+  ZstdOptions)
+
 (defn choose-codec
   "Based on Netty's algorithm, which only compares with the next-best option.
    E.g., Brotli's q-value is only compared with zstd, not gzip or deflate.
@@ -92,12 +103,12 @@
         ;; some encodings were listed
         (cond (and (p/not== br -1.0)
                    (p/>= br zstd)
-                   (contains-class? compressor-options BrotliOptions))
+                   (contains-class? compressor-options brotli-options-class))
               "br"
 
               (and (p/not== zstd -1.0)
                    (p/>= zstd snappy)
-                   (contains-class? compressor-options ZstdOptions))
+                   (contains-class? compressor-options zstd-options-class))
               "zstd"
 
               (and (p/not== snappy -1.0)
