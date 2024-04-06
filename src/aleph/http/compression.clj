@@ -1,6 +1,6 @@
 (ns ^:no-doc aleph.http.compression
-  "Currently focused on HTTP/2, since Netty offers better support for
-   compression in its HTTP/1 code.
+  "Currently only for HTTP/2, since Netty offers better support for
+   compression in HTTP/1 code.
 
    Best supported compression codecs on the web are Brotli, gzip, and deflate.
 
@@ -8,8 +8,8 @@
    open-source databases. It's not on track to be a web standard, but is
    well-supported by Netty.
 
-   Zstd is a promising Facebook codec that is registered with IANA, but is not
-   yet widely available. (See https://caniuse.com/zstd).
+   Zstd is a Facebook codec that is registered with IANA, but is not yet
+   widely available. (See https://caniuse.com/zstd).
 
    See https://www.iana.org/assignments/http-parameters/http-parameters.xml#content-coding"
   (:require
@@ -17,17 +17,15 @@
     [clj-commons.primitive-math :as p]
     [clojure.tools.logging :as log])
   (:import
+    (aleph.http AlephCompressionOptions)
     (io.netty.channel ChannelHandler)
     (io.netty.handler.codec.compression
       Brotli
-      BrotliOptions
-      CompressionOptions
+      BrotliOptions CompressionOptions
       DeflateOptions
       GzipOptions
       SnappyOptions
-      StandardCompressionOptions
-      Zstd
-      ZstdOptions)
+      Zstd ZstdOptions)
     (io.netty.handler.codec.http HttpHeaderNames)
     (io.netty.handler.codec.http2 Http2HeadersFrame)
     (io.netty.util AsciiString)
@@ -37,10 +35,6 @@
 (def ^:private ^AsciiString identity-encoding (AsciiString. "identity"))
 (def ^:private ^AsciiString head-method (AsciiString. "HEAD"))
 (def ^:private ^AsciiString connect-method (AsciiString. "CONNECT"))
-
-;; From 0.7.0-rc2 on, Brotli and Zstd should be available by default
-(Brotli/ensureAvailability)
-(Zstd/ensureAvailability)
 
 (defn- contains-class?
   "Returns true if the class is in the array"
@@ -57,11 +51,11 @@
   available-compressor-options
   "A Java array of all available compressor options"
   (into-array CompressionOptions
-              [(StandardCompressionOptions/brotli)
-               (StandardCompressionOptions/deflate)
-               (StandardCompressionOptions/gzip)
-               (StandardCompressionOptions/zstd)
-               (StandardCompressionOptions/snappy)]))
+              (cond-> [(AlephCompressionOptions/deflate)
+                       (AlephCompressionOptions/gzip)
+                       (AlephCompressionOptions/snappy)]
+                      (Brotli/isAvailable) (conj (AlephCompressionOptions/brotli))
+                      (Zstd/isAvailable) (conj (AlephCompressionOptions/zstd)))))
 
 
 (defn- qvalue
@@ -122,10 +116,12 @@
 
         ;; no named encodings were listed, so we'll apply *'s qval to unset ones
         (p/> star 0.0)
-        (cond (p/== br -1.0)
+        (cond (and (p/== br -1.0)
+                   (Brotli/isAvailable))
               "br"
 
-              (p/== zstd -1.0)
+              (and (p/== zstd -1.0)
+                   (Zstd/isAvailable))
               "zstd"
 
               (p/== snappy -1.0)
@@ -219,7 +215,6 @@
                                (p/== 204 status)
                                (p/== 304 status)))
                   (log/debug "Setting content-encoding to:" @encoding)
-                  ;; TODO: add "vary" header
                   (.set headers HttpHeaderNames/CONTENT_ENCODING chosen-encoding))))))
 
         (.write ctx msg promise))))))
