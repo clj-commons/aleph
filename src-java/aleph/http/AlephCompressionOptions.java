@@ -1,6 +1,7 @@
 package aleph.http;
 
 import io.netty.handler.codec.compression.BrotliOptions;
+import io.netty.handler.codec.compression.CompressionOptions;
 import io.netty.handler.codec.compression.DeflateOptions;
 import io.netty.handler.codec.compression.GzipOptions;
 import io.netty.handler.codec.compression.SnappyOptions;
@@ -38,5 +39,36 @@ public class AlephCompressionOptions {
 
     public static DeflateOptions deflate() {
         return StandardCompressionOptions.deflate();
+    }
+
+    private static boolean containsInstanceOf(CompressionOptions[] options, Class optionClass) {
+        for (CompressionOptions o : options) {
+            // NOTE: Can't use optionClass.instanceOf(o) because GzipOptions inherits from
+            // DeflateOptions which yields false positives.
+            if (optionClass == o.getClass()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean hasBrotli(CompressionOptions[] options) {
+        return containsInstanceOf(options, BrotliOptions.class);
+    }
+
+    public static boolean hasZstd(CompressionOptions[] options) {
+        return containsInstanceOf(options, ZstdOptions.class);
+    }
+
+    public static boolean hasSnappy(CompressionOptions[] options) {
+        return containsInstanceOf(options, SnappyOptions.class);
+    }
+
+    public static boolean hasGzip(CompressionOptions[] options) {
+        return containsInstanceOf(options, GzipOptions.class);
+    }
+
+    public static boolean hasDeflate(CompressionOptions[] options) {
+        return containsInstanceOf(options, DeflateOptions.class);
     }
 }

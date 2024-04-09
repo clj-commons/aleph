@@ -37,17 +37,6 @@
 (def ^:private ^AsciiString head-method (AsciiString. "HEAD"))
 (def ^:private ^AsciiString connect-method (AsciiString. "CONNECT"))
 
-(defn- contains-class?
-  "Returns true if the class is in the array"
-  [^"[Lio.netty.handler.codec.compression.CompressionOptions;" a ^Class klazz]
-  (let [len (alength a)]
-    (loop [i 0]
-      (if (>= i len)
-        false
-        (if (.equals klazz (class (aget ^"[Lio.netty.handler.codec.compression.CompressionOptions;" a i)))
-          true
-          (recur (unchecked-inc-int i)))))))
-
 (def ^"[Lio.netty.handler.codec.compression.CompressionOptions;"
   available-compressor-options
   "A Java array of all available compressor options"
@@ -77,16 +66,6 @@
 
 (defrecord Qvals [^double star ^double br ^double snappy ^double zstd ^double gzip ^double deflate])
 
-;; We can't reference these options classes directly in `choose-codec` since the compiler would try
-;; to initialize them even when the necessary dependencies aren't available, resulting in an
-;; error. Indirectly referencing them like this works, though.  See
-;; https://github.com/clj-commons/aleph/issues/703
-(def brotli-options-class
-  BrotliOptions)
-
-(def zstd-options-class
-  ZstdOptions)
-
 (defn choose-codec
   "Based on Netty's algorithm, which only compares with the next-best option.
    E.g., Brotli's q-value is only compared with zstd, not gzip or deflate.
@@ -103,26 +82,26 @@
         ;; some encodings were listed
         (cond (and (p/not== br -1.0)
                    (p/>= br zstd)
-                   (contains-class? compressor-options brotli-options-class))
+                   (AlephCompressionOptions/hasBrotli compressor-options))
               "br"
 
               (and (p/not== zstd -1.0)
                    (p/>= zstd snappy)
-                   (contains-class? compressor-options zstd-options-class))
+                   (AlephCompressionOptions/hasZstd compressor-options))
               "zstd"
 
               (and (p/not== snappy -1.0)
                    (p/>= snappy gzip)
-                   (contains-class? compressor-options SnappyOptions))
+                   (AlephCompressionOptions/hasSnappy compressor-options))
               "snappy"
 
               (and (p/not== gzip -1.0)
                    (p/>= gzip deflate)
-                   (contains-class? compressor-options GzipOptions))
+                   (AlephCompressionOptions/hasGzip compressor-options))
               "gzip"
 
               (and (p/not== deflate -1.0)
-                   (contains-class? compressor-options DeflateOptions))
+                   (AlephCompressionOptions/hasDeflate compressor-options))
               "deflate")
 
         ;; no named encodings were listed, so we'll apply *'s qval to unset ones
