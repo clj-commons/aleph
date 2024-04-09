@@ -292,8 +292,10 @@
 
 (defmacro with-both-handlers [handler & body]
   `(do
-     (with-handler ~handler ~@body)
-     (with-raw-handler ~handler ~@body)))
+     (testing "cooked"
+       (with-handler ~handler ~@body))
+     (testing "raw"
+       (with-raw-handler ~handler ~@body))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -776,7 +778,10 @@
 
 (defn echo-string-handler [{:keys [body]}]
   {:status 200
-   :body   (bs/to-string body)})
+   :body   (when body ; cooked handler produces nil for empty request body
+             (bs/to-string (if (s/stream? body)
+                             (s/map netty/release-buf->array body)
+                             body)))})
 
 (deftest test-idle-timeout
   ;; Required so that the conversion initialization doesn't count
@@ -800,6 +805,11 @@
       (with-http-servers echo-string-handler {:idle-timeout 30}
         (is (thrown-with-msg? Exception #"connection was close"
                               (bs/to-string (:body @(http-put path {:body (slow-stream)})))))))))
+
+(deftest test-empty-request-body
+  (with-both-handlers echo-string-handler
+    (is (= "" (bs/to-string (:body @(http-put "/" {:body ""})))))))
+
 ;;;
 
 (deftest test-large-responses
