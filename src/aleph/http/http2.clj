@@ -1074,16 +1074,17 @@
                      (log/debug "Stream is no longer writable"))))))
 
          (instance? Http2DataFrame msg)
-         (let [content (.content ^Http2DataFrame msg)]
+         (let [content (.content ^Http2DataFrame msg)
+               content-empty? (p/== (.readableBytes content) 0)]
            ;; skip empty bytebufs
-           (when (p/> (.readableBytes content) 0)
+           (when-not content-empty?
              (netty/put! (.channel ctx)
                          body-stream
                          (if raw-stream?
                            content
                            (netty/buf->array content))))
 
-           (when-not raw-stream?
+           (when (or (not raw-stream?) content-empty?)
              (.release ^ReferenceCounted msg))
 
            (when (.isEndStream ^Http2DataFrame msg)
