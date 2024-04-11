@@ -217,8 +217,5 @@
                :local-address       local-address
                :transport           (netty/determine-transport transport epoll?)
                :connect-timeout     connect-timeout})]
-    (d/catch' ch-d #(d/error! s %))
-    (d/catch' s (fn [e]
-                  (d/error! ch-d e)
-                  (d/error-deferred e)))
-    s))
+    (d/on-realized ch-d identity #(d/error! s %))
+    (d/on-realized s identity #(d/error! ch-d %))))

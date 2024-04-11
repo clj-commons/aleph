@@ -935,12 +935,12 @@
                                                        :response-buffer-size response-buffer-size
                                                        :t0                   t0}))))))))))))]
     (d/connect conn result)
-    (d/catch' result (fn [e]
-                       (log/trace e "Closing HTTP connection channel")
-                       (d/error! ch-d e)
-                       (@close-ch!)
-                       (d/error-deferred e)))
-    result))
+    (d/on-realized result
+                   identity
+                   (fn [e]
+                     (log/trace e "Closing HTTP connection channel")
+                     (d/error! ch-d e)
+                     (@close-ch!)))))
 
 
 

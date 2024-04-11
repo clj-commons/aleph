@@ -1569,21 +1569,21 @@
                         bootstrap-transform)
 
         fut (connect-client bootstrap remote-address local-address)]
-    (doto (-> (wrap-future fut)
-              (d/chain'
-               (fn [_]
-                 (let [ch (.channel ^ChannelFuture fut)]
-                   (maybe-ssl-handshake-future ch)))))
-      (d/catch' (fn [e]
-                  (when-not (.isDone fut)
-                    (log/trace e "Cancelling Bootstrap#connect future")
-                    (when-not (.cancel fut true)
-                      (when-not (.isDone fut)
-                        (log/warn "Transport" transport "does not support cancellation of connection attempts."
-                                  "Instead, you have to wait for the connect timeout to expire for it to be terminated."
-                                  "Its current value is" connect-timeout "ms."
-                                  "It can be set via the `connect-timeout` option."))))
-                  (d/error-deferred e))))))
+    (-> (wrap-future fut)
+        (d/chain'
+         (fn [_]
+           (let [ch (.channel ^ChannelFuture fut)]
+             (maybe-ssl-handshake-future ch))))
+        (d/on-realized identity
+                       (fn [e]
+                         (when-not (.isDone fut)
+                           (log/trace e "Cancelling Bootstrap#connect future")
+                           (when-not (.cancel fut true)
+                             (when-not (.isDone fut)
+                               (log/warn "Transport" transport "does not support cancellation of connection attempts."
+                                         "Instead, you have to wait for the connect timeout to expire for it to be terminated."
+                                         "Its current value is" connect-timeout "ms."
+                                         "It can be set via the `connect-timeout` option.")))))))))
 
 
 (defn ^:no-doc ^:deprecated create-client

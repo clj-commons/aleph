@@ -112,11 +112,11 @@
               (if on-closed
                 (assoc options :on-closed on-closed)
                 options))]
-    (doto (d/chain' conn middleware)
-      (d/catch' (fn [e]
-                  (log/trace e "Terminating creation of HTTP connection")
-                  (d/error! conn e)
-                  (d/error-deferred e))))))
+    (-> (d/chain' conn middleware)
+        (d/on-realized identity
+                       (fn [e]
+                         (log/trace e "Terminating creation of HTTP connection")
+                         (d/error! conn e))))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -393,7 +393,11 @@
                                   (reset! dispose-conn! (fn [] (flow/dispose pool k conn)))
 
                                   ;; allow cancellation during connection establishment
-                                  (d/connect result (first conn))
+                                  (d/on-realized result
+                                                 identity
+                                                 (fn [e]
+                                                   (log/trace e "Aborting connection acquisition")
+                                                   (d/error! (first conn) e)))
 
                                   (if (realized? result)
                                     ;; to account for race condition between setting `dispose-conn!`
