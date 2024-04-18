@@ -814,16 +814,15 @@
                                   :logger logger
                                   :pipeline-transform pipeline-transform))
 
-        ch-d (netty/create-client-chan
-              {:pipeline-builder    pipeline-builder
-               :bootstrap-transform bootstrap-transform
-               :remote-address      remote-address
-               :local-address       local-address
-               :transport           (netty/determine-transport transport epoll?)
-               :name-resolver       name-resolver
-               :connect-timeout     connect-timeout})
-
-        _ (attach-on-close-handler ch-d on-closed)
+        ch-d (doto (netty/create-client-chan
+                    {:pipeline-builder    pipeline-builder
+                     :bootstrap-transform bootstrap-transform
+                     :remote-address      remote-address
+                     :local-address       local-address
+                     :transport           (netty/determine-transport transport epoll?)
+                     :name-resolver       name-resolver
+                     :connect-timeout     connect-timeout})
+               (attach-on-close-handler on-closed))
 
         close-ch! (atom (fn []))
         result (d/deferred)
