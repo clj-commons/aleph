@@ -466,11 +466,11 @@
                                                 (middleware/handle-redirects request req))))))))))))
                       req))]
       (d/connect response result)
-      (d/catch' result
-                (fn [e]
-                  (log/trace e "Request failed. Disposing of connection...")
-                  (@dispose-conn!)
-                  (d/error-deferred e)))
+      (d/on-realized result
+                     identity
+                     (fn [e]
+                       (log/trace e "Request failed. Disposing of connection...")
+                       (@dispose-conn!)))
       result)))
 
 (defn cancel-request!
