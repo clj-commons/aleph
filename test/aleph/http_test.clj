@@ -1480,17 +1480,21 @@
           (is (some-> @connect-future .isCancelled)))))))
 
 (deftest test-in-flight-request-cancellation
-  (let [conn-established (promise)
-        conn-closed (promise)]
+  (let [conn-established (atom nil)
+        conn-closed (atom nil)]
     (with-raw-handler (fn [req]
-                        (deliver conn-established true)
+                        (deliver @conn-established true)
                         (s/on-closed (:body req)
                                      (fn []
-                                       (deliver conn-closed true))))
+                                       (deliver @conn-closed true))))
+      ;; NOTE: The atom indirection here is needed because `with-raw-handler` will run the body
+      ;; twice (for HTTP1 and HTTP2), so we need a new promise for each run.
+      (reset! conn-established (promise))
+      (reset! conn-closed (promise))
       (let [rsp (http-get "/")]
-        (is (= true (deref conn-established 1000 :timeout)))
+        (is (= true (deref @conn-established 1000 :timeout)))
         (http/cancel-request! rsp)
-        (is (= true (deref conn-closed 1000 :timeout)))
+        (is (= true (deref @conn-closed 1000 :timeout)))
         (is (thrown? RequestCancellationException (deref rsp 1000 :timeout)))))))
 
 (deftest ^:leak test-leak-in-raw-stream-handler
