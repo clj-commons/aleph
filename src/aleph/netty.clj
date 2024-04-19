@@ -1,6 +1,7 @@
 (ns aleph.netty
   (:refer-clojure :exclude [flush])
   (:require
+    [aleph.util :as util]
     [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p]
     [clojure.string :as str]
@@ -1574,8 +1575,7 @@
          (fn [_]
            (let [ch (.channel ^ChannelFuture fut)]
              (maybe-ssl-handshake-future ch))))
-        (d/on-realized identity
-                       (fn [e]
+        (util/on-error (fn [e]
                          (when-not (.isDone fut)
                            (log/trace e "Cancelling Bootstrap#connect future")
                            (when-not (.cancel fut true)

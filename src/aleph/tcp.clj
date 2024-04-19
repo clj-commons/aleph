@@ -1,6 +1,7 @@
 (ns aleph.tcp
   (:require
     [aleph.netty :as netty]
+    [aleph.util :as util]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s]
@@ -217,5 +218,7 @@
                :local-address       local-address
                :transport           (netty/determine-transport transport epoll?)
                :connect-timeout     connect-timeout})]
-    (d/on-realized ch-d identity #(d/error! s %))
-    (d/on-realized s identity #(d/error! ch-d %))))
+    (util/propagate-error s
+                          ch-d
+                          (fn [e]
+                            (log/trace e "Closed TCP client channel")))))

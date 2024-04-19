@@ -11,6 +11,7 @@
     [aleph.http.websocket.common :as ws.common]
     [aleph.http.websocket.server :as ws.server]
     [aleph.netty :as netty]
+    [aleph.util :as util]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -113,10 +114,9 @@
                 (assoc options :on-closed on-closed)
                 options))]
     (-> (d/chain' conn middleware)
-        (d/on-realized identity
-                       (fn [e]
-                         (log/trace e "Terminating creation of HTTP connection")
-                         (d/error! conn e))))))
+        (util/propagate-error conn
+                              (fn [e]
+                                (log/trace e "Terminated creation of HTTP connection"))))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -393,11 +393,10 @@
                                   (reset! dispose-conn! (fn [] (flow/dispose pool k conn)))
 
                                   ;; allow cancellation during connection establishment
-                                  (d/on-realized result
-                                                 identity
-                                                 (fn [e]
-                                                   (log/trace e "Aborting connection acquisition")
-                                                   (d/error! (first conn) e)))
+                                  (util/propagate-error result
+                                                        (first conn)
+                                                        (fn [e]
+                                                          (log/trace e "Aborted connection acquisition")))
 
                                   (if (realized? result)
                                     ;; to account for race condition between setting `dispose-conn!`
@@ -466,8 +465,7 @@
                                                 (middleware/handle-redirects request req))))))))))))
                       req))]
       (d/connect response result)
-      (d/on-realized result
-                     identity
+      (util/on-error result
                      (fn [e]
                        (log/trace e "Request failed. Disposing of connection...")
                        (@dispose-conn!)))

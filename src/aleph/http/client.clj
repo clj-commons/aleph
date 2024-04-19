@@ -6,6 +6,7 @@
     [aleph.http.multipart :as multipart]
     [aleph.http.websocket.client :as ws.client]
     [aleph.netty :as netty]
+    [aleph.util :as util]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -934,12 +935,11 @@
                                                        :response-buffer-size response-buffer-size
                                                        :t0                   t0}))))))))))))]
     (d/connect conn result)
-    (d/on-realized result
-                   identity
-                   (fn [e]
-                     (log/trace e "Closing HTTP connection channel")
-                     (d/error! ch-d e)
-                     (@close-ch!)))))
+    (util/propagate-error result
+                          ch-d
+                          (fn [e]
+                            (log/trace e "Closing HTTP connection channel")
+                            (@close-ch!)))))
 
 
 
