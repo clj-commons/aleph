@@ -218,6 +218,7 @@
                :local-address       local-address
                :transport           (netty/determine-transport transport epoll?)
                :connect-timeout     connect-timeout})]
+    (util/propagate-error ch-d s)
     (util/propagate-error s
                           ch-d
                           (fn [e]
