@@ -1,3 +1,17 @@
+### 0.8.0
+
+* BREAKING: Make brotli and zstd optional again (#723)
+* Bump Manifold to 0.4.3 for improved clj-kondo exports
+* Bump Netty to 4.1.110.Final (fixes CVE-2024-29025)
+* Add initial support for cancelling HTTP client requests (#714)
+* Add `connect-timeout` client option (#715)
+* Drop fixed HTTP server shutdown timeout (#709)
+* Demote insecure/cleartext HTTP pipeline warn log (#719)
+
+Contributions by Moritz Heidkamp, Matthew Davidson, and Arnaud Geiser.
+
+Manifold contributions by Jacob Maine and Ferdinand Beyer
+
 ### 0.7.1
 
 * Bump Manifold to 0.4.2 to fix Promesa print-method hierarchy bug
