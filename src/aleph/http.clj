@@ -11,6 +11,7 @@
     [aleph.http.websocket.common :as ws.common]
     [aleph.http.websocket.server :as ws.server]
     [aleph.netty :as netty]
+    [aleph.util :as util]
     [clojure.string :as str]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -100,20 +101,22 @@
    will be errors, and a new connection must be created."
   [^URI uri options middleware on-closed]
   (let [scheme (.getScheme uri)
-        ssl? (= "https" scheme)]
-    (-> (client/http-connection
-          (InetSocketAddress/createUnresolved
-            (.getHost uri)
-            (int
-              (or
-                (when (pos? (.getPort uri)) (.getPort uri))
-                (if ssl? 443 80))))
-          ssl?
-          (if on-closed
-            (assoc options :on-closed on-closed)
-            options))
-
-        (d/chain' middleware))))
+        ssl? (= "https" scheme)
+        conn (client/http-connection
+              (InetSocketAddress/createUnresolved
+               (.getHost uri)
+               (int
+                (or
+                 (when (pos? (.getPort uri)) (.getPort uri))
+                 (if ssl? 443 80))))
+              ssl?
+              (if on-closed
+                (assoc options :on-closed on-closed)
+                options))]
+    (-> (d/chain' conn middleware)
+        (util/propagate-error conn
+                              (fn [e]
+                                (log/trace e "Terminated creation of HTTP connection"))))))
 
 (def ^:private connection-stats-callbacks (atom #{}))
 
@@ -389,6 +392,12 @@
                                   ;; function.
                                   (reset! dispose-conn! (fn [] (flow/dispose pool k conn)))
 
+                                  ;; allow cancellation during connection establishment
+                                  (util/propagate-error result
+                                                        (first conn)
+                                                        (fn [e]
+                                                          (log/trace e "Aborted connection acquisition")))
+
                                   (if (realized? result)
                                     ;; to account for race condition between setting `dispose-conn!`
                                     ;; and putting `result` into error state for cancellation
@@ -456,11 +465,10 @@
                                                 (middleware/handle-redirects request req))))))))))))
                       req))]
       (d/connect response result)
-      (d/catch' result
-                (fn [e]
-                  (log/trace e "Request failed. Disposing of connection...")
-                  (@dispose-conn!)
-                  (d/error-deferred e)))
+      (util/on-error result
+                     (fn [e]
+                       (log/trace e "Request failed. Disposing of connection...")
+                       (@dispose-conn!)))
       result)))
 
 (defn cancel-request!

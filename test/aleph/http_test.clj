@@ -7,7 +7,7 @@
     [aleph.resource-leak-detector]
     [aleph.ssl :as test-ssl]
     [aleph.tcp :as tcp]
-    [aleph.testutils :refer [str=]]
+    [aleph.testutils :refer [passive-tcp-server str=]]
     [clj-commons.byte-streams :as bs]
     [clojure.java.io :as io]
     [clojure.string :as str]
@@ -1458,18 +1458,50 @@
       (is (instance? IllegalArgumentException result))
       (is (= "use-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))
 
+(deftest test-request-cancellation-during-connection-acquisition
+  (let [starved-pool (http/connection-pool
+                      {:total-connections 0})]
+    (try
+      (let [rsp (http-get "/" {:pool starved-pool
+                               :pool-timeout 500})]
+        (http/cancel-request! rsp)
+        (is (thrown? RequestCancellationException (deref rsp 0 :timeout))))
+      (finally
+        (.shutdown ^Pool starved-pool)))))
+
+(deftest test-request-cancellation-during-connection-establishment
+  (let [connect-client @#'aleph.netty/connect-client
+        connect-future (promise)]
+    (with-redefs [aleph.netty/connect-client (fn [& args]
+                                               (let [fut (apply connect-client args)]
+                                                 (deliver connect-future fut)
+                                                 fut))]
+      (with-server (passive-tcp-server port)
+        (let [rsp (http-get "/")]
+          (is (some? (deref connect-future 1000 nil)))
+          (http/cancel-request! rsp)
+          (is (thrown? RequestCancellationException (deref rsp 1000 :timeout)))
+          (some-> @connect-future (.await 2000 TimeUnit/MILLISECONDS))
+          (is (some-> @connect-future .isSuccess false?))
+          (is (some-> @connect-future .isDone))
+          (is (some-> @connect-future .isCancelled)))))))
+
 (deftest test-in-flight-request-cancellation
-  (let [conn-established (promise)
-        conn-closed (promise)]
+  (let [conn-established (atom nil)
+        conn-closed (atom nil)]
     (with-raw-handler (fn [req]
-                        (deliver conn-established true)
+                        (deliver @conn-established true)
                         (s/on-closed (:body req)
                                      (fn []
-                                       (deliver conn-closed true))))
+                                       (deliver @conn-closed true))))
+      ;; NOTE: The atom indirection here is needed because `with-raw-handler` will run the body
+      ;; twice (for HTTP1 and HTTP2), so we need a new promise for each run.
+      (reset! conn-established (promise))
+      (reset! conn-closed (promise))
       (let [rsp (http-get "/")]
-        (is (= true (deref conn-established 1000 :timeout)))
+        (is (= true (deref @conn-established 1000 :timeout)))
         (http/cancel-request! rsp)
-        (is (= true (deref conn-closed 1000 :timeout)))
+        (is (= true (deref @conn-closed 1000 :timeout)))
         (is (thrown? RequestCancellationException (deref rsp 1000 :timeout)))))))
 
 (deftest ^:leak test-leak-in-raw-stream-handler

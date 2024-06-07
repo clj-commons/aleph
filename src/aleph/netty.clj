@@ -1,6 +1,7 @@
 (ns aleph.netty
   (:refer-clojure :exclude [flush])
   (:require
+    [aleph.util :as util]
     [clj-commons.byte-streams :as bs]
     [clj-commons.primitive-math :as p]
     [clojure.string :as str]
@@ -1521,6 +1522,14 @@
                     (ssl-handler ch ssl-ctx))))
      (pipeline-builder p))))
 
+(defn- connect-client
+  ^ChannelFuture [^Bootstrap bootstrap
+                  ^SocketAddress remote-address
+                  ^SocketAddress local-address]
+  (if local-address
+    (.connect bootstrap remote-address local-address)
+    (.connect bootstrap remote-address)))
+
 (defn ^:no-doc create-client-chan
   "Returns a deferred containing a new Channel.
 
@@ -1529,8 +1538,8 @@
    complete."
   [{:keys [pipeline-builder
            bootstrap-transform
-           ^SocketAddress remote-address
-           ^SocketAddress local-address
+           remote-address
+           local-address
            transport
            name-resolver
            connect-timeout]
@@ -1543,32 +1552,38 @@
     (throw (IllegalArgumentException. "Can't use :ssl-context anymore.")))
 
   (let [^Class chan-class (transport-channel-class transport)
-        initializer (pipeline-initializer pipeline-builder)]
-    (try
-      (let [client-event-loop-group @(transport-client-group transport)
-            resolver' (when (some? name-resolver)
-                        (cond
-                          (= :default name-resolver) nil
-                          (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
-                          (instance? AddressResolverGroup name-resolver) name-resolver))
-            bootstrap (doto (Bootstrap.)
-                            (.option ChannelOption/SO_REUSEADDR true)
-                            (.option ChannelOption/CONNECT_TIMEOUT_MILLIS (int connect-timeout))
-                            #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
-                            (.group client-event-loop-group)
-                            (.channel chan-class)
-                            (.handler initializer)
-                            (.resolver resolver')
-                            bootstrap-transform)
+        initializer (pipeline-initializer pipeline-builder)
+        client-event-loop-group @(transport-client-group transport)
+        resolver' (when (some? name-resolver)
+                    (cond
+                      (= :default name-resolver) nil
+                      (= :noop name-resolver) NoopAddressResolverGroup/INSTANCE
+                      (instance? AddressResolverGroup name-resolver) name-resolver))
+        bootstrap (doto (Bootstrap.)
+                        (.option ChannelOption/SO_REUSEADDR true)
+                        (.option ChannelOption/CONNECT_TIMEOUT_MILLIS (int connect-timeout))
+                        #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
+                        (.group client-event-loop-group)
+                        (.channel chan-class)
+                        (.handler initializer)
+                        (.resolver resolver')
+                        bootstrap-transform)
 
-            fut (if local-address
-                  (.connect bootstrap remote-address local-address)
-                  (.connect bootstrap remote-address))]
-
-        (d/chain' (wrap-future fut)
-                  (fn [_]
-                    (let [ch (.channel ^ChannelFuture fut)]
-                      (maybe-ssl-handshake-future ch))))))))
+        fut (connect-client bootstrap remote-address local-address)]
+    (-> (wrap-future fut)
+        (d/chain'
+         (fn [_]
+           (let [ch (.channel ^ChannelFuture fut)]
+             (maybe-ssl-handshake-future ch))))
+        (util/on-error (fn [e]
+                         (when-not (.isDone fut)
+                           (log/trace e "Cancelling Bootstrap#connect future")
+                           (when-not (.cancel fut true)
+                             (when-not (.isDone fut)
+                               (log/warn "Transport" transport "does not support cancellation of connection attempts."
+                                         "Instead, you have to wait for the connect timeout to expire for it to be terminated."
+                                         "Its current value is" connect-timeout "ms."
+                                         "It can be set via the `connect-timeout` option.")))))))))
 
 
 (defn ^:no-doc ^:deprecated create-client
@@ -1732,7 +1747,7 @@
                      (fn [shutdown-output]
                        (when (= shutdown-output ::timeout)
                          (log/error
-                           (format "Timeout while waiting for requests to close (exceeded: %ss)"
+                           (format "Timeout while waiting for connections to close (exceeded: %ss)"
                                    shutdown-timeout)))))
                    (d/finally'
                      ;; 3. At this stage, stop the EventLoopGroup, this will cancel any

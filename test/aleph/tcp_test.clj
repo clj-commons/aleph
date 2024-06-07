@@ -3,9 +3,13 @@
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
    [aleph.tcp :as tcp]
+   [aleph.testutils :refer [passive-tcp-server]]
    [clj-commons.byte-streams :as bs]
-   [clojure.test :refer [deftest testing is]]
-   [manifold.stream :as s]))
+   [clojure.test :refer [deftest is testing]]
+   [manifold.deferred :as d]
+   [manifold.stream :as s])
+  (:import
+   (java.util.concurrent TimeUnit)))
 
 (defn echo-handler [s _]
   (s/connect s s))
@@ -54,5 +58,23 @@
             (is (= "foo" (bs/to-string @(s/take! c)))))))
       (catch Exception _
         (is (not (netty/io-uring-available?)))))))
+
+(deftest test-cancellation-during-connection-establishment
+  (let [connect-client @#'aleph.netty/connect-client
+        connect-future (promise)
+        server (passive-tcp-server 0)]
+    (with-redefs [aleph.netty/connect-client (fn [& args]
+                                               (let [fut (apply connect-client args)]
+                                                 (deliver connect-future fut)
+                                                 fut))]
+      (with-server server
+        (let [c (tcp/client {:host "localhost"
+                             :port (netty/port server)})]
+          (is (some? (deref connect-future 1000 nil)))
+          (d/timeout! c 10)
+          (some-> @connect-future (.await 2000 TimeUnit/MILLISECONDS))
+          (is (some-> @connect-future .isSuccess false?))
+          (is (some-> @connect-future .isDone))
+          (is (some-> @connect-future .isCancelled)))))))
 
 (aleph.resource-leak-detector/instrument-tests!)

@@ -1,6 +1,7 @@
 (ns aleph.tcp
   (:require
     [aleph.netty :as netty]
+    [aleph.util :as util]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
     [manifold.stream :as s]
@@ -160,6 +161,11 @@
   "Given a host and port, returns a deferred which yields a duplex stream that can be used
    to communicate with the server.
 
+   Closing the stream will also close the underlying connection.
+
+   Putting the returned deferred into an error state before it yielded the stream will cancel an
+   in-flight connection attempt.
+
    Param key               | Description
    | ---                   | ---
    | `host`                | the hostname of the server.
@@ -209,13 +215,16 @@
                                        (netty/ssl-handler (.channel pipeline) ssl-context remote-address ssl-endpoint-id-alg)))
                            (.addLast pipeline "handler" handler)
                            (when pipeline-transform
-                             (pipeline-transform pipeline)))]
-    (-> (netty/create-client-chan
-          {:pipeline-builder    pipeline-builder
-           :bootstrap-transform bootstrap-transform
-           :remote-address      remote-address
-           :local-address       local-address
-           :transport           (netty/determine-transport transport epoll?)
-           :connect-timeout     connect-timeout})
-        (d/catch' #(d/error! s %)))
-    s))
+                             (pipeline-transform pipeline)))
+        ch-d (netty/create-client-chan
+              {:pipeline-builder    pipeline-builder
+               :bootstrap-transform bootstrap-transform
+               :remote-address      remote-address
+               :local-address       local-address
+               :transport           (netty/determine-transport transport epoll?)
+               :connect-timeout     connect-timeout})]
+    (util/propagate-error ch-d s)
+    (util/propagate-error s
+                          ch-d
+                          (fn [e]
+                            (log/trace e "Closed TCP client channel")))))

@@ -6,6 +6,7 @@
     [aleph.http.multipart :as multipart]
     [aleph.http.websocket.client :as ws.client]
     [aleph.netty :as netty]
+    [aleph.util :as util]
     [clj-commons.byte-streams :as bs]
     [clojure.tools.logging :as log]
     [manifold.deferred :as d]
@@ -814,119 +815,131 @@
                                   :logger logger
                                   :pipeline-transform pipeline-transform))
 
-        ch-d (netty/create-client-chan
-              {:pipeline-builder    pipeline-builder
-               :bootstrap-transform bootstrap-transform
-               :remote-address      remote-address
-               :local-address       local-address
-               :transport           (netty/determine-transport transport epoll?)
-               :name-resolver       name-resolver
-               :connect-timeout     connect-timeout})]
+        ch-d (doto (netty/create-client-chan
+                    {:pipeline-builder    pipeline-builder
+                     :bootstrap-transform bootstrap-transform
+                     :remote-address      remote-address
+                     :local-address       local-address
+                     :transport           (netty/determine-transport transport epoll?)
+                     :name-resolver       name-resolver
+                     :connect-timeout     connect-timeout})
+               (attach-on-close-handler on-closed))
 
-    (attach-on-close-handler ch-d on-closed)
+        close-ch! (atom (fn []))
+        result (d/deferred)
 
-    (d/chain' ch-d
-              (fn setup-client
-                [^Channel ch]
-                (log/debug "Channel:" ch)
+        conn (d/chain' ch-d
+                       (fn setup-client
+                         [^Channel ch]
+                         (log/debug "Channel:" ch)
+                         (reset! close-ch! (fn [] @(-> (netty/close ch) (netty/wrap-future))))
+                         (if (realized? result)
+                           ;; Account for race condition between setting `close-ch!` and putting
+                           ;; `result` into error state for cancellation
+                           (@close-ch!)
+                           ;; We know the SSL handshake must be complete because create-client wraps the
+                           ;; future with maybe-ssl-handshake-future, so we can get the negotiated
+                           ;; protocol, falling back to HTTP/1.1 by default.
+                           (let [pipeline (.pipeline ch)
+                                 protocol (cond
+                                            ssl?
+                                            (or (-> pipeline
+                                                    ^SslHandler (.get ^Class SslHandler)
+                                                    (.applicationProtocol))
+                                                ApplicationProtocolNames/HTTP_1_1) ; Not using ALPN, HTTP/2 isn't allowed
 
-                ;; We know the SSL handshake must be complete because create-client wraps the
-                ;; future with maybe-ssl-handshake-future, so we can get the negotiated
-                ;; protocol, falling back to HTTP/1.1 by default.
-                (let [pipeline (.pipeline ch)
-                      protocol (cond
-                                 ssl?
-                                 (or (-> pipeline
-                                         ^SslHandler (.get ^Class SslHandler)
-                                         (.applicationProtocol))
-                                     ApplicationProtocolNames/HTTP_1_1) ; Not using ALPN, HTTP/2 isn't allowed
+                                            force-h2c?
+                                            (do
+                                              (log/info "Forcing HTTP/2 over cleartext. Be sure to do this only with servers you control.")
+                                              ApplicationProtocolNames/HTTP_2)
 
-                                 force-h2c?
-                                 (do
-                                   (log/info "Forcing HTTP/2 over cleartext. Be sure to do this only with servers you control.")
-                                   ApplicationProtocolNames/HTTP_2)
+                                            :else
+                                            ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed unless h2c requested
+                                 setup-opts (assoc opts
+                                                   :authority authority
+                                                   :ch ch
+                                                   :server? false
+                                                   :keep-alive? keep-alive?
+                                                   :keep-alive?' keep-alive?'
+                                                   :logger logger
+                                                   :non-tun-proxy? non-tun-proxy?
+                                                   :pipeline pipeline
+                                                   :pipeline-transform pipeline-transform
+                                                   :raw-stream? raw-stream?
+                                                   :remote-address remote-address
+                                                   :response-buffer-size response-buffer-size
+                                                   :ssl-context ssl-context
+                                                   :ssl? ssl?)]
 
-                                 :else
-                                 ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed unless h2c requested
-                      setup-opts (assoc opts
-                                        :authority authority
-                                        :ch ch
-                                        :server? false
-                                        :keep-alive? keep-alive?
-                                        :keep-alive?' keep-alive?'
-                                        :logger logger
-                                        :non-tun-proxy? non-tun-proxy?
-                                        :pipeline pipeline
-                                        :pipeline-transform pipeline-transform
-                                        :raw-stream? raw-stream?
-                                        :remote-address remote-address
-                                        :response-buffer-size response-buffer-size
-                                        :ssl-context ssl-context
-                                        :ssl? ssl?)]
+                             (log/debug (str "Using HTTP protocol: " protocol)
+                                        {:authority authority
+                                         :ssl? ssl?
+                                         :force-h2c? force-h2c?})
 
-                  (log/debug (str "Using HTTP protocol: " protocol)
-                             {:authority authority
-                              :ssl? ssl?
-                              :force-h2c? force-h2c?})
+                             ;; can't use ApnHandler, because we need to coordinate with Manifold code
+                             (let [http-req-handler
+                                   (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
+                                         (setup-http1-client setup-opts)
 
-                  ;; can't use ApnHandler, because we need to coordinate with Manifold code
-                  (let [http-req-handler
-                        (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-                              (setup-http1-client setup-opts)
+                                         (.equals ApplicationProtocolNames/HTTP_2 protocol)
+                                         (do
+                                           (http2/setup-conn-pipeline setup-opts)
+                                           (http2-req-handler setup-opts))
 
-                              (.equals ApplicationProtocolNames/HTTP_2 protocol)
-                              (do
-                                (http2/setup-conn-pipeline setup-opts)
-                                (http2-req-handler setup-opts))
+                                         :else
+                                         (do
+                                           (let [msg (str "Unknown protocol: " protocol)
+                                                 e (IllegalStateException. msg)]
+                                             (log/error e msg)
+                                             (netty/close ch)
+                                             (throw e))))]
 
-                              :else
-                              (do
-                                (let [msg (str "Unknown protocol: " protocol)
-                                      e (IllegalStateException. msg)]
-                                  (log/error e msg)
-                                  (netty/close ch)
-                                  (throw e))))]
+                               ;; Both Netty and Aleph are set up, unpause the pipeline
+                               (when (.get pipeline "pause-handler")
+                                 (log/debug "Unpausing pipeline")
+                                 (.remove pipeline "pause-handler"))
 
-                    ;; Both Netty and Aleph are set up, unpause the pipeline
-                    (when (.get pipeline "pause-handler")
-                      (log/debug "Unpausing pipeline")
-                      (.remove pipeline "pause-handler"))
+                               (fn http-req-fn
+                                 [req]
+                                 (log/trace "http-req-fn fired")
+                                 (log/debug "client request:" (pr-str req))
 
-                    (fn http-req-fn
-                      [req]
-                      (log/trace "http-req-fn fired")
-                      (log/debug "client request:" (pr-str req))
+                                 ;; If :aleph/close is set in the req, closes the channel and
+                                 ;; returns a deferred containing the result.
+                                 (if (or (contains? req :aleph/close)
+                                         (contains? req ::close))
+                                   (-> ch (netty/close) (netty/wrap-future))
 
-                      ;; If :aleph/close is set in the req, closes the channel and
-                      ;; returns a deferred containing the result.
-                      (if (or (contains? req :aleph/close)
-                              (contains? req ::close))
-                        (-> ch (netty/close) (netty/wrap-future))
+                                   (let [t0 (System/nanoTime)
+                                         ;; I suspect the below is an error for http1
+                                         ;; since the shared handler might not match.
+                                         ;; Should work for HTTP2, though
+                                         raw-stream? (get req :raw-stream? raw-stream?)]
 
-                        (let [t0 (System/nanoTime)
-                              ;; I suspect the below is an error for http1
-                              ;; since the shared handler might not match.
-                              ;; Should work for HTTP2, though
-                              raw-stream? (get req :raw-stream? raw-stream?)]
+                                     (if (or (not (.isActive ch))
+                                             (not (.isOpen ch)))
 
-                          (if (or (not (.isActive ch))
-                                  (not (.isOpen ch)))
+                                       (d/error-deferred
+                                        (ex-info "Channel is inactive/closed."
+                                                 {:req     req
+                                                  :ch      ch
+                                                  :open?   (.isOpen ch)
+                                                  :active? (.isActive ch)}))
 
-                            (d/error-deferred
-                              (ex-info "Channel is inactive/closed."
-                                       {:req     req
-                                        :ch      ch
-                                        :open?   (.isOpen ch)
-                                        :active? (.isActive ch)}))
-
-                            (-> (http-req-handler req)
-                                (d/chain' (rsp-handler
-                                            {:ch                   ch
-                                             :keep-alive?          keep-alive? ; why not keep-alive?'
-                                             :raw-stream?          raw-stream?
-                                             :req                  req
-                                             :response-buffer-size response-buffer-size
-                                             :t0                   t0})))))))))))))
+                                       (-> (http-req-handler req)
+                                           (d/chain' (rsp-handler
+                                                      {:ch                   ch
+                                                       :keep-alive?          keep-alive? ; why not keep-alive?'
+                                                       :raw-stream?          raw-stream?
+                                                       :req                  req
+                                                       :response-buffer-size response-buffer-size
+                                                       :t0                   t0}))))))))))))]
+    (d/connect conn result)
+    (util/propagate-error result
+                          ch-d
+                          (fn [e]
+                            (log/trace e "Closing HTTP connection channel")
+                            (@close-ch!)))))
 
 
 
