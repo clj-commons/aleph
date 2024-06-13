@@ -133,6 +133,14 @@
 (defn connection-pool
   "Returns a connection pool which can be used as an argument in `request`.
 
+   To enable HTTP/2, add `:http2` to the `http-versions` option. If you supply an
+   `io.netty.handler.ssl.SslContext` instance for `:ssl-context`, you have to set it up with ALPN
+   support for HTTP/2, as well. See `aleph.netty/ssl-client-context` and
+   `aleph.netty/application-protocol-config` for more details.  If you supply an SSL options map
+   without an `:application-protocol-config` key instead, the necessary ALPN configuration will be
+   set up automatically. (You can also set `force-h2c?` to force HTTP/2 cleartext, but this is
+   strongly discouraged.)
+
    Param key                      | Description
    | ---                          | ---
    | `connections-per-host`       | the maximum number of simultaneous connections to any host
