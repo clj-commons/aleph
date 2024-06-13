@@ -158,8 +158,9 @@
    If `ssl-context` is an options map and it does contain an `:application-protocol-config` key, its
    supported protocols are validated to match `desired-http-versions`.
 
-   Otherwise, if `ssl-context` is an `io.netty.handler.ssl.SslContext` instance, its supported
-   protocols are validated to match `desired-http-versions`."
+   Otherwise, if `ssl-context` is an `io.netty.handler.ssl.SslContext` instance, its ALPN config's
+   protocols are validated to match `desired-http-versions`. If it doesn't have an ALPN config,
+   `desired-http-versions` may only contain `:http1`."
   [ssl-context desired-http-versions]
   (when-let [unsupported-http-versions (seq (remove supported-http-versions desired-http-versions))]
     (throw (ex-info "Unsupported desired HTTP versions"
@@ -178,13 +179,23 @@
     nil
 
     :else
-    (do
-      (assert-consistent-alpn-config!
-       (some-> ^SslContext ssl-context
-               (.applicationProtocolNegotiator)
-               (.protocols))
-       desired-http-versions)
-      ssl-context)))
+    ;; NOTE: `SslContext` always has an `ApplicationProtocolNegotiator`, even if
+    ;; `.applicationProtocolConfig` was never invoked in the `SslContextBuilder`. In this case, its
+    ;; `.protocols` will be an empty collection, which we thus treat as if no ALPN config is
+    ;; present.
+    (if-let [protocols (some-> ^SslContext ssl-context
+                               (.applicationProtocolNegotiator)
+                               (.protocols)
+                               (seq))]
+      (do
+        (assert-consistent-alpn-config!
+         protocols
+         desired-http-versions)
+        ssl-context)
+      (if (= [:http1] desired-http-versions)
+        ssl-context
+        (throw (ex-info "No ALPN supplied, but requested non-HTTP/1 versions that require ALPN."
+                        {:desired-http-versions desired-http-versions}))))))
 
 (defn validate-http1-pipeline-transform
   "Checks that :pipeline-transform is not being used with HTTP/2, since Netty
