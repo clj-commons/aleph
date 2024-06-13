@@ -1339,7 +1339,7 @@
     (catch Exception e
       e)))
 
-(deftest test-http-versions-config
+(deftest test-http-versions-server-config
   (testing "ssl-context as options map"
 
     (testing "with different HTTP versions in ALPN config"
@@ -1424,12 +1424,18 @@
                                           (netty/application-protocol-config [:http2 :http1])))})]
         (is (= :started result))))
 
-    (testing "with no ALPN config"
+    (testing "with no ALPN config but desiring HTTP/2"
       (let [result (try-start-server
                     {:http-versions [:http2 :http1]
                      :ssl-context test-ssl/server-ssl-context})]
         (is (instance? ExceptionInfo result))
-        (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result))))))
+        (is (= "No ALPN supplied, but requested non-HTTP/1 versions that require ALPN." (ex-message result)))))
+
+    (testing "with no ALPN config but desiring only HTTP/1"
+      (let [result (try-start-server
+                    {:http-versions [:http1]
+                     :ssl-context test-ssl/server-ssl-context})]
+        (is (= :started result)))))
 
   (testing "HTTP/2 without ssl-context"
     (let [result (try-start-server
