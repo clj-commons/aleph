@@ -158,7 +158,7 @@
 
    Param key                   | Description
    | ---                       | ---
-   | `ssl-context`             | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details), only required if a custom context is required
+   | `ssl-context`             | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-client-context` for more details), only required if a custom context is desired. When passing an `io.netty.handler.ssl.SslContext` object, it must have an ALPN config matching the `http-versions` option (see also `aleph.netty/application-protocol-config`).
    | `ssl-endpoint-id-alg`     | the name of the algorithm to use for SSL endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms), defaults to \"HTTPS\". Only used for HTTPS connections. Pass `nil` to disable endpoint identification.
    | `local-address`           | an optional `java.net.SocketAddress` describing which local interface should be used
    | `bootstrap-transform`     | a function that takes an `io.netty.bootstrap.Bootstrap` object and modifies it.
