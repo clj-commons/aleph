@@ -1609,7 +1609,15 @@
                       {:connection-options
                        {:force-h2c? true
                         :http-versions [:http2]}})]
-          (is (= :success result)))))))
+          (is (= :success result))))
+
+      (testing "h2c without HTTP/2"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:force-h2c? true
+                        :http-versions [:http1]}})]
+          (is (instance? IllegalArgumentException result))
+          (is (= "force-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))))
 
 
 (deftest test-in-flight-request-cancellation

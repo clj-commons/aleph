@@ -208,11 +208,17 @@
            control-period       60000
            middleware           middleware/wrap-request
            max-queue-size       65536}}]
-  (when (and (false? (:keep-alive? connection-options))
-             (pos? (:idle-timeout connection-options 0)))
-    (throw
-      (IllegalArgumentException.
+  (let [{:keys [keep-alive?
+                idle-timeout
+                http-versions
+                force-h2c?]
+         :or {idle-timeout 0}} connection-options]
+    (when (and (false? keep-alive?) (pos? idle-timeout))
+      (throw
+       (IllegalArgumentException.
         ":idle-timeout option is not allowed when :keep-alive? is explicitly disabled")))
+    (when (and force-h2c? (not-any? #{:http2} http-versions))
+      (throw (IllegalArgumentException. "force-h2c? may only be true when HTTP/2 is enabled."))))
 
   (let [log-activity (:log-activity connection-options)
         dns-options' (if-not (and (some? dns-options)
