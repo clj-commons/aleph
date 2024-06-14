@@ -938,7 +938,16 @@
       "Creates a default config for Application-Layer Protocol Negotiation (ALPN),
        which TLS uses to negotiate which HTTP version to use during the handshake.
 
-       Takes a vector of HTTP versions, in order of preference. E.g., `[:http2 :http1]`"
+       Takes a vector of HTTP versions, in order of preference. E.g., `[:http2 :http1]`
+
+       Note that the returned config uses `SelectorFailureBehavior.NO_ADVERTISE`[1] and
+       `SelectedListenerFailureBehavior.ACCEPT`[2] since these are the only failure behaviors
+       supported by all SSL providers. See their documentation for details. One important
+       consequence of this is that it's not possible to completely opt out of HTTP/1.1 by way of
+       only specifying `[:http2]`.
+
+       1: https://netty.io/4.1/api/io/netty/handler/ssl/ApplicationProtocolConfig.SelectorFailureBehavior.html#NO_ADVERTISE
+       2: https://netty.io/4.1/api/io/netty/handler/ssl/ApplicationProtocolConfig.SelectedListenerFailureBehavior.html#ACCEPT"
       ^ApplicationProtocolConfig
       [protocols]
       (ApplicationProtocolConfig.
