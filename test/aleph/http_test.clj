@@ -1619,6 +1619,27 @@
           (is (instance? IllegalArgumentException result))
           (is (= "force-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))))
 
+(deftest http2-only-client-connecting-to-http1-only-server
+  (testing "No ALPN config, desiring only HTTP/2 but the server only allows HTTP/1"
+    (with-http1-server echo-handler http1-ssl-server-options
+      (with-redefs [*use-tls-requests* true]
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2]
+                        :ssl-context test-ssl/client-ssl-context-opts}})]
+          (is (= :success result) "succeeds due to the default failure behaviors (see docstring of `application-protocol-config`)"))))))
+
+
+(deftest http1-only-client-connecting-to-http2-only-server
+  (testing "No ALPN config, desiring only HTTP/1.1 but the server only allows HTTP/2"
+    (with-http2-server echo-handler {}
+      (with-redefs [*use-tls-requests* true]
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http1]
+                        :ssl-context test-ssl/client-ssl-context-opts}})]
+          (is (= :success result) "succeeds due to the default failure behaviors (see docstring of `application-protocol-config`)"))))))
+
 
 (deftest test-in-flight-request-cancellation
   (let [conn-established (promise)
