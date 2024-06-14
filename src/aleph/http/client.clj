@@ -478,6 +478,7 @@
     [^ChannelPipeline pipeline]
     (when ssl?
       (do
+        (log/debug "ALPN protocols passed into netty/ssl-handler:" (-> ^SslContext ssl-context .applicationProtocolNegotiator .protocols seq))
         (.addLast pipeline
                   "ssl-handler"
                   (netty/ssl-handler (.channel pipeline) ssl-context remote-address ssl-endpoint-id-alg))
