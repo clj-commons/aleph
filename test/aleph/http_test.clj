@@ -1464,6 +1464,154 @@
       (is (instance? IllegalArgumentException result))
       (is (= "use-h2c? may only be true when HTTP/2 is enabled." (ex-message result))))))
 
+(defn ex-root-cause [e]
+  (if-let [c (ex-cause e)]
+    (recur c)
+    e))
+
+(defn try-request-with-pool [options]
+  (try
+    (let [^Pool pool (http/connection-pool options)]
+      (try
+        @(http-get "/" {:pool pool})
+        :success
+        (finally
+          (.shutdown pool))))
+    (catch Exception e
+      ;; Exceptions raised during connection creation are wrapped in multiple levels of
+      ;; `RuntimeException` which we don't care about here.
+      (ex-root-cause e))))
+
+(deftest test-http-versions-client-config
+  (with-http-ssl-servers echo-handler {}
+    (testing "ssl-context as options map"
+
+      (testing "with different HTTP versions in ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2]
+                        :ssl-context (assoc test-ssl/client-ssl-context-opts
+                                            :application-protocol-config
+                                            (netty/application-protocol-config [:http1]))}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result)))))
+
+      (testing "with different preference order in ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2 :http1]
+                        :ssl-context (assoc test-ssl/client-ssl-context-opts
+                                            :application-protocol-config
+                                            (netty/application-protocol-config [:http1 :http2]))}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "Desired HTTP version preference order differs from ALPN config." (ex-message result)))))
+
+      (testing "with extra HTTP versions in the ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http1]
+                        :ssl-context (assoc test-ssl/client-ssl-context-opts
+                                            :application-protocol-config
+                                            (netty/application-protocol-config [:http1 :http2]))}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "ALPN config contains more HTTP versions than desired." (ex-message result)))))
+
+      (testing "with matching ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2 :http1]
+                        :ssl-context (assoc test-ssl/client-ssl-context-opts
+                                            :application-protocol-config
+                                            (netty/application-protocol-config [:http2 :http1]))}})]
+          (is (= :success result))))
+
+      (testing "with no ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2 :http1]
+                        :ssl-context test-ssl/client-ssl-context-opts}})]
+          (is (= :success result)))))
+
+    (testing "ssl-context as SslContext instance"
+
+      (testing "with different HTTP versions in ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2]
+                        :ssl-context (netty/ssl-client-context
+                                      (assoc test-ssl/client-ssl-context-opts
+                                             :application-protocol-config
+                                             (netty/application-protocol-config [:http1])))}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "Some desired HTTP versions are not part of ALPN config." (ex-message result)))))
+
+      (testing "with different preference order in ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2 :http1]
+                        :ssl-context (netty/ssl-client-context
+                                      (assoc test-ssl/client-ssl-context-opts
+                                             :application-protocol-config
+                                             (netty/application-protocol-config [:http1 :http2])))}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "Desired HTTP version preference order differs from ALPN config." (ex-message result)))))
+
+      (testing "with extra HTTP versions in the ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http1]
+                        :ssl-context (netty/ssl-client-context
+                                      (assoc test-ssl/client-ssl-context-opts
+                                             :application-protocol-config
+                                             (netty/application-protocol-config [:http1 :http2])))}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "ALPN config contains more HTTP versions than desired." (ex-message result)))))
+
+      (testing "with matching ALPN config"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2 :http1]
+                        :ssl-context (netty/ssl-client-context
+                                      (assoc test-ssl/client-ssl-context-opts
+                                             :application-protocol-config
+                                             (netty/application-protocol-config [:http2 :http1])))}})]
+          (is (= :success result))))
+
+      (testing "with no ALPN config but desiring HTTP/2"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http2 :http1]
+                        :ssl-context test-ssl/client-ssl-context}})]
+          (is (instance? ExceptionInfo result))
+          (is (= "No ALPN supplied, but requested non-HTTP/1 versions that require ALPN." (ex-message result)))))
+
+      (testing "with no ALPN config but desiring only HTTP/1"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:http-versions [:http1]
+                        :ssl-context test-ssl/client-ssl-context}})]
+          (is (= :success result)))))
+
+    (testing "HTTP/2 without ssl-context"
+      (let [result (try-request-with-pool
+                    {:connection-options
+                     {:http-versions [:http2]
+                      ;; We only want assert that not providing `:ssl-context` is possible but since
+                      ;; the test server uses a self-signed certificate, we cannot verify it with
+                      ;; the default one. Since all we care about is ALPN here, this is fine.
+                      :insecure? true}})]
+        (is (= :success result)))))
+
+  (with-http2-server echo-handler {:use-h2c? true :ssl-context nil}
+    (with-redefs [*use-tls-requests* false]
+      (testing "h2c with HTTP/2"
+        (let [result (try-request-with-pool
+                      {:connection-options
+                       {:force-h2c? true
+                        :http-versions [:http2]}})]
+          (is (= :success result)))))))
+
+
 (deftest test-in-flight-request-cancellation
   (let [conn-established (promise)
         conn-closed (promise)]
