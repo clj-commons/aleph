@@ -643,8 +643,8 @@
                             :pipeline pipeline)]
       (cond ssl?
             (let [ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]
-              (log/info "Setting up secure HTTP server pipeline.")
-              (log/info "ALPN HTTP versions:" (mapv str (.nextProtocols ssl-context)))
+              (log/debug "Setting up secure HTTP server pipeline.")
+              (log/debug "ALPN HTTP versions:" (mapv str (.nextProtocols ssl-context)))
 
               (-> pipeline
                   (.addLast "ssl-handler" ssl-handler)
