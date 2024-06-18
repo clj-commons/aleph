@@ -944,7 +944,8 @@
        `SelectedListenerFailureBehavior.ACCEPT`[2] since these are the only failure behaviors
        supported by all SSL providers. See their documentation for details. One important
        consequence of this is that it's not possible to completely opt out of HTTP/1.1 by way of
-       only specifying `[:http2]`.
+       only specifying `[:http2]`. If you want this behavior and you know your SSL provider supports
+       it, you can construct an `ApplicationProtocolConfig` with the desired settings yourself.
 
        1: https://netty.io/4.1/api/io/netty/handler/ssl/ApplicationProtocolConfig.SelectorFailureBehavior.html#NO_ADVERTISE
        2: https://netty.io/4.1/api/io/netty/handler/ssl/ApplicationProtocolConfig.SelectedListenerFailureBehavior.html#ACCEPT"
