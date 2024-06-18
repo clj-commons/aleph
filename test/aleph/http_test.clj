@@ -1429,7 +1429,7 @@
                     {:http-versions [:http2 :http1]
                      :ssl-context test-ssl/server-ssl-context})]
         (is (instance? ExceptionInfo result))
-        (is (= "No ALPN supplied, but requested non-HTTP/1 versions that require ALPN." (ex-message result)))))
+        (is (= "Supplied SslContext with no ALPN config, but requested secure non-HTTP/1 versions that require ALPN." (ex-message result)))))
 
     (testing "with no ALPN config but desiring only HTTP/1"
       (let [result (try-start-server
@@ -1583,7 +1583,7 @@
                        {:http-versions [:http2 :http1]
                         :ssl-context test-ssl/client-ssl-context}})]
           (is (instance? ExceptionInfo result))
-          (is (= "No ALPN supplied, but requested non-HTTP/1 versions that require ALPN." (ex-message result)))))
+          (is (= "Supplied SslContext with no ALPN config, but requested secure non-HTTP/1 versions that require ALPN." (ex-message result)))))
 
       (testing "with no ALPN config but desiring only HTTP/1"
         (let [result (try-request-with-pool
