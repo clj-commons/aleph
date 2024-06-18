@@ -194,7 +194,7 @@
         ssl-context)
       (if (= [:http1] desired-http-versions)
         ssl-context
-        (throw (ex-info "No ALPN supplied, but requested non-HTTP/1 versions that require ALPN."
+        (throw (ex-info "Supplied SslContext with no ALPN config, but requested secure non-HTTP/1 versions that require ALPN."
                         {:desired-http-versions desired-http-versions}))))))
 
 (defn validate-http1-pipeline-transform
