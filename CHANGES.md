@@ -1,3 +1,14 @@
+### 0.8.1
+
+* Bump Netty to 4.1.111.Final (only bug-fixes)
+* Allow custom `SslContext` without ALPN again for HTTP/1.1-only case (#727, #730)
+* Demote HTTPS connection info log to debug (#733)
+* Improve docs around ALPN config (#729)
+
+Contributions by (in alphabetical order):
+
+Arnaud Geiser, David Ongaro, Matthew Davidson, and Moritz Heidkamp.
+
 ### 0.8.0
 
 * BREAKING: Make brotli and zstd optional again (#723)
