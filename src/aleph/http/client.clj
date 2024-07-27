@@ -689,22 +689,6 @@
 
         resp))))
 
-(defn- client-ssl-context
-  "Returns a client SslContext, or nil if none is requested.
-   Validates the ALPN setup."
-  ^SslContext
-  [ssl? ssl-context http-versions insecure?]
-  (if ssl?
-    (if ssl-context
-      (-> ssl-context
-          (common/ensure-consistent-alpn-config http-versions)
-          (netty/coerce-ssl-client-context))
-      (let [ssl-ctx-opts {:application-protocol-config (netty/application-protocol-config http-versions)}]
-        (if insecure?
-          (netty/insecure-ssl-client-context ssl-ctx-opts)
-          (netty/ssl-client-context ssl-ctx-opts))))
-    nil))
-
 (defn- setup-http1-client
   [{:keys [on-closed response-executor]
     :as   opts}]
@@ -761,8 +745,6 @@
            bootstrap-transform
            name-resolver
            keep-alive?
-           insecure?
-           ssl-context
            ssl-endpoint-id-alg
            response-buffer-size
            epoll?
@@ -770,7 +752,6 @@
            proxy-options
            pipeline-transform
            log-activity
-           http-versions
            force-h2c?
            on-closed
            connect-timeout]
@@ -784,7 +765,6 @@
            epoll?               false
            name-resolver        :default
            log-activity         :debug
-           http-versions        [:http1]
            force-h2c?           false}
     :as   opts}]
 
@@ -798,8 +778,6 @@
                                                 (get proxy-options :keep-alive? true))))
         authority (str host (when explicit-port? (str ":" port)))
 
-        ssl-context (client-ssl-context ssl? ssl-context http-versions insecure?)
-
         logger (cond
                  (instance? LoggingHandler log-activity) log-activity
                  (some? log-activity) (netty/activity-logger "aleph-client" log-activity)
@@ -810,7 +788,6 @@
                           (assoc opts
                                  :proxy-connected proxy-connected
                                  :ssl? ssl?
-                                 :ssl-context ssl-context
                                  :ssl-endpoint-id-alg ssl-endpoint-id-alg
                                  :remote-address remote-address
                                  :raw-stream? raw-stream?
@@ -868,7 +845,6 @@
                                            :raw-stream? raw-stream?
                                            :remote-address remote-address
                                            :response-buffer-size response-buffer-size
-                                           :ssl-context ssl-context
                                            :ssl? ssl?)]
 
                      (log/debug (str "Using HTTP protocol: " protocol)
@@ -935,6 +911,19 @@
                                                :response-buffer-size response-buffer-size
                                                :t0                   t0})))))))))))))))
 
+(defn ssl-context
+  "Coerces a client SSL context, including enforcement of its ALPN setup."
+  (^SslContext [http-versions] (ssl-context nil http-versions false))
+  (^SslContext [ssl-ctx http-versions insecure?]
+   (if ssl-ctx
+     (-> ssl-ctx
+         (common/ensure-consistent-alpn-config http-versions)
+         (netty/coerce-ssl-client-context))
+     (let [ssl-ctx-opts {:application-protocol-config (netty/application-protocol-config http-versions)}]
+       (if insecure?
+         (netty/insecure-ssl-client-context ssl-ctx-opts)
+         (netty/ssl-client-context ssl-ctx-opts))))))
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -970,7 +959,7 @@
                  (InetSocketAddress/createUnresolved "www.google.com" (int 443))
                  true
                  {:on-closed #(println "http conn closed")
-                  :http-versions  [:http1]}))
+                  :ssl-context (ssl-context [:http1])}))
 
     (conn {:request-method :get}))
   )
