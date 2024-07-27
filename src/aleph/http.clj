@@ -231,7 +231,10 @@
     (when (and force-h2c? (not-any? #{:http2} http-versions))
       (throw (IllegalArgumentException. "force-h2c? may only be true when HTTP/2 is enabled."))))
 
-  (let [log-activity (:log-activity connection-options)
+  (let [{:keys [log-activity
+                http-versions
+                insecure?]
+         :or   {http-versions [:http1]}} connection-options
         dns-options' (if-not (and (some? dns-options)
                                   (not (or (contains? dns-options :transport)
                                            (contains? dns-options :epoll?))))
@@ -244,7 +247,10 @@
                               (assoc :name-resolver (netty/dns-resolver-group dns-options'))
 
                               (some? log-activity)
-                              (assoc :log-activity (netty/activity-logger "aleph-client" log-activity)))
+                              (assoc :log-activity (netty/activity-logger "aleph-client" log-activity))
+
+                              true
+                              (update :ssl-context #(client/ssl-context % http-versions insecure?)))
         p (promise)
         create-pool-fn (or pool-builder-fn
                            flow/instrumented-pool)
