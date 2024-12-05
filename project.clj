@@ -1,5 +1,5 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
-(def netty-version "4.1.111.Final")
+(def netty-version "4.1.115.Final")
 (def brotli-version "1.16.0")
 
 
