@@ -523,16 +523,17 @@
     (repeatedly #(rand-nth charset))))
 
 (deftest test-bulk-requests
-  (with-handler basic-handler
-    (->> (range 1e2)
-         (map (fn [_] (http-get "/string")))
-         (apply d/zip)
-         deref)
-    (dotimes [_ 10]
-      (->> (range 10)
-           (map (fn [_] (http-get "/string")))
+  (let [pool (http/connection-pool {})]
+    (with-handler basic-handler
+      (->> (range 1e2)
+           (map (fn [_] (http-get "/string") {:pool pool}))
            (apply d/zip)
-           deref))))
+           deref)
+      (dotimes [_ 10]
+        (->> (range 10)
+             (map (fn [_] (http-get "/string") {:pool pool}))
+             (apply d/zip)
+             deref)))))
 
 (deftest test-overly-long-url
   (let [long-url (apply str "/" (repeat (long 1e5) "a"))]
