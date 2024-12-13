@@ -16,3 +16,4 @@ target/**
 **/.lsp
 /.eastwood
 *.pem
+.cpcache

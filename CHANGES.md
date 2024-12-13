@@ -1,3 +1,11 @@
+### 0.8.2
+
+* Bump Netty to 4.1.115.Final (CVE-2024-47535 and bug-fixes)
+
+Contributions by (in alphabetical order):
+
+David Ongaro
+
 ### 0.8.1
 
 * Bump Netty to 4.1.111.Final (only bug-fixes)
