@@ -19,6 +19,7 @@
     (aleph.utils
       ConnectionTimeoutException
       PoolTimeoutException
+      ProxyConnectionTimeoutException
       ReadTimeoutException
       RequestCancellationException
       RequestTimeoutException)
@@ -414,12 +415,23 @@
                                         ;; connection establishment failed
                                         (d/catch'
                                          (fn [e]
-                                           (if (or (instance? TimeoutException e)
-                                                   ;; Unintuitively, this type doesn't inherit from TimeoutException
-                                                   (instance? ConnectTimeoutException e))
+                                           (cond
+                                             ;; Handled separately because it inherits from
+                                             ;; TimeoutException but we don't want to wrap it in
+                                             ;; ConnectionTimeoutException.
+                                             (instance? ProxyConnectionTimeoutException e)
+                                             (do
+                                               (log/trace "Timed out waiting for proxy connection to be established")
+                                               (d/error-deferred e))
+
+                                             (or (instance? TimeoutException e)
+                                                 ;; Unintuitively, this type doesn't inherit from TimeoutException
+                                                 (instance? ConnectTimeoutException e))
                                              (do
                                                (log/trace "Timed out waiting for connection to be established")
                                                (d/error-deferred (ConnectionTimeoutException. ^Throwable e)))
+
+                                             :else
                                              (do
                                                (log/trace "Connection establishment failed")
                                                (d/error-deferred e)))))
