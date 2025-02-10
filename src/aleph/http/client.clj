@@ -378,7 +378,7 @@
       (.setConnectTimeoutMillis ^ProxyHandler handler connection-timeout))
     handler))
 
-(defn pending-proxy-connection-handler [early-response-d]
+(defn pending-proxy-connection-handler [proxy-connected]
   (netty/channel-inbound-handler
     :exception-caught
     ([_ ctx cause]
@@ -388,28 +388,29 @@
              headers (when (instance? HttpProxyHandler$HttpProxyConnectException cause)
                        (.headers ^HttpProxyHandler$HttpProxyConnectException cause))
              response (cond
-                        (= "timeout" message)
+                        (.contains message "timeout")
                         (ProxyConnectionTimeoutException. ^Throwable cause)
 
                         (some? headers)
-                        (ex-info message {:headers (http1/headers->map headers)})
+                        (ex-info message {:headers (http1/headers->map headers)} cause)
 
                         :else
                         cause)]
-         (d/error! early-response-d response)
+         (d/error! proxy-connected response)
          ;; client handler should take care of the rest
          (netty/close ctx))))
 
     :user-event-triggered
     ([this ctx evt]
      (when (instance? ProxyConnectionEvent evt)
-       (.remove (.pipeline ctx) this))
+       (.remove (.pipeline ctx) this)
+       (d/success! proxy-connected true))
      (.fireUserEventTriggered ^ChannelHandlerContext ctx evt))))
 
 (defn- add-proxy-handlers
   "Inserts handlers for proxying through a server"
-  [^ChannelPipeline p early-response-d proxy-options ssl?]
-  (when (some? proxy-options)
+  [^ChannelPipeline p proxy-connected proxy-options ssl?]
+  (if (some? proxy-options)
     (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
       (.addFirst p "proxy" ^ChannelHandler proxy)
       ;; well, we need to wait before the proxy responded with
@@ -420,7 +421,8 @@
                    "proxy"
                    "pending-proxy-connection"
                    ^ChannelHandler
-                   (pending-proxy-connection-handler early-response-d)))))
+                   (pending-proxy-connection-handler proxy-connected))))
+    (d/success! proxy-connected false))
   p)
 
 (defn- setup-http1-pipeline
@@ -472,10 +474,10 @@
 
    Can't use an ApnHandler/ApplicationProtocolNegotiationHandler here,
    because it's tricky to run Manifold code on Netty threads."
-  [{:keys [ssl? remote-address ssl-context ssl-endpoint-id-alg proxy-options early-response-d]}]
+  [{:keys [ssl? remote-address ssl-context ssl-endpoint-id-alg proxy-options proxy-connected]}]
   (fn pipeline-builder*
     [^ChannelPipeline pipeline]
-    (add-proxy-handlers pipeline early-response-d proxy-options ssl?)
+    (add-proxy-handlers pipeline proxy-connected proxy-options ssl?)
     (when ssl?
       (do
         (.addLast pipeline
@@ -803,10 +805,10 @@
                  (some? log-activity) (netty/activity-logger "aleph-client" log-activity)
                  :else nil)
 
-        early-response-d (d/deferred)
+        proxy-connected (d/deferred)
         pipeline-builder (make-pipeline-builder
                           (assoc opts
-                                 :early-response-d early-response-d
+                                 :proxy-connected proxy-connected
                                  :ssl? ssl?
                                  :ssl-context ssl-context
                                  :ssl-endpoint-id-alg ssl-endpoint-id-alg
@@ -827,110 +829,111 @@
 
     (attach-on-close-handler ch-d on-closed)
 
-    (d/alt'
-     early-response-d
-     (d/chain' ch-d
-               (fn setup-client
-                 [^Channel ch]
-                 (log/debug "Channel:" ch)
+    (d/chain'
+     proxy-connected
+     (fn [_]
+       (d/chain' ch-d
+                 (fn setup-client
+                   [^Channel ch]
+                   (log/debug "Channel:" ch)
 
-                 ;; We know the SSL handshake must be complete because create-client wraps the
-                 ;; future with maybe-ssl-handshake-future, so we can get the negotiated
-                 ;; protocol, falling back to HTTP/1.1 by default.
-                 (let [pipeline (.pipeline ch)
-                       protocol (cond
-                                  ssl?
-                                  (or (-> pipeline
-                                          ^SslHandler (.get ^Class SslHandler)
-                                          (.applicationProtocol))
-                                      ApplicationProtocolNames/HTTP_1_1) ; Not using ALPN, HTTP/2 isn't allowed
+                   ;; We know the SSL handshake must be complete because create-client wraps the
+                   ;; future with maybe-ssl-handshake-future, so we can get the negotiated
+                   ;; protocol, falling back to HTTP/1.1 by default.
+                   (let [pipeline (.pipeline ch)
+                         protocol (cond
+                                    ssl?
+                                    (or (-> pipeline
+                                            ^SslHandler (.get ^Class SslHandler)
+                                            (.applicationProtocol))
+                                        ApplicationProtocolNames/HTTP_1_1) ; Not using ALPN, HTTP/2 isn't allowed
 
-                                  force-h2c?
-                                  (do
-                                    (log/info "Forcing HTTP/2 over cleartext. Be sure to do this only with servers you control.")
-                                    ApplicationProtocolNames/HTTP_2)
+                                    force-h2c?
+                                    (do
+                                      (log/info "Forcing HTTP/2 over cleartext. Be sure to do this only with servers you control.")
+                                      ApplicationProtocolNames/HTTP_2)
 
-                                  :else
-                                  ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed unless h2c requested
-                       setup-opts (assoc opts
-                                         :authority authority
-                                         :ch ch
-                                         :server? false
-                                         :keep-alive? keep-alive?
-                                         :keep-alive?' keep-alive?'
-                                         :logger logger
-                                         :non-tun-proxy? non-tun-proxy?
-                                         :pipeline pipeline
-                                         :pipeline-transform pipeline-transform
-                                         :raw-stream? raw-stream?
-                                         :remote-address remote-address
-                                         :response-buffer-size response-buffer-size
-                                         :ssl-context ssl-context
-                                         :ssl? ssl?)]
+                                    :else
+                                    ApplicationProtocolNames/HTTP_1_1) ; Not using SSL, HTTP/2 isn't allowed unless h2c requested
+                         setup-opts (assoc opts
+                                           :authority authority
+                                           :ch ch
+                                           :server? false
+                                           :keep-alive? keep-alive?
+                                           :keep-alive?' keep-alive?'
+                                           :logger logger
+                                           :non-tun-proxy? non-tun-proxy?
+                                           :pipeline pipeline
+                                           :pipeline-transform pipeline-transform
+                                           :raw-stream? raw-stream?
+                                           :remote-address remote-address
+                                           :response-buffer-size response-buffer-size
+                                           :ssl-context ssl-context
+                                           :ssl? ssl?)]
 
-                   (log/debug (str "Using HTTP protocol: " protocol)
-                              {:authority authority
-                               :ssl? ssl?
-                               :force-h2c? force-h2c?})
+                     (log/debug (str "Using HTTP protocol: " protocol)
+                                {:authority authority
+                                 :ssl? ssl?
+                                 :force-h2c? force-h2c?})
 
-                   ;; can't use ApnHandler, because we need to coordinate with Manifold code
-                   (let [http-req-handler
-                         (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-                               (setup-http1-client setup-opts)
+                     ;; can't use ApnHandler, because we need to coordinate with Manifold code
+                     (let [http-req-handler
+                           (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
+                                 (setup-http1-client setup-opts)
 
-                               (.equals ApplicationProtocolNames/HTTP_2 protocol)
-                               (do
-                                 (http2/setup-conn-pipeline setup-opts)
-                                 (http2-req-handler setup-opts))
+                                 (.equals ApplicationProtocolNames/HTTP_2 protocol)
+                                 (do
+                                   (http2/setup-conn-pipeline setup-opts)
+                                   (http2-req-handler setup-opts))
 
-                               :else
-                               (do
-                                 (let [msg (str "Unknown protocol: " protocol)
-                                       e (IllegalStateException. msg)]
-                                   (log/error e msg)
-                                   (netty/close ch)
-                                   (throw e))))]
+                                 :else
+                                 (do
+                                   (let [msg (str "Unknown protocol: " protocol)
+                                         e (IllegalStateException. msg)]
+                                     (log/error e msg)
+                                     (netty/close ch)
+                                     (throw e))))]
 
-                     ;; Both Netty and Aleph are set up, unpause the pipeline
-                     (when (.get pipeline "pause-handler")
-                       (log/debug "Unpausing pipeline")
-                       (.remove pipeline "pause-handler"))
+                       ;; Both Netty and Aleph are set up, unpause the pipeline
+                       (when (.get pipeline "pause-handler")
+                         (log/debug "Unpausing pipeline")
+                         (.remove pipeline "pause-handler"))
 
-                     (fn http-req-fn
-                       [req]
-                       (log/trace "http-req-fn fired")
-                       (log/debug "client request:" (pr-str req))
+                       (fn http-req-fn
+                         [req]
+                         (log/trace "http-req-fn fired")
+                         (log/debug "client request:" (pr-str req))
 
-                       ;; If :aleph/close is set in the req, closes the channel and
-                       ;; returns a deferred containing the result.
-                       (if (or (contains? req :aleph/close)
-                               (contains? req ::close))
-                         (-> ch (netty/close) (netty/wrap-future))
+                         ;; If :aleph/close is set in the req, closes the channel and
+                         ;; returns a deferred containing the result.
+                         (if (or (contains? req :aleph/close)
+                                 (contains? req ::close))
+                           (-> ch (netty/close) (netty/wrap-future))
 
-                         (let [t0 (System/nanoTime)
-                               ;; I suspect the below is an error for http1
-                               ;; since the shared handler might not match.
-                               ;; Should work for HTTP2, though
-                               raw-stream? (get req :raw-stream? raw-stream?)]
+                           (let [t0 (System/nanoTime)
+                                 ;; I suspect the below is an error for http1
+                                 ;; since the shared handler might not match.
+                                 ;; Should work for HTTP2, though
+                                 raw-stream? (get req :raw-stream? raw-stream?)]
 
-                           (if (or (not (.isActive ch))
-                                   (not (.isOpen ch)))
+                             (if (or (not (.isActive ch))
+                                     (not (.isOpen ch)))
 
-                             (d/error-deferred
-                              (ex-info "Channel is inactive/closed."
-                                       {:req     req
-                                        :ch      ch
-                                        :open?   (.isOpen ch)
-                                        :active? (.isActive ch)}))
+                               (d/error-deferred
+                                (ex-info "Channel is inactive/closed."
+                                         {:req     req
+                                          :ch      ch
+                                          :open?   (.isOpen ch)
+                                          :active? (.isActive ch)}))
 
-                             (-> (http-req-handler req)
-                                 (d/chain' (rsp-handler
-                                            {:ch                   ch
-                                             :keep-alive?          keep-alive? ; why not keep-alive?'
-                                             :raw-stream?          raw-stream?
-                                             :req                  req
-                                             :response-buffer-size response-buffer-size
-                                             :t0                   t0}))))))))))))))
+                               (-> (http-req-handler req)
+                                   (d/chain' (rsp-handler
+                                              {:ch                   ch
+                                               :keep-alive?          keep-alive? ; why not keep-alive?'
+                                               :raw-stream?          raw-stream?
+                                               :req                  req
+                                               :response-buffer-size response-buffer-size
+                                               :t0                   t0})))))))))))))))
 
 
 
