@@ -101,7 +101,7 @@ While it's tempting to reformat things left and right, this has the downside of 
 
 ## Updating dependencies
 
-There’s some extra steps to test when updating dependencies:
+There are some extra steps to test when updating dependencies:
 
 1. After you've made your changes to `project.clj`, be sure to rerun the tests with `lein test`.
 
