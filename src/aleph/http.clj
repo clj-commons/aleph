@@ -287,7 +287,7 @@
    | `ssl-context`         | an `io.netty.handler.ssl.SslContext` object, only required if a custom context is required
    | `ssl-endpoint-id-alg` | the name of the algorithm to use for SSL endpoint identification (see https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#endpoint-identification-algorithms), defaults to \"HTTPS\". Only used for WSS connections. Pass `nil` to disable endpoint identification.
    | `extensions?`         | if `true`, the websocket extensions will be supported.
-   | `sub-protocols`       | a string with a comma seperated list of supported sub-protocols.
+   | `sub-protocols`       | a string with a comma separated list of supported sub-protocols.
    | `headers`             | the headers that should be included in the handshake
    | `compression?`        | when set to `true`, enables client to use permessage-deflate compression extension, defaults to `false`.
    | `pipeline-transform`  | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
@@ -311,7 +311,7 @@
    | ---                  | ---
    | `raw-stream?`        | if `true`, the connection will emit raw `io.netty.buffer.ByteBuf` objects rather than strings or byte-arrays.  This will minimize copying, but means that care must be taken with Netty's buffer reference counting.  Only recommended for advanced users.
    | `headers`            | the headers that should be included in the handshake
-   | `compression?`       | when set to `true`, enables permessage-deflate compression extention support for the connection, defaults to `false`.
+   | `compression?`       | when set to `true`, enables permessage-deflate compression extension support for the connection, defaults to `false`.
    | `pipeline-transform` | an optional function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
    | `max-frame-payload`  | maximum allowable frame payload length, in bytes, defaults to `65536`.
    | `max-frame-size`     | maximum aggregate message size, in bytes, defaults to `1048576`.
@@ -325,7 +325,7 @@
 (defn websocket-ping
   "Takes a websocket endpoint (either client or server) and returns a deferred that will
    yield true whenever the PONG comes back, or false if the connection is closed. Subsequent
-   PINGs are supressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
+   PINGs are suppressed to avoid ambiguity in a way that the next PONG trigger all pending PINGs."
   ([conn]
    (ws.common/websocket-ping conn (d/deferred) nil))
   ([conn d']

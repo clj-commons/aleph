@@ -112,7 +112,7 @@
                (if raw-stream?
                  (let [body (.content ^TextWebSocketFrame msg)]
                    ;; pass ByteBuf body directly to next level (it's
-                   ;; their reponsibility to release)
+                   ;; their responsibility to release)
                    (netty/put! ch in body))
                  (let [text (.text ^TextWebSocketFrame msg)]
                    ;; working with text now, so we do not need

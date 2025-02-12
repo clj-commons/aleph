@@ -97,7 +97,7 @@
 (defn exception-handler [ctx ex response-stream]
   (log/warn "exception-handler" ex)
   (cond
-    ;; could happens when io.netty.handler.codec.http.HttpObjectAggregator
+    ;; could happen when io.netty.handler.codec.http.HttpObjectAggregator
     ;; is part of the pipeline
     (instance? TooLongFrameException ex)
     (s/put! response-stream ex)
@@ -336,7 +336,7 @@
                    (true? ssl?)))
       (throw (IllegalArgumentException.
                (str "Proxy options given require sending CONNECT request, "
-                    "but `tunnel?' option is set to 'false' explicitely. "
+                    "but `tunnel?' option is set to 'false' explicitly. "
                     "Consider setting 'tunnel?' to 'true' or omit it at all"))))
 
     (if (non-tunnel-proxy? options')

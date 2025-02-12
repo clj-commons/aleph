@@ -1298,7 +1298,7 @@
         (is (= "Internal Server Error" (bs/to-string (:body resp)))))))
 
   (testing "reading invalid request message: bad request"
-    ;; this request should fail with `IllegalArgumentException` "multiple Content-Lenght headers"
+    ;; this request should fail with `IllegalArgumentException` "multiple Content-Length headers"
     (with-tcp-request {} ["GET / HTTP/1.1"
                           "content-length: 0"
                           "content-length: 1"]

@@ -149,7 +149,7 @@
              (s/put! s (str "ERROR: " ex))
              (s/close! s)))))))
 
-;; Alternately, we use `manifold.deferred/let-flow` to implement the composition of these
+;; Alternatively, we use `manifold.deferred/let-flow` to implement the composition of these
 ;; asynchronous values.  It is certainly more concise, but at the cost of being less explicit.
 (defn slow-echo-handler
   [f]

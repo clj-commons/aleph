@@ -1193,7 +1193,7 @@
     (instance? SslContext ssl-context)
     ssl-context
 
-    ;; in future this option might be interesing
+    ;; in future this option might be interesting
     ;; for turning application config (e.g. ALPN)
     ;; depending on the server's capabilities
     (instance? SslContextBuilder ssl-context)
