@@ -374,8 +374,8 @@
 
       (testing ":compression-level"
         (doseq [{:keys [phrase opts encs]}
-                [{:phrase "Gzip and deflate only for :compression-level"
-                  :opts   {:compression?        true
+                [{:phrase "All for :compression-level"
+                  :opts   {:compression-level   3
                            :idle-timeout        600000}
                   :encs   [{:accept-encoding  "gzip"
                             :content-encoding "gzip"
@@ -384,12 +384,15 @@
                             :content-encoding "deflate"
                             :stream-ctor      #(InflaterInputStream. %)}
                            {:accept-encoding  "br"
-                            :content-encoding nil
-                            :stream-ctor      identity}]}]]
+                            :content-encoding "br"
+                            :stream-ctor      #(BrotliInputStream. %)}
+                           {:accept-encoding  "zstd"
+                            :content-encoding "zstd"
+                            :stream-ctor      #(ZstdInputStream. %)}]}]]
           (testing phrase
             (doseq [{:keys [accept-encoding content-encoding stream-ctor]} encs]
               (testing (str " - " accept-encoding "-> " content-encoding)
-                (with-http1-server basic-handler {:compression-level 3}
+                (with-http1-server basic-handler opts
                   (doseq [[path result] expected-results]
                     (testing (str "/" path)
                       (let [resp @(http-get (str "/" path)
