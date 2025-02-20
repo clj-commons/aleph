@@ -1251,16 +1251,12 @@
   [{:keys [^ChannelPipeline pipeline
            handler
            server?
-           proxy-options
            logger
            http2-stream-pipeline-transform
            max-request-body-size
            compression?
            compression-options]}]
   (log/trace "setup-stream-pipeline called")
-
-  (when (some? proxy-options)
-    (throw (IllegalArgumentException. "Proxying HTTP/2 messages not supported yet")))
 
   (cond-> pipeline
 

@@ -18,6 +18,7 @@
   (:import
     (aleph.utils
       ConnectionTimeoutException
+      ProxyConnectionTimeoutException
       RequestCancellationException
       RequestTimeoutException)
     (clojure.lang
@@ -38,8 +39,11 @@
       StandardCompressionOptions)
     (io.netty.handler.codec.http
       HttpMessage
-      HttpObjectAggregator)
+      HttpObjectAggregator
+      HttpRequestDecoder
+      LastHttpContent)
     (io.netty.handler.codec.http2 Http2HeadersFrame)
+    (io.netty.handler.proxy ProxyConnectException)
     (java.io
       Closeable
       File)
@@ -1658,6 +1662,90 @@
         (http/cancel-request! rsp)
         (is (= true (deref conn-closed 1000 :timeout)))
         (is (thrown? RequestCancellationException (deref rsp 1000 :timeout)))))))
+
+(deftest test-client-proxy-support
+  (with-http-ssl-servers basic-handler {}
+    (let [proxy-request (d/deferred)
+          proxy-server (tcp/start-server
+                        (fn [stream _]
+                          (d/future
+                            (try
+                              (let [stream-ch (:aleph/channel (meta stream))
+                                    req (http.core/netty-request->ring-request
+                                         @(d/timeout! (s/take! stream) 1000)
+                                         false
+                                         stream-ch
+                                         nil)]
+                                (assert (instance? LastHttpContent @(d/timeout! (s/take! stream) 1000)))
+                                (-> stream-ch .pipeline (.remove "http-request-decoder"))
+                                (when (= :connect (:request-method req))
+                                  (when-let [[host port] (some-> req :uri (str/split #":" 2))]
+                                    (when-let [client (-> (tcp/client {:host host
+                                                                       :port (parse-long port)
+                                                                       :connect-timeout 1000})
+                                                          (d/timeout! 2000)
+                                                          deref)]
+                                      (s/put! stream (netty/to-byte-buf "HTTP/1.0 200 Connection established\r\n\r\n"))
+                                      (s/connect stream client)
+                                      (s/connect client stream))))
+                                (d/success! proxy-request req))
+                              (catch Throwable e
+                                (d/error! proxy-request e)))))
+                        {:port 0
+                         :shutdown-timeout 0
+                         :raw-stream? true
+                         :pipeline-transform (fn [^ChannelPipeline p]
+                                               (.addFirst p "http-request-decoder" (HttpRequestDecoder.)))})]
+      (binding [*connection-options* {:proxy-options {:host "localhost"
+                                                      :port (netty/port proxy-server)}}]
+        (with-server proxy-server
+          (is (= string-response (some-> (http-get "/string")
+                                         (d/timeout! 1000)
+                                         deref
+                                         :body
+                                         bs/to-string)))
+          (is (= {:request-method :connect
+                  :uri (str "localhost:" port)
+                  :headers {"host" (str "localhost:" port)
+                            "proxy-connection" "Keep-Alive"}
+                  :body nil}
+                 (select-keys @(d/timeout! proxy-request 1000)
+                              [:request-method :uri :headers :body]))))))))
+
+(deftest test-client-proxy-connection-timeout
+  (with-http-ssl-servers basic-handler {}
+    (let [proxy-server (tcp/start-server (fn [_ _]
+                                           ;; Accept connection and let it linger so that the
+                                           ;; client's proxy connection timeout fires.
+                                           )
+                                         {:port 0
+                                          :shutdown-timeout 0})]
+      (binding [*connection-options* {:proxy-options {:host "localhost"
+                                                      :port (netty/port proxy-server)
+                                                      :connection-timeout 10}}]
+        (with-server proxy-server
+          (try
+            @(d/timeout! (http-get "/string") 1000)
+            (is (= true false) "Should have thrown an exception")
+            (catch Exception e
+              (is (instance? ProxyConnectionTimeoutException e)))))))))
+
+(deftest test-client-proxy-connect-error
+  (with-http-ssl-servers basic-handler {}
+    (let [proxy-server (tcp/start-server (fn [stream _]
+                                           ;; Immediately close connection so that we get a
+                                           ;; non-timeout proxy connection error on the client-side.
+                                           (s/close! stream))
+                                         {:port 0
+                                          :shutdown-timeout 0})]
+      (binding [*connection-options* {:proxy-options {:host "localhost"
+                                                      :port (netty/port proxy-server)}}]
+        (with-server proxy-server
+          (try
+            @(d/timeout! (http-get "/string") 1000)
+            (is (= true false) "Should have thrown an exception")
+            (catch Exception e
+              (is (instance? ProxyConnectException e)))))))))
 
 (deftest ^:leak test-leak-in-raw-stream-handler
   ;; NOTE: Expecting 2 leaks because `with-raw-handler` will run its body for both http1 and
