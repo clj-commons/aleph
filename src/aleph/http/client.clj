@@ -412,7 +412,7 @@
   [^ChannelPipeline p proxy-connected proxy-options ssl?]
   (if (some? proxy-options)
     (let [proxy (proxy-handler (assoc proxy-options :ssl? ssl?))]
-      (.addFirst p "proxy" ^ChannelHandler proxy)
+      (.addLast p "proxy" ^ChannelHandler proxy)
       ;; well, we need to wait before the proxy responded with
       ;; HTTP/1.1 200 Connection established
       ;; before sending any requests
