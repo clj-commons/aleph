@@ -80,7 +80,7 @@
    | `initial-buffer-size`             | The initial buffer size of characters when decoding the request, defaults to `128` |
    | `pipeline-transform`              | (DEPRECATED: Use `:http1-pipeline-transform` instead.) A function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it. |
    | `http1-pipeline-transform`        | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents an HTTP/1 connection, and modifies it. Contains the user handler at \"request-handler\". |
-   | `compression-level`               | (DEPRECATED: Use `compression-options` or leave unset.) Optional gzip/deflate compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6` . When set, ONLY older gzip and deflate codecs are available. Overridden by `compression-options`. |
+   | `compression-level`               | (DEPRECATED: Use `compression-options` or leave unset.) Optional gzip/deflate compression level, `1` yields the fastest compression and `9` yields the best compression, defaults to `6`. Zstd or Brotli will also be enabled when available. Overridden by `compression-options`. |
 
    HTTP/2-specific options
    | Param key                         | Description |
