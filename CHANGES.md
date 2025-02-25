@@ -1,3 +1,13 @@
+### 0.8.3
+
+* Bump Netty to 4.1.118.Final (CVE-2025-24970 and bug-fixes)
+* Passing the `:compression-level` option to `aleph.http/start-server` will now also enable Brotli and Zstd when available (even though that option doesn't affect them); via https://github.com/netty/netty/pull/14466
+* Fix HTTP client's proxy support which was broken since 0.7.0 (#731, #742)
+
+Contributions by (in alphabetical order):
+
+Arnaud Geiser, David Ongaro, Matthew Davidson, and Moritz Heidkamp.
+
 ### 0.8.2
 
 * Bump Netty to 4.1.115.Final (CVE-2024-47535 and bug-fixes)
