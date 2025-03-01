@@ -452,6 +452,37 @@
                  :body
                  bs/to-string))))))
 
+(deftest using-input-stream-as-ssl-context-trust-store
+  (let [num-requests 2
+        file-name "test/ca_cert.pem"
+        client-options (fn [stream]
+                         {:connection-options {:ssl-context {:private-key test-ssl/client-key
+                                                             :certificate-chain [test-ssl/client-cert]
+                                                             :trust-store stream}}})
+        requests (fn [pool]
+                   (repeatedly num-requests #(http-post "/"
+                                                        {:body "hello!"
+                                                         :pool pool})))]
+    (testing "multiple serial requests without connection reuse"
+      (with-open [stream (io/input-stream file-name)]
+        (let [client-pool (http/connection-pool (-> (client-options stream)
+                                                    (assoc-in [:connection-options :keep-alive?] false)))]
+          (with-http-ssl-servers echo-handler {}
+            (is (every?
+                  #{"hello!"}
+                  (->> (requests client-pool)
+                       (mapv (comp bs/to-string :body deref)))))))))
+
+    (testing "multiple concurrent requests"
+      (with-open [stream (io/input-stream file-name)]
+        (let [client-pool (http/connection-pool (client-options stream))]
+          (with-http-ssl-servers echo-handler {}
+            (is (every?
+                  #{"hello!"}
+                  (->> (requests client-pool)
+                       (doall)
+                       (mapv (comp bs/to-string :body deref)))))))))))
+
 (defn ssl-session-capture-handler [ssl-session-atom]
   (fn [req]
     (reset! ssl-session-atom (http.core/ring-request-ssl-session req))
