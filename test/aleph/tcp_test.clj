@@ -3,6 +3,7 @@
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
    [aleph.tcp :as tcp]
+   [aleph.testutils :refer [bound-channel]]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is]]
    [manifold.stream :as s]))
@@ -54,5 +55,14 @@
             (is (= "foo" (bs/to-string @(s/take! c)))))))
       (catch Exception _
         (is (not (netty/io-uring-available?)))))))
+
+(deftest test-existing-channel
+  (testing "the :port option is not required when :existing-channel is passed"
+    (let [port 8083]
+      (with-open [channel (bound-channel port)]
+        (with-server (tcp/start-server echo-handler {:existing-channel channel :shutdown-timeout 0})
+          (let [c @(tcp/client {:host "localhost" :port port})]
+            (s/put! c "foo")
+            (is (= "foo" (bs/to-string @(s/take! c))))))))))
 
 (aleph.resource-leak-detector/instrument-tests!)

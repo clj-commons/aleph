@@ -51,6 +51,7 @@
    | ---                               | --- |
    | `port`                            | The port the server will bind to. If `0`, the server will bind to a random port. |
    | `socket-address`                  | A `java.net.SocketAddress` specifying both the port and interface to bind to. |
+   | `existing-channel`                | A pre-bound `java.nio.channels.ServerSocketChannel` for the server to use rather than opening and binding its own server-socket. It won't be closed by the server. Possibly obtained from `System/inheritedChannel`. |
    | `bootstrap-transform`             | A function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it. |
    | `http-versions`                   | An optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http1]`. |
    | `ssl-context`                     | An `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired. When passing an `io.netty.handler.ssl.SslContext` object, it must have an ALPN config matching the `http-versions` option (see `aleph.netty/ssl-server-context` and `aleph.netty/application-protocol-config`). If only HTTP/1.1 is desired, ALPN config is optional.

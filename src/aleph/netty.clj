@@ -21,6 +21,7 @@
       Unpooled)
     (io.netty.channel
       Channel
+      ChannelFactory
       ChannelFuture
       ChannelHandler
       ChannelHandlerContext
@@ -1667,6 +1668,22 @@
     (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
+(defn- validate-existing-channel
+  [existing-channel]
+  (when (some? existing-channel)
+    (when-not (instance? java.nio.channels.ServerSocketChannel existing-channel)
+      (throw (IllegalArgumentException.
+               (str "The existing-channel type is not supported: " (pr-str existing-channel)))))
+    (when (nil? (.getLocalAddress ^java.nio.channels.ServerSocketChannel existing-channel))
+      (throw (IllegalArgumentException.
+               (str "The existing-channel is not bound: " (pr-str existing-channel)))))))
+
+(defn- wrapping-channel-factory
+  ^ChannelFactory [^java.nio.channels.ServerSocketChannel channel]
+  (proxy [ChannelFactory] []
+    (newChannel []
+      (NioServerSocketChannel. channel))))
+
 (defn ^:no-doc start-server
   ([pipeline-builder
     ssl-context
@@ -1685,11 +1702,13 @@
             bootstrap-transform
             on-close
             ^SocketAddress socket-address
+            existing-channel
             transport
             shutdown-timeout]
      :or   {shutdown-timeout default-shutdown-timeout}
      :as   opts}]
    (ensure-transport-available! transport)
+   (validate-existing-channel existing-channel)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-server-pool" false)
@@ -1715,7 +1734,8 @@
                      (.option ChannelOption/SO_REUSEADDR true)
                      (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
-                     (.channel channel-class)
+                     (cond-> (nil? existing-channel) (.channel channel-class))
+                     (cond-> (some? existing-channel) (.channelFactory (wrapping-channel-factory existing-channel)))
                      ;;TODO: add a server (.handler) call to the bootstrap, for logging or something
                      (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
@@ -1723,7 +1743,11 @@
                      bootstrap-transform)
 
              ^ServerSocketChannel
-             ch (-> b (.bind socket-address) .sync .channel)]
+             ch (-> (if (nil? existing-channel)
+                      (.bind b socket-address)
+                      (.register b))
+                    .sync
+                    .channel)]
 
          (reify
            Closeable
@@ -1731,7 +1755,9 @@
              (when (compare-and-set! closed? false true)
                ;; This is the three step closing sequence:
                ;; 1. Stop listening to incoming requests
-               (-> ch .close .sync)
+               (if (nil? existing-channel)
+                 (-> ch .close .sync)
+                 (-> ch .deregister .sync))
                (-> (if (pos? shutdown-timeout)
                      ;; 2. Wait for in-flight requests to stop processing within the supplied timeout
                      ;;    interval.
@@ -1759,7 +1785,8 @@
            (port [_]
              (-> ch .localAddress .getPort))
            (wait-for-close [_]
-             (-> ch .closeFuture .await)
+             (when (nil? existing-channel)
+               (-> ch .closeFuture .await))
              (-> group .terminationFuture .await)
              nil)))
 
