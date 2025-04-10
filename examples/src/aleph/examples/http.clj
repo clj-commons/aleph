@@ -46,7 +46,7 @@
    (hello-world-handler req)))
 
 (defn delayed-hello-world-handler
-  "Alternately, we can use a [core.async](https://github.com/clojure/core.async) goroutine to
+  "Alternatively, we can use a [core.async](https://github.com/clojure/core.async) goroutine to
    create our response, and convert the channel it returns using
    `manifold.deferred/->source`, and then take the first message from it. This is entirely equivalent
    to the previous implementation."

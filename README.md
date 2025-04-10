@@ -72,7 +72,7 @@ For HTTP client requests, Aleph models itself after [clj-http](https://github.co
 
 Aleph attempts to mimic the clj-http API and capabilities fully. It supports multipart/form-data requests, cookie stores, proxy servers and requests inspection with a few notable differences:
 
-* proxy configuration should be set for the connection when seting up a connection pool, per-request proxy setups are not allowed
+* proxy configuration should be set for the connection when setting up a connection pool, per-request proxy setups are not allowed
 
 * HTTP proxy functionality is extended with tunneling settings, optional HTTP headers and connection timeout control, see [all configuration keys](https://github.com/clj-commons/aleph/blob/d33c76d6c7d1bf9788369fe6fd9d0e56434c8244/src/aleph/http.clj#L122-L132)
 

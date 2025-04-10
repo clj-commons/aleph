@@ -190,7 +190,7 @@
              (if raw-stream?
                (let [body (.content ^TextWebSocketFrame msg)]
                  ;; pass ByteBuf body directly to lower next
-                 ;; level. it's their reponsibility to release
+                 ;; level. it's their responsibility to release
                  (netty/put! ch @in body))
                (let [text (.text ^TextWebSocketFrame msg)]
                  (netty/release msg)
