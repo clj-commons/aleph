@@ -728,6 +728,7 @@
   [handler
    {:keys [port
            socket-address
+           existing-channel
            executor
            http-versions
            ssl-context
@@ -773,9 +774,10 @@
     (netty/start-server
       {:pipeline-builder    pipeline-builder
        :bootstrap-transform bootstrap-transform
-       :socket-address      (if socket-address
-                              socket-address
-                              (InetSocketAddress. port))
+       :socket-address      (cond
+                              socket-address socket-address
+                              (nil? existing-channel) (InetSocketAddress. port))
+       :existing-channel    existing-channel
        :on-close            (when (and shutdown-executor?
                                        (or (instance? ExecutorService executor)
                                            (instance? ExecutorService continue-executor)))

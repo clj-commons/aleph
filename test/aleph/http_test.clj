@@ -7,7 +7,7 @@
     [aleph.resource-leak-detector]
     [aleph.ssl :as test-ssl]
     [aleph.tcp :as tcp]
-    [aleph.testutils :refer [str=]]
+    [aleph.testutils :refer [str= bound-channel]]
     [clj-commons.byte-streams :as bs]
     [clojure.java.io :as io]
     [clojure.string :as str]
@@ -47,7 +47,10 @@
     (java.io
       Closeable
       File)
-    (java.net UnknownHostException)
+    (java.net
+      BindException
+      UnknownHostException)
+    (java.nio.channels ServerSocketChannel)
     (java.util.concurrent
       SynchronousQueue
       ThreadPoolExecutor
@@ -1746,6 +1749,40 @@
             (is (= true false) "Should have thrown an exception")
             (catch Exception e
               (is (instance? ProxyConnectException e)))))))))
+
+(deftest test-existing-channel
+  (testing "validation"
+    (is (thrown-with-msg? Exception #"existing-channel"
+                          (with-http-servers basic-handler {:existing-channel "a string"})))
+    (with-open [unbound-channel (ServerSocketChannel/open)]
+      (is (thrown-with-msg? Exception #"existing-channel"
+                            (with-http-servers basic-handler {:existing-channel unbound-channel})))))
+
+  (testing "with a bound server-socket channel"
+    (testing "- unknown to the server"
+      (with-open [_ (bound-channel port)]
+        ;; The port is already bound by a server-socket channel, but
+        ;; we are not telling Aleph about it, so we should get a
+        ;; BindException when Aleph tries to bind to the same port.
+        (is (thrown? BindException
+                     (with-http-servers basic-handler {})))))
+
+    (testing "- known to the server"
+      (with-open [channel (bound-channel port)]
+        ;; This time, we shouldn't get a BindException, because we are
+        ;; telling Aleph to use an existing server-socket channel,
+        ;; which should be already bound, so Aleph doesn't try to bind.
+        (with-http-servers basic-handler {:existing-channel channel}
+          (is (= 200 (:status @(http-get "/string")))))
+        ;; The existing channel should not be closed on a server shutdown,
+        ;; because that channel is not owned by the server.
+        (is (.isOpen channel)))))
+
+  (testing "the :port option is not required when :existing-channel is passed"
+    (with-redefs [http-server-options (dissoc http-server-options :port)]
+      (with-open [channel (bound-channel port)]
+        (with-http1-server basic-handler {:existing-channel channel}
+          (is (= 200 (:status @(http-get "/string")))))))))
 
 (deftest ^:leak test-leak-in-raw-stream-handler
   ;; NOTE: Expecting 2 leaks because `with-raw-handler` will run its body for both http1 and
