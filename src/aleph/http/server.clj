@@ -641,7 +641,7 @@
                             :handler handler
                             :server? true
                             :pipeline pipeline)]
-      (cond ssl?
+      (cond (and ssl? ssl-context)
             (let [ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]
               (log/debug "Setting up secure HTTP server pipeline.")
               (log/debug "ALPN HTTP versions:" (mapv str (.nextProtocols ssl-context)))
