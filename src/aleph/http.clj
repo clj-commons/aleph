@@ -54,7 +54,7 @@
    | `bootstrap-transform`             | A function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it. |
    | `http-versions`                   | An optional vector of allowable HTTP versions to negotiate via ALPN, in preference order. Defaults to `[:http1]`. |
    | `ssl-context`                     | An `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details) if an SSL connection is desired. When passing an `io.netty.handler.ssl.SslContext` object, it must have an ALPN config matching the `http-versions` option (see `aleph.netty/ssl-server-context` and `aleph.netty/application-protocol-config`). If only HTTP/1.1 is desired, ALPN config is optional.
-   | `manual-ssl?`                     | Set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (perhaps in `:pipeline-transform` ) to select the SSL context based on the client's indicated host name. |
+   | `manual-ssl?`                     | Set to `true` to indicate that SSL is active, but the caller is managing it (this implies `:ssl-context` is nil). For example, this can be used if you want to use configure SNI (usually via `:initial-pipeline-transform`) to select the SSL context based on the client's indicated host name. |
    | `executor`                        | A `java.util.concurrent.Executor` which is used to handle individual requests. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-executor?`              | If `true`, the executor will be shut down when `.close()` is called on the server, defaults to `true` . |
    | `request-buffer-size`             | The maximum body size, in bytes, that the server will allow to accumulate before placing on the body stream, defaults to `16384` . This does *not* represent the maximum size request the server can handle (which is unbounded), and is only a means of maximizing performance. |
@@ -69,6 +69,7 @@
    | `continue-handler`                | Optional handler which is invoked when header sends \"Except: 100-continue\" header to test whether the request should be accepted or rejected. Handler should return `true`, `false`, ring responseo to be used as a reject response or deferred that yields one of those. |
    | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-timeout`                | Interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of `0` bypasses waiting entirely. |
+   | `initial-pipeline-transform`      | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents the connection before any default handlers are installed (and thus, before HTTP version negotiation), and modifies it. |
 
    HTTP/1-specific options
    | Param key                         | Description |

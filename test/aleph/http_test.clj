@@ -2,6 +2,7 @@
   (:require
     [aleph.flow :as flow]
     [aleph.http :as http]
+    [aleph.http.common :as common]
     [aleph.http.core :as http.core]
     [aleph.netty :as netty]
     [aleph.resource-leak-detector]
@@ -517,6 +518,29 @@
         (reset! ssl-session nil)
         (is (= 200 (:status @(http-get "/"))))
         (is (some? @ssl-session))))))
+
+
+(defn test-manual-ssl-for-version [http-version]
+  (testing (str "manual ssl with " http-version)
+    (with-redefs [*use-tls-requests* true]
+      (with-server (http/start-server string-handler
+                                      (assoc http-server-options
+                                             :manual-ssl? true
+                                             :http-versions [http-version]
+                                             :initial-pipeline-transform (fn [pipeline]
+                                                                           (let [ssl-handler (netty/ssl-handler (.channel pipeline)
+                                                                                                                (-> test-ssl/server-ssl-context-opts
+                                                                                                                    (common/ensure-consistent-alpn-config [http-version])
+                                                                                                                    (netty/coerce-ssl-server-context)))]
+                                                                             (.addLast pipeline
+                                                                                       "ssl-handler"
+                                                                                       ssl-handler)))))
+        (binding [*connection-options* {:http-versions [http-version]}]
+          (is (= 200 (:status @(http-get "/")))))))))
+
+(deftest test-manual-ssl
+  (test-manual-ssl-for-version :http1)
+  (test-manual-ssl-for-version :http2))
 
 (deftest test-invalid-body
   (let [client-url "/"]
@@ -1449,7 +1473,7 @@
     (let [result (try-start-server
                   {:http-versions [:http2]})]
       (is (instance? IllegalArgumentException result))
-      (is (= "HTTP/2 requires ssl-context to be given or use-h2c? to be true." (ex-message result)))))
+      (is (= "HTTP/2 requires passing an ssl-context or manual-ssl? true. Alternatively, pass use-h2c? true to disable TLS." (ex-message result)))))
 
   (testing "HTTP/2 without ssl-context but with h2c"
     (let [result (try-start-server

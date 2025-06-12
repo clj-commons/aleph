@@ -46,7 +46,8 @@
       LastHttpContent)
     (io.netty.handler.ssl
       ApplicationProtocolNames
-      SslContext)
+      SslContext
+      SslHandler)
     (io.netty.handler.stream
       ChunkedWriteHandler)
     (io.netty.util AsciiString)
@@ -633,7 +634,12 @@
 
 (defn make-pipeline-builder
   "Returns a function that initializes a new server channel's pipeline."
-  [handler {:keys [ssl? ^SslContext ssl-context use-h2c?] :as opts}]
+  [handler {:keys [ssl?
+                   ^SslContext ssl-context
+                   use-h2c?
+                   initial-pipeline-transform]
+            :or {initial-pipeline-transform identity}
+            :as opts}]
   (fn pipeline-builder*
     [^ChannelPipeline pipeline]
     (log/trace "pipeline-builder*" pipeline opts)
@@ -641,32 +647,35 @@
                             :handler handler
                             :server? true
                             :pipeline pipeline)]
-      (cond (and ssl? ssl-context)
-            (let [ssl-handler (netty/ssl-handler (.channel pipeline) ssl-context)]
-              (log/debug "Setting up secure HTTP server pipeline.")
-              (log/debug "ALPN HTTP versions:" (mapv str (.nextProtocols ssl-context)))
+      (initial-pipeline-transform pipeline)
+      (cond ssl?
+            (do
+              ;; might be nil in manual-ssl? mode
+              (when ssl-context
+                (log/debug "Setting up secure HTTP server pipeline.")
+                (log/debug "ALPN HTTP versions:" (mapv str (.nextProtocols ssl-context)))
+                (.addLast pipeline "ssl-handler" (netty/ssl-handler (.channel pipeline) ssl-context)))
+              (.addLast pipeline
+                        "apn-handler"
+                        (ApnHandler.
+                         (fn setup-secure-pipeline
+                           [^ChannelPipeline pipeline protocol]
+                           (log/trace "setup-secure-pipeline: chosen protocol:" protocol)
+                           (let [^SslHandler ssl-handler (.get pipeline SslHandler)]
+                             (when (nil? (.applicationProtocol ssl-handler))
+                               (log/debug (str "ALPN not used. Protocol " protocol " chosen by fallback.")))
+                             (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
+                                   (setup-http1-pipeline setup-opts)
 
-              (-> pipeline
-                  (.addLast "ssl-handler" ssl-handler)
-                  (.addLast "apn-handler"
-                            (ApnHandler.
-                              (fn setup-secure-pipeline
-                                [^ChannelPipeline pipeline protocol]
-                                (log/trace "setup-secure-pipeline: chosen protocol:" protocol)
-                                (when (nil? (.applicationProtocol ssl-handler))
-                                  (log/debug (str "ALPN not used. Protocol " protocol " chosen by fallback.")))
-                                (cond (.equals ApplicationProtocolNames/HTTP_1_1 protocol)
-                                      (setup-http1-pipeline setup-opts)
+                                   (.equals ApplicationProtocolNames/HTTP_2 protocol)
+                                   (http2/setup-conn-pipeline setup-opts)
 
-                                      (.equals ApplicationProtocolNames/HTTP_2 protocol)
-                                      (http2/setup-conn-pipeline setup-opts)
-
-                                      :else
-                                      (let [msg (str "Unknown protocol: " protocol)
-                                            e (IllegalStateException. msg)]
-                                        (log/error e msg)
-                                        (throw e))))
-                              apn-fallback-protocol)))
+                                   :else
+                                   (let [msg (str "Unknown protocol: " protocol)
+                                         e (IllegalStateException. msg)]
+                                     (log/error e msg)
+                                     (throw e)))))
+                         apn-fallback-protocol))
               pipeline)
 
             use-h2c?
@@ -750,19 +759,13 @@
         opts (assoc opts :ssl-context ssl-context)
         http1-pipeline-transform (common/validate-http1-pipeline-transform opts)
         executor (setup-executor executor)
-        continue-executor (setup-continue-executor executor continue-executor)
-        pipeline-builder (make-pipeline-builder
-                           handler
-                           (assoc opts
-                                  :executor executor
-                                  :ssl? (or manual-ssl? (boolean ssl-context))
-                                  :http1-pipeline-transform http1-pipeline-transform
-                                  :continue-executor continue-executor))]
+        continue-executor (setup-continue-executor executor continue-executor)]
 
     (if (some #{:http2} http-versions)
       (when (and (not ssl-context)
-                 (not use-h2c?))
-        (throw (IllegalArgumentException. "HTTP/2 requires ssl-context to be given or use-h2c? to be true.")))
+                 (not use-h2c?)
+                 (not manual-ssl?))
+        (throw (IllegalArgumentException. "HTTP/2 requires passing an ssl-context or manual-ssl? true. Alternatively, pass use-h2c? true to disable TLS.")))
       (when use-h2c?
         (throw (IllegalArgumentException. "use-h2c? may only be true when HTTP/2 is enabled."))))
 
@@ -770,8 +773,18 @@
                use-h2c?)
       (throw (IllegalArgumentException. "use-h2c? must not be true when ssl-context is given.")))
 
+    (when (and ssl-context
+               manual-ssl?)
+      (throw (IllegalArgumentException. "manual-ssl? must not be true when ssl-context is given.")))
+
     (netty/start-server
-      {:pipeline-builder    pipeline-builder
+      {:pipeline-builder    (make-pipeline-builder
+                             handler
+                             (assoc opts
+                                    :executor executor
+                                    :ssl? (or manual-ssl? (boolean ssl-context))
+                                    :http1-pipeline-transform http1-pipeline-transform
+                                    :continue-executor continue-executor))
        :bootstrap-transform bootstrap-transform
        :socket-address      (if socket-address
                               socket-address
