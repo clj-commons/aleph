@@ -18,15 +18,15 @@
   "Returns a [Dirigiste](https://github.com/clj-commons/dirigiste) object pool, which can be interacted
    with via `acquire`, `release`, and `dispose`.
 
-   Param key          | Description
-   | ---              | ---
-   | `generate`       | a single-arg funcion which takes a key, and returns an object which should be non-equal to any other generated object |
-   | `destroy`        | an optional two-arg function which takes a key and object, and releases any associated resources |
-   | `stats-callback` | a function which will be invoked every `control-period` with a map of keys onto associated statistics |
-   | `max-queue-size` | the maximum number of pending acquires per key that are allowed before `acquire` will start to throw a `java.util.concurrent.RejectedExecutionException`.
-   | `sample-period`  | the interval, in milliseconds, between sampling the state of the pool for resizing and gathering statistics, defaults to `10`.
-   | `control-period` | the interval, in milliseconds, between use of the controller to adjust the size of the pool, defaults to `10000`.
-   | `controller`     | a Dirigiste controller that is used to gide the pool's size."
+   | Param            | Description                                                                                  |
+   | ---------------- | -------------------------------------------------------------------------------------------- |
+   | `generate`       | A single-arg function which takes a key and returns an object. Should not equal any other generated object. |
+   | `destroy`        | An optional two-arg function which releases any associated resources.                        |
+   | `stats-callback` | A function invoked every `control-period` with a map of keys onto associated statistics.     |
+   | `max-queue-size` | The maximum number of pending acquires per key.                                              |
+   | `sample-period`  | The interval in milliseconds between sampling the pool's state. Defaults to `10`.            |
+   | `control-period` | The interval in milliseconds between controller use to adjust pool size. Defaults to `10000`.|
+   | `controller`     | A Dirigiste controller used to guide the pool's size.                                        |"
   [{:keys
     [generate
      destroy
@@ -66,7 +66,7 @@
       TimeUnit/MILLISECONDS)))
 
 (defn acquire
-  "Acquires an object from the pool for key `k`, returning a deferred containing the object.  May
+  "Acquires an object from the pool for key `k`, returning a deferred containing the object. May
    throw a `java.util.concurrent.RejectedExecutionException` if there are too many pending acquires."
   [^IPool p k]
   (let [d (d/deferred nil)]
