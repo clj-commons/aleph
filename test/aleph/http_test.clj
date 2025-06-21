@@ -30,10 +30,11 @@
       IPool
       Pool)
     (io.netty.channel
-      ChannelHandlerContext
-      ChannelOutboundHandlerAdapter
-      ChannelPipeline
-      ChannelPromise)
+     ChannelException
+     ChannelHandlerContext
+     ChannelOutboundHandlerAdapter
+     ChannelPipeline
+     ChannelPromise)
     (io.netty.handler.codec TooLongFrameException)
     (io.netty.handler.codec.compression
       CompressionOptions
@@ -1774,15 +1775,50 @@
             (catch Exception e
               (is (instance? ProxyConnectException e)))))))))
 
-(deftest test-existing-channel
-  (testing "validation"
-    (is (thrown-with-msg? Exception #"existing-channel"
-                          (with-http-servers basic-handler {:existing-channel "a string"})))
-    (with-open [unbound-channel (ServerSocketChannel/open)]
-      (is (thrown-with-msg? Exception #"existing-channel"
-                            (with-http-servers basic-handler {:existing-channel unbound-channel})))))
+(deftest test-listen-socket
+  (testing "validation when transport is"
+    (let [file-descriptor Integer/MAX_VALUE]
+      (testing "nio"
+        (is (thrown-with-msg? IllegalArgumentException #"listen-socket"
+                              (with-http-servers basic-handler {:listen-socket file-descriptor})))
+        (with-open [unbound-channel (ServerSocketChannel/open)]
+          (is (thrown-with-msg? IllegalArgumentException #"listen-socket"
+                                (with-http-servers basic-handler {:listen-socket unbound-channel})))))
 
-  (testing "with a bound server-socket channel"
+      (testing "epoll"
+        (when (netty/epoll-available?)
+          (testing "we should pass our validation and get an error due to the fake file descriptor"
+            (is (thrown-with-msg? ChannelException #"Bad file descriptor"
+                                  (with-http-servers basic-handler {:transport :epoll
+                                                                    :listen-socket file-descriptor}))))
+          (with-open [channel (bound-channel port)]
+            (is (thrown-with-msg? IllegalArgumentException #"listen-socket"
+                                  (with-http-servers basic-handler {:transport :epoll
+                                                                    :listen-socket channel}))))))
+
+      (testing "kqueue"
+        (when (netty/kqueue-available?)
+          (testing "we should pass our validation and get an error due to the fake file descriptor"
+            (is (thrown-with-msg? ChannelException #"Bad file descriptor"
+                                  (with-http-servers basic-handler {:transport :kqueue
+                                                                    :listen-socket file-descriptor}))))
+          (with-open [channel (bound-channel port)]
+            (is (thrown-with-msg? IllegalArgumentException #"listen-socket"
+                                  (with-http-servers basic-handler {:transport :kqueue
+                                                                    :listen-socket channel}))))))
+
+      (testing "io-uring"
+        (when (netty/io-uring-available?)
+          (testing "which is not supported"
+            (is (thrown-with-msg? IllegalArgumentException #"listen-socket"
+                                  (with-http-servers basic-handler {:transport :io-uring
+                                                                    :listen-socket file-descriptor}))))
+          (with-open [channel (bound-channel port)]
+            (is (thrown-with-msg? IllegalArgumentException #"listen-socket"
+                                  (with-http-servers basic-handler {:transport :io-uring
+                                                                    :listen-socket channel}))))))))
+
+  (testing "with nio transport and a bound server-socket channel"
     (testing "- unknown to the server"
       (with-open [_ (bound-channel port)]
         ;; The port is already bound by a server-socket channel, but
@@ -1796,16 +1832,16 @@
         ;; This time, we shouldn't get a BindException, because we are
         ;; telling Aleph to use an existing server-socket channel,
         ;; which should be already bound, so Aleph doesn't try to bind.
-        (with-http-servers basic-handler {:existing-channel channel}
+        (with-http-servers basic-handler {:listen-socket channel}
           (is (= 200 (:status @(http-get "/string")))))
         ;; The existing channel should not be closed on a server shutdown,
         ;; because that channel is not owned by the server.
         (is (.isOpen channel)))))
 
-  (testing "the :port option is not required when :existing-channel is passed"
+  (testing "the :port option is not required when :listen-socket is passed"
     (with-redefs [http-server-options (dissoc http-server-options :port)]
       (with-open [channel (bound-channel port)]
-        (with-http1-server basic-handler {:existing-channel channel}
+        (with-http1-server basic-handler {:listen-socket channel}
           (is (= 200 (:status @(http-get "/string")))))))))
 
 (deftest ^:leak test-leak-in-raw-stream-handler
