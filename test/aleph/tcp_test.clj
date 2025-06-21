@@ -56,11 +56,11 @@
       (catch Exception _
         (is (not (netty/io-uring-available?)))))))
 
-(deftest test-existing-channel
-  (testing "the :port option is not required when :existing-channel is passed"
+(deftest test-listen-socket
+  (testing "the :port option is not required when :listen-socket is passed"
     (let [port 8083]
       (with-open [channel (bound-channel port)]
-        (with-server (tcp/start-server echo-handler {:existing-channel channel :shutdown-timeout 0})
+        (with-server (tcp/start-server echo-handler {:listen-socket channel :shutdown-timeout 0})
           (let [c @(tcp/client {:host "localhost" :port port})]
             (s/put! c "foo")
             (is (= "foo" (bs/to-string @(s/take! c))))))))))

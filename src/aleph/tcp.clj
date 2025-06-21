@@ -74,7 +74,7 @@
    | ---                   | ---
    | `port`                | the port the server will bind to.  If `0`, the server will bind to a random port.
    | `socket-address`      | a `java.net.SocketAddress` specifying both the port and interface to bind to.
-   | `existing-channel`    | a pre-bound `java.nio.channels.ServerSocketChannel` for the server to use rather than opening and binding its own server-socket. It won't be closed by the server. Possibly obtained from `System/inheritedChannel`. |
+   | `listen-socket`       | a pre-bound server-socket as a `java.nio.channels.ServerSocketChannel` (NIO transport) or a `long` file descriptor (epoll and kqueue transports) for the server to use rather than opening and binding its own server-socket. It won't be closed by the server. Possibly obtained from `System/inheritedChannel`.
    | `ssl-context`         | an `io.netty.handler.ssl.SslContext` object or a map of SSL context options (see `aleph.netty/ssl-server-context` for more details). If given, the server will only accept SSL connections and call the handler once the SSL session has been successfully established. If a self-signed certificate is all that's required, `(aleph.netty/self-signed-ssl-context)` will suffice.
    | `bootstrap-transform` | a function that takes an `io.netty.bootstrap.ServerBootstrap` object, which represents the server, and modifies it.
    | `pipeline-transform`  | a function that takes an `io.netty.channel.ChannelPipeline` object, which represents a connection, and modifies it.
@@ -82,7 +82,7 @@
    | `shutdown-timeout`    | interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of 0 bypasses waiting entirely.
    | `transport`           | the transport to use, one of `:nio`, `:epoll`, `:kqueue` or `:io-uring` (defaults to `:nio`)."
   [handler
-   {:keys [port socket-address existing-channel ssl-context bootstrap-transform pipeline-transform epoll?
+   {:keys [port socket-address listen-socket ssl-context bootstrap-transform pipeline-transform epoll?
            shutdown-timeout transport]
     :or {bootstrap-transform identity
          pipeline-transform identity
@@ -104,8 +104,8 @@
       :bootstrap-transform bootstrap-transform
       :socket-address (cond
                         socket-address socket-address
-                        (nil? existing-channel) (InetSocketAddress. port))
-      :existing-channel existing-channel
+                        (nil? listen-socket) (InetSocketAddress. port))
+      :listen-socket listen-socket
       :transport (netty/determine-transport transport epoll?)
       :shutdown-timeout shutdown-timeout})))
 

@@ -1331,6 +1331,39 @@
     :io-uring IOUringServerSocketChannel
     :nio NioServerSocketChannel))
 
+(defn- wrapping-channel-factory
+  ^ChannelFactory [listen-socket transport]
+  (proxy [ChannelFactory] []
+    (newChannel []
+      (case transport
+        :epoll (EpollServerSocketChannel. ^long listen-socket)
+        :kqueue (KQueueServerSocketChannel. ^long listen-socket)
+        :nio (NioServerSocketChannel. ^java.nio.channels.ServerSocketChannel listen-socket)))))
+
+(defn- validate-listen-socket
+  [listen-socket transport]
+  (when (some? listen-socket)
+    (case transport
+      (:epoll :kqueue) (when-not (int? listen-socket)
+                         (throw (IllegalArgumentException.
+                                 (str "With epoll and kqueue transports, only a numeric file descriptor "
+                                      "is supported as listen-socket, but received: "
+                                      (pr-str listen-socket)))))
+
+      :nio (cond (not (instance? java.nio.channels.ServerSocketChannel listen-socket))
+                 (throw (IllegalArgumentException.
+                         (str "With NIO transport, only a java.nio.channels.ServerSocketChannel "
+                              "is supported as listen-socket, but received: "
+                              (pr-str listen-socket))))
+
+                 (nil? (.getLocalAddress ^java.nio.channels.ServerSocketChannel listen-socket))
+                 (throw (IllegalArgumentException.
+                         (str "The listen-socket is not bound: " (pr-str listen-socket)))))
+
+      (throw (IllegalArgumentException.
+              (str "The listen-socket option is not supported with this transport: "
+                   (pr-str transport)))))))
+
 (defn ^:no-doc convert-address-types [address-types]
   (case address-types
     :ipv4-only ResolvedAddressTypes/IPV4_ONLY
@@ -1668,22 +1701,6 @@
     (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
-(defn- validate-existing-channel
-  [existing-channel]
-  (when (some? existing-channel)
-    (when-not (instance? java.nio.channels.ServerSocketChannel existing-channel)
-      (throw (IllegalArgumentException.
-               (str "The existing-channel type is not supported: " (pr-str existing-channel)))))
-    (when (nil? (.getLocalAddress ^java.nio.channels.ServerSocketChannel existing-channel))
-      (throw (IllegalArgumentException.
-               (str "The existing-channel is not bound: " (pr-str existing-channel)))))))
-
-(defn- wrapping-channel-factory
-  ^ChannelFactory [^java.nio.channels.ServerSocketChannel channel]
-  (proxy [ChannelFactory] []
-    (newChannel []
-      (NioServerSocketChannel. channel))))
-
 (defn ^:no-doc start-server
   ([pipeline-builder
     ssl-context
@@ -1702,13 +1719,13 @@
             bootstrap-transform
             on-close
             ^SocketAddress socket-address
-            existing-channel
+            listen-socket
             transport
             shutdown-timeout]
      :or   {shutdown-timeout default-shutdown-timeout}
      :as   opts}]
    (ensure-transport-available! transport)
-   (validate-existing-channel existing-channel)
+   (validate-listen-socket listen-socket transport)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
          thread-factory (enumerating-thread-factory "aleph-server-pool" false)
@@ -1734,8 +1751,8 @@
                      (.option ChannelOption/SO_REUSEADDR true)
                      (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
-                     (cond-> (nil? existing-channel) (.channel channel-class))
-                     (cond-> (some? existing-channel) (.channelFactory (wrapping-channel-factory existing-channel)))
+                     (cond-> (nil? listen-socket) (.channel channel-class))
+                     (cond-> (some? listen-socket) (.channelFactory (wrapping-channel-factory listen-socket transport)))
                      ;;TODO: add a server (.handler) call to the bootstrap, for logging or something
                      (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
@@ -1743,7 +1760,7 @@
                      bootstrap-transform)
 
              ^ServerSocketChannel
-             ch (-> (if (nil? existing-channel)
+             ch (-> (if (nil? listen-socket)
                       (.bind b socket-address)
                       (.register b))
                     .sync
@@ -1755,7 +1772,7 @@
              (when (compare-and-set! closed? false true)
                ;; This is the three step closing sequence:
                ;; 1. Stop listening to incoming requests
-               (if (nil? existing-channel)
+               (if (nil? listen-socket)
                  (-> ch .close .sync)
                  (-> ch .deregister .sync))
                (-> (if (pos? shutdown-timeout)
@@ -1785,7 +1802,7 @@
            (port [_]
              (-> ch .localAddress .getPort))
            (wait-for-close [_]
-             (when (nil? existing-channel)
+             (when (nil? listen-socket)
                (-> ch .closeFuture .await))
              (-> group .terminationFuture .await)
              nil)))

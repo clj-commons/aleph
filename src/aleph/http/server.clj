@@ -737,7 +737,7 @@
   [handler
    {:keys [port
            socket-address
-           existing-channel
+           listen-socket
            executor
            http-versions
            ssl-context
@@ -789,8 +789,8 @@
        :bootstrap-transform bootstrap-transform
        :socket-address      (cond
                               socket-address socket-address
-                              (nil? existing-channel) (InetSocketAddress. port))
-       :existing-channel    existing-channel
+                              (nil? listen-socket) (InetSocketAddress. port))
+       :listen-socket       listen-socket
        :on-close            (when (and shutdown-executor?
                                        (or (instance? ExecutorService executor)
                                            (instance? ExecutorService continue-executor)))
