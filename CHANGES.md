@@ -1,6 +1,13 @@
-### Unreleased
+### 0.9.0
 
-* Loosen `wrap-validation` validation to support strings in :request-method. (See release in 0.6.2 for more information). 
+* New server option `:listen-socket` for passing a pre-bound listening socket (#748, #755)
+* Bump Netty to 4.1.122.Final (only bug-fixes) and update other dependencies (#754)
+* Fix `:manual-ssl?` server option which was broken since 0.7.0 (#751, #753)
+* Loosen `wrap-validation` validation to support strings in `:request-method` again, see changelog of 0.6.2 for more information (#685)
+
+Contributions by (in alphabetical order):
+
+Arnaud Geiser, Daniel Compton, David Ongaro, Matthew Phillips, Moritz Heidkamp, and Paweł Stroiński.
 
 ### 0.8.3
 
@@ -84,10 +91,7 @@ Contributions by Matthew Davidson and Stefan van den Oord.
 * Bump deps and example deps
 * Upgrade CircleCI instance size
 * Switch to pedantic deps for CircleCI
-
-### Breaking changes
-
-* Add `wrap-validation` middleware to validate Ring maps [#679](https://github.com/clj-commons/aleph/pull/679). While the Ring spec has always [required](https://github.com/ring-clojure/ring/blob/master/SPEC.md#request-method) a keyword value for `:request-method` (e.g. `:get`), previously, Aleph would also accept string methods (e.g. `"GET"`). This means that `wrap-validation` may cause HTTP requests to fail on previously valid input. This will be fixed in the release after 0.8.3.
+* BREAKING: Add `wrap-validation` middleware to validate Ring maps (#679). While the Ring spec has always [required](https://github.com/ring-clojure/ring/blob/master/SPEC.md#request-method) a keyword value for `:request-method` (e.g. `:get`), previously, Aleph would also accept string methods (e.g. `"GET"`). This means that `wrap-validation` may cause HTTP requests to fail on previously valid input. This is fixed since 0.9.0.
 
 Contributions by Arnaud Geiser, Ertuğrul Çetin, Jeroen van Dijk, David Ongaro, 
 Matthew Davidson, and Moritz Heidkamp.

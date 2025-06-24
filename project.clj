@@ -3,7 +3,7 @@
 (def brotli-version "1.18.0")
 
 
-(defproject aleph (or (System/getenv "PROJECT_VERSION") "0.8.3")
+(defproject aleph (or (System/getenv "PROJECT_VERSION") "0.9.0")
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
@@ -35,7 +35,7 @@
                                                   [spootnik/signal "0.2.5"]
                                                   ;; This is for dev and testing ONLY, not recommended for prod
                                                   [org.bouncycastle/bcprov-jdk18on "1.81"]
-                                                  [org.bouncycastle/bcpkix-jdk18on "1.81"]
+                                                  [org.bouncycastle/bcpkix-jdk18on "1.81" :exclusions [org.bouncycastle/bcutil-jdk18on]]
                                                   ;;[org.bouncycastle/bctls-jdk18on "1.75"]
                                                   [io.netty/netty-tcnative-boringssl-static "2.0.72.Final"]
                                                   ;;[com.aayushatharva.brotli4j/all ~brotli-version]
