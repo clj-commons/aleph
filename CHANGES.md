@@ -1,3 +1,11 @@
+### 0.9.1
+
+* Bump Netty to 4.1.124.Final (CVE-2025-55163 and bug-fixes)
+
+Contributions by (in alphabetical order):
+
+Ivo Vachkov
+
 ### 0.9.0
 
 * New server option `:listen-socket` for passing a pre-bound listening socket (#748, #755)

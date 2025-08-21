@@ -1,5 +1,5 @@
-(defproject aleph.examples "0.9.0"
-  :dependencies [[aleph "0.9.0"]
+(defproject aleph.examples "0.9.1"
+  :dependencies [[aleph "0.9.1"]
                  [gloss "0.2.6"]
                  [metosin/reitit "0.9.1"]
                  [org.clojure/clojure "1.12.1"]
