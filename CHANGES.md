@@ -1,3 +1,11 @@
+### 0.9.2
+
+* Bump Netty to 4.1.126.Final (fixes CVE-2025-58057 and CVE-2025-58056)
+
+Contributions by (in alphabetical order):
+
+Moritz Heidkamp
+
 ### 0.9.1
 
 * Bump Netty to 4.1.124.Final (CVE-2025-55163 and bug-fixes)
