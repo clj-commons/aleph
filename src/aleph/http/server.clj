@@ -885,7 +885,7 @@
                    (InetSocketAddress. "127.0.0.1" (int port))
                    true
                    {:on-closed     #(log/debug "http conn closed")
-                    :http-versions [:http2]}))
+                    :ssl-context   (aleph.http.client/ssl-context [:http2])}))
 
       (def result @(d/timeout! (conn {:request-method :get})
                                2000
@@ -906,8 +906,7 @@
                  (InetSocketAddress. "aleph.localhost" (int port))
                  true
                  {:on-closed     #(log/debug "http conn closed")
-                  :http-versions [:http2]
-                  :insecure? true}))
+                  :ssl-context   (aleph.http.client/ssl-context nil [:http2] true)}))
 
     (def result @(d/timeout! (conn {:request-method :get})
                              2000

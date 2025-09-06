@@ -1426,7 +1426,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions [:http2]}))
+                  :ssl-context (aleph.http.client/ssl-context [:http2])}))
 
     (def result @(conn {:request-method :get
                         ;;:raw-stream?    true
@@ -1438,7 +1438,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions [:http2]}))
+                  :ssl-context (aleph.http.client/ssl-context [:http2])}))
 
     (let [body-string "Body test"
           fpath (Files/createTempFile "test" ".txt" (into-array FileAttribute []))
@@ -1482,7 +1482,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions  [:http2]}))
+                  :ssl-context (aleph.http.client/ssl-context [:http2])}))
 
     (def result
       @(conn {:request-method :post
@@ -1504,7 +1504,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions [:http2]}))
+                  :ssl-context (aleph.http.client/ssl-context [:http2])}))
 
     (let [req {:request-method :post
                :uri            "/post"
@@ -1521,7 +1521,7 @@
                  (InetSocketAddress. "postman-echo.com" (int 443))
                  true
                  {:on-closed #(log/debug "http conn closed")
-                  :http-versions [:http1]}))
+                  :ssl-context (aleph.http.client/ssl-context [:http1])}))
 
     (def result @(conn {:request-method :get
                         :uri           "/gzip" #_ "/deflate"
