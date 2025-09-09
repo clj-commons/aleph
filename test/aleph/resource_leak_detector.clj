@@ -88,7 +88,8 @@
       (.buffer 1)
       (.touch hint)))
 
-(def current-leaks)
+;; NOTE: Not setting to bare `nil` to appease `clj-kondo`.
+(def current-leaks (atom nil))
 
 (defn force-leak-detection! []
   (System/gc)
@@ -131,23 +132,30 @@
       (await-probe! hint)
       (handle-leaks (remove-probes @current-leaks)))))
 
-(defn -needReport [_this]
-  true)
-
-(defn -reportTracedLeak [_this resource-type records]
-  (swap! current-leaks conj {:resource-type resource-type
-                             :records records}))
-
-;; NOTE: Since we require level PARANOID, this should never be called in practice.
-(defn -reportUntracedLeak [_this resource-type]
-  (swap! current-leaks conj {:resource-type resource-type
-                             :records "[untraced]"}))
-
 (defn log-leaks! [leaks]
   (doseq [{:keys [resource-type records]} leaks]
     ;; Log message cribbed from io.netty.util.ResourceLeakDetector's (protected) reportTracedLeak method
     (log/error (str "LEAK: " resource-type ".release() was not called before it's garbage-collected.")
                (str "See https://netty.io/wiki/reference-counted-objects.html for more information." records))))
+
+(defn -needReport [_this]
+  true)
+
+(defn report-leak! [leak]
+  (if @current-leaks
+    (swap! current-leaks conj leak)
+    (do
+      (log/error "NOTE: The following leak occurred outside of a `with-leak-collection` scope.")
+      (log-leaks! [leak]))))
+
+(defn -reportTracedLeak [_this resource-type records]
+  (report-leak! {:resource-type resource-type
+                 :records records}))
+
+;; NOTE: Since we require level PARANOID, this should never be called in practice.
+(defn -reportUntracedLeak [_this resource-type]
+  (report-leak! {:resource-type resource-type
+                 :records "[untraced]"}))
 
 (defmacro with-expected-leaks
   "Runs `body` and expects it to produce exactly `expected-leak-count` leaks. Intended for use in tests
