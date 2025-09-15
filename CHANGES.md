@@ -1,3 +1,12 @@
+### 0.9.3
+
+* Bump Netty to 4.1.127.Final (follow-up fix for BouncyCastle)
+* Fix using `InputStream` as `:trust-store` in `:ssl-context` (#728, #746)
+
+Contributions by (in alphabetical order):
+
+Moritz Heidkamp and Paweł Stroiński.
+
 ### 0.9.2
 
 * Bump Netty to 4.1.126.Final (fixes CVE-2025-58057 and CVE-2025-58056)
