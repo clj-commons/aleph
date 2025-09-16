@@ -487,14 +487,16 @@
                                          (fn handle-response [rsp]
                                            (->> rsp
                                                 (middleware/handle-cookies req)
-                                                (middleware/handle-redirects request req))))))))))))
+                                                (middleware/handle-redirects request req)
+                                                (middleware/handle-error-status req))))))))))))
                       req))]
       (d/connect response result)
-      (d/catch' result
-                (fn [e]
-                  (log/trace e "Request failed. Disposing of connection...")
-                  (@dispose-conn!)
-                  (d/error-deferred e)))
+      (-> result
+          (d/catch'
+           (fn [e]
+             (when-not (:aleph/error-status? (ex-data e))
+               (log/trace e "Request failed. Disposing of connection...")
+               (@dispose-conn!)))))
       result)))
 
 (defn cancel-request!
