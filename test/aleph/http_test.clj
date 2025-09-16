@@ -1195,6 +1195,18 @@
                                       (d/timeout! 5e3)
                                       deref)))))
 
+(deftest test-client-throw-error-responses-as-exceptions
+  (with-http-servers (fn [_]
+                       {:status 429
+                        :body "nope"}) {}
+    (try
+      (-> (http-get "/" {:throw-exceptions? true})
+          (d/timeout! 1e3)
+          deref)
+      (is (= false true) "should have thrown an exception")
+      (catch Exception e
+        (is (= 429 (:status (ex-data e))))))))
+
 (deftest test-client-errors-handling
   (testing "writing invalid request message"
     (with-handler echo-string-handler

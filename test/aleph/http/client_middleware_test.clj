@@ -2,11 +2,15 @@
   (:require
    [aleph.http.client-middleware :as middleware]
    [aleph.http.schema :as schema]
+   [clojure.java.io :as io]
    [clojure.test :as t :refer [deftest is testing]]
    [malli.core :as m]
    [malli.generator :as mg]
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
    [manifold.test :as mt])
   (:import
+   (clojure.lang ExceptionInfo)
    (java.net URLDecoder)))
 
 (deftest test-empty-query-string
@@ -204,5 +208,47 @@
         #"Invalid spec.*:in \[:content-type\].*:value 10"
         (middleware/wrap-validation {:request-method :post
                                      :content-type 10}))))
+
+(deftest test-handle-error-status
+  (let [handle-error-status (fn [req rsp]
+                              (deref (d/chain (middleware/handle-error-status req rsp))
+                                     1000
+                                     ::timeout))]
+    (testing "response body is input stream"
+      (try
+        (let [rsp (handle-error-status {:throw-exceptions? true}
+                                       {:status 400
+                                        :body (io/input-stream (.getBytes "hello"))})]
+          (is (= ::thrown? rsp) "should have thrown"))
+        (catch Exception e
+          (is (instance? ExceptionInfo e))
+          (is (= 400 (:status (ex-data e))))
+          (is (= "hello" (some-> e ex-data :body slurp))))))
+    (testing "response body is manifold stream"
+      (try
+        (let [rsp (handle-error-status {:throw-exceptions? true}
+                                       {:status 400
+                                        :body (doto (s/stream 1)
+                                                (s/put! "hello")
+                                                (s/close!))})]
+          (is (= ::thrown? rsp) "should have thrown"))
+        (catch Exception e
+          (is (instance? ExceptionInfo e))
+          (is (= 400 (:status (ex-data e))))
+          (is (= "hello" (some-> e ex-data :body s/take! (deref 100 :timeout)))))))
+    (testing "response body is nil"
+      (try
+        (let [rsp (handle-error-status {:throw-exceptions? true}
+                                       {:status 400
+                                        :body nil})]
+          (is (= ::thrown? rsp) "should have thrown"))
+        (catch Exception e
+          (is (instance? ExceptionInfo e))
+          (is (= 400 (:status (ex-data e))))
+          (is (nil? (-> e ex-data :body))))))
+    (testing "error status but :throw-exceptions is false"
+      (let [rsp (handle-error-status {:throw-exceptions? false}
+                                     {:status 400})]
+        (is (= 400 (:status rsp)))))))
 
 (mt/instrument-tests-with-dropped-error-detection!)
