@@ -254,36 +254,40 @@
     (str "application/" (name type))
     type))
 
-(defn wrap-exceptions
+(defn error-status-deferred [rsp]
+  (d/error-deferred
+   (ex-info
+    (str "status: " (:status rsp))
+    (assoc rsp :aleph/error-status? true))))
+
+(defn handle-error-status
   "Middleware that throws response as an ExceptionInfo if the response has
   unsuccessful status code. :throw-exceptions set to false in the request
   disables this middleware."
-  [client]
-  (fn [req]
-    (d/let-flow' [{:keys [status body] :as rsp} (client req)]
-      (if (unexceptional-status? status)
-        rsp
-        (cond
+  [req rsp]
+  (let [{:keys [status body]} rsp]
+    (cond
+      (unexceptional-status? status)
+      rsp
 
-          (false? (opt req :throw-exceptions))
-          rsp
+      (false? (opt req :throw-exceptions))
+      rsp
 
-          (instance? InputStream body)
-          (d/chain' (d/future (bs/to-byte-array body))
-                    (fn [body]
-                      (d/error-deferred
-                        (ex-info
-                          (str "status: " status)
-                          (assoc rsp :body (ByteArrayInputStream. body))))))
+      (instance? InputStream body)
+      (d/chain' (d/future (bs/to-byte-array body))
+                (fn [body]
+                  (error-status-deferred
+                   (assoc rsp :body (ByteArrayInputStream. body)))))
 
-          :else
-          (d/chain'
-            (s/reduce conj [] body)
-            (fn [body]
-              (d/error-deferred
-                (ex-info
-                  (str "status: " status)
-                  (assoc rsp :body (s/->source body)))))))))))
+      (nil? body)
+      (error-status-deferred rsp)
+
+      :else
+      (d/chain'
+       (s/reduce conj [] body)
+       (fn [body]
+         (error-status-deferred
+          (assoc rsp :body (s/->source body))))))))
 
 (defn wrap-method
   "Middleware converting the :method option into the :request-method option"
@@ -965,7 +969,6 @@
   by default"
   [client]
   (let [client' (-> client
-                    wrap-exceptions
                     wrap-request-timing)]
     (fn [req]
       (let [executor (ex/executor)]
