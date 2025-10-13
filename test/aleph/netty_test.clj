@@ -2,7 +2,7 @@
   (:require
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
-   [clojure.test :refer [deftest is]]
+   [clojure.test :refer [deftest is testing]]
    [manifold.stream :as s])
   (:import
    (io.netty.channel Channel ChannelConfig)
@@ -53,5 +53,16 @@
     (is (-> config .isAutoRead))
     (netty/put! channel s 6)
     (is (not (-> config .isAutoRead)))))
+
+(deftest sliced-bytebuf-conversion
+  (let [s "foObar"
+        bbuf (netty/to-byte-buf s)
+        sbuf (.slice bbuf 2 3)
+        bary (netty/buf->array bbuf)
+        sary (netty/buf->array sbuf)]
+    (testing "Vanilla ByteBuf conversion"
+      (is (= s (String. ^bytes bary))))
+    (testing "Sliced ByteBuf conversion"
+      (is (= (subs s 2 5) (String. ^bytes sary))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
