@@ -212,7 +212,8 @@
   (if (.hasArray buf)
     (-> buf
         (.array)
-        (java.util.Arrays/copyOfRange (.readerIndex buf) (.writerIndex buf)))
+        (java.util.Arrays/copyOfRange (+ (.readerIndex buf) (.arrayOffset buf))
+                                      (+ (.writerIndex buf) (.arrayOffset buf))))
     (let [dst (ByteBuffer/allocate (.readableBytes buf))]
       (doary [^ByteBuffer buf (.nioBuffers buf)]
              (.put dst buf))
