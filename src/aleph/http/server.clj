@@ -748,7 +748,8 @@
            transport
            continue-executor
            shutdown-timeout
-           bootstrap-transform]
+           bootstrap-transform
+           thread-pool-name]
     :or   {bootstrap-transform             identity
            shutdown-executor?              true
            epoll?                          false
@@ -801,7 +802,8 @@
                                             (not= continue-executor executor))
                                    (.shutdown ^ExecutorService continue-executor))))
        :transport           (netty/determine-transport transport epoll?)
-       :shutdown-timeout    shutdown-timeout})))
+       :shutdown-timeout    shutdown-timeout
+       :thread-pool-name    thread-pool-name})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; backwards compatibility

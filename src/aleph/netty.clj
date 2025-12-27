@@ -1318,12 +1318,26 @@
     :io-uring io-uring-client-group
     :nio nio-client-group))
 
+
 (defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
   (case transport
     :epoll (EpollEventLoopGroup. num-threads thread-factory)
     :kqueue (KQueueEventLoopGroup. num-threads thread-factory)
     :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
     :nio (NioEventLoopGroup. num-threads thread-factory)))
+
+(def ^:no-doc ^:private client-group-cache (atom {}))
+
+(defn ^:no-doc get-client-group [transport name]
+  (if-not name
+    @(transport-client-group transport)
+    (let [key [transport name]]
+      (or (get @client-group-cache key)
+          (locking client-group-cache
+            (or (get @client-group-cache key)
+                (let [group (transport-event-loop-group transport (get-default-event-loop-threads) (enumerating-thread-factory name true))]
+                  (swap! client-group-cache assoc key group)
+                  group)))))))
 
 (defn ^:no-doc transport-server-channel-class [transport]
   (case transport
@@ -1590,7 +1604,7 @@
   (let [^Class chan-class (transport-channel-class transport)
         initializer (pipeline-initializer pipeline-builder)]
     (try
-      (let [client-event-loop-group @(transport-client-group transport)
+      (let [client-event-loop-group (get-client-group transport (:thread-pool-name opts))
             resolver' (when (some? name-resolver)
                         (cond
                           (= :default name-resolver) nil
@@ -1722,14 +1736,16 @@
             ^SocketAddress socket-address
             listen-socket
             transport
-            shutdown-timeout]
-     :or   {shutdown-timeout default-shutdown-timeout}
+            shutdown-timeout
+            thread-pool-name]
+     :or   {shutdown-timeout default-shutdown-timeout
+            thread-pool-name "aleph-server-pool"}
      :as   opts}]
    (ensure-transport-available! transport)
    (validate-listen-socket listen-socket transport)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
-         thread-factory (enumerating-thread-factory "aleph-server-pool" false)
+         thread-factory (enumerating-thread-factory thread-pool-name false)
          closed? (atom false)
          chan-group (make-channel-group)                    ; a ChannelGroup for all active server Channels
 

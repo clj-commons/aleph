@@ -754,7 +754,8 @@
            log-activity
            force-h2c?
            on-closed
-           connect-timeout]
+           connect-timeout
+           thread-pool-name]
     :or   {raw-stream?          false
            bootstrap-transform  identity
            pipeline-transform   identity
@@ -797,6 +798,7 @@
 
         ch-d (netty/create-client-chan
               {:pipeline-builder    pipeline-builder
+               :thread-pool-name    thread-pool-name
                :bootstrap-transform bootstrap-transform
                :remote-address      remote-address
                :local-address       local-address
