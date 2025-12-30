@@ -8,7 +8,8 @@
     [clj-commons.byte-streams :as bs]
     [clojure.test :refer [deftest is]]
     [manifold.deferred :as d]
-    [manifold.stream :as s])
+    [manifold.stream :as s]
+    [manifold.test :as mt])
   (:import
     (java.security.cert X509Certificate)
     (java.util.concurrent TimeoutException)
@@ -149,3 +150,4 @@
         (is (deref c 1000 false))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
+(mt/instrument-tests-with-dropped-error-detection!)

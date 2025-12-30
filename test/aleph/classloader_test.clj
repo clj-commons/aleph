@@ -4,6 +4,7 @@
    [aleph.netty :as netty]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
+   [manifold.test :as mt]
    [manifold.utils :refer [when-class]]
    [signal.handler :refer [on-signal]])
   (:import
@@ -48,3 +49,5 @@
                      (fn [_] (.close ^java.io.Closeable server)))
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))
           (is (= (deref result 10000 ::timeout) true)))))))
+
+(mt/instrument-tests-with-dropped-error-detection!)

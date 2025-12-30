@@ -9,7 +9,8 @@
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
-   [manifold.stream :as s]))
+   [manifold.stream :as s]
+   [manifold.test :as mt]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -108,3 +109,4 @@
                  "401 Unauthorized")))
 
 (aleph.resource-leak-detector/instrument-tests!)
+(mt/instrument-tests-with-dropped-error-detection!)
