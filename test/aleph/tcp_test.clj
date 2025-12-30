@@ -6,7 +6,8 @@
    [aleph.testutils :refer [bound-channel]]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is]]
-   [manifold.stream :as s]))
+   [manifold.stream :as s]
+   [manifold.test :as mt]))
 
 (defn echo-handler [s _]
   (s/connect s s))
@@ -66,3 +67,4 @@
             (is (= "foo" (bs/to-string @(s/take! c))))))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
+(mt/instrument-tests-with-dropped-error-detection!)

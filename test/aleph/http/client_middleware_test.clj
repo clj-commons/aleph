@@ -4,7 +4,8 @@
    [aleph.http.schema :as schema]
    [clojure.test :as t :refer [deftest is testing]]
    [malli.core :as m]
-   [malli.generator :as mg])
+   [malli.generator :as mg]
+   [manifold.test :as mt])
   (:import
    (java.net URLDecoder)))
 
@@ -203,3 +204,5 @@
         #"Invalid spec.*:in \[:content-type\].*:value 10"
         (middleware/wrap-validation {:request-method :post
                                      :content-type 10}))))
+
+(mt/instrument-tests-with-dropped-error-detection!)

@@ -3,7 +3,8 @@
             [aleph.resource-leak-detector]
             [clj-commons.byte-streams :as bs]
             [clojure.test :refer [deftest testing is]]
-            [manifold.stream :as s])
+            [manifold.stream :as s]
+            [manifold.test :as mt])
   (:import java.lang.AutoCloseable))
 
 (def ^:private default-options
@@ -97,3 +98,4 @@
           (.close ^AutoCloseable server))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
+(mt/instrument-tests-with-dropped-error-detection!)

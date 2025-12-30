@@ -10,7 +10,8 @@
    [clojure.tools.logging :as log]
    [manifold.deferred :as d]
    [manifold.stream :as s]
-   [manifold.time :as time]))
+   [manifold.time :as time]
+   [manifold.test :as mt]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -326,3 +327,4 @@
            (is (not (netty/io-uring-available?)))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
+(mt/instrument-tests-with-dropped-error-detection!)

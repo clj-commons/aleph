@@ -9,7 +9,8 @@
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
-   [manifold.stream :as s])
+   [manifold.stream :as s]
+   [manifold.test :as mt])
   (:import
    (io.netty.buffer ByteBufAllocator)
    (io.netty.handler.codec.http HttpContent)
@@ -339,3 +340,5 @@
       (test-decoder port2 url2 (make-decode-manual-handler {:raw-stream? true
                                                             :memory-limit 0
                                                             :manual-cleanup? true})))))
+
+(mt/instrument-tests-with-dropped-error-detection!)
