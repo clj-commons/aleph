@@ -590,17 +590,25 @@
     (repeatedly #(rand-nth charset))))
 
 (deftest test-bulk-requests
-  (let [pool (http/connection-pool {})]
+  (let [pool (http/connection-pool {:connection-options
+                                    {:insecure? true
+                                     :http-versions [:http2 :http1]}})]
     (with-handler basic-handler
-      (->> (range 1e2)
-           (map (fn [_] (http-get "/string") {:pool pool}))
-           (apply d/zip)
-           deref)
+      (is (= #{200}
+             (->> (range 1e2)
+                  (map (fn [_] (http-get "/string" {:pool pool})))
+                  (apply d/zip)
+                  deref
+                  (map :status)
+                  set)))
       (dotimes [_ 10]
-        (->> (range 10)
-             (map (fn [_] (http-get "/string") {:pool pool}))
-             (apply d/zip)
-             deref)))))
+        (is (= #{200}
+               (->> (range 10)
+                    (map (fn [_] (http-get "/string" {:pool pool})))
+                    (apply d/zip)
+                    deref
+                    (map :status)
+                    set)))))))
 
 (deftest test-overly-long-url
   (let [long-url (apply str "/" (repeat (long 1e5) "a"))]
