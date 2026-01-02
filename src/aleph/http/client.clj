@@ -723,17 +723,19 @@
   [ch-d on-closed]
   (when on-closed
     (log/trace "Attaching chan close handler")
-    (d/chain' ch-d
-              (fn setup-chan-close
-                [^Channel ch]
-                (let [on-closed* (fn [_] (on-closed))
-                      chan-close-d (-> ch (.closeFuture) (netty/wrap-future))]
-                  (d/on-realized chan-close-d on-closed* on-closed*)
+    (d/on-realized ch-d
+                   (fn setup-chan-close
+                     [^Channel ch]
+                     (let [on-closed* (fn [_] (on-closed))
+                           chan-close-d (-> ch (.closeFuture) (netty/wrap-future))]
+                       (d/on-realized chan-close-d on-closed* on-closed*)
 
-                  (when (log/enabled? :trace)
-                    (d/on-realized chan-close-d
-                                   #(log/trace "Channel closed normally." %)
-                                   #(log/trace "Channel closed w/ error." %))))))))
+                       (when (log/enabled? :trace)
+                         (d/on-realized chan-close-d
+                                        #(log/trace "Channel closed normally." %)
+                                        #(log/trace "Channel closed w/ error." %)))))
+                   (fn [e]
+                     (log/debug e "ch-d failed in attach-on-close-handler")))))
 
 (defn http-connection
   "Returns a deferred containing a fn that accepts a Ring request and returns
