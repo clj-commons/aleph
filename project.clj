@@ -64,6 +64,8 @@
                                          ;; These settings empirically make leak detection more reliable
                                          "-Dio.netty.leakDetection.targetRecords=1"
                                          "-Dio.netty.allocator.type=unpooled"]}
+             :dropped-error-deferred-detection {:jvm-opts ["-Dorg.slf4j.simpleLogger.log.manifold.debug=warn"
+                                                           "-Daleph.testutils.detect-dropped-error-deferreds=true"]}
              :pedantic            {:pedantic? :abort}
              :trace               {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}
              :profile             {:dependencies [[com.clojure-goes-fast/clj-async-profiler "1.7.0"]]

@@ -5,11 +5,11 @@
     [aleph.ssl :as ssl]
     [aleph.tcp :as tcp]
     [aleph.tcp-test :refer [with-server]]
+    [aleph.testutils]
     [clj-commons.byte-streams :as bs]
     [clojure.test :refer [deftest is]]
     [manifold.deferred :as d]
-    [manifold.stream :as s]
-    [manifold.test :as mt])
+    [manifold.stream :as s])
   (:import
     (java.security.cert X509Certificate)
     (java.util.concurrent TimeoutException)
@@ -150,4 +150,4 @@
         (is (deref c 1000 false))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

@@ -2,9 +2,9 @@
   (:require
    [aleph.http :as http]
    [aleph.netty :as netty]
+   [aleph.testutils]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
-   [manifold.test :as mt]
    [manifold.utils :refer [when-class]]
    [signal.handler :refer [on-signal]])
   (:import
@@ -50,4 +50,4 @@
           (.exec (Runtime/getRuntime) (format "kill -SIGINT %s" (pid)))
           (is (= (deref result 10000 ::timeout) true)))))))
 
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

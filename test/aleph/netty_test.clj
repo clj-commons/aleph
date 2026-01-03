@@ -2,9 +2,9 @@
   (:require
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
+   [aleph.testutils]
    [clojure.test :refer [deftest is testing]]
-   [manifold.stream :as s]
-   [manifold.test :as mt])
+   [manifold.stream :as s])
   (:import
    (io.netty.channel Channel ChannelConfig)
    (io.netty.channel.embedded EmbeddedChannel)))
@@ -67,4 +67,4 @@
       (is (= (subs s 2 5) (String. ^bytes sary))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

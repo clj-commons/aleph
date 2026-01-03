@@ -3,9 +3,9 @@
    [aleph.http :as http]
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
+   [aleph.testutils]
    [clj-commons.byte-streams :as bs]
-   [clojure.test :refer [deftest is]]
-   [manifold.test :as mt]))
+   [clojure.test :refer [deftest is]]))
 
 (defn create-url
   ([path]
@@ -94,4 +94,4 @@
     (is (= "localhost:8080" (request)))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

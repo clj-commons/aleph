@@ -2,13 +2,13 @@
   (:require
    [aleph.http.client-middleware :as middleware]
    [aleph.http.schema :as schema]
+   [aleph.testutils]
    [clojure.java.io :as io]
    [clojure.test :as t :refer [deftest is testing]]
    [malli.core :as m]
    [malli.generator :as mg]
    [manifold.deferred :as d]
-   [manifold.stream :as s]
-   [manifold.test :as mt])
+   [manifold.stream :as s])
   (:import
    (clojure.lang ExceptionInfo)
    (java.net URLDecoder)))
@@ -251,4 +251,4 @@
                                      {:status 400})]
         (is (= 400 (:status rsp)))))))
 
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

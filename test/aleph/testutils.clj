@@ -1,4 +1,5 @@
 (ns aleph.testutils
+  (:require manifold.test)
   (:import (io.netty.util AsciiString)
            (java.net InetSocketAddress)
            (java.nio.channels ServerSocketChannel)))
@@ -13,3 +14,7 @@
   ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
     (.bind (InetSocketAddress. port))))
+
+(defn instrument-tests-with-dropped-error-deferred-detection! []
+  (when (= "true" (System/getProperty "aleph.testutils.detect-dropped-error-deferreds"))
+    (manifold.test/instrument-tests-with-dropped-error-detection!)))

@@ -15,7 +15,6 @@
     [clojure.test :refer [deftest is testing]]
     [manifold.deferred :as d]
     [manifold.stream :as s]
-    [manifold.test :as mt]
     [manifold.time :as t])
   (:import
     (aleph.utils
@@ -1910,4 +1909,4 @@
         (is (= "String!" (bs/to-string (:body resp))))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)
