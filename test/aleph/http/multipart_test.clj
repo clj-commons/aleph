@@ -4,13 +4,13 @@
    [aleph.http.core :as core]
    [aleph.http.multipart :as mp]
    [aleph.netty :as netty]
+   [aleph.testutils]
    [clj-commons.byte-streams :as bs]
    [clojure.java.io :as io]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
-   [manifold.stream :as s]
-   [manifold.test :as mt])
+   [manifold.stream :as s])
   (:import
    (io.netty.buffer ByteBufAllocator)
    (io.netty.handler.codec.http HttpContent)
@@ -341,4 +341,4 @@
                                                             :memory-limit 0
                                                             :manual-cleanup? true})))))
 
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

@@ -3,10 +3,10 @@
    [aleph.netty :as netty]
    [aleph.udp :as udp]
    [aleph.resource-leak-detector]
+   [aleph.testutils]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest testing is use-fixtures]]
-   [manifold.stream :as s]
-   [manifold.test :as mt])
+   [manifold.stream :as s])
   (:import
    (java.net ServerSocket)))
 
@@ -75,4 +75,4 @@
         (is (not (netty/io-uring-available?)))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

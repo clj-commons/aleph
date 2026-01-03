@@ -1,10 +1,10 @@
 (ns aleph.http-timeout-test
   (:require [aleph.http :as http]
             [aleph.resource-leak-detector]
+            [aleph.testutils]
             [clj-commons.byte-streams :as bs]
             [clojure.test :refer [deftest testing is]]
-            [manifold.stream :as s]
-            [manifold.test :as mt])
+            [manifold.stream :as s])
   (:import java.lang.AutoCloseable))
 
 (def ^:private default-options
@@ -98,4 +98,4 @@
           (.close ^AutoCloseable server))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

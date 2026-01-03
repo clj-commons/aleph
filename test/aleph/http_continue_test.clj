@@ -5,12 +5,12 @@
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
    [aleph.tcp :as tcp]
+   [aleph.testutils]
    [clj-commons.byte-streams :as bs]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [manifold.deferred :as d]
-   [manifold.stream :as s]
-   [manifold.test :as mt]))
+   [manifold.stream :as s]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -109,4 +109,4 @@
                  "401 Unauthorized")))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

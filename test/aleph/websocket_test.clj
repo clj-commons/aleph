@@ -5,13 +5,13 @@
    [aleph.http.websocket.server :as ws.server]
    [aleph.netty :as netty]
    [aleph.resource-leak-detector]
+   [aleph.testutils]
    [clj-commons.byte-streams :as bs]
    [clojure.test :refer [deftest is testing]]
    [clojure.tools.logging :as log]
    [manifold.deferred :as d]
    [manifold.stream :as s]
-   [manifold.time :as time]
-   [manifold.test :as mt]))
+   [manifold.time :as time]))
 
 (defmacro with-server [server & body]
   `(let [server# ~server]
@@ -327,4 +327,4 @@
            (is (not (netty/io-uring-available?)))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
-(mt/instrument-tests-with-dropped-error-detection!)
+(aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)
