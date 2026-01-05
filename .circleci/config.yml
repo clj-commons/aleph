@@ -2,53 +2,83 @@
 #
 # Check https://circleci.com/docs/2.0/language-clojure/ for more details
 #
-version: 2
-jobs:
-  build:
-    docker:
-      # specify the version you desire here
-      - image: cimg/clojure:1.11.1-openjdk-8.0
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # - image: circleci/postgres:9.4
+version: 2.1
+.job_defaults: &job_defaults
+  docker:
+    # specify the version you desire here
+    - image: cimg/clojure:1.11.1-openjdk-8.0
+    # Specify service dependencies here if necessary
+    # CircleCI maintains a library of pre-built images
+    # documented at https://circleci.com/docs/2.0/circleci-images/
+    # - image: circleci/postgres:9.4
 
-    working_directory: ~/repo
+  working_directory: ~/repo
 
-    environment:
-      LEIN_ROOT: "true"
-      # Customize the JVM maximum heap limit
-      JVM_OPTS: -Xmx3200m
+  environment:
+    LEIN_ROOT: "true"
+    # Customize the JVM maximum heap limit
+    JVM_OPTS: -Xmx3200m
 
+  # The resource_class feature allows configuring CPU and RAM resources for each job. Different resource classes are available for different executors. https://circleci.com/docs/2.0/configuration-reference/#resourceclass
+  resource_class: large
+  
+commands:
+  restore_deps_cache:
     steps:
-      - checkout
-      # Download and cache dependencies
       - restore_cache:
           keys:
-            - v1-dependencies-{{ checksum "project.clj" }}
+            - v2-dependencies-{{ checksum "project.clj" }}
             # fallback to using the latest cache if no exact match is found
-            - v1-dependencies-
+            - v2-dependencies-
 
+jobs:
+  prepare_deps_cache:
+    <<: *job_defaults
+    steps:
+      - checkout
+      - restore_deps_cache
       - run:
           name: Install bb
           command: |
             sudo bash < <(curl -s https://raw.githubusercontent.com/babashka/babashka/3d916df4a0c1e00df94100860b8eb5577e59c56a/install)
 
-      - run: lein with-profile pedantic deps
+      - run: 
+          name: Download and cache dependencies
+          command: lein with-profile pedantic,dev,test deps
+
+      - run:
+          name: Ensure deps.edn is in sync with project.clj
+          command: deps/ensure-deps-up-to-date
 
       - save_cache:
           paths:
             - ~/.m2
-          key: v1-dependencies-{{ checksum "project.clj" }}
+          key: v2-dependencies-{{ checksum "project.clj" }}
 
-      - run: deps/ensure-deps-up-to-date
-
+  test_with_leak_detection:
+    <<: *job_defaults
+    steps:
+      - checkout
+      - restore_deps_cache
       - run:
           name: Run tests with leak detection
           command: lein do clean, with-profile +leak-detection test :default+leak
+  test_with_dropped_error_deferred_detection:
+    <<: *job_defaults
+    steps:
+      - checkout
+      - restore_deps_cache
       - run:
           name: Run tests with dropped error deferred detection
-          no_output_timeout: 20m
           command: lein do clean, with-profile +dropped-error-deferred-detection test
-    # The resource_class feature allows configuring CPU and RAM resources for each job. Different resource classes are available for different executors. https://circleci.com/docs/2.0/configuration-reference/#resourceclass
-    resource_class: large
+          no_output_timeout: 20m
+workflows:
+  test:
+    jobs:
+      - prepare_deps_cache
+      - test_with_leak_detection:
+          requires:
+            - prepare_deps_cache
+      - test_with_dropped_error_deferred_detection:
+          requires:
+            - prepare_deps_cache
