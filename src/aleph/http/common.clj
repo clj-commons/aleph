@@ -238,7 +238,7 @@
   (.isFailure ^DecoderResult (.decoderResult msg)))
 
 
-(defn ^Throwable decoder-failure [^DecoderResultProvider msg]
+(defn decoder-failure ^Throwable [^DecoderResultProvider msg]
   (.cause ^DecoderResult (.decoderResult msg)))
 
 (defn invalid-value-exception
