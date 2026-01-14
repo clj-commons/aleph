@@ -757,6 +757,22 @@
          (let [rsp (http-get "/" {:connection-pool pool})]
            (is (= http/default-response-executor (.executor rsp))))))))
 
+(deftest test-connection-pool-response-executor
+  (let [pool-executor (java.util.concurrent.Executors/newFixedThreadPool 1)
+        pool (http/connection-pool
+               {:connection-options
+                {:response-executor pool-executor
+                 :insecure? true}})]
+    (try
+      (with-both-handlers basic-handler
+        (let [rsp (http-get "/string" {:pool pool})]
+          ;; Verify that the response deferred uses the custom pool executor
+          (is (= pool-executor (.executor rsp))
+              "Response deferred should use the connection pool's response-executor")))
+      (finally
+        (.shutdown pool-executor)
+        (.shutdown pool)))))
+
 (deftest test-trace-request-omitted-body
   (with-handler echo-handler
     (is (= "" (-> @(http-trace "/" {:body "REQUEST"})
