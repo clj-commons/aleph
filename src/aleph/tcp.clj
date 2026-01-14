@@ -23,8 +23,8 @@
 
 (alter-meta! #'->TcpConnection assoc :private true)
 
-(defn- ^ChannelHandler server-channel-handler
-  [handler {:keys [raw-stream?] :as options}]
+(defn- server-channel-handler
+  ^ChannelHandler [handler {:keys [raw-stream?] :as options}]
   (let [in (atom nil)]
     (netty/channel-inbound-handler
 

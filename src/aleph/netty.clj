@@ -270,9 +270,9 @@
       (.writeBytes buf (bs/to-byte-buffer x))))
 
   ;; TODO: switch to pooled buffers (http://normanmaurer.me/presentations/2014-twitter-meetup-netty/slides.html#12.0)
-  (defn ^ByteBuf to-byte-buf
+  (defn to-byte-buf
     "Converts `x` into a `io.netty.buffer.ByteBuf`."
-    ([x]
+    (^ByteBuf [x]
      (cond
        (nil? x)
        Unpooled/EMPTY_BUFFER
@@ -295,7 +295,7 @@
 
        :else
        (bs/convert x ByteBuf)))
-    ([ch x]
+    (^ByteBuf [ch x]
      ;; todo(kachayev): do we really need to reallocate in case
      ;;                 we already have an instance of ByteBuf here?
      (if (nil? x)
@@ -388,10 +388,10 @@
     x
     (.channel ^ChannelHandlerContext x)))
 
-(defn ^:no-doc ^ChannelGroup make-channel-group
+(defn ^:no-doc make-channel-group
   "Create a channel group which can be used to perform channel operations on
    several channels at once."
-  []
+  ^ChannelGroup []
   (DefaultChannelGroup. GlobalEventExecutor/INSTANCE))
 
 (defmacro ^:no-doc safe-execute
@@ -760,7 +760,7 @@
                (.flush ctx#))))))
 
 
-(defn ^:no-doc ^ChannelHandler bandwidth-tracker [^Channel ch]
+(defn ^:no-doc bandwidth-tracker ^ChannelHandler [^Channel ch]
   (let [inbound-counter (AtomicLong. 0)
         outbound-counter (AtomicLong. 0)
         inbound-throughput (AtomicLong. 0)
