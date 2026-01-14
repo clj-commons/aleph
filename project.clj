@@ -1,15 +1,15 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
-(def netty-version "4.1.127.Final")
-(def brotli-version "1.18.0")
+(def netty-version "4.1.130.Final")
+(def brotli-version "1.20.0")
 
 
 (defproject aleph (or (System/getenv "PROJECT_VERSION") "0.9.3")
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/clojure "1.12.2"]
-                 [org.clojure/tools.logging "1.3.0" :exclusions [org.clojure/clojure]]
-                 [manifold "0.4.3" :exclusions [org.clojure/tools.logging]]
+  :dependencies [[org.clojure/clojure "1.12.4"]
+                 [org.clojure/tools.logging "1.3.1" :exclusions [org.clojure/clojure]]
+                 [manifold "0.5.0" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.4"]
                  [org.clj-commons/dirigiste "1.0.4"]
                  [org.clj-commons/primitive-math "1.0.1"]
@@ -27,17 +27,17 @@
                  [io.netty/netty-handler-proxy ~netty-version]
                  [io.netty/netty-resolver ~netty-version]
                  [io.netty/netty-resolver-dns ~netty-version]
-                 [metosin/malli "0.19.1" :exclusions [org.clojure/clojure]]]
+                 [metosin/malli "0.20.0" :exclusions [org.clojure/clojure]]]
   :profiles {:dev                 {:dependencies [[criterium "0.4.6"]
                                                   [cheshire "6.1.0"]
                                                   [org.slf4j/slf4j-simple "2.0.17"]
                                                   [com.cognitect/transit-clj "1.0.333"]
                                                   [spootnik/signal "0.2.5"]
                                                   ;; This is for dev and testing ONLY, not recommended for prod
-                                                  [org.bouncycastle/bcprov-jdk18on "1.81"]
-                                                  [org.bouncycastle/bcpkix-jdk18on "1.81" :exclusions [org.bouncycastle/bcutil-jdk18on]]
+                                                  [org.bouncycastle/bcprov-jdk18on "1.83"]
+                                                  [org.bouncycastle/bcpkix-jdk18on "1.83" :exclusions [org.bouncycastle/bcutil-jdk18on]]
                                                   ;;[org.bouncycastle/bctls-jdk18on "1.75"]
-                                                  [io.netty/netty-tcnative-boringssl-static "2.0.73.Final"]
+                                                  [io.netty/netty-tcnative-boringssl-static "2.0.74.Final"]
                                                   ;;[com.aayushatharva.brotli4j/all ~brotli-version]
                                                   [com.aayushatharva.brotli4j/brotli4j ~brotli-version]
                                                   [com.aayushatharva.brotli4j/service ~brotli-version]
@@ -47,7 +47,7 @@
                                                   [com.aayushatharva.brotli4j/native-osx-aarch64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-osx-x86_64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-windows-x86_64 ~brotli-version]
-                                                  [com.github.luben/zstd-jni "1.5.7-4"]]
+                                                  [com.github.luben/zstd-jni "1.5.7-6"]]
                                    :jvm-opts     ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                                   "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                                   "-Dorg.slf4j.simpleLogger.showThreadId=true"
@@ -66,7 +66,7 @@
                                          "-Dio.netty.allocator.type=unpooled"]}
              :pedantic            {:pedantic? :abort}
              :trace               {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}
-             :profile             {:dependencies [[com.clojure-goes-fast/clj-async-profiler "1.6.2"]]
+             :profile             {:dependencies [[com.clojure-goes-fast/clj-async-profiler "1.7.0"]]
                                    :jvm-opts     ["-Djdk.attach.allowAttachSelf"]}}
   :java-source-paths ["src-java"]
   :test-selectors {:default   #(not
