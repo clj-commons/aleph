@@ -1,3 +1,12 @@
+### 0.9.4
+
+* Bump Netty to 4.1.130.Final (fixes CVE-2025-67735) and update other dependencies (#776)
+* Fix `buf->array` for `SlicedByteBuf` (#768)
+
+Contributions by (in alphabetical order):
+
+Christian Nautze and David Ongaro.
+
 ### 0.9.3
 
 * Bump Netty to 4.1.127.Final (follow-up fix for BouncyCastle)
