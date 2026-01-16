@@ -484,11 +484,12 @@
                                                           (dissoc :aleph/destroy-conn?)
                                                           (assoc :connection-time (- end start)))))))))
 
-                                         (fn handle-response [rsp]
-                                           (->> rsp
-                                                (middleware/handle-cookies req)
-                                                (middleware/handle-redirects request req)
-                                                (middleware/handle-error-status req))))))))))))
+                                         (fn handle-cookies [rsp]
+                                           (middleware/handle-cookies req rsp))
+                                         (fn handle-redirects [rsp]
+                                           (middleware/handle-redirects request req rsp))
+                                         (fn handle-error-status [rsp]
+                                           (middleware/handle-error-status req rsp)))))))))))
                       req))]
       (d/connect response result)
       (-> result
