@@ -79,9 +79,9 @@ workflows:
       - test_with_leak_detection:
           requires:
             - prepare_deps_cache
+      - hold_test_with_dropped_error_deferred_detection:
+          type: approval
       - test_with_dropped_error_deferred_detection:
           requires:
-            # Not an actual dependency, only to force sequential execution to reduce probability of https://github.com/clj-commons/aleph/issues/772
-            # Also, since test_with_leak_detection is a bit faster, this allows us to fail the pipeline earlier.
-            - test_with_leak_detection
+            - hold_test_with_dropped_error_deferred_detection
             - prepare_deps_cache
