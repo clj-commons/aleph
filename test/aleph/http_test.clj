@@ -670,7 +670,24 @@
                                     {:method            :get
                                      :url               (make-url "/301")
                                      :follow-redirects? true
-                                     :pool              *pool*}))))))))
+                                     :pool              *pool*})))))))
+
+
+  (testing "with throw-exceptions"
+    (with-handler
+        (fn [{:keys [uri]}]
+          (case uri
+            "/redirect" {:status  301
+                         :headers {"Location" "/error"}}
+            "/error" {:status 401}))
+        (try
+          (-> (http-get "/redirect" {:throw-exceptions? true})
+              (d/timeout! 1e3)
+              deref)
+          (is (= false true) "should have thrown an exception")
+          (catch Exception e
+            (is (instance? clojure.lang.ExceptionInfo e))
+            (is (= 401 (:status (ex-data e)))))))))
 
 (deftest test-middleware
   (with-both-handlers basic-handler
