@@ -73,7 +73,7 @@ jobs:
           command: lein do clean, with-profile +dropped-error-deferred-detection test
           no_output_timeout: 20m
 workflows:
-  test:
+  commit:
     jobs:
       - prepare_deps_cache
       - test_with_leak_detection:
@@ -84,4 +84,17 @@ workflows:
       - test_with_dropped_error_deferred_detection:
           requires:
             - hold_test_with_dropped_error_deferred_detection
+            - prepare_deps_cache
+  weekly:
+    triggers:
+      - schedule:
+          cron: "0 0 * * 0"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+      - prepare_deps_cache
+      - test_with_dropped_error_deferred_detection:
+          requires:
             - prepare_deps_cache
