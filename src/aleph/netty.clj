@@ -1268,11 +1268,17 @@
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
-(defn ^:no-doc enumerating-thread-factory
-  "Sets the ThreadFactory used by Netty EventLoopGroups.
+(defn enumerating-thread-factory
+  "Creates a ThreadFactory that names threads with a sequential suffix.
 
-   Sets the ClassLoader to the Clojure DynamicClassLoader for any clj
-   code that could be loaded by Netty."
+   Example: (enumerating-thread-factory \"my-pool\" true)
+   Creates threads named: my-pool-1, my-pool-2, etc.
+
+   Parameters:
+   - prefix: the prefix for thread names
+   - daemon?: if true, creates daemon threads
+
+   Also sets the ClassLoader to the Clojure DynamicClassLoader."
   ^ThreadFactory
   [prefix daemon?]
   (let [num-threads (atom 0)]
@@ -1326,18 +1332,7 @@
     :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
     :nio (NioEventLoopGroup. num-threads thread-factory)))
 
-(def ^:no-doc ^:private client-group-cache (atom {}))
 
-(defn ^:no-doc get-client-group [transport name]
-  (if-not name
-    @(transport-client-group transport)
-    (let [key [transport name]]
-      (or (get @client-group-cache key)
-          (locking client-group-cache
-            (or (get @client-group-cache key)
-                (let [group (transport-event-loop-group transport (get-default-event-loop-threads) (enumerating-thread-factory name true))]
-                  (swap! client-group-cache assoc key group)
-                  group)))))))
 
 (defn ^:no-doc transport-server-channel-class [transport]
   (case transport
@@ -1604,7 +1599,8 @@
   (let [^Class chan-class (transport-channel-class transport)
         initializer (pipeline-initializer pipeline-builder)]
     (try
-      (let [client-event-loop-group (get-client-group transport (:thread-pool-name opts))
+      (let [client-event-loop-group (or (:event-loop-group opts)
+                                        @(transport-client-group transport))
             resolver' (when (some? name-resolver)
                         (cond
                           (= :default name-resolver) nil
@@ -1737,15 +1733,15 @@
             listen-socket
             transport
             shutdown-timeout
-            thread-pool-name]
-     :or   {shutdown-timeout default-shutdown-timeout
-            thread-pool-name "aleph-server-pool"}
+            thread-factory]
+     :or   {shutdown-timeout default-shutdown-timeout}
      :as   opts}]
    (ensure-transport-available! transport)
    (validate-listen-socket listen-socket transport)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
-         thread-factory (enumerating-thread-factory thread-pool-name false)
+         thread-factory (or thread-factory
+                            (enumerating-thread-factory "aleph-server-pool" false))
          closed? (atom false)
          chan-group (make-channel-group)                    ; a ChannelGroup for all active server Channels
 
