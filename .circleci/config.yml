@@ -72,10 +72,68 @@ jobs:
           name: Run tests with dropped error deferred detection
           command: lein do clean, with-profile +dropped-error-deferred-detection test
           no_output_timeout: 20m
+  patch_hold_test_with_dropped_error_deferred_detection_status:
+    <<: *job_defaults
+    steps:
+      - run:
+          name: Patch status of hold_test_with_dropped_error_deferred_detection job to work around https://circleci.canny.io/cloud-feature-requests/p/show-overall-all-checks-have-passed-status-in-github-even-on-builds-with-incompl
+          command: |
+            #!/bin/bash
+
+            # Adapted from https://federicoterzi.com/blog/solving-github-status-stuck-on-pending-with-circlecis-approvals/
+
+            set -e
+
+            CIRCLECI_JOB_NAME="commit/hold_test_with_dropped_error_deferred_detection"
+            REPO_NAME="aleph"
+            REPO_OWNER="clj-commons"
+
+            echo "Patching approval job named: ${CIRCLECI_JOB_NAME}"
+
+            for i in {1..10}
+            do
+              echo "waiting for status to appear..."
+
+              sleep 10
+
+              curl --request GET \
+                --fail \
+                --url "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/statuses/${CIRCLE_SHA1}" \
+                --header 'Accept: application/vnd.github.v3+json' \
+                --header "Authorization: Bearer ${GITHUB_ACCESS_TOKEN}" > commit-statuses.json
+
+              cat commit-statuses.json | jq -r '.[].context' > commit-statuses.txt
+
+              if grep -q "ci/circleci: ${CIRCLECI_JOB_NAME}" "commit-statuses.txt"; then
+                echo "status appeared, patching the pending state"
+                URL=$(cat commit-statuses.json | jq -r --arg name "$CIRCLECI_JOB_NAME" -c 'map(select(.context | contains($name))) | .[].target_url' | head -1)
+
+                curl --request POST \
+                  --fail \
+                  --url "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/statuses/${CIRCLE_SHA1}" \
+                  --header 'Accept: application/vnd.github.v3+json' \
+                  --header "Authorization: Bearer $GITHUB_ACCESS_TOKEN" \
+                  --header 'Content-Type: application/json' \
+                  --data '{
+                    "state": "success",
+                    "target_url": "'"$URL"'",
+                    "description": "Patched pending state, please visit circleCI to start the approval.",
+                    "context": "ci/circleci: '"$CIRCLECI_JOB_NAME"'"
+                  }'
+
+                exit 0
+              fi
+            done
+
+            echo "Could not patch CircleCI approval job status, timed out"
+            exit 1
+
+
 workflows:
   commit:
     jobs:
       - prepare_deps_cache
+      - patch_hold_test_with_dropped_error_deferred_detection_status
       - test_with_leak_detection:
           requires:
             - prepare_deps_cache
