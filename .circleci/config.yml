@@ -133,12 +133,16 @@ workflows:
   commit:
     jobs:
       - prepare_deps_cache
-      - patch_hold_test_with_dropped_error_deferred_detection_status
       - test_with_leak_detection:
           requires:
             - prepare_deps_cache
       - hold_test_with_dropped_error_deferred_detection:
           type: approval
+          requires:
+            - test_with_leak_detection
+      - patch_hold_test_with_dropped_error_deferred_detection_status:
+          requires:
+            - test_with_leak_detection
       - test_with_dropped_error_deferred_detection:
           requires:
             - hold_test_with_dropped_error_deferred_detection
