@@ -411,8 +411,7 @@
              connection-timeout aleph.netty/default-connect-timeout}
       :as   req}]
     (let [response-executor' (or response-executor
-                                 (when (instance? ConnectionPool pool)
-                                   (:response-executor pool))
+                                 (:response-executor pool)
                                  default-response-executor)
           dispose-conn! (atom (fn []))
           result (d/deferred response-executor')
