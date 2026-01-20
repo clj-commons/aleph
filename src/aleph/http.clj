@@ -71,7 +71,8 @@
    | `continue-executor`               | Optional `java.util.concurrent.Executor` which is used to handle requests passed to :continue-handler. To avoid this indirection you may specify `:none`, but in this case extreme care must be taken to avoid blocking operations on the handler's thread. |
    | `shutdown-timeout`                | Interval in seconds within which in-flight requests must be processed, defaults to 15 seconds. A value of `0` bypasses waiting entirely. |
    | `initial-pipeline-transform`      | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents the connection before any default handlers are installed (and thus, before HTTP version negotiation), and modifies it. |
-   | `thread-factory`                | A `java.util.concurrent.ThreadFactory` for creating Netty EventLoopGroup threads. Use `aleph.netty/enumerating-thread-factory` for simple name customization. Defaults to creating threads named `aleph-server-pool-N`. |
+   | `initial-pipeline-transform`      | A function that takes an `io.netty.channel.ChannelPipeline` object, which represents the connection before any default handlers are installed (and thus, before HTTP version negotiation), and modifies it. |
+   | `event-loop-group`              | An optional `io.netty.channel.EventLoopGroup` to use for the server's threads. Create one using `aleph.netty/transport-event-loop-group`. If provided, this overrides the internally created thread pool. |
 
    HTTP/1-specific options
    | Param key                         | Description |

@@ -749,7 +749,7 @@
            continue-executor
            shutdown-timeout
            bootstrap-transform
-           thread-factory]
+           event-loop-group]
     :or   {bootstrap-transform             identity
            shutdown-executor?              true
            epoll?                          false
@@ -803,7 +803,7 @@
                                    (.shutdown ^ExecutorService continue-executor))))
        :transport           (netty/determine-transport transport epoll?)
        :shutdown-timeout    shutdown-timeout
-       :thread-factory      (:thread-factory opts)})))
+       :event-loop-group    event-loop-group})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; backwards compatibility
