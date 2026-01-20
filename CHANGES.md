@@ -1,3 +1,11 @@
+### 0.9.5
+
+* Fix NPE in `wrap-exceptions` HTTP client middleware (#766, #767)
+
+Contributions by (in alphabetical order):
+
+Dave Roberts, Kevin Downey, and Moritz Heidkamp.
+
 ### 0.9.4
 
 * Bump Netty to 4.1.130.Final (fixes CVE-2025-67735) and update other dependencies (#776)
