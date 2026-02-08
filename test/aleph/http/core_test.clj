@@ -12,8 +12,12 @@
                                    :headers {"Accept"                "text/html"
                                              "Authorization"         "Basic narfdorfle"
                                              :Content                "text/test"}})
+                                            "Content-type"           "application/json"
+                                            "content-type"           "application/json"
         m (core/headers->map (.headers req))
         changed-map (-> m
                         (assoc "x-tra" "foobar")
                         (dissoc "authorization" "content"))]
+    (is (= "application/json" (-> req .headers (.get "Content-Type")))
+        "normalize will not allow duplicates for singleton keys, we get a single value out")
     (is (= #{"accept" "x-tra"} (-> changed-map keys set)))))

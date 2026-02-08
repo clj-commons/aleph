@@ -157,6 +157,10 @@
   [^HttpHeaders h]
   (HeaderMap. h nil nil nil))
 
+(def singleton-header-names
+  #{"Content-Type" "Content-Length" "Content-Location" "Content-Range"
+    "Location" "ETag" "Last-Modified" "Expires" "Age" "Retry-After"
+    "Transfer-Encoding" "Content-Encoding" "Server" "Date"})
 (defn map->headers!
   "Despite the name, this doesn't convert; it adds headers from the Ring :headers
    map to the Netty HttpHeaders param."
@@ -170,10 +174,14 @@
         (throw (IllegalArgumentException. (str "nil value for header key '" k "'")))
 
         (sequential? v)
-        (.add h ^CharSequence k ^Iterable v)
+        (if (contains? singleton-header-names k)
+          (.set h ^CharSequence k ^Iterable v)
+          (.add h ^CharSequence k ^Iterable v))
 
         :else
-        (.add h ^CharSequence k ^Object v)))))
+        (if (contains? singleton-header-names k)
+          (.set h ^CharSequence k ^Object v)
+          (.add h ^CharSequence k ^Object v))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HTTP/1.1 request/response handling
