@@ -52,12 +52,7 @@
                                                   [com.aayushatharva.brotli4j/native-osx-x86_64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-windows-x86_64 ~brotli-version]
                                                   [com.github.luben/zstd-jni "1.5.7-6"]]
-                                   :jvm-opts     ["-Dio.netty.allocator.type=pooled"
-                                                  ;; Netty 4.2 changed the default allocator from pooled to adaptive.
-                                                  ;; Pinned to pooled during stabilization to isolate transport-layer
-                                                  ;; changes from allocator-layer changes. Remove after CI is green
-                                                  ;; on all platforms to adopt the new adaptive allocator.
-                                                  "-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
+                                   :jvm-opts     ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                                   "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                                   "-Dorg.slf4j.simpleLogger.showThreadId=true"
                                                   "-Dorg.slf4j.simpleLogger.showLogName=false"
