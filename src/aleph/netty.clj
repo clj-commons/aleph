@@ -32,11 +32,12 @@
       ChannelOutboundInvoker
       ChannelPipeline
       EventLoopGroup
-      FileRegion)
+      FileRegion
+      MultiThreadIoEventLoopGroup)
     (io.netty.channel.epoll
       Epoll
       EpollDatagramChannel
-      EpollEventLoopGroup
+      EpollIoHandler
       EpollServerSocketChannel
       EpollSocketChannel)
     (io.netty.channel.group
@@ -45,10 +46,10 @@
     (io.netty.channel.kqueue
       KQueue
       KQueueDatagramChannel
-      KQueueEventLoopGroup
+      KQueueIoHandler
       KQueueServerSocketChannel
       KQueueSocketChannel)
-    (io.netty.channel.nio NioEventLoopGroup)
+    (io.netty.channel.nio NioIoHandler)
     (io.netty.channel.socket
       ChannelInputShutdownReadComplete
       ServerSocketChannel)
@@ -81,12 +82,12 @@
       IdleState
       IdleStateEvent
       IdleStateHandler)
-    (io.netty.incubator.channel.uring
-      IOUring
-      IOUringDatagramChannel
-      IOUringEventLoopGroup
-      IOUringServerSocketChannel
-      IOUringSocketChannel)
+    (io.netty.channel.uring
+      IoUring
+      IoUringDatagramChannel
+      IoUringIoHandler
+      IoUringServerSocketChannel
+      IoUringSocketChannel)
     (io.netty.resolver
       AddressResolverGroup
       NoopAddressResolverGroup
@@ -132,6 +133,7 @@
     (java.util.concurrent
       CancellationException
       ConcurrentHashMap
+      Executor
       ScheduledFuture
       ThreadFactory
       TimeUnit)
@@ -1237,7 +1239,7 @@
   (KQueue/isAvailable))
 
 (defn ^:no-doc io-uring-available? []
-  (IOUring/isAvailable))
+  (IoUring/isAvailable))
 
 (defn ^:no-doc determine-transport [transport epoll?]
   (or transport (if epoll? :epoll :nio)))
@@ -1246,7 +1248,7 @@
   (case transport
     :epoll [(Epoll/unavailabilityCause) "Epoll"]
     :kqueue [(KQueue/unavailabilityCause) "KQueue"]
-    :io-uring [(IOUring/unavailabilityCause) "IO-Uring"]
+    :io-uring [(IoUring/unavailabilityCause) "IO-Uring"]
     nil))
 
 (defn ^:no-doc ensure-transport-available! [transport]
@@ -1287,29 +1289,48 @@
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
+(defn- create-io-event-loop-group
+  "Creates a MultiThreadIoEventLoopGroup with the appropriate IoHandler for the given transport.
+   The third argument may be either a ThreadFactory or an Executor. When an Executor is
+   provided, Netty uses it directly for scheduling; when a ThreadFactory is provided, Netty
+   creates its own threads using the factory."
+  ^MultiThreadIoEventLoopGroup [transport ^long thread-count thread-factory-or-executor]
+  (let [handler-factory (case transport
+                          :nio     (NioIoHandler/newFactory)
+                          :epoll   (EpollIoHandler/newFactory)
+                          :kqueue  (KQueueIoHandler/newFactory)
+                          :io-uring (IoUringIoHandler/newFactory))]
+    (if (instance? Executor thread-factory-or-executor)
+      (MultiThreadIoEventLoopGroup. thread-count
+                                    ^Executor thread-factory-or-executor
+                                    handler-factory)
+      (MultiThreadIoEventLoopGroup. thread-count
+                                    ^ThreadFactory thread-factory-or-executor
+                                    handler-factory))))
+
 (def ^:no-doc epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (EpollEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :epoll thread-count thread-factory))))
 
 (def ^:no-doc nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (NioEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :nio thread-count thread-factory))))
 
 (def ^:no-doc kqueue-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (KQueueEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :kqueue thread-count thread-factory))))
 
 (def ^:no-doc io-uring-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (IOUringEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :io-uring thread-count thread-factory))))
 
 (defn ^:no-doc transport-client-group [transport]
   (case transport
@@ -1319,18 +1340,20 @@
     :nio nio-client-group))
 
 (defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
-  (case transport
-    :epoll (EpollEventLoopGroup. num-threads thread-factory)
-    :kqueue (KQueueEventLoopGroup. num-threads thread-factory)
-    :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
-    :nio (NioEventLoopGroup. num-threads thread-factory)))
+  (create-io-event-loop-group transport num-threads thread-factory))
+
+;; Define channel classes as vars to avoid CLJ-2842 eager static init in `case`
+(def ^:private epoll-server-channel-class EpollServerSocketChannel)
+(def ^:private kqueue-server-channel-class KQueueServerSocketChannel)
+(def ^:private io-uring-server-channel-class IoUringServerSocketChannel)
+(def ^:private nio-server-channel-class NioServerSocketChannel)
 
 (defn ^:no-doc transport-server-channel-class [transport]
   (case transport
-    :epoll EpollServerSocketChannel
-    :kqueue KQueueServerSocketChannel
-    :io-uring IOUringServerSocketChannel
-    :nio NioServerSocketChannel))
+    :epoll epoll-server-channel-class
+    :kqueue kqueue-server-channel-class
+    :io-uring io-uring-server-channel-class
+    :nio nio-server-channel-class))
 
 (defn- wrapping-channel-factory
   ^ChannelFactory [listen-socket transport]
@@ -1396,19 +1419,30 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
+;; Define datagram/socket channel classes as vars to avoid CLJ-2842 eager static init in `case`
+(def ^:private epoll-datagram-channel-class EpollDatagramChannel)
+(def ^:private kqueue-datagram-channel-class KQueueDatagramChannel)
+(def ^:private io-uring-datagram-channel-class IoUringDatagramChannel)
+(def ^:private nio-datagram-channel-class NioDatagramChannel)
+
+(def ^:private epoll-socket-channel-class EpollSocketChannel)
+(def ^:private kqueue-socket-channel-class KQueueSocketChannel)
+(def ^:private io-uring-socket-channel-class IoUringSocketChannel)
+(def ^:private nio-socket-channel-class NioSocketChannel)
+
 (defn ^:no-doc transport-channel-type [transport]
   (case transport
-    :epoll EpollDatagramChannel
-    :kqueue KQueueDatagramChannel
-    :io-uring IOUringDatagramChannel
-    :nio NioDatagramChannel))
+    :epoll epoll-datagram-channel-class
+    :kqueue kqueue-datagram-channel-class
+    :io-uring io-uring-datagram-channel-class
+    :nio nio-datagram-channel-class))
 
 (defn- transport-channel-class [transport]
   (case transport
-    :epoll EpollSocketChannel
-    :kqueue KQueueSocketChannel
-    :io-uring IOUringSocketChannel
-    :nio NioSocketChannel))
+    :epoll epoll-socket-channel-class
+    :kqueue kqueue-socket-channel-class
+    :io-uring io-uring-socket-channel-class
+    :nio nio-socket-channel-class))
 
 (defn dns-resolver-group-builder
   "Creates an instance of DnsAddressResolverGroupBuilder that is used to
@@ -1599,7 +1633,6 @@
             bootstrap (doto (Bootstrap.)
                             (.option ChannelOption/SO_REUSEADDR true)
                             (.option ChannelOption/CONNECT_TIMEOUT_MILLIS (int connect-timeout))
-                            #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
                             (.group client-event-loop-group)
                             (.channel chan-class)
                             (.handler initializer)
@@ -1750,14 +1783,12 @@
        (let [b (doto (ServerBootstrap.)
                      (.option ChannelOption/SO_BACKLOG (int 1024))
                      (.option ChannelOption/SO_REUSEADDR true)
-                     (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
                      (cond-> (nil? listen-socket) (.channel channel-class))
                      (cond-> (some? listen-socket) (.channelFactory (wrapping-channel-factory listen-socket transport)))
                      ;;TODO: add a server (.handler) call to the bootstrap, for logging or something
                      (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
-                     (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      bootstrap-transform)
 
              ^ServerSocketChannel
