@@ -2,8 +2,10 @@
 
 * BREAKING: Bump Netty to 4.2.10.Final
 * Promote io_uring transport from incubator (`io.netty.incubator` → `io.netty`)
+* Load io_uring transport classes lazily via reflection (requires Java 9+; gracefully unavailable on Java 8)
 * Add kqueue `osx-aarch_64` native transport for Apple Silicon
 * Update `self-signed-ssl-context` for JDK 24+ compatibility via Netty `CertificateBuilder`, with `SelfSignedCertificate` fallback
+* Fix deprecated `Class.newInstance()` usage in `CertificateBuilder` reflection (use `Constructor.newInstance()`)
 * Remove deprecated `ChannelOption/MAX_MESSAGES_PER_READ` usage
 
 Contributions by (in alphabetical order):
