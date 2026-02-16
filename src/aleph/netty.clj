@@ -123,6 +123,7 @@
       File
       IOException
       InputStream)
+    (java.lang.reflect Constructor)
     (java.net
       InetSocketAddress
       SocketAddress
@@ -1179,7 +1180,9 @@
   [^String hostname]
   (try
     (let [builder-class (Class/forName "io.netty.pkitesting.CertificateBuilder")
-          builder       (.newInstance builder-class)
+          ^Constructor
+          ctor          (.getDeclaredConstructor builder-class (into-array Class []))
+          builder       (.newInstance ctor (object-array []))
           ;; CertificateBuilder.subject(String) -> CertificateBuilder
           subject-m     (.getMethod builder-class "subject" (into-array Class [String]))
           _             (.invoke subject-m builder (object-array [(str "cn=" hostname)]))
