@@ -60,7 +60,7 @@
 
 (def max-probe-gc-runs
   "Maximum number of times the GC will be run to detect a leaked probe."
-  10)
+  50)
 
 (def probe-hint-marker
   "ALEPH LEAK DETECTOR PROBE")
@@ -99,7 +99,7 @@
 
 (def max-gc-polls
   "Maximum number of GC polls before giving up in force-leak-detection!."
-  50)
+  10)
 
 (defn force-leak-detection! []
   ;; Use a WeakReference sentinel to confirm GC has actually run and
@@ -123,6 +123,7 @@
     (if (zero? n)
       (throw (RuntimeException. "Gave up awaiting leak probe. Try increasing `aleph.resource-leak-detector/max-probe-gc-runs`."))
       (when-not (some (partial contains-hint? probe-hint) @current-leaks)
+        (Thread/sleep (long gc-poll-interval-ms))
         (recur (dec n))))))
 
 (defn with-leak-collection
