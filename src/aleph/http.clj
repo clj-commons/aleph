@@ -249,6 +249,15 @@
                               (some? log-activity)
                               (assoc :log-activity (netty/activity-logger "aleph-client" log-activity))
 
+                              ;; When insecure?, disable endpoint identification (hostname
+                              ;; verification) unless the user explicitly set it. On JDK 8
+                              ;; with OpenSSL/tcnative, Netty 4.2's trust manager wrapping
+                              ;; causes hostname verification to run even with
+                              ;; InsecureTrustManagerFactory, leading to SSLHandshakeException.
+                              (and insecure?
+                                   (not (contains? connection-options :ssl-endpoint-id-alg)))
+                              (assoc :ssl-endpoint-id-alg nil)
+
                               true
                               (update :ssl-context #(client/ssl-context % http-versions insecure?)))
         p (promise)
