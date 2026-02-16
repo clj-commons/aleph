@@ -33,6 +33,7 @@
       ChannelPipeline
       EventLoopGroup
       FileRegion
+      IoHandlerFactory
       MultiThreadIoEventLoopGroup)
     (io.netty.channel.epoll
       Epoll
@@ -82,12 +83,6 @@
       IdleState
       IdleStateEvent
       IdleStateHandler)
-    (io.netty.channel.uring
-      IoUring
-      IoUringDatagramChannel
-      IoUringIoHandler
-      IoUringServerSocketChannel
-      IoUringSocketChannel)
     (io.netty.resolver
       AddressResolverGroup
       NoopAddressResolverGroup
@@ -1303,8 +1298,16 @@
 (defn ^:no-doc kqueue-available? []
   (KQueue/isAvailable))
 
-(defn ^:no-doc io-uring-available? []
-  (IoUring/isAvailable))
+(defn ^:no-doc io-uring-available?
+  "Returns true if io_uring transport is available.
+   Uses reflection to avoid loading io_uring classes (which require Java 9+)
+   at namespace load time."
+  []
+  (try
+    (let [cls (Class/forName "io.netty.channel.uring.IoUring")
+          m   (.getMethod cls "isAvailable" (into-array Class []))]
+      (boolean (.invoke m nil (object-array []))))
+    (catch Throwable _ false)))
 
 (defn ^:no-doc determine-transport [transport epoll?]
   (or transport (if epoll? :epoll :nio)))
@@ -1313,7 +1316,15 @@
   (case transport
     :epoll [(Epoll/unavailabilityCause) "Epoll"]
     :kqueue [(KQueue/unavailabilityCause) "KQueue"]
-    :io-uring [(IoUring/unavailabilityCause) "IO-Uring"]
+    :io-uring (try
+               (let [cls (Class/forName "io.netty.channel.uring.IoUring")
+                     m   (.getMethod cls "unavailabilityCause" (into-array Class []))]
+                 [(.invoke m nil (object-array [])) "IO-Uring"])
+               (catch UnsupportedClassVersionError _
+                 [(UnsupportedClassVersionError.
+                    "io_uring transport requires Java 9+") "IO-Uring"])
+               (catch Throwable t
+                 [t "IO-Uring"]))
     nil))
 
 (defn ^:no-doc ensure-transport-available! [transport]
@@ -1360,11 +1371,14 @@
    provided, Netty uses it directly for scheduling; when a ThreadFactory is provided, Netty
    creates its own threads using the factory."
   ^MultiThreadIoEventLoopGroup [transport ^long thread-count thread-factory-or-executor]
-  (let [handler-factory (case transport
-                          :nio     (NioIoHandler/newFactory)
-                          :epoll   (EpollIoHandler/newFactory)
-                          :kqueue  (KQueueIoHandler/newFactory)
-                          :io-uring (IoUringIoHandler/newFactory))]
+  (let [^IoHandlerFactory handler-factory
+        (case transport
+          :nio     (NioIoHandler/newFactory)
+          :epoll   (EpollIoHandler/newFactory)
+          :kqueue  (KQueueIoHandler/newFactory)
+          :io-uring (let [cls (Class/forName "io.netty.channel.uring.IoUringIoHandler")
+                          m   (.getMethod cls "newFactory" (into-array Class []))]
+                      (.invoke m nil (object-array []))))]
     (if (instance? Executor thread-factory-or-executor)
       (MultiThreadIoEventLoopGroup. thread-count
                                     ^Executor thread-factory-or-executor
@@ -1407,10 +1421,15 @@
 (defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
   (create-io-event-loop-group transport num-threads thread-factory))
 
-;; Define channel classes as vars to avoid CLJ-2842 eager static init in `case`
+;; Define channel classes as vars to avoid CLJ-2842 eager static init in `case`.
+;; io_uring classes require Java 9+ (class file version 53.0), so they must be
+;; resolved via Class/forName with try/catch to avoid UnsupportedClassVersionError
+;; on Java 8.
 (def ^:private epoll-server-channel-class EpollServerSocketChannel)
 (def ^:private kqueue-server-channel-class KQueueServerSocketChannel)
-(def ^:private io-uring-server-channel-class IoUringServerSocketChannel)
+(def ^:private io-uring-server-channel-class
+  (try (Class/forName "io.netty.channel.uring.IoUringServerSocketChannel")
+       (catch Throwable _ nil)))
 (def ^:private nio-server-channel-class NioServerSocketChannel)
 
 (defn ^:no-doc transport-server-channel-class [transport]
@@ -1484,15 +1503,20 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
-;; Define datagram/socket channel classes as vars to avoid CLJ-2842 eager static init in `case`
+;; Define datagram/socket channel classes as vars to avoid CLJ-2842 eager static init in `case`.
+;; io_uring classes are resolved lazily via Class/forName (require Java 9+).
 (def ^:private epoll-datagram-channel-class EpollDatagramChannel)
 (def ^:private kqueue-datagram-channel-class KQueueDatagramChannel)
-(def ^:private io-uring-datagram-channel-class IoUringDatagramChannel)
+(def ^:private io-uring-datagram-channel-class
+  (try (Class/forName "io.netty.channel.uring.IoUringDatagramChannel")
+       (catch Throwable _ nil)))
 (def ^:private nio-datagram-channel-class NioDatagramChannel)
 
 (def ^:private epoll-socket-channel-class EpollSocketChannel)
 (def ^:private kqueue-socket-channel-class KQueueSocketChannel)
-(def ^:private io-uring-socket-channel-class IoUringSocketChannel)
+(def ^:private io-uring-socket-channel-class
+  (try (Class/forName "io.netty.channel.uring.IoUringSocketChannel")
+       (catch Throwable _ nil)))
 (def ^:private nio-socket-channel-class NioSocketChannel)
 
 (defn ^:no-doc transport-channel-type [transport]
