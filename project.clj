@@ -76,6 +76,7 @@
              :dropped-error-deferred-detection {:jvm-opts ["-Dorg.slf4j.simpleLogger.log.manifold.debug=warn"
                                                            "-Daleph.testutils.detect-dropped-error-deferreds=true"]}
              :test-unsafe-deny    {:jvm-opts ["--sun-misc-unsafe-memory-access=deny"]}
+             :jdk-21              {:javac-options ^:replace ["--release" "11"]}
              :pedantic            {:pedantic? :abort}
              :trace               {:jvm-opts ["-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}
              :profile             {:dependencies [[com.clojure-goes-fast/clj-async-profiler "1.7.0"]]
