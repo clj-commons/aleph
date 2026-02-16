@@ -1,3 +1,15 @@
+### Unreleased
+
+* BREAKING: Bump Netty to 4.2.10.Final
+* Promote io_uring transport from incubator (`io.netty.incubator` → `io.netty`)
+* Add kqueue `osx-aarch_64` native transport for Apple Silicon
+* Update `self-signed-ssl-context` for JDK 24+ compatibility via Netty `CertificateBuilder`, with `SelfSignedCertificate` fallback
+* Remove deprecated `ChannelOption/MAX_MESSAGES_PER_READ` usage
+
+Contributions by (in alphabetical order):
+
+Robin Lahtinen
+
 ### 0.9.5
 
 * Fix NPE in `wrap-exceptions` HTTP client middleware (#766, #767)
