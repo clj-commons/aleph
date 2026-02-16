@@ -7,10 +7,11 @@
     [aleph.tcp-test :refer [with-server]]
     [aleph.testutils]
     [clj-commons.byte-streams :as bs]
-    [clojure.test :refer [deftest is]]
+    [clojure.test :refer [deftest is testing]]
     [manifold.deferred :as d]
     [manifold.stream :as s])
   (:import
+    (io.netty.handler.ssl SslContext)
     (java.security.cert X509Certificate)
     (java.util.concurrent TimeoutException)
     (javax.net.ssl SSLHandshakeException)))
@@ -148,6 +149,28 @@
         (is (not (d/realized? c)))
         (deliver continue-handshake true)
         (is (deref c 1000 false))))))
+
+(deftest test-self-signed-ssl-context
+  (testing "self-signed-ssl-context returns a valid server SslContext"
+    (let [ctx (netty/self-signed-ssl-context)]
+      (is (instance? SslContext ctx))
+      (is (.isServer ^SslContext ctx))))
+
+  (testing "self-signed-ssl-context with custom hostname"
+    (let [ctx (netty/self-signed-ssl-context "example.test")]
+      (is (instance? SslContext ctx))
+      (is (.isServer ^SslContext ctx))))
+
+  (testing "self-signed-ssl-context can serve TLS traffic"
+    (with-server (tcp/start-server (fn [s _] (s/connect s s))
+                                   {:port             10001
+                                    :shutdown-timeout 0
+                                    :ssl-context      (netty/self-signed-ssl-context "localhost")})
+      (let [c @(tcp/client {:host        "localhost"
+                            :port        10001
+                            :ssl-context (netty/insecure-ssl-client-context)})]
+        (s/put! c "foo")
+        (is (= "foo" (bs/to-string @(s/take! c))))))))
 
 (aleph.resource-leak-detector/instrument-tests!)
 (aleph.testutils/instrument-tests-with-dropped-error-deferred-detection!)

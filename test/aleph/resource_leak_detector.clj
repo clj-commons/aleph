@@ -22,7 +22,8 @@
    (io.netty.util
     ResourceLeakDetector
     ResourceLeakDetector$Level
-    ResourceLeakDetectorFactory)))
+    ResourceLeakDetectorFactory)
+   (java.lang.ref WeakReference)))
 
 (defn enabled?
   "Checks whether the resource leak detector is enabled.
@@ -59,7 +60,7 @@
 
 (def max-probe-gc-runs
   "Maximum number of times the GC will be run to detect a leaked probe."
-  10)
+  50)
 
 (def probe-hint-marker
   "ALEPH LEAK DETECTOR PROBE")
@@ -91,9 +92,27 @@
 ;; NOTE: Not setting to bare `nil` to appease `clj-kondo`.
 (def current-leaks (atom nil))
 
+(def gc-poll-interval-ms
+  "Milliseconds to sleep between GC polls in force-leak-detection!.
+   Gives the reference-processing thread time to run after System/gc."
+  10)
+
+(def max-gc-polls
+  "Maximum number of GC polls before giving up in force-leak-detection!."
+  10)
+
 (defn force-leak-detection! []
-  (System/gc)
-  (System/runFinalization)
+  ;; Use a WeakReference sentinel to confirm GC has actually run and
+  ;; processed references. This is the standard OpenJDK ForceGC pattern.
+  ;; PhantomReferences (used by Netty's ResourceLeakDetector) are enqueued
+  ;; asynchronously after GC; polling with a short sleep ensures the
+  ;; reference-processing thread has had time to run.
+  (let [sentinel (WeakReference. (Object.))]
+    (loop [n max-gc-polls]
+      (System/gc)
+      (when (and (.get sentinel) (pos? n))
+        (Thread/sleep (long gc-poll-interval-ms))
+        (recur (dec n)))))
   ;; Transitively trigger a track() invocation which in turn works
   ;; off the leaked references queue.
   (-> AbstractByteBufAllocator/DEFAULT (.buffer 1) .release))
@@ -104,6 +123,7 @@
     (if (zero? n)
       (throw (RuntimeException. "Gave up awaiting leak probe. Try increasing `aleph.resource-leak-detector/max-probe-gc-runs`."))
       (when-not (some (partial contains-hint? probe-hint) @current-leaks)
+        (Thread/sleep (long gc-poll-interval-ms))
         (recur (dec n))))))
 
 (defn with-leak-collection

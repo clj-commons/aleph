@@ -32,11 +32,13 @@
       ChannelOutboundInvoker
       ChannelPipeline
       EventLoopGroup
-      FileRegion)
+      FileRegion
+      IoHandlerFactory
+      MultiThreadIoEventLoopGroup)
     (io.netty.channel.epoll
       Epoll
       EpollDatagramChannel
-      EpollEventLoopGroup
+      EpollIoHandler
       EpollServerSocketChannel
       EpollSocketChannel)
     (io.netty.channel.group
@@ -45,10 +47,10 @@
     (io.netty.channel.kqueue
       KQueue
       KQueueDatagramChannel
-      KQueueEventLoopGroup
+      KQueueIoHandler
       KQueueServerSocketChannel
       KQueueSocketChannel)
-    (io.netty.channel.nio NioEventLoopGroup)
+    (io.netty.channel.nio NioIoHandler)
     (io.netty.channel.socket
       ChannelInputShutdownReadComplete
       ServerSocketChannel)
@@ -81,12 +83,6 @@
       IdleState
       IdleStateEvent
       IdleStateHandler)
-    (io.netty.incubator.channel.uring
-      IOUring
-      IOUringDatagramChannel
-      IOUringEventLoopGroup
-      IOUringServerSocketChannel
-      IOUringSocketChannel)
     (io.netty.resolver
       AddressResolverGroup
       NoopAddressResolverGroup
@@ -122,6 +118,7 @@
       File
       IOException
       InputStream)
+    (java.lang.reflect Constructor)
     (java.net
       InetSocketAddress
       SocketAddress
@@ -132,6 +129,7 @@
     (java.util.concurrent
       CancellationException
       ConcurrentHashMap
+      Executor
       ScheduledFuture
       ThreadFactory
       TimeUnit)
@@ -1053,7 +1051,13 @@
                (.sessionTimeout session-timeout)
 
                (some? application-protocol-config)
-               (.applicationProtocolConfig application-protocol-config))
+               (.applicationProtocolConfig application-protocol-config)
+
+               ;; Netty 4.2 defaults to "HTTPS" endpoint identification at the builder level.
+               ;; Aleph manages hostname verification itself in ssl-handler, so disable the
+               ;; builder-level default to avoid double-verification.
+               true
+               (.endpointIdentificationAlgorithm nil))
 
        (.build builder))))
 
@@ -1164,21 +1168,79 @@
                    (str/join ", " (.supportedProtocols application-protocol-config))))
        (.build b)))))
 
+(defn- try-certificate-builder
+  "Attempts to create a self-signed cert using Netty 4.2's CertificateBuilder
+   (from io.netty/netty-pkitesting). Returns a map of {:private-key :certificate-chain}
+   or nil if the class is unavailable."
+  [^String hostname]
+  (try
+    (let [builder-class (Class/forName "io.netty.pkitesting.CertificateBuilder")
+          ^Constructor
+          ctor          (.getDeclaredConstructor builder-class (into-array Class []))
+          builder       (.newInstance ctor (object-array []))
+          ;; CertificateBuilder.subject(String) -> CertificateBuilder
+          subject-m     (.getMethod builder-class "subject" (into-array Class [String]))
+          _             (.invoke subject-m builder (object-array [(str "cn=" hostname)]))
+          ;; CertificateBuilder.setIsCertificateAuthority(boolean) -> CertificateBuilder
+          ;; Must be true: buildSelfSigned() requires root CA flag internally
+          set-ca-m      (.getMethod builder-class "setIsCertificateAuthority" (into-array Class [Boolean/TYPE]))
+          _             (.invoke set-ca-m builder (object-array [(Boolean/valueOf true)]))
+          ;; CertificateBuilder.addSanDnsName(String) -> CertificateBuilder
+          ;; Required for HTTPS endpoint identification (RFC 6125: SAN takes precedence over CN)
+          san-m         (.getMethod builder-class "addSanDnsName" (into-array Class [String]))
+          _             (.invoke san-m builder (object-array [hostname]))
+          ;; CertificateBuilder.buildSelfSigned() -> X509Bundle
+          build-m       (.getMethod builder-class "buildSelfSigned" (into-array Class []))
+          bundle        (.invoke build-m builder (object-array []))
+          ;; X509Bundle.getKeyPair() -> KeyPair
+          bundle-class  (Class/forName "io.netty.pkitesting.X509Bundle")
+          get-kp-m      (.getMethod bundle-class "getKeyPair" (into-array Class []))
+          key-pair      (.invoke get-kp-m bundle (object-array []))
+          ;; KeyPair.getPrivate() -> PrivateKey
+          priv-key      (.getPrivate ^java.security.KeyPair key-pair)
+          ;; X509Bundle.getCertificate() -> X509Certificate
+          get-cert-m    (.getMethod bundle-class "getCertificate" (into-array Class []))
+          certificate   (.invoke get-cert-m bundle (object-array []))]
+      (log/debug "Using CertificateBuilder from netty-pkitesting for self-signed cert")
+      {:private-key       priv-key
+       :certificate-chain [certificate]})
+    (catch ClassNotFoundException _
+      nil)
+    (catch Exception e
+      (log/debug e "CertificateBuilder reflection failed, falling back to SelfSignedCertificate")
+      nil)))
+
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers.
 
    Never use in production. Even if you control all clients, and want to use
-   a self-signed cert internally, do not use this fn, because Netty's
-   SelfSignedCertificate class is only for testing, and uses an insecure PRNG."
+   a self-signed cert internally, do not use this fn, because the generated
+   certificate uses weak algorithms and is only for testing.
+
+   Prefers Netty 4.2's `CertificateBuilder` from `io.netty/netty-pkitesting`
+   when available (works on all JDKs including 24+). Falls back to Netty's
+   `SelfSignedCertificate` which does not work on JDK 24+ where the internal
+   certificate generator was removed. Add `io.netty/netty-pkitesting` to your
+   classpath for JDK 24+ support."
   ([]
    (self-signed-ssl-context "localhost"))
   ([hostname]
    (self-signed-ssl-context hostname {}))
   ([hostname opts]
-   (let [cert (SelfSignedCertificate. hostname)]
-     (ssl-server-context (assoc opts
-                                :private-key (.privateKey cert)
-                                :certificate-chain (.certificate cert))))))
+   (if-let [cert-map (try-certificate-builder hostname)]
+     (ssl-server-context (merge opts cert-map))
+     ;; Fallback to SelfSignedCertificate (pre-JDK 24)
+     (let [^SelfSignedCertificate cert (try
+                  (SelfSignedCertificate. hostname)
+                  (catch UnsupportedOperationException e
+                    (throw (UnsupportedOperationException.
+                             (str "SelfSignedCertificate is not supported on this JDK version. "
+                                  "Add io.netty/netty-pkitesting to your classpath, or use "
+                                  "ssl-server-context with pre-generated certificates instead.")
+                             e))))]
+       (ssl-server-context (assoc opts
+                                  :private-key (.privateKey cert)
+                                  :certificate-chain (.certificate cert)))))))
 
 
 (defn insecure-ssl-client-context
@@ -1236,8 +1298,16 @@
 (defn ^:no-doc kqueue-available? []
   (KQueue/isAvailable))
 
-(defn ^:no-doc io-uring-available? []
-  (IOUring/isAvailable))
+(defn ^:no-doc io-uring-available?
+  "Returns true if io_uring transport is available.
+   Uses reflection to avoid loading io_uring classes (which require Java 9+)
+   at namespace load time."
+  []
+  (try
+    (let [cls (Class/forName "io.netty.channel.uring.IoUring")
+          m   (.getMethod cls "isAvailable" (into-array Class []))]
+      (boolean (.invoke m nil (object-array []))))
+    (catch Throwable _ false)))
 
 (defn ^:no-doc determine-transport [transport epoll?]
   (or transport (if epoll? :epoll :nio)))
@@ -1246,7 +1316,15 @@
   (case transport
     :epoll [(Epoll/unavailabilityCause) "Epoll"]
     :kqueue [(KQueue/unavailabilityCause) "KQueue"]
-    :io-uring [(IOUring/unavailabilityCause) "IO-Uring"]
+    :io-uring (try
+               (let [cls (Class/forName "io.netty.channel.uring.IoUring")
+                     m   (.getMethod cls "unavailabilityCause" (into-array Class []))]
+                 [(.invoke m nil (object-array [])) "IO-Uring"])
+               (catch UnsupportedClassVersionError _
+                 [(UnsupportedClassVersionError.
+                    "io_uring transport requires Java 9+") "IO-Uring"])
+               (catch Throwable t
+                 [t "IO-Uring"]))
     nil))
 
 (defn ^:no-doc ensure-transport-available! [transport]
@@ -1287,29 +1365,51 @@
 
 (def ^:no-doc ^String client-event-thread-pool-name "aleph-netty-client-event-pool")
 
+(defn- create-io-event-loop-group
+  "Creates a MultiThreadIoEventLoopGroup with the appropriate IoHandler for the given transport.
+   The third argument may be either a ThreadFactory or an Executor. When an Executor is
+   provided, Netty uses it directly for scheduling; when a ThreadFactory is provided, Netty
+   creates its own threads using the factory."
+  ^MultiThreadIoEventLoopGroup [transport ^long thread-count thread-factory-or-executor]
+  (let [^IoHandlerFactory handler-factory
+        (case transport
+          :nio     (NioIoHandler/newFactory)
+          :epoll   (EpollIoHandler/newFactory)
+          :kqueue  (KQueueIoHandler/newFactory)
+          :io-uring (let [cls (Class/forName "io.netty.channel.uring.IoUringIoHandler")
+                          m   (.getMethod cls "newFactory" (into-array Class []))]
+                      (.invoke m nil (object-array []))))]
+    (if (instance? Executor thread-factory-or-executor)
+      (MultiThreadIoEventLoopGroup. thread-count
+                                    ^Executor thread-factory-or-executor
+                                    handler-factory)
+      (MultiThreadIoEventLoopGroup. thread-count
+                                    ^ThreadFactory thread-factory-or-executor
+                                    handler-factory))))
+
 (def ^:no-doc epoll-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (EpollEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :epoll thread-count thread-factory))))
 
 (def ^:no-doc nio-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (NioEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :nio thread-count thread-factory))))
 
 (def ^:no-doc kqueue-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (KQueueEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :kqueue thread-count thread-factory))))
 
 (def ^:no-doc io-uring-client-group
   (delay
     (let [thread-count (get-default-event-loop-threads)
           thread-factory (enumerating-thread-factory client-event-thread-pool-name true)]
-      (IOUringEventLoopGroup. (long thread-count) thread-factory))))
+      (create-io-event-loop-group :io-uring thread-count thread-factory))))
 
 (defn ^:no-doc transport-client-group [transport]
   (case transport
@@ -1319,18 +1419,25 @@
     :nio nio-client-group))
 
 (defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
-  (case transport
-    :epoll (EpollEventLoopGroup. num-threads thread-factory)
-    :kqueue (KQueueEventLoopGroup. num-threads thread-factory)
-    :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
-    :nio (NioEventLoopGroup. num-threads thread-factory)))
+  (create-io-event-loop-group transport num-threads thread-factory))
+
+;; Define channel classes as vars to avoid CLJ-2842 eager static init in `case`.
+;; io_uring classes require Java 9+ (class file version 53.0), so they must be
+;; resolved via Class/forName with try/catch to avoid UnsupportedClassVersionError
+;; on Java 8.
+(def ^:private epoll-server-channel-class EpollServerSocketChannel)
+(def ^:private kqueue-server-channel-class KQueueServerSocketChannel)
+(def ^:private io-uring-server-channel-class
+  (try (Class/forName "io.netty.channel.uring.IoUringServerSocketChannel")
+       (catch Throwable _ nil)))
+(def ^:private nio-server-channel-class NioServerSocketChannel)
 
 (defn ^:no-doc transport-server-channel-class [transport]
   (case transport
-    :epoll EpollServerSocketChannel
-    :kqueue KQueueServerSocketChannel
-    :io-uring IOUringServerSocketChannel
-    :nio NioServerSocketChannel))
+    :epoll epoll-server-channel-class
+    :kqueue kqueue-server-channel-class
+    :io-uring io-uring-server-channel-class
+    :nio nio-server-channel-class))
 
 (defn- wrapping-channel-factory
   ^ChannelFactory [listen-socket transport]
@@ -1396,19 +1503,35 @@
       (SingletonDnsServerAddressStreamProvider. (first addresses))
       (SequentialDnsServerAddressStreamProvider. ^Iterable addresses))))
 
+;; Define datagram/socket channel classes as vars to avoid CLJ-2842 eager static init in `case`.
+;; io_uring classes are resolved lazily via Class/forName (require Java 9+).
+(def ^:private epoll-datagram-channel-class EpollDatagramChannel)
+(def ^:private kqueue-datagram-channel-class KQueueDatagramChannel)
+(def ^:private io-uring-datagram-channel-class
+  (try (Class/forName "io.netty.channel.uring.IoUringDatagramChannel")
+       (catch Throwable _ nil)))
+(def ^:private nio-datagram-channel-class NioDatagramChannel)
+
+(def ^:private epoll-socket-channel-class EpollSocketChannel)
+(def ^:private kqueue-socket-channel-class KQueueSocketChannel)
+(def ^:private io-uring-socket-channel-class
+  (try (Class/forName "io.netty.channel.uring.IoUringSocketChannel")
+       (catch Throwable _ nil)))
+(def ^:private nio-socket-channel-class NioSocketChannel)
+
 (defn ^:no-doc transport-channel-type [transport]
   (case transport
-    :epoll EpollDatagramChannel
-    :kqueue KQueueDatagramChannel
-    :io-uring IOUringDatagramChannel
-    :nio NioDatagramChannel))
+    :epoll epoll-datagram-channel-class
+    :kqueue kqueue-datagram-channel-class
+    :io-uring io-uring-datagram-channel-class
+    :nio nio-datagram-channel-class))
 
 (defn- transport-channel-class [transport]
   (case transport
-    :epoll EpollSocketChannel
-    :kqueue KQueueSocketChannel
-    :io-uring IOUringSocketChannel
-    :nio NioSocketChannel))
+    :epoll epoll-socket-channel-class
+    :kqueue kqueue-socket-channel-class
+    :io-uring io-uring-socket-channel-class
+    :nio nio-socket-channel-class))
 
 (defn dns-resolver-group-builder
   "Creates an instance of DnsAddressResolverGroupBuilder that is used to
@@ -1599,7 +1722,6 @@
             bootstrap (doto (Bootstrap.)
                             (.option ChannelOption/SO_REUSEADDR true)
                             (.option ChannelOption/CONNECT_TIMEOUT_MILLIS (int connect-timeout))
-                            #_(.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE) ; option deprecated, removed in v5
                             (.group client-event-loop-group)
                             (.channel chan-class)
                             (.handler initializer)
@@ -1750,14 +1872,12 @@
        (let [b (doto (ServerBootstrap.)
                      (.option ChannelOption/SO_BACKLOG (int 1024))
                      (.option ChannelOption/SO_REUSEADDR true)
-                     (.option ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      (.group group)
                      (cond-> (nil? listen-socket) (.channel channel-class))
                      (cond-> (some? listen-socket) (.channelFactory (wrapping-channel-factory listen-socket transport)))
                      ;;TODO: add a server (.handler) call to the bootstrap, for logging or something
                      (.childHandler (pipeline-initializer pipeline-builder))
                      (.childOption ChannelOption/SO_REUSEADDR true)
-                     (.childOption ChannelOption/MAX_MESSAGES_PER_READ Integer/MAX_VALUE)
                      bootstrap-transform)
 
              ^ServerSocketChannel

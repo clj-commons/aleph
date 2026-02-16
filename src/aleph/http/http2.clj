@@ -1399,6 +1399,21 @@
             true
             http2-conn-pipeline-transform)
 
+    ;; Flush the HTTP/2 connection preface (magic + initial SETTINGS) that was
+    ;; written by Http2ConnectionHandler.sendPreface() during handlerAdded.
+    ;; When Http2FrameCodec is added to an already-active pipeline (the normal
+    ;; case for both client post-SSL-handshake and server ALPN paths),
+    ;; channelActive is never replayed, so the flushPreface guard in
+    ;; PrefaceDecoder.channelActive never fires. Without this explicit flush,
+    ;; the preface sits in SslHandler.pendingUnencryptedWrites and under
+    ;; certain allocator/timing conditions (e.g., unpooled allocator on
+    ;; JDK 21), a SETTINGS ACK can be flushed before the initial SETTINGS,
+    ;; causing the peer to reject the connection.
+    ;; See https://github.com/netty/netty/issues/12089
+    (let [ch (.channel pipeline)]
+      (when (.isActive ch)
+        (.flush ch)))
+
     (log/debug "Conn chan pipeline:" pipeline)
 
     pipeline))

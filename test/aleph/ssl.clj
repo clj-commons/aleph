@@ -2,7 +2,6 @@
   (:require
     [aleph.netty :as netty])
   (:import
-    (io.netty.handler.ssl.util SelfSignedCertificate)
     (java.io ByteArrayInputStream)
     (java.security KeyFactory PrivateKey)
     (java.security.cert CertificateFactory X509Certificate)
@@ -63,13 +62,16 @@
 (def client-ssl-context
   (netty/ssl-client-context client-ssl-context-opts))
 
-(def wrong-hostname-cert
-  (SelfSignedCertificate. "some-random-hostname"))
+(def ^X509Certificate wrong-hostname-cert
+  (gen-cert (read-string (slurp "test/wrong_hostname_cert.edn"))))
+
+(def wrong-hostname-key
+  (gen-key 65537 (read-string (slurp "test/wrong_hostname_key.edn"))))
 
 (def wrong-hostname-server-ssl-context-opts
-  {:private-key       (.privateKey wrong-hostname-cert)
-   :certificate-chain (.certificate wrong-hostname-cert)})
+  {:private-key       wrong-hostname-key
+   :certificate-chain [wrong-hostname-cert]})
 
 (def wrong-hostname-client-ssl-context-opts
   (assoc client-ssl-context-opts
-         :trust-store (.certificate wrong-hostname-cert)))
+         :trust-store [wrong-hostname-cert]))
