@@ -1055,7 +1055,13 @@
                (.sessionTimeout session-timeout)
 
                (some? application-protocol-config)
-               (.applicationProtocolConfig application-protocol-config))
+               (.applicationProtocolConfig application-protocol-config)
+
+               ;; Netty 4.2 defaults to "HTTPS" endpoint identification at the builder level.
+               ;; Aleph manages hostname verification itself in ssl-handler, so disable the
+               ;; builder-level default to avoid double-verification.
+               true
+               (.endpointIdentificationAlgorithm nil))
 
        (.build builder))))
 
@@ -1166,21 +1172,77 @@
                    (str/join ", " (.supportedProtocols application-protocol-config))))
        (.build b)))))
 
+(defn- try-certificate-builder
+  "Attempts to create a self-signed cert using Netty 4.2's CertificateBuilder
+   (from io.netty/netty-pkitesting). Returns a map of {:private-key :certificate-chain}
+   or nil if the class is unavailable."
+  [^String hostname]
+  (try
+    (let [builder-class (Class/forName "io.netty.pkitesting.CertificateBuilder")
+          builder       (.newInstance builder-class)
+          ;; CertificateBuilder.subject(String) -> CertificateBuilder
+          subject-m     (.getMethod builder-class "subject" (into-array Class [String]))
+          _             (.invoke subject-m builder (object-array [(str "cn=" hostname)]))
+          ;; CertificateBuilder.setIsCertificateAuthority(boolean) -> CertificateBuilder
+          ;; Must be true: buildSelfSigned() requires root CA flag internally
+          set-ca-m      (.getMethod builder-class "setIsCertificateAuthority" (into-array Class [Boolean/TYPE]))
+          _             (.invoke set-ca-m builder (object-array [(Boolean/valueOf true)]))
+          ;; CertificateBuilder.addSanDnsName(String) -> CertificateBuilder
+          ;; Required for HTTPS endpoint identification (RFC 6125: SAN takes precedence over CN)
+          san-m         (.getMethod builder-class "addSanDnsName" (into-array Class [String]))
+          _             (.invoke san-m builder (object-array [hostname]))
+          ;; CertificateBuilder.buildSelfSigned() -> X509Bundle
+          build-m       (.getMethod builder-class "buildSelfSigned" (into-array Class []))
+          bundle        (.invoke build-m builder (object-array []))
+          ;; X509Bundle.getKeyPair() -> KeyPair
+          bundle-class  (Class/forName "io.netty.pkitesting.X509Bundle")
+          get-kp-m      (.getMethod bundle-class "getKeyPair" (into-array Class []))
+          key-pair      (.invoke get-kp-m bundle (object-array []))
+          ;; KeyPair.getPrivate() -> PrivateKey
+          priv-key      (.getPrivate ^java.security.KeyPair key-pair)
+          ;; X509Bundle.getCertificate() -> X509Certificate
+          get-cert-m    (.getMethod bundle-class "getCertificate" (into-array Class []))
+          certificate   (.invoke get-cert-m bundle (object-array []))]
+      (log/debug "Using CertificateBuilder from netty-pkitesting for self-signed cert")
+      {:private-key       priv-key
+       :certificate-chain [certificate]})
+    (catch ClassNotFoundException _
+      nil)
+    (catch Exception e
+      (log/debug e "CertificateBuilder reflection failed, falling back to SelfSignedCertificate")
+      nil)))
+
 (defn self-signed-ssl-context
   "A self-signed SSL context for servers.
 
    Never use in production. Even if you control all clients, and want to use
-   a self-signed cert internally, do not use this fn, because Netty's
-   SelfSignedCertificate class is only for testing, and uses an insecure PRNG."
+   a self-signed cert internally, do not use this fn, because the generated
+   certificate uses weak algorithms and is only for testing.
+
+   Prefers Netty 4.2's `CertificateBuilder` from `io.netty/netty-pkitesting`
+   when available (works on all JDKs including 24+). Falls back to Netty's
+   `SelfSignedCertificate` which does not work on JDK 24+ where the internal
+   certificate generator was removed. Add `io.netty/netty-pkitesting` to your
+   classpath for JDK 24+ support."
   ([]
    (self-signed-ssl-context "localhost"))
   ([hostname]
    (self-signed-ssl-context hostname {}))
   ([hostname opts]
-   (let [cert (SelfSignedCertificate. hostname)]
-     (ssl-server-context (assoc opts
-                                :private-key (.privateKey cert)
-                                :certificate-chain (.certificate cert))))))
+   (if-let [cert-map (try-certificate-builder hostname)]
+     (ssl-server-context (merge opts cert-map))
+     ;; Fallback to SelfSignedCertificate (pre-JDK 24)
+     (let [^SelfSignedCertificate cert (try
+                  (SelfSignedCertificate. hostname)
+                  (catch UnsupportedOperationException e
+                    (throw (UnsupportedOperationException.
+                             (str "SelfSignedCertificate is not supported on this JDK version. "
+                                  "Add io.netty/netty-pkitesting to your classpath, or use "
+                                  "ssl-server-context with pre-generated certificates instead.")
+                             e))))]
+       (ssl-server-context (assoc opts
+                                  :private-key (.privateKey cert)
+                                  :certificate-chain (.certificate cert)))))))
 
 
 (defn insecure-ssl-client-context
