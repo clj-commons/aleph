@@ -7,7 +7,6 @@
 * Update `self-signed-ssl-context` for JDK 24+ compatibility via Netty `CertificateBuilder`, with `SelfSignedCertificate` fallback
 * Fix deprecated `Class.newInstance()` usage in `CertificateBuilder` reflection (use `Constructor.newInstance()`)
 * Remove deprecated `ChannelOption/MAX_MESSAGES_PER_READ` usage
-* Fix HTTP/2 connection preface not flushed on already-active pipelines (affected JDK 21 with unpooled allocator)
 
 Contributions by (in alphabetical order):
 
