@@ -3,7 +3,7 @@
 (def brotli-version "1.20.0")
 
 
-(defproject aleph (or (System/getenv "PROJECT_VERSION") "0.9.5")
+(defproject aleph (or (System/getenv "PROJECT_VERSION") "0.9.6")
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}

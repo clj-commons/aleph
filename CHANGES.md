@@ -1,3 +1,11 @@
+### 0.9.6
+
+* Bump Netty to 4.1.132.Final to fix CVE-2026-33870 and CVE-2026-33871 (#781)
+
+Contributions by (in alphabetical order):
+
+Moritz Heidkamp.
+
 ### 0.9.5
 
 * Fix NPE in `wrap-exceptions` HTTP client middleware (#766, #767)
