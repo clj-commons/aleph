@@ -1224,12 +1224,13 @@
                        {:status 429
                         :body "nope"}) {}
     (try
-      (-> (http-get "/" {:throw-exceptions? true})
+      (-> (http-get "/" {:throw-exceptions? true :as :string})
           (d/timeout! 1e3)
           deref)
       (is (= false true) "should have thrown an exception")
       (catch Exception e
-        (is (= 429 (:status (ex-data e))))))))
+        (is (= 429 (:status (ex-data e))))
+        (is (= "nope" (:body (ex-data e))))))))
 
 (deftest test-client-errors-handling
   (testing "writing invalid request message"

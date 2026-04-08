@@ -278,15 +278,15 @@
                   (error-status-deferred
                    (assoc rsp :body (ByteArrayInputStream. body)))))
 
-      (nil? body)
-      (error-status-deferred rsp)
-
-      :else
+      (s/stream? body)
       (d/chain'
        (s/reduce conj [] body)
        (fn [body]
          (error-status-deferred
-          (assoc rsp :body (s/->source body))))))))
+          (assoc rsp :body (s/->source body)))))
+
+      :else
+      (error-status-deferred rsp))))
 
 (defn wrap-method
   "Middleware converting the :method option into the :request-method option"

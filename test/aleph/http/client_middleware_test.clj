@@ -53,6 +53,14 @@
                                          :form-params {:foo :bar}})
         (middleware/coerce-form-params {:form-params {:foo :bar}}))))
 
+(deftest test-coerce-response-body
+  (is (= "foo" (:body (middleware/coerce-response-body
+                       {:as :string}
+                       {:body (s/->source ["f" "o" "o"])}))))
+  (is (= {:foo "bar"} (:body (middleware/coerce-response-body
+                              {:as :clojure}
+                              {:body "{:foo \"bar\"}"})))))
+
 (deftest test-nested-query-params
   (let [req {:request-method :get
              :query-params {:foo {:bar "baz"}}}
@@ -246,6 +254,16 @@
           (is (instance? ExceptionInfo e))
           (is (= 400 (:status (ex-data e))))
           (is (nil? (-> e ex-data :body))))))
+    (testing "response body is string (e.g. via `:as :string`)"
+      (try
+        (let [rsp (handle-error-status {:throw-exceptions? true}
+                                       {:status 400
+                                        :body "hello"})]
+          (is (= ::thrown? rsp) "should have thrown"))
+        (catch Exception e
+          (is (instance? ExceptionInfo e))
+          (is (= 400 (:status (ex-data e))))
+          (is (= "hello" (-> e ex-data :body))))))
     (testing "error status but :throw-exceptions is false"
       (let [rsp (handle-error-status {:throw-exceptions? false}
                                      {:status 400})]
