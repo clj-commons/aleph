@@ -904,11 +904,9 @@
 (defmethod coerce-response-body :transit+msgpack [req resp]
   (coerce-transit-body req resp :msgpack))
 
-(defmethod coerce-response-body :string [{:keys [as]} {:keys [body] :as resp}]
+(defmethod coerce-response-body :string [_req {:keys [body] :as resp}]
   (let [body-bytes (bs/to-byte-array body)]
-    (if (string? as)
-      (assoc resp :body (bs/to-string body-bytes {:charset as}))
-      (assoc resp :body (bs/to-string body-bytes)))))
+    (assoc resp :body (bs/to-string body-bytes))))
 
 (defmethod coerce-response-body :default [_ resp]
   resp)
