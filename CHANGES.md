@@ -1,3 +1,11 @@
+### 0.9.7
+
+* Fix HTTP client response body coercion for error status responses (#782)
+
+Contributions by (in alphabetical order):
+
+Lukas Buhné, Moritz Heidkamp, and Peter Bex.
+
 ### 0.9.6
 
 * Bump Netty to 4.1.132.Final to fix CVE-2026-33870 and CVE-2026-33871 (#781)

@@ -8,11 +8,11 @@ Aleph exposes data from the network as a [Manifold](https://github.com/clj-commo
 
 Leiningen:
 ```clojure
-[aleph "0.9.6"]
+[aleph "0.9.7"]
 ```
 deps.edn:
 ```clojure
-aleph/aleph {:mvn/version "0.9.6"}
+aleph/aleph {:mvn/version "0.9.7"}
 ;; alternatively
 io.github.clj-commons/aleph {:git/sha "..."}
 ```
