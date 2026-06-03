@@ -1,5 +1,5 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
-(def netty-version "4.1.133.Final")
+(def netty-version "4.1.135.Final")
 (def brotli-version "1.20.0")
 
 
@@ -7,7 +7,7 @@
   :description "A framework for asynchronous communication"
   :url "https://github.com/clj-commons/aleph"
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/clojure "1.12.4"]
+  :dependencies [[org.clojure/clojure "1.12.5"]
                  [org.clojure/tools.logging "1.3.1" :exclusions [org.clojure/clojure]]
                  [manifold "0.5.0" :exclusions [org.clojure/tools.logging]]
                  [org.clj-commons/byte-streams "0.3.4"]
@@ -30,7 +30,7 @@
                  [metosin/malli "0.20.1" :exclusions [org.clojure/clojure]]]
   :profiles {:dev                 {:dependencies [[criterium "0.4.6"]
                                                   [cheshire "6.2.0"]
-                                                  [org.slf4j/slf4j-simple "2.0.17"]
+                                                  [org.slf4j/slf4j-simple "2.0.18"]
                                                   [com.cognitect/transit-clj "1.1.357"]
                                                   [spootnik/signal "0.2.5"]
                                                   ;; This is for dev and testing ONLY, not recommended for prod
@@ -47,7 +47,7 @@
                                                   [com.aayushatharva.brotli4j/native-osx-aarch64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-osx-x86_64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-windows-x86_64 ~brotli-version]
-                                                  [com.github.luben/zstd-jni "1.5.7-8"]]
+                                                  [com.github.luben/zstd-jni "1.5.7-10"]]
                                    :jvm-opts     ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                                   "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                                   "-Dorg.slf4j.simpleLogger.showThreadId=true"
