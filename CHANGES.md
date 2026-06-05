@@ -1,3 +1,12 @@
+### 0.9.9
+
+* Bump Netty to [4.1.135.Final](https://netty.io/news/2026/05/04/4-1-133-Final.html) to fix various CVEs (#784)
+* Update other dependencies, too
+
+Contributions by (in alphabetical order):
+
+Moritz Heidkamp.
+
 ### 0.9.8
 
 * Bump Netty to [4.1.133.Final](https://netty.io/news/2026/05/04/4-1-133-Final.html) to fix various CVEs (#783)
