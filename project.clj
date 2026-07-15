@@ -1,5 +1,5 @@
 ;; you'll need to run the script at `deps/lein-to-deps` after changing any dependencies
-(def netty-version "4.1.135.Final")
+(def netty-version "4.1.136.Final")
 (def brotli-version "1.20.0")
 
 
@@ -34,10 +34,10 @@
                                                   [com.cognitect/transit-clj "1.1.357"]
                                                   [spootnik/signal "0.2.5"]
                                                   ;; This is for dev and testing ONLY, not recommended for prod
-                                                  [org.bouncycastle/bcprov-jdk18on "1.84"]
-                                                  [org.bouncycastle/bcpkix-jdk18on "1.84" :exclusions [org.bouncycastle/bcutil-jdk18on]]
+                                                  [org.bouncycastle/bcprov-jdk18on "1.85"]
+                                                  [org.bouncycastle/bcpkix-jdk18on "1.85" :exclusions [org.bouncycastle/bcutil-jdk18on]]
                                                   ;;[org.bouncycastle/bctls-jdk18on "1.75"]
-                                                  [io.netty/netty-tcnative-boringssl-static "2.0.77.Final"]
+                                                  [io.netty/netty-tcnative-boringssl-static "2.0.80.Final"]
                                                   ;;[com.aayushatharva.brotli4j/all ~brotli-version]
                                                   [com.aayushatharva.brotli4j/brotli4j ~brotli-version]
                                                   [com.aayushatharva.brotli4j/service ~brotli-version]
@@ -47,7 +47,7 @@
                                                   [com.aayushatharva.brotli4j/native-osx-aarch64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-osx-x86_64 ~brotli-version]
                                                   [com.aayushatharva.brotli4j/native-windows-x86_64 ~brotli-version]
-                                                  [com.github.luben/zstd-jni "1.5.7-10"]]
+                                                  [com.github.luben/zstd-jni "1.5.7-11"]]
                                    :jvm-opts     ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
                                                   "-Dorg.slf4j.simpleLogger.showThreadName=false"
                                                   "-Dorg.slf4j.simpleLogger.showThreadId=true"
