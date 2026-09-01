@@ -1268,11 +1268,17 @@
   (let [cpu-count (->> (Runtime/getRuntime) (.availableProcessors))]
     (max 1 (SystemPropertyUtil/getInt "io.netty.eventLoopThreads" (* cpu-count 2)))))
 
-(defn ^:no-doc enumerating-thread-factory
-  "Sets the ThreadFactory used by Netty EventLoopGroups.
+(defn enumerating-thread-factory
+  "Creates a ThreadFactory that names threads with a sequential suffix.
 
-   Sets the ClassLoader to the Clojure DynamicClassLoader for any clj
-   code that could be loaded by Netty."
+   Example: (enumerating-thread-factory \"my-pool\" true)
+   Creates threads named: my-pool-1, my-pool-2, etc.
+
+   Parameters:
+   - prefix: the prefix for thread names
+   - daemon?: if true, creates daemon threads
+
+   Also sets the ClassLoader to the Clojure DynamicClassLoader."
   ^ThreadFactory
   [prefix daemon?]
   (let [num-threads (atom 0)]
@@ -1318,12 +1324,31 @@
     :io-uring io-uring-client-group
     :nio nio-client-group))
 
-(defn ^:no-doc transport-event-loop-group [transport ^long num-threads ^ThreadFactory thread-factory]
-  (case transport
-    :epoll (EpollEventLoopGroup. num-threads thread-factory)
-    :kqueue (KQueueEventLoopGroup. num-threads thread-factory)
-    :io-uring (IOUringEventLoopGroup. num-threads thread-factory)
-    :nio (NioEventLoopGroup. num-threads thread-factory)))
+
+(defn transport-event-loop-group
+  "Creates a Netty EventLoopGroup based on the specified transport and thread count.
+
+   `transport` should be one of `:nio`, `:epoll`, `:kqueue`, or `:io-uring`.
+   `num-threads` is the number of threads in the group.
+   `thread-factory-or-name` can be a ThreadFactory instance or a string prefix for thread names."
+  [transport num-threads thread-factory-or-name]
+  (let [factory (if (string? thread-factory-or-name)
+                  (enumerating-thread-factory thread-factory-or-name false)
+                  thread-factory-or-name)]
+    (case transport
+      :nio
+      (NioEventLoopGroup. (int num-threads) ^ThreadFactory factory)
+
+      :epoll
+      (EpollEventLoopGroup. (int num-threads) ^ThreadFactory factory)
+
+      :io-uring
+      (IOUringEventLoopGroup. (int num-threads) ^ThreadFactory factory)
+
+      :kqueue
+      (KQueueEventLoopGroup. (int num-threads) ^ThreadFactory factory))))
+
+
 
 (defn ^:no-doc transport-server-channel-class [transport]
   (case transport
@@ -1590,7 +1615,8 @@
   (let [^Class chan-class (transport-channel-class transport)
         initializer (pipeline-initializer pipeline-builder)]
     (try
-      (let [client-event-loop-group @(transport-client-group transport)
+      (let [client-event-loop-group (or (:event-loop-group opts)
+                                        @(transport-client-group transport))
             resolver' (when (some? name-resolver)
                         (cond
                           (= :default name-resolver) nil
@@ -1702,6 +1728,14 @@
     (.addFirst pipeline "channel-tracker" ^ChannelHandler (channel-tracking-handler chan-group))
     (pipeline-builder pipeline)))
 
+(defn- required-local-transport [^EventLoopGroup group]
+  (cond
+    (instance? NioEventLoopGroup group) :nio
+    (instance? EpollEventLoopGroup group) :epoll
+    (instance? KQueueEventLoopGroup group) :kqueue
+    (instance? IOUringEventLoopGroup group) :io-uring
+    :else nil))
+
 (defn ^:no-doc start-server
   ([pipeline-builder
     ssl-context
@@ -1722,20 +1756,30 @@
             ^SocketAddress socket-address
             listen-socket
             transport
-            shutdown-timeout]
+            shutdown-timeout
+            event-loop-group]
      :or   {shutdown-timeout default-shutdown-timeout}
      :as   opts}]
    (ensure-transport-available! transport)
    (validate-listen-socket listen-socket transport)
    (let [num-cores (.availableProcessors (Runtime/getRuntime))
          num-threads (* 2 num-cores)
-         thread-factory (enumerating-thread-factory "aleph-server-pool" false)
+         ^EventLoopGroup group (or event-loop-group
+                                   (transport-event-loop-group transport num-threads "aleph-server-pool"))
+
          closed? (atom false)
+
+         ;; If user provided a group, verify transport consistency
+         _ (when (and event-loop-group transport)
+             (let [required (required-local-transport group)]
+               (when (and required (not= required transport))
+                 (throw (IllegalArgumentException.
+                          (format "Transport %s is not compatible with the provided EventLoopGroup which requires %s."
+                                  transport required))))))
+         
          chan-group (make-channel-group)                    ; a ChannelGroup for all active server Channels
-
-         ^EventLoopGroup group (transport-event-loop-group transport num-threads thread-factory)
-
-         ^Class channel-class (transport-server-channel-class transport)
+         
+         ^Class channel-class (transport-server-channel-class (or (required-local-transport group) transport))
 
          ^SslContext
          ssl-context (when (some? ssl-context)
@@ -1791,10 +1835,13 @@
                    (d/finally'
                      ;; 3. At this stage, stop the EventLoopGroup, this will cancel any
                      ;;    in flight pending requests.
-                     #(.shutdownGracefully group 0 0 TimeUnit/MILLISECONDS)))
+                     #(when-not event-loop-group
+                        (.shutdownGracefully group 0 0 TimeUnit/MILLISECONDS))))
                (when on-close
                  (d/chain'
-                   (wrap-future (.terminationFuture group))
+                   (if event-loop-group
+                     (d/success-deferred true)
+                     (wrap-future (.terminationFuture group)))
                    (fn [_] (on-close))))))
            Object
            (toString [_]
@@ -1805,11 +1852,13 @@
            (wait-for-close [_]
              (when (nil? listen-socket)
                (-> ch .closeFuture .await))
-             (-> group .terminationFuture .await)
+             (when-not event-loop-group
+               (-> group .terminationFuture .await))
              nil)))
 
        (catch Exception e
-         @(.shutdownGracefully group)
+         (when-not event-loop-group
+           @(.shutdownGracefully group))
          (throw e))))))
 
 
