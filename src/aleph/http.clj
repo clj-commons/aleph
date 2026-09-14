@@ -130,6 +130,11 @@
   [c]
   (swap! connection-stats-callbacks disj c))
 
+(defn- default-stats-callback
+  [s]
+  (doseq [c @connection-stats-callbacks]
+    (c s)))
+
 (def ^:no-doc default-response-executor
   (flow/utilization-executor 0.9 256 {:onto? false}))
 
@@ -218,7 +223,8 @@
            target-utilization   0.9
            control-period       60000
            middleware           middleware/wrap-request
-           max-queue-size       65536}}]
+           max-queue-size       65536
+           stats-callback       default-stats-callback}}]
   (let [{:keys [keep-alive?
                 idle-timeout
                 http-versions
@@ -277,11 +283,7 @@
     @(deliver p pool)))
 
 (def ^:no-doc default-connection-pool
-  (connection-pool
-    {:stats-callback
-     (fn [s]
-       (doseq [c @connection-stats-callbacks]
-         (c s)))}))
+  (connection-pool {}))
 
 (defn websocket-client
   "Given a url, returns a deferred which yields a duplex stream that can be used to
