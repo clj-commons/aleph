@@ -782,6 +782,28 @@
          (let [rsp (http-get "/" {:connection-pool pool})]
            (is (= http/default-response-executor (.executor rsp))))))))
 
+(deftest test-custom-pool-stats-callbacks
+  (let [seen (atom [])
+        cb (fn [stats] (swap! seen conj stats))]
+    (http/register-connection-stats-callback cb)
+    (try
+      (let [server (http/start-server hello-handler {:port port :shutdown-timeout 0})
+            pool (http/connection-pool {:control-period 200})]
+        (try
+          @(http-get "/" {:pool pool})
+          (loop [i 0]
+            (when (and (empty? @seen) (< i 50))
+              (Thread/sleep 100)
+              (recur (inc i))))
+          (is (seq @seen)
+              "registered stats callbacks should fire for a custom connection pool")
+          (finally
+            (.shutdown ^IPool pool)
+            (.close ^Closeable server)
+            (netty/wait-for-close server))))
+      (finally
+        (http/unregister-connection-stats-callback cb)))))
+
 (deftest test-trace-request-omitted-body
   (with-handler echo-handler
     (is (= "" (-> @(http-trace "/" {:body "REQUEST"})
